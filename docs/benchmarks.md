@@ -110,3 +110,97 @@ scripts/bench_rust_hdl.py --vfl target/release/vfl \
     --vhdl-lang /tmp/rust_hdl/bin/vhdl_lang --libraries path/to/vhdl_libraries \
     --runs 5 path/to/neorv32 path/to/OSVVM path/to/UVVM path/to/vunit
 ```
+
+## Language servers: vfl against vhdl_ls
+
+`scripts/bench_vhdl_ls.py` starts `vfl lsp` and rust_hdl's `vhdl_ls` over stdio, drives
+both with the same LSP client on the same project, and measures:
+
+- **Open**: from `initialize` to the answer to the first request after `initialized`.
+  Both servers analyze the whole project and publish its diagnostics before they answer.
+- **Edits**: 8 files spread over the project, each opened, then edited 3 times by
+  appending a comment and 3 times by changing the first `integer` to `natural` or
+  `positive`, timed from `didChange` to the answer to the request that follows it (both
+  servers re-analyze and publish diagnostics first).
+- **Requests**: hover, completion and go to definition in the middle of the first
+  identifier of every 7th line of 16 files spread over the project, with how many got a
+  non-empty answer.
+- **Peak memory** of the server process over the whole run.
+- **Diagnostics** published for the project's files once it is open.
+
+vfl runs with no configuration. vhdl_ls uses the project's own `vhdl_ls.toml` (UVVM has
+one) or else one generated from vfl's inference, and its own standard libraries. Both
+servers see the same files: the ones that `vhdl_ls.toml` lists (UVVM's lists 286 of its
+302 files).
+
+### Results
+
+vhdl_ls 0.88.0 (from crates.io) against this branch, release builds, same machine as
+above, 3 runs of each server (open time: median of the runs; latencies: median and
+slowest over all runs).
+
+| Project | Files | Open (vfl / vhdl_ls) | Peak memory (vfl / vhdl_ls) | Errors (vfl / vhdl_ls) | Warnings (vfl / vhdl_ls) |
+|---|---:|---:|---:|---:|---:|
+| neorv32 | 68 | 103 / 229 ms | 35 / 130 MiB | 0 / 0 | 10 / 18 |
+| OSVVM | 76 | 207 / 385 ms | 79 / 224 MiB | 164 / 357 | 60 / 130 |
+| UVVM | 286 | 581 / 1101 ms | 142 / 386 MiB | 5 / 41 | 98 / 555 |
+| VUnit | 331 | 279 / 439 ms | 73 / 200 MiB | 37 / 1024 | 76 / 226 |
+
+| Project | Server | Edit: comment (median / max) | Edit: type change (median / max) |
+|---|---|---:|---:|
+| neorv32 | vfl | 8.1 / 15 ms | 7.3 / 15 ms |
+| neorv32 | vhdl_ls | 4.3 / 8.9 ms | 4.3 / 7.8 ms |
+| OSVVM | vfl | 12 / 104 ms | 19 / 102 ms |
+| OSVVM | vhdl_ls | 3.7 / 254 ms | 3.4 / 251 ms |
+| UVVM | vfl | 25 / 37 ms | 26 / 61 ms |
+| UVVM | vhdl_ls | 23 / 1025 ms | 26 / 946 ms |
+| VUnit | vfl | 24 / 40 ms | 22 / 39 ms |
+| VUnit | vhdl_ls | 6.2 / 64 ms | 6.3 / 63 ms |
+
+| Project | Server | Hover (median / max, answered) | Completion | Definition |
+|---|---|---:|---:|---:|
+| neorv32 | vfl | 0.30 / 7.8 ms, 296/303 | 2.6 / 19 ms, 303/303 | 0.40 / 5.7 ms, 278/303 |
+| neorv32 | vhdl_ls | 15 / 27 ms, 302/303 | 3.6 / 11 ms, 230/303 | 0.47 / 19 ms, 285/303 |
+| OSVVM | vfl | 0.40 / 7.8 ms, 1483/1532 | 2.7 / 14 ms, 1532/1532 | 0.50 / 11 ms, 1457/1532 |
+| OSVVM | vhdl_ls | 19 / 42 ms, 1263/1532 | 7.2 / 42 ms, 1177/1532 | 0.96 / 39 ms, 1243/1532 |
+| UVVM | vfl | 0.61 / 16 ms, 422/470 | 2.5 / 9.1 ms, 470/470 | 0.71 / 5.0 ms, 407/470 |
+| UVVM | vhdl_ls | 23 / 65 ms, 469/470 | 6.6 / 17 ms, 419/470 | 0.74 / 71 ms, 454/470 |
+| VUnit | vfl | 0.49 / 4.9 ms, 502/508 | 2.4 / 8.3 ms, 508/508 | 0.59 / 6.3 ms, 490/508 |
+| VUnit | vhdl_ls | 8.9 / 39 ms, 505/508 | 5.5 / 14 ms, 489/508 | 0.75 / 44 ms, 493/508 |
+
+What it shows:
+
+- **Opening a project**: vfl is 1.6 to 2.2 times faster and uses 2.7 to 3.7 times less
+  memory.
+- **Edits**: vhdl_ls is faster on a typical edit in the smaller projects (4 to 6 ms
+  against 7 to 24 ms): it re-analyzes only the units the edit invalidates, and so does
+  vfl, but vfl also re-runs inference and the lint pass on each refresh. vfl's slowest
+  edits are much faster: 37 to 104 ms against 250 ms to 1 s for vhdl_ls, whose worst case
+  is an edit to a package most of the project depends on. Both stay under 30 ms at the
+  median on every project; this is where vfl has the most to gain.
+- **Requests**: vfl's hover is 20 to 50 times faster at the median (vhdl_ls takes 9 to
+  23 ms per hover), completion 1.4 to 2.7 times, definition about the same at the median
+  and 4 to 14 times at the slowest. vfl answers completion everywhere; hover and
+  definition answer rates are close, vhdl_ls answering slightly more on UVVM and
+  neorv32, vfl more on OSVVM (where vhdl_ls does not resolve names in the files it
+  cannot parse or that refer to duplicate units).
+- **Diagnostics**: the same picture as the CLI comparison above. vfl's 37 errors in
+  VUnit are the missing OSVVM submodule reported once per use clause; vhdl_ls reports
+  804 "no declaration" and 47 "could not resolve call" errors that cascade from it. In
+  OSVVM, both report the `$` template files and the removed `print`; vhdl_ls also
+  reports duplicate units as errors. On warnings, vhdl_ls reports every unused
+  subprogram parameter (460 in UVVM), which vfl has no rule for, and unused ports and
+  generics, which vfl reports only under the `strict` preset.
+
+### Running it
+
+```sh
+cargo build --release
+cargo install vhdl_ls --root /tmp/rust_hdl
+# rust_hdl's standard libraries: vhdl_libraries/ from the rust_hdl repository
+scripts/bench_vhdl_ls.py --vfl target/release/vfl \
+    --vhdl-ls /tmp/rust_hdl/bin/vhdl_ls --libraries path/to/vhdl_libraries \
+    --runs 3 path/to/neorv32 path/to/OSVVM path/to/UVVM path/to/vunit
+```
+
+It needs Python 3.11 or later, and reads peak memory from `/proc` (Linux).
