@@ -8,9 +8,11 @@
 //! go-to-definition, find-references, rename) and diagnostics (for the
 //! linter).
 //!
-//! Resolution is by name: it does not resolve overloads or check types. A
-//! name it cannot check is left alone rather than reported, so valid code
-//! gets no false errors. See `docs/design.md`, "Semantic model".
+//! After resolution, a type checker resolves overloaded subprograms and
+//! operators (narrowing their references to the declarations chosen) and
+//! reports type mismatches and calls no overload accepts. Anything it
+//! cannot type, it leaves alone rather than reports, so valid code gets no
+//! false errors. See `docs/design.md`, "Semantic model".
 //!
 //! ```
 //! use std::sync::Arc;
@@ -38,7 +40,11 @@ mod diagnostic;
 mod resolver;
 mod stdlib;
 mod syntax;
+mod typeck;
 
 pub use analysis::{Analysis, AnalyzedFile, FileInput, UnitInfo};
-pub use decl::{Access, Decl, DeclId, DeclKind, FileId, Mode, Reference, Region, Target, UnitId};
+pub use decl::{
+    Access, Decl, DeclId, DeclKind, Element, FileId, Mode, Reference, Region, Target, TypeDef,
+    UnitId,
+};
 pub use diagnostic::{Diagnostic, Edit, Fix, codes};

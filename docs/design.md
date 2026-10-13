@@ -92,8 +92,23 @@ Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
   fewest missing dependencies, so broken code still gets analyzed.
 - Name resolution walks scopes from the innermost: local declarations of every enclosing
   region first, then `use`-imported names, then library names, as in the LRM. Overloaded
-  names (subprograms, enumeration literals) keep every candidate; full overload resolution
-  by type is future work, so a reference to an overloaded name points at all candidates.
+  names (subprograms, operators, enumeration literals) keep every visible candidate.
+- Type checking runs after resolution, for every unit in parallel (it only reads the
+  declarations of the units a unit depends on). Each declaration records its type
+  (subtype mark, return type, parameters, type definition). Expressions are typed in two
+  passes, as in the LRM: bottom-up, the set of types an expression may have; top-down,
+  with the type its context needs, which picks the overload and narrows the reference to
+  it. Predefined operators come from the operand types' classes (they are not declared in
+  `std.standard`), and universal integer and real convert to any integer or real type.
+  Errors: `sema/type-mismatch` (an expression of the wrong type) and
+  `sema/no-matching-overload` (no subprogram or operator accepts the arguments, with the
+  reason: arity, an unknown or repeated formal, a missing argument, or the first
+  mismatching argument).
+- The checker is conservative: a name from an unknown library, a generic type, an
+  attribute it does not model or a literal without a typed context is "unknown", and
+  unknown is compatible with everything. On the corpus (OSVVM, UVVM, VUnit, neorv32, VESTS)
+  it reports no type error on valid code, except where a test suite declares several
+  units of the same name in one library.
 - Each resolved reference records its access (read, write, both), which feeds the
   unused / unread / undriven / sensitivity checks.
 - Unknown things degrade to "unknown" instead of cascading errors: a library that is not in
@@ -308,7 +323,7 @@ fewer false errors, with zero configuration.
 | LSP keystroke-to-diagnostics latency | under 50 ms on the largest corpus project | within a full re-analysis (about 100-400 ms on the corpus); per-unit reuse is the next step |
 | False errors on valid corpus code | fewer (tracked per release) | fewer on every project |
 | Setup | zero config vs. required `vhdl_ls.toml` | done; `vfl project --vhdl-ls` exports one |
-| Features | formatter, autofixes, lossless refactorings, VHDL-2019 | done except type-aware checks |
+| Features | formatter, autofixes, lossless refactorings, VHDL-2019, type checking | done |
 
 ## Repository and CI
 
@@ -325,5 +340,7 @@ fewer false errors, with zero configuration.
 3. Formatter with full alignment; idempotency and token-preservation checks (done).
 4. Project inference, semantic model, linter, CLI and LSP; benchmarks against rust_hdl
    (done).
-5. Next: overload resolution and type checking, more import formats, per-unit incremental
-   reuse, more rules (width mismatches, latches, clock domain hints).
+5. Overload resolution and type checking (done).
+6. Next: per-unit incremental reuse for the LSP, type-aware LSP features (hover with
+   types, signature help), more rules (width mismatches, latches, clock domain hints),
+   more import formats.

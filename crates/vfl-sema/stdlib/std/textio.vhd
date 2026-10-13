@@ -1,5 +1,5 @@
 -- Declarations of package STD.TEXTIO (IEEE 1076-2019, 16.4), written for
--- vhdl-fmt-lint's name resolution.
+-- vhdl-fmt-lint's name resolution and type checking.
 package textio is
   type line is access string;
   type line_vector is array (natural range <>) of line;
@@ -11,17 +11,46 @@ package textio is
   file output : text open write_mode is "STD_OUTPUT";
   procedure readline (file f : text; l : inout line);
   procedure read (l : inout line; value : out bit; good : out boolean);
+  procedure read (l : inout line; value : out bit);
+  procedure read (l : inout line; value : out bit_vector; good : out boolean);
+  procedure read (l : inout line; value : out bit_vector);
+  procedure read (l : inout line; value : out boolean; good : out boolean);
+  procedure read (l : inout line; value : out boolean);
+  procedure read (l : inout line; value : out character; good : out boolean);
+  procedure read (l : inout line; value : out character);
+  procedure read (l : inout line; value : out integer; good : out boolean);
+  procedure read (l : inout line; value : out integer);
+  procedure read (l : inout line; value : out real; good : out boolean);
+  procedure read (l : inout line; value : out real);
+  procedure read (l : inout line; value : out string; good : out boolean);
+  procedure read (l : inout line; value : out string);
+  procedure read (l : inout line; value : out time; good : out boolean);
+  procedure read (l : inout line; value : out time);
   procedure sread (l : inout line; value : out string; strlen : out natural);
   alias string_read is sread [line, string, natural];
   procedure bread (l : inout line; value : out bit_vector; good : out boolean);
+  procedure bread (l : inout line; value : out bit_vector);
   alias binary_read is bread [line, bit_vector, boolean];
+  alias binary_read is bread [line, bit_vector];
   procedure oread (l : inout line; value : out bit_vector; good : out boolean);
+  procedure oread (l : inout line; value : out bit_vector);
   alias octal_read is oread [line, bit_vector, boolean];
+  alias octal_read is oread [line, bit_vector];
   procedure hread (l : inout line; value : out bit_vector; good : out boolean);
+  procedure hread (l : inout line; value : out bit_vector);
   alias hex_read is hread [line, bit_vector, boolean];
+  alias hex_read is hread [line, bit_vector];
   procedure writeline (file f : text; l : inout line);
   procedure tee (file f : text; l : inout line);
   procedure write (l : inout line; value : in bit; justified : in side := right; field : in width := 0);
+  procedure write (l : inout line; value : in bit_vector; justified : in side := right; field : in width := 0);
+  procedure write (l : inout line; value : in boolean; justified : in side := right; field : in width := 0);
+  procedure write (l : inout line; value : in character; justified : in side := right; field : in width := 0);
+  procedure write (l : inout line; value : in integer; justified : in side := right; field : in width := 0);
+  procedure write (l : inout line; value : in string; justified : in side := right; field : in width := 0);
+  procedure write (l : inout line; value : in real; justified : in side := right; field : in width := 0; digits : in natural := 0);
+  procedure write (l : inout line; value : in real; format : in string);
+  procedure write (l : inout line; value : in time; justified : in side := right; field : in width := 0; unit : in time := ns);
   procedure swrite (l : inout line; value : in string; justified : in side := right; field : in width := 0);
   alias string_write is swrite [line, string, side, width];
   procedure bwrite (l : inout line; value : in bit_vector; justified : in side := right; field : in width := 0);

@@ -15,7 +15,8 @@ use vfl_syntax::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange, identifier_key}
 
 use crate::analysis::{Ctx, UnitResult};
 use crate::decl::{
-    Access, Decl, DeclId, DeclKind, FileId, Mode, Reference, Region, Target, UnitId,
+    Access, Decl, DeclId, DeclKind, Element, FileId, Mode, Reference, Region, Target, TypeDef,
+    UnitId,
 };
 use crate::diagnostic::{Diagnostic, Edit, Fix, codes};
 use crate::syntax::*;
@@ -106,6 +107,8 @@ pub(crate) struct Resolver<'a> {
     in_subtype: u32,
     access: Access,
     interface: Interface,
+    /// Operators whose visible declarations are unknown.
+    opaque_ops: Vec<TextRange>,
 }
 
 impl<'a> Resolver<'a> {
@@ -143,6 +146,7 @@ impl<'a> Resolver<'a> {
             in_subtype: 0,
             access: Access::Read,
             interface: Interface::Parameter,
+            opaque_ops: Vec::new(),
         }
     }
 
@@ -243,6 +247,12 @@ impl<'a> Resolver<'a> {
             diagnostics: self.diags,
             use_items: self.use_items,
             used_imports: self.used_imports.into_iter().collect(),
+            opaque_ops: {
+                // Sorted for the type checker's binary search.
+                let mut ops = self.opaque_ops;
+                ops.sort_by_key(|r| r.start());
+                ops
+            },
         }
     }
 
@@ -399,6 +409,9 @@ impl<'a> Resolver<'a> {
             full_range: node.text_range(),
             members: None,
             parent: self.parents.last().copied(),
+            subtype: None,
+            type_def: None,
+            params: None,
         });
         id
     }
@@ -486,6 +499,13 @@ impl<'a> Resolver<'a> {
             }
         }
         let ids = self.ident_list(node, kind);
+        let subtype = node
+            .children()
+            .find(|n| n.kind() == SyntaxKind::SUBTYPE_INDICATION)
+            .and_then(|n| self.subtype_mark(&n));
+        for &id in &ids {
+            self.decls[id.index as usize].subtype = subtype;
+        }
         if kind == DeclKind::Constant {
             // The full declaration of a deferred constant completes the one
             // in the package: it is used wherever that one is.
@@ -532,7 +552,7 @@ impl<'a> Resolver<'a> {
         let kind = match self.interface {
             Interface::Generic => DeclKind::Generic { has_default },
             Interface::Port => DeclKind::Port { mode, has_default },
-            Interface::Parameter => DeclKind::Parameter { mode },
+            Interface::Parameter => DeclKind::Parameter { mode, has_default },
         };
         self.object_decl(node, kind);
     }
@@ -590,6 +610,7 @@ impl<'a> Resolver<'a> {
             Some(SyntaxKind::PROTECTED_TYPE_DEF) => {
                 let def = def.unwrap();
                 let id = self.declare(&name, DeclKind::Type, node);
+                self.decls[id.index as usize].type_def = Some(Arc::new(TypeDef::Protected));
                 self.parents.push(id);
                 self.frames.push(Frame::default());
                 self.visit_children(&def);
@@ -601,14 +622,30 @@ impl<'a> Resolver<'a> {
             Some(_) => {
                 let def = def.unwrap();
                 let id = self.declare(&name, DeclKind::Type, node);
-                match def.kind() {
+                self.complete_incomplete_type(&name, id);
+                let type_def = match def.kind() {
                     SyntaxKind::ENUM_TYPE_DEF => {
                         let mut literals = Region::default();
                         for token in idents(&def) {
                             let literal = self.declare(&token, DeclKind::EnumLiteral, &def);
+                            self.decls[literal.index as usize].subtype = Some(id);
                             literals.insert(&designator_key(&token), literal);
                         }
                         self.decls[id.index as usize].members = Some(Arc::new(literals));
+                        let keys = def
+                            .children_with_tokens()
+                            .filter_map(|e| e.into_token())
+                            .filter(|t| {
+                                matches!(
+                                    t.kind(),
+                                    SyntaxKind::IDENT
+                                        | SyntaxKind::EXT_IDENT
+                                        | SyntaxKind::CHAR_LITERAL
+                                )
+                            })
+                            .map(|t| designator_key(&t))
+                            .collect();
+                        Some(TypeDef::Enum(keys))
                     }
                     SyntaxKind::PHYSICAL_TYPE_DEF => {
                         let mut units = Region::default();
@@ -618,6 +655,7 @@ impl<'a> Resolver<'a> {
                                 if let Some(unit) = designator(&child) {
                                     let unit_id =
                                         self.declare(&unit, DeclKind::PhysicalUnit, &child);
+                                    self.decls[unit_id.index as usize].subtype = Some(id);
                                     units.insert(&designator_key(&unit), unit_id);
                                 }
                             } else {
@@ -626,20 +664,43 @@ impl<'a> Resolver<'a> {
                         }
                         self.decls[id.index as usize].members = Some(Arc::new(units));
                         self.end_label_refs(&def, &name, id);
+                        Some(TypeDef::Physical)
                     }
                     SyntaxKind::RECORD_TYPE_DEF => {
                         // Element names are not declared in the region.
+                        let mut elements = Vec::new();
                         for element in def.children() {
+                            let mut subtype = None;
                             for child in element.children() {
                                 if child.kind() != SyntaxKind::IDENT_LIST {
                                     self.with_access(Access::Other, |s| s.visit(&child));
+                                    if child.kind() == SyntaxKind::SUBTYPE_INDICATION {
+                                        subtype = self.subtype_mark(&child);
+                                    }
+                                }
+                            }
+                            if let Some(list) = element
+                                .children()
+                                .find(|n| n.kind() == SyntaxKind::IDENT_LIST)
+                            {
+                                for token in idents(&list) {
+                                    elements.push(Element {
+                                        name: designator_key(&token),
+                                        spelling: token.text().to_owned(),
+                                        subtype,
+                                    });
                                 }
                             }
                         }
                         self.end_label_refs(&def, &name, id);
+                        Some(TypeDef::Record(elements))
                     }
-                    _ => self.with_access(Access::Other, |s| s.visit(&def)),
-                }
+                    _ => {
+                        self.with_access(Access::Other, |s| s.visit(&def));
+                        self.type_definition(&def)
+                    }
+                };
+                self.decls[id.index as usize].type_def = type_def.map(Arc::new);
             }
         }
     }
@@ -659,17 +720,44 @@ impl<'a> Resolver<'a> {
         };
         self.parents.push(id);
         self.frames.push(Frame::default());
-        for child in spec.children() {
+        let mut params = Vec::new();
+        let mut after_return = false;
+        for child in spec.children_with_tokens() {
+            let child = match child {
+                rowan::NodeOrToken::Token(t) => {
+                    after_return |= t.kind() == SyntaxKind::RETURN_KW;
+                    continue;
+                }
+                rowan::NodeOrToken::Node(n) => n,
+            };
             match child.kind() {
                 SyntaxKind::INTERFACE_LIST => {
-                    self.with_interface(Interface::Parameter, |s| s.visit(&child))
+                    let start = self.decls.len();
+                    self.with_interface(Interface::Parameter, |s| s.visit(&child));
+                    params.extend(
+                        (start..self.decls.len())
+                            .filter(|&i| {
+                                let d = &self.decls[i];
+                                d.parent == Some(id) && matches!(d.kind, DeclKind::Parameter { .. })
+                            })
+                            .map(|i| DeclId {
+                                unit: self.unit,
+                                index: i as u32,
+                            }),
+                    );
                 }
                 SyntaxKind::GENERIC_CLAUSE => {
                     self.with_interface(Interface::Generic, |s| s.visit(&child))
                 }
-                _ => self.with_access(Access::Other, |s| s.visit(&child)),
+                _ => {
+                    self.with_access(Access::Other, |s| s.visit(&child));
+                    if after_return {
+                        self.decls[id.index as usize].subtype = self.type_mark(&child);
+                    }
+                }
             }
         }
+        self.decls[id.index as usize].params = Some(params.into());
         name.is_some().then_some(id)
     }
 
@@ -884,17 +972,31 @@ impl<'a> Resolver<'a> {
     // ---- Lookup -----------------------------------------------------------
 
     fn lookup(&mut self, name: &str) -> Lookup {
+        // An inner declaration hides outer ones, except that overloadable
+        // declarations (subprograms, enumeration literals) add up: every
+        // visible overload is a candidate for overload resolution.
+        let mut overloads: Vec<Target> = Vec::new();
         for frame in self.frames.iter().rev() {
-            let local = frame.locals.get(name);
-            if !local.is_empty() {
-                return Lookup::Found(local.iter().map(|&id| Target::Decl(id)).collect());
+            let mut ids = frame.locals.get(name);
+            if ids.is_empty() {
+                ids = frame
+                    .inherited
+                    .iter()
+                    .map(|r| r.get(name))
+                    .find(|ids| !ids.is_empty())
+                    .unwrap_or(&[]);
             }
-            for region in &frame.inherited {
-                let ids = region.get(name);
-                if !ids.is_empty() {
+            if ids.is_empty() {
+                continue;
+            }
+            let overloadable = ids.iter().all(|&id| self.is_overloadable(id));
+            if !overloadable {
+                if overloads.is_empty() {
                     return Lookup::Found(ids.iter().map(|&id| Target::Decl(id)).collect());
                 }
+                return Lookup::Found(overloads);
             }
+            overloads.extend(ids.iter().map(|&id| Target::Decl(id)));
         }
         let mut found = Vec::new();
         let mut opaque = false;
@@ -930,6 +1032,19 @@ impl<'a> Resolver<'a> {
             }
         }
         self.used_imports.extend(used);
+        if !overloads.is_empty() {
+            // Imported overloads join the local ones; other imported names
+            // are hidden by them.
+            for target in found {
+                if let Target::Decl(id) = target
+                    && self.is_overloadable(id)
+                    && !overloads.contains(&target)
+                {
+                    overloads.push(target);
+                }
+            }
+            return Lookup::Found(overloads);
+        }
         if !found.is_empty() {
             return Lookup::Found(found);
         }
@@ -945,20 +1060,239 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    /// Marks the use clauses that make operator `symbol` visible as used.
-    fn use_operator(&mut self, symbol: &str) {
-        let key = format!("\"{symbol}\"");
-        let mut used = Vec::new();
-        for frame in &self.frames {
-            for import in &frame.imports {
-                match &import.kind {
-                    ImportKind::All(region) if !region.get(&key).is_empty() => used.push(import.id),
-                    ImportKind::Names(n, _) if *n == key => used.push(import.id),
-                    _ => {}
-                }
+    fn is_overloadable(&self, id: DeclId) -> bool {
+        self.decl(id).is_some_and(|d| d.kind.is_overloadable())
+    }
+
+    // ---- Types ------------------------------------------------------------
+
+    /// The type or subtype a subtype indication's type mark names.
+    pub(crate) fn subtype_mark(&self, indication: &SyntaxNode) -> Option<DeclId> {
+        let mark = indication.children().find(|n| {
+            matches!(
+                n.kind(),
+                SyntaxKind::NAME | SyntaxKind::SELECTED_NAME | SyntaxKind::CALL_EXPR
+            )
+        })?;
+        self.type_mark(&mark)
+    }
+
+    /// The type or subtype a resolved type mark (`t`, `pkg.t`, or `t(...)`
+    /// with a constraint) names.
+    fn type_mark(&self, mark: &SyntaxNode) -> Option<DeclId> {
+        let token = mark_token(mark)?;
+        let range = token.text_range();
+        // The mark was just resolved: its reference is among the last ones.
+        let r = self
+            .refs
+            .iter()
+            .rev()
+            .take(256)
+            .find(|r| r.range == range)?;
+        r.targets.iter().find_map(|t| match t {
+            Target::Decl(id)
+                if self.decl(*id).is_some_and(|d| {
+                    matches!(
+                        d.kind,
+                        DeclKind::Type
+                            | DeclKind::Subtype
+                            | DeclKind::IncompleteType
+                            | DeclKind::GenericType
+                    )
+                }) =>
+            {
+                Some(*id)
+            }
+            _ => None,
+        })
+    }
+
+    /// The subtype of the object an alias names, when it names a whole
+    /// object (`alias a is s`) or gives a subtype.
+    fn alias_subtype(&self, node: &SyntaxNode) -> Option<DeclId> {
+        if let Some(indication) = node
+            .children()
+            .find(|n| n.kind() == SyntaxKind::SUBTYPE_INDICATION)
+        {
+            return self.subtype_mark(&indication);
+        }
+        let name = node
+            .children()
+            .find(|n| matches!(n.kind(), SyntaxKind::NAME | SyntaxKind::SELECTED_NAME))?;
+        let token = mark_token(&name)?;
+        let r = self
+            .refs
+            .iter()
+            .rev()
+            .take(64)
+            .find(|r| r.range == token.text_range())?;
+        match r.targets.as_slice() {
+            [Target::Decl(id)] => self
+                .decl(*id)
+                .filter(|d| d.kind.is_object())
+                .and_then(|d| d.subtype),
+            _ => None,
+        }
+    }
+
+    /// Links an incomplete type declaration to its full declaration.
+    fn complete_incomplete_type(&mut self, name: &SyntaxToken, full: DeclId) {
+        let key = designator_key(name);
+        let incomplete = self
+            .frames
+            .last()
+            .unwrap()
+            .locals
+            .get(&key)
+            .iter()
+            .copied()
+            .find(|&d| {
+                d != full
+                    && d.unit == self.unit
+                    && self.decls[d.index as usize].kind == DeclKind::IncompleteType
+            });
+        if let Some(incomplete) = incomplete {
+            self.decls[incomplete.index as usize].subtype = Some(full);
+        }
+    }
+
+    /// A type declared in `std.standard`.
+    fn standard_type(&self, name: &str) -> Option<DeclId> {
+        match self.ctx.standard_region() {
+            Some(region) => region.get(name).first().copied(),
+            // Analyzing `std.standard` itself.
+            None => self
+                .frames
+                .iter()
+                .find_map(|f| f.locals.get(name).first().copied()),
+        }
+    }
+
+    /// The definition of the base type of `id`, following subtypes.
+    fn base_def(&self, mut id: DeclId) -> Option<Arc<TypeDef>> {
+        for _ in 0..32 {
+            let decl = self.decl(id)?;
+            match decl.kind {
+                DeclKind::Type => return decl.type_def.clone(),
+                DeclKind::Subtype | DeclKind::IncompleteType => id = decl.subtype?,
+                _ if decl.kind.is_object() => id = decl.subtype?,
+                _ => return None,
             }
         }
-        self.used_imports.extend(used);
+        None
+    }
+
+    /// The definition of a range, array, access or file type.
+    fn type_definition(&self, def: &SyntaxNode) -> Option<TypeDef> {
+        match def.kind() {
+            SyntaxKind::RANGE_TYPE_DEF => Some(self.range_class(def)),
+            SyntaxKind::ARRAY_TYPE_DEF => {
+                let mut indexes = Vec::new();
+                let mut element = None;
+                let mut after_of = false;
+                for child in def.children_with_tokens() {
+                    match child {
+                        rowan::NodeOrToken::Token(t) => after_of |= t.kind() == SyntaxKind::OF_KW,
+                        rowan::NodeOrToken::Node(n) if after_of => {
+                            if n.kind() == SyntaxKind::SUBTYPE_INDICATION {
+                                element = self.subtype_mark(&n);
+                            }
+                        }
+                        rowan::NodeOrToken::Node(n) => indexes.push(self.index_subtype(&n)),
+                    }
+                }
+                Some(TypeDef::Array { indexes, element })
+            }
+            SyntaxKind::ACCESS_TYPE_DEF => Some(TypeDef::Access(
+                def.children()
+                    .find(|n| n.kind() == SyntaxKind::SUBTYPE_INDICATION)
+                    .and_then(|n| self.subtype_mark(&n)),
+            )),
+            SyntaxKind::FILE_TYPE_DEF => Some(TypeDef::File(
+                def.children().next().and_then(|n| self.type_mark(&n)),
+            )),
+            _ => None,
+        }
+    }
+
+    /// Integer or real, from the literals and names of a range.
+    fn range_class(&self, range: &SyntaxNode) -> TypeDef {
+        let mut integer = false;
+        for token in range
+            .descendants_with_tokens()
+            .filter_map(|e| e.into_token())
+        {
+            match token.kind() {
+                SyntaxKind::DECIMAL_LITERAL | SyntaxKind::BASED_LITERAL => {
+                    if token.text().contains('.') {
+                        return TypeDef::Real;
+                    }
+                    integer = true;
+                }
+                _ => {}
+            }
+        }
+        if integer {
+            return TypeDef::Integer;
+        }
+        // Only names: the class of the first one's type.
+        let first = range
+            .descendants()
+            .find(|n| n.kind() == SyntaxKind::NAME)
+            .and_then(|n| self.resolved_decl(&n));
+        match first.and_then(|id| self.base_def(id)).as_deref() {
+            Some(TypeDef::Integer) => TypeDef::Integer,
+            Some(TypeDef::Real) => TypeDef::Real,
+            _ => TypeDef::Scalar,
+        }
+    }
+
+    /// The single declaration a resolved name refers to.
+    fn resolved_decl(&self, name: &SyntaxNode) -> Option<DeclId> {
+        let token = mark_token(name)?;
+        let r = self
+            .refs
+            .iter()
+            .rev()
+            .take(256)
+            .find(|r| r.range == token.text_range())?;
+        match r.targets.as_slice() {
+            [Target::Decl(id)] => Some(*id),
+            _ => None,
+        }
+    }
+
+    /// The index subtype of one index of an array definition.
+    fn index_subtype(&self, index: &SyntaxNode) -> Option<DeclId> {
+        match index.kind() {
+            SyntaxKind::INDEX_SUBTYPE_DEF => {
+                index.children().next().and_then(|n| self.type_mark(&n))
+            }
+            SyntaxKind::SUBTYPE_INDICATION => self.subtype_mark(index),
+            SyntaxKind::NAME | SyntaxKind::SELECTED_NAME => self.type_mark(index),
+            SyntaxKind::RANGE_EXPR => {
+                if index.descendants_with_tokens().any(|e| {
+                    matches!(
+                        e.kind(),
+                        SyntaxKind::DECIMAL_LITERAL | SyntaxKind::BASED_LITERAL
+                    )
+                }) {
+                    return self.standard_type("integer");
+                }
+                // `low to high` with names: the type of the first bound.
+                let first = index
+                    .descendants()
+                    .find(|n| n.kind() == SyntaxKind::NAME)
+                    .and_then(|n| self.resolved_decl(&n))?;
+                let decl = self.decl(first)?;
+                match decl.kind {
+                    DeclKind::EnumLiteral => decl.subtype,
+                    _ if decl.kind.is_object() => decl.subtype,
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
     }
 
     /// What can be selected from `targets`: a package's declarations, a
@@ -1216,6 +1550,19 @@ impl<'a> Resolver<'a> {
     }
 
     // ---- Statements -------------------------------------------------------
+
+    /// Records what an operator symbol may denote.
+    fn operator_ref(&mut self, node: &SyntaxNode) {
+        let Some(op) = operator_token(node) else {
+            return;
+        };
+        let key = format!("\"{}\"", op.text().to_ascii_lowercase());
+        match self.lookup(&key) {
+            Lookup::Found(targets) => self.record(op.text_range(), targets, Access::Other),
+            Lookup::Unknown => self.opaque_ops.push(op.text_range()),
+            Lookup::NotFound => {}
+        }
+    }
 
     fn visit_children(&mut self, node: &SyntaxNode) {
         for child in node.children() {
@@ -1985,15 +2332,25 @@ impl<'a> Resolver<'a> {
                 }
             }
             BINARY_EXPR | UNARY_EXPR => {
-                if let Some(op) = node
-                    .children_with_tokens()
-                    .filter_map(|e| e.into_token())
-                    .find(|t| !t.kind().is_trivia())
+                // A long chain (`a & b & ...`) nests to the left: walk its
+                // left spine in a loop, so 16k operands don't overflow the
+                // stack.
+                let mut spine = vec![node.clone()];
+                while let Some(left) = spine.last().and_then(|n| n.children().next())
+                    && left.kind() == BINARY_EXPR
                 {
-                    let text = op.text().to_ascii_lowercase();
-                    self.use_operator(&text);
+                    spine.push(left);
                 }
-                self.visit_children(node);
+                for n in &spine {
+                    self.operator_ref(n);
+                }
+                let (innermost, outer) = spine.split_last().expect("not empty");
+                self.visit_children(innermost);
+                for n in outer.iter().rev() {
+                    for child in n.children().skip(1) {
+                        self.visit(&child);
+                    }
+                }
             }
             AGGREGATE => {
                 for element in node.children() {
@@ -2089,14 +2446,19 @@ impl<'a> Resolver<'a> {
             SUBTYPE_DECL => {
                 self.with_access(Access::Other, |s| s.visit_children(node));
                 if let Some(name) = designator(node) {
-                    self.declare(&name, DeclKind::Subtype, node);
+                    let id = self.declare(&name, DeclKind::Subtype, node);
+                    self.decls[id.index as usize].subtype = node
+                        .children()
+                        .find(|n| n.kind() == SUBTYPE_INDICATION)
+                        .and_then(|n| self.subtype_mark(&n));
                 }
             }
             ALIAS_DECL => {
                 // An alias may stand for reads and writes of its object.
                 self.with_access(Access::ReadWrite, |s| s.visit_children(node));
                 if let Some(name) = designator(node) {
-                    self.declare(&name, DeclKind::Alias, node);
+                    let id = self.declare(&name, DeclKind::Alias, node);
+                    self.decls[id.index as usize].subtype = self.alias_subtype(node);
                 }
             }
             ATTRIBUTE_DECL => {
@@ -2342,4 +2704,29 @@ fn is_clock_edge(node: &SyntaxNode) -> bool {
             .is_some_and(|t| t.text().eq_ignore_ascii_case("event")),
         _ => false,
     }
+}
+
+/// The token a type mark or name is resolved at: the identifier of a simple
+/// name, the suffix of a selected name, the prefix of a constrained mark.
+pub(crate) fn mark_token(mark: &SyntaxNode) -> Option<SyntaxToken> {
+    match mark.kind() {
+        SyntaxKind::NAME => mark
+            .children_with_tokens()
+            .filter_map(|e| e.into_token())
+            .find(|t| is_designator(t.kind())),
+        SyntaxKind::SELECTED_NAME => mark
+            .children_with_tokens()
+            .filter_map(|e| e.into_token())
+            .filter(|t| is_designator(t.kind()))
+            .last(),
+        SyntaxKind::CALL_EXPR => mark_token(&mark.children().next()?),
+        _ => None,
+    }
+}
+
+/// The operator of a binary or unary expression.
+pub(crate) fn operator_token(node: &SyntaxNode) -> Option<SyntaxToken> {
+    node.children_with_tokens()
+        .filter_map(|e| e.into_token())
+        .find(|t| !t.kind().is_trivia())
 }
