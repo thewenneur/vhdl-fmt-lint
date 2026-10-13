@@ -1,0 +1,154 @@
+name: Release
+
+# Pushing a `v*` tag builds every artifact and publishes a GitHub Release with
+# the matching CHANGELOG.md section as its notes. A pull request that touches
+# this file runs the same builds without publishing.
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - CHANGELOG.md
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        shell: bash
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match the workspace version $version"
+            exit 1
+          fi
+          if ! grep -q "^## \[$version\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no section for $version"
+            exit 1
+          fi
+
+  cli:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: cargo build --release --locked -p vfl-cli --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        run: |
+          name=vfl-v${{ needs.version.outputs.version }}-${{ matrix.target }}
+          mkdir -p "dist/$name"
+          cp README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            cp target/${{ matrix.target }}/release/vfl.exe "dist/$name/"
+            (cd dist && 7z a "$name.zip" "$name" > /dev/null)
+          else
+            cp target/${{ matrix.target }}/release/vfl "dist/$name/"
+            tar -C dist -czf "dist/$name.tar.gz" "$name"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: dist/*.*
+
+  notepadpp:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release --locked -p vfl-npp
+      - name: Package
+        shell: bash
+        run: |
+          name=vfl_npp-v${{ needs.version.outputs.version }}-x64
+          mkdir -p dist/vfl_npp
+          cp target/release/vfl_npp.dll dist/vfl_npp/
+          cp editors/notepadpp/README.md LICENSE-MIT LICENSE-APACHE dist/vfl_npp/
+          (cd dist && 7z a "$name.zip" vfl_npp > /dev/null)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notepadpp
+          path: dist/*.zip
+
+  vscode:
+    needs: version
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+      - run: npm ci
+      - name: Check the extension version
+        run: |
+          ext=$(node -p "require('./package.json').version")
+          if [ "$ext" != "${{ needs.version.outputs.version }}" ]; then
+            echo "::error::editors/vscode/package.json is $ext, the workspace is ${{ needs.version.outputs.version }}"
+            exit 1
+          fi
+      - run: npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vscode
+          path: editors/vscode/*.vsix
+
+  publish:
+    needs: [version, cli, notepadpp, vscode]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums and notes
+        run: |
+          (cd dist && sha256sum * > SHA256SUMS)
+          cat dist/SHA256SUMS
+          version=${{ needs.version.outputs.version }}
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" { on = 1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          cat notes.md
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "vfl $GITHUB_REF_NAME" --notes-file notes.md --verify-tag
