@@ -251,15 +251,9 @@ pub fn definition(world: &mut World, path: &Path, offset: usize) -> Vec<Location
     let Some((file, offset)) = locate(world, path, offset) else {
         return Vec::new();
     };
-    let Some(hit) = crate::handlers::hit_at(world, file, offset) else {
-        return Vec::new();
-    };
-    hit.targets
-        .iter()
-        .filter_map(|id| {
-            let decl = world.analysis.decl(*id)?;
-            location(world, decl.file, decl.range)
-        })
+    crate::handlers::definitions(world, file, offset)
+        .into_iter()
+        .filter_map(|(file, range)| location(world, file, range))
         .collect()
 }
 
@@ -269,10 +263,10 @@ pub fn references(world: &mut World, path: &Path, offset: usize) -> Vec<Location
     let Some((file, offset)) = locate(world, path, offset) else {
         return Vec::new();
     };
-    let Some(hit) = crate::handlers::hit_at(world, file, offset) else {
+    let Some((_, symbol)) = crate::refactor::symbol_at(world, file, offset, None) else {
         return Vec::new();
     };
-    crate::handlers::occurrences(world, &hit.targets, true)
+    crate::refactor::occurrences(world, &symbol, true, None)
         .into_iter()
         .filter(|(f, _, _)| !world.analysis.files()[*f as usize].builtin)
         .filter_map(|(f, range, _)| location(world, f, range))
@@ -294,10 +288,10 @@ pub fn highlights(world: &mut World, path: &Path, offset: usize) -> Vec<(Range<u
     let Some((file, offset)) = locate(world, path, offset) else {
         return Vec::new();
     };
-    let Some(hit) = crate::handlers::hit_at(world, file, offset) else {
+    let Some((_, symbol)) = crate::refactor::symbol_at(world, file, offset, Some(file)) else {
         return Vec::new();
     };
-    crate::handlers::occurrences(world, &hit.targets, true)
+    crate::refactor::occurrences(world, &symbol, true, Some(file))
         .into_iter()
         .filter(|(f, _, _)| *f == file)
         .map(|(_, range, access)| {
@@ -395,7 +389,7 @@ pub fn prepare_rename(
 ) -> Result<Range<usize>, String> {
     let (file, offset) = locate(world, path, offset).ok_or("this file is not analyzed")?;
     Ok(crate::handlers::rename_targets_at(world, file, offset)?
-        .range
+        .0
         .into())
 }
 
@@ -408,11 +402,19 @@ pub fn rename(
     new_name: &str,
 ) -> Result<Vec<FileEdits>, String> {
     let new_name = new_name.trim();
-    crate::handlers::check_identifier(new_name)?;
     let (file, offset) = locate(world, path, offset).ok_or("this file is not analyzed")?;
-    let hit = crate::handlers::rename_targets_at(world, file, offset)?;
+    let (_, symbol) = crate::handlers::rename_targets_at(world, file, offset)?;
+    let edits = crate::handlers::rename_edits(world, &symbol, new_name)?;
+    Ok(file_edits(world, edits))
+}
+
+/// `edits` grouped by file, in order.
+fn file_edits(
+    world: &World,
+    edits: impl IntoIterator<Item = (FileId, vfl_syntax::TextRange, String)>,
+) -> Vec<FileEdits> {
     let mut out: Vec<FileEdits> = Vec::new();
-    for (f, range) in crate::handlers::rename_ranges(world, &hit.targets) {
+    for (f, range, text) in edits {
         let analyzed = &world.analysis.files()[f as usize];
         let i = match out.iter().position(|e| e.path == analyzed.path) {
             Some(i) => i,
@@ -425,14 +427,14 @@ pub fn rename(
                 out.len() - 1
             }
         };
-        out[i].edits.push((range.into(), new_name.to_owned()));
+        out[i].edits.push((range.into(), text));
     }
     // A file analyzed in two libraries names the same places twice.
     for file in &mut out {
         file.edits.sort_by_key(|(r, _)| (r.start, r.end));
         file.edits.dedup_by(|a, b| a.0 == b.0);
     }
-    Ok(out)
+    out
 }
 
 /// A fix for a problem.
@@ -443,33 +445,46 @@ pub struct QuickFix {
     pub safe: bool,
     /// The rule of the problem it fixes.
     pub rule: &'static str,
+    /// The edits to the file, unless it is a rename.
     pub edits: Vec<(Range<usize>, String)>,
+    /// For a name that breaks a naming convention: the name to rename it to
+    /// everywhere, with [`rename`] at byte `at`.
+    pub rename: Option<String>,
+    /// Where the problem starts.
+    pub at: usize,
+    /// Whether it adds a `-- vfl-ignore` comment rather than fixing the
+    /// problem.
+    pub silences: bool,
 }
 
 /// The fixes of the problems touching bytes `start..end` of the file at
-/// `path`, as of the last lint.
+/// `path`, as of the last lint: the rules' own fixes, renames that follow
+/// naming conventions, `use` clauses for undeclared names, then comments
+/// that silence the rules.
 pub fn quick_fixes(world: &mut World, path: &Path, start: usize, end: usize) -> Vec<QuickFix> {
     world.refresh();
     let Some(file) = world.file_id(path) else {
         return Vec::new();
     };
-    world
-        .lint
-        .iter()
-        .filter(|d| d.file == file)
-        .filter(|d| usize::from(d.range.end()) >= start && usize::from(d.range.start()) <= end)
-        .filter_map(|d| {
-            let fix = d.fix.as_ref()?;
-            Some(QuickFix {
-                title: fix.title.clone(),
-                safe: fix.safe,
-                rule: d.rule,
-                edits: fix
+    let at = |offset: usize| TextSize::from(offset.min(u32::MAX as usize) as u32);
+    crate::actions::actions(world, file, at(start), at(end))
+        .into_iter()
+        .map(|action| QuickFix {
+            title: action.title,
+            safe: action.safe,
+            rule: world.lint[action.problem].rule,
+            edits: if action.rename.is_some() {
+                Vec::new()
+            } else {
+                action
                     .edits
-                    .iter()
-                    .map(|e| (e.range.into(), e.text.clone()))
-                    .collect(),
-            })
+                    .into_iter()
+                    .map(|(_, range, text)| (range.into(), text))
+                    .collect()
+            },
+            rename: action.rename,
+            at: world.lint[action.problem].range.start().into(),
+            silences: action.silences,
         })
         .collect()
 }

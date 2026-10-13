@@ -38,6 +38,11 @@ unsafe (it can, so it is worth a look). `vfl lint --fix` applies the safe fixes 
 again; `vfl lint --fix --unsafe-fixes` applies both. In an editor, each fix is offered as a
 quick fix, and the `source.fixAll.vfl` code action applies the safe ones.
 
+Editors offer more quick fixes than `--fix` applies: renaming a declaration everywhere to
+follow its [naming convention](#naming), adding the `use` clause for an
+[undeclared name](#semaunresolved-name) that a package declares, and, for every rule,
+silencing it on the line or in the file with a `-- vfl-ignore` comment.
+
 A finding can be silenced in the source with `-- vfl-ignore rule-id` at the end of its line
 (or on the line above), or for a whole file with `-- vfl-ignore-file rule-id`; see
 [In-source comments](configuration.md#in-source-comments).
@@ -55,16 +60,16 @@ A finding can be silenced in the source with `-- vfl-ignore rule-id` at the end 
 | [`sema/unassociated-port`](#semaunassociated-port) | error | error | |
 | [`sema/type-mismatch`](#sematype-mismatch) | error | error | |
 | [`sema/no-matching-overload`](#semano-matching-overload) | error | error | |
-| [`sema/unused-signal`](#semaunused-signal) | warn | warn | |
-| [`sema/unused-variable`](#semaunused-variable) | warn | warn | |
-| [`sema/unused-constant`](#semaunused-constant) | warn | warn | |
+| [`sema/unused-signal`](#semaunused-signal) | warn | warn | unsafe |
+| [`sema/unused-variable`](#semaunused-variable) | warn | warn | unsafe |
+| [`sema/unused-constant`](#semaunused-constant) | warn | warn | unsafe |
 | [`sema/unused-port`](#semaunused-port) | off | warn | |
 | [`sema/unused-generic`](#semaunused-generic) | off | warn | |
 | [`sema/unused-use`](#semaunused-use) | off | warn | unsafe |
 | [`sema/unread-signal`](#semaunread-signal) | warn | warn | |
 | [`sema/undriven-signal`](#semaundriven-signal) | warn | warn | |
 | [`sema/sensitivity-list`](#semasensitivity-list) | warn | warn | unsafe |
-| [`sema/unneeded-sensitivity`](#semaunneeded-sensitivity) | off | warn | |
+| [`sema/unneeded-sensitivity`](#semaunneeded-sensitivity) | off | warn | unsafe |
 | [`sema/width-mismatch`](#semawidth-mismatch) | warn | error | |
 | [`sema/inferred-latch`](#semainferred-latch) | warn | error | |
 | [`sema/clock-domain-crossing`](#semaclock-domain-crossing) | info | warn | |
@@ -75,13 +80,13 @@ A finding can be silenced in the source with `-- vfl-ignore rule-id` at the end 
 | [`sema/reset-polarity`](#semareset-polarity) | warn | error | |
 | [`sema/fsm-unreachable-state`](#semafsm-unreachable-state) | warn | warn | |
 | [`sema/fsm-stuck-state`](#semafsm-stuck-state) | info | warn | |
-| [`style/no-buffer-ports`](#styleno-buffer-ports) | warn | warn | |
-| [`style/no-std-logic-arith`](#styleno-std-logic-arith) | warn | warn | |
+| [`style/no-buffer-ports`](#styleno-buffer-ports) | warn | warn | unsafe |
+| [`style/no-std-logic-arith`](#styleno-std-logic-arith) | warn | warn | unsafe |
 | [`style/line-length`](#styleline-length) | off | warn | |
 | [`style/trailing-whitespace`](#styletrailing-whitespace) | off | warn | safe |
-| [`style/tabs`](#styletabs) | off | warn | |
+| [`style/tabs`](#styletabs) | off | warn | safe |
 | [`style/process-label`](#styleprocess-label) | off | warn | |
-| [`style/positional-association`](#stylepositional-association) | off | warn | |
+| [`style/positional-association`](#stylepositional-association) | off | warn | safe |
 | [`style/clock-edge`](#styleclock-edge) | off | warn | unsafe |
 | [`style/file-name`](#stylefile-name) | off | warn | |
 | [`naming/<kind>`](#naming) | off | off | |
@@ -118,6 +123,9 @@ x <= undeclared;          -- `undeclared` is not declared
 When a region `use`s something from a library outside the project (see
 [`sema/unknown-library`](#semaunknown-library)), names that are not found there are not
 reported, since they may come from that library.
+
+In an editor, a quick fix adds the `use` clause of each package that declares the name, in
+the project or in the bundled libraries (with its `library` clause when needed).
 
 ### `sema/unresolved-unit`
 
@@ -202,6 +210,10 @@ A constant declared in an architecture, process, subprogram or block is never re
 For these three rules, declarations directly in an entity or a package are not reported,
 because other units can use them; neither are the members of protected types.
 
+Fix (unsafe): removes the name from its declaration, or the whole declaration and its line
+when it declares only that name. It is unsafe because the initial value is no longer
+evaluated, which matters when it calls an impure function.
+
 ### `sema/unused-port`
 
 A port is not referenced by its entity or by any architecture of it. Entities without an
@@ -272,6 +284,9 @@ shape. Fix (unsafe): appends the missing signals to the list.
 
 A sensitivity list names a signal the process never reads. Harmless for synthesis, but it
 wakes the process in simulation for nothing. Off in `recommended`.
+
+Fix (unsafe): removes the signal from the list. There is no fix when it is the only signal,
+since a process without a sensitivity list and without a `wait` never stops.
 
 ### `sema/width-mismatch`
 
@@ -482,11 +497,19 @@ These rules look at one file's text and syntax tree.
 A port has mode `buffer`. Since VHDL-2008, ports of mode `out` can be read, and earlier code
 can use an internal signal; `buffer` ports complicate connections in older tools.
 
+Fix (unsafe), with `standard = "2008"` or later: changes the mode to `out`. It is unsafe
+because the port's actual in each instantiation must then be a signal that is not also
+driven elsewhere.
+
 ### `style/no-std-logic-arith`
 
 A use clause names one of the Synopsys packages `std_logic_arith`, `std_logic_unsigned` or
 `std_logic_signed`, which are not standard and conflict with `ieee.numeric_std`. Use
 `numeric_std` (and `numeric_std_unsigned` in VHDL-2008).
+
+Fix (unsafe): names `numeric_std` instead, or `numeric_std_unsigned` for
+`std_logic_unsigned` with `standard = "2008"` or later. It is unsafe because arithmetic
+written for the Synopsys packages may then need conversions.
 
 ### `style/line-length`
 
@@ -512,6 +535,9 @@ A line ends with spaces or tabs. Fix (safe): removes them. `vfl fmt` removes the
 A line's indentation contains a tab. `vfl fmt` with `format.use_tabs = false` (the default)
 re-indents with spaces.
 
+Fix (safe): replaces the indentation with spaces, a tab reaching the next multiple of
+`format.indent` columns.
+
 ### `style/process-label`
 
 A process has no label. Labels name processes in simulators and synthesis reports.
@@ -521,6 +547,9 @@ A process has no label. Labels name processes in simulators and synthesis report
 A component or entity instantiation maps ports or generics by position:
 `port map (clk, open, o)`. Named association (`clk => clk`) survives changes to the
 entity's port order.
+
+Fix (safe): names the formals of the positional associations, from the instantiated entity
+or component when it is in the project.
 
 ### `style/clock-edge`
 
@@ -593,3 +622,9 @@ most one finding: the first problem found. A port is checked against `naming/por
 then against the rule for its mode, so both can be used together. Extended identifiers
 (`\name\`) are not checked. A rule with an invalid option (an unknown `case`, a pattern
 that does not compile) is reported as a configuration warning and skipped.
+
+In an editor, a quick fix renames the declaration everywhere to a name that follows every
+convention that applies to it: the prefixes and suffixes added, the rest of the name in the
+convention's case (`dataValid` becomes `s_data_valid` for `{ prefix = "s_", case =
+"snake" }`). There is none when no such name matches the `pattern`, or when the new name
+would clash with another declaration.

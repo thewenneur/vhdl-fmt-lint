@@ -35,14 +35,20 @@ each file like `vfl lint` does, so names resolve across files, and it reads the 
 - **Format document**, as one undo step that keeps the caret and scroll position.
   Optionally on every save.
 - **Next problem** / **Previous problem** jump between problems.
-- **Quick fixes**: **Fix problem at caret** lists the fixes for the problem at the caret,
-  **Fix all problems** applies every safe fix in the file.
+- **Quick fixes**: **Fix problem at caret** lists the fixes for the problem at the caret:
+  the rule's own fix, renaming a name everywhere to follow a naming convention, adding the
+  `use` clause for a name declared in a package, or silencing the rule on the line or in
+  the file with a `-- vfl-ignore` comment. **Fix all problems** applies every safe fix in
+  the file.
 - **Go to definition**, also into the bundled `ieee` and `std` sources, and **Go back**.
 - **Find references** lists every use of a name across the project; choosing one opens it.
   **Highlight uses** marks the uses of the name at the caret in the file, reads and writes in
   two colors.
 - **Rename symbol** renames a name everywhere it is used, in every file of the project, as
-  one undo step per file. Renaming in files other than the current one asks first.
+  one undo step per file. Renaming in files other than the current one asks first. A
+  package and its body, a subprogram and its body, and an entity and the components named
+  after it (with their ports and generics) are renamed together; record elements can be
+  renamed too; a name that would clash with another is refused.
 - **Go to symbol in file** lists the file's declarations, nested; **Go to symbol in project**
   searches the declarations of the whole project.
 - **Code generation**: insert an entity or component instantiation or a component
@@ -58,7 +64,7 @@ Mapper > Plugin commands**.
 | Format document | Formats the current file with its `vfl.toml` settings. Files with syntax errors are not formatted; the caret goes to the first error. |
 | Lint document | Lints the current file, whatever its language, and goes to the first problem. |
 | Next problem, Previous problem | Moves to the next or previous problem and shows its message. |
-| Fix problem at caret | Lists the fixes for the problems at the caret; a single safe fix is applied directly. |
+| Fix problem at caret | Lists the fixes for the problems at the caret, and comments that silence their rules; a single safe fix is applied directly. |
 | Fix all problems | Applies every fix that can be applied safely to the current file, as one undo step. |
 | Clear problems | Removes the underlines and messages from the current file. |
 | Go to definition | Opens the declaration of the name at the caret. Library units such as `ieee.std_logic_1164` open as read-only copies of the bundled sources. |

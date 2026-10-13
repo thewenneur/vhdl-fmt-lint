@@ -93,6 +93,117 @@ impl Convention {
     }
 }
 
+/// A name like `name` that follows every one of `conventions`: their
+/// prefixes and suffixes added (or recased when present), the rest in
+/// their case. `None` when the result would not follow them all (a
+/// pattern it does not match) or would not be an identifier.
+pub fn suggest(name: &str, conventions: &[&Convention]) -> Option<String> {
+    if name.starts_with('\\') {
+        return None;
+    }
+    let mut core = name.to_owned();
+    // Strip what is already there, so it is not added twice.
+    loop {
+        let lower = core.to_ascii_lowercase();
+        let before = core.len();
+        for c in conventions {
+            if let Some(prefix) = &c.prefix
+                && lower.starts_with(&prefix.to_ascii_lowercase())
+                && core.len() > prefix.len()
+            {
+                core = core[prefix.len()..].to_owned();
+                break;
+            }
+            if let Some(suffix) = &c.suffix
+                && lower.ends_with(&suffix.to_ascii_lowercase())
+                && core.len() > suffix.len()
+            {
+                core = core[..core.len() - suffix.len()].to_owned();
+                break;
+            }
+        }
+        if core.len() == before {
+            break;
+        }
+    }
+    let words = words(&core);
+    if words.is_empty() {
+        return None;
+    }
+    let case = conventions
+        .iter()
+        .rev()
+        .find_map(|c| c.case.as_deref())
+        .unwrap_or("any");
+    let capitalized = |w: &str| {
+        let mut chars = w.chars();
+        chars.next().map_or(String::new(), |c| {
+            c.to_ascii_uppercase().to_string() + &chars.as_str().to_ascii_lowercase()
+        })
+    };
+    let mut core = match case {
+        "snake" | "lower" => words.join("_").to_ascii_lowercase(),
+        "upper" => words.join("_").to_ascii_uppercase(),
+        "pascal" => words.iter().map(|w| capitalized(w)).collect(),
+        "camel" => words
+            .iter()
+            .enumerate()
+            .map(|(i, w)| {
+                if i == 0 {
+                    w.to_ascii_lowercase()
+                } else {
+                    capitalized(w)
+                }
+            })
+            .collect(),
+        _ => core.trim_matches('_').to_owned(),
+    };
+    for c in conventions.iter().rev() {
+        if let Some(prefix) = &c.prefix {
+            core = format!("{prefix}{core}");
+        }
+    }
+    for c in conventions {
+        if let Some(suffix) = &c.suffix {
+            core = format!("{core}{suffix}");
+        }
+    }
+    let identifier = core.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+        && core.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && !core.contains("__")
+        && !core.ends_with('_');
+    (identifier && core != name && conventions.iter().all(|c| c.check(&core).is_none()))
+        .then_some(core)
+}
+
+/// The words of a name: split at `_` and where the case changes
+/// (`dataValid`, `HTTPServer`).
+fn words(name: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for part in name.split('_').filter(|p| !p.is_empty()) {
+        let chars: Vec<char> = part.chars().collect();
+        let mut word = String::new();
+        for (i, &c) in chars.iter().enumerate() {
+            let prev = i.checked_sub(1).map(|j| chars[j]);
+            let next = chars.get(i + 1).copied();
+            let boundary = c.is_ascii_uppercase()
+                && prev.is_some_and(|p| {
+                    p.is_ascii_lowercase()
+                        || p.is_ascii_digit()
+                        || (p.is_ascii_uppercase() && next.is_some_and(|n| n.is_ascii_lowercase()))
+                });
+            if boundary && !word.is_empty() {
+                out.push(std::mem::take(&mut word));
+            }
+            word.push(c);
+        }
+        if !word.is_empty() {
+            out.push(word);
+        }
+    }
+    out
+}
+
 /// The `naming/<kind>` rules that apply to a declaration, most general first.
 pub fn kinds(decl: &Decl, root: &SyntaxNode) -> Vec<&'static str> {
     match decl.kind {
@@ -174,16 +285,25 @@ pub fn check(
         {
             continue;
         }
-        for kind in kinds(decl, root) {
-            let Some((_, convention)) = conventions.iter().find(|(k, _)| *k == kind) else {
-                continue;
-            };
+        let applying: Vec<(&str, &Convention)> = kinds(decl, root)
+            .into_iter()
+            .filter_map(|kind| {
+                conventions
+                    .iter()
+                    .find(|(k, _)| *k == kind)
+                    .map(|(k, c)| (*k, c))
+            })
+            .collect();
+        for &(kind, convention) in &applying {
             if let Some(problem) = convention.check(&decl.spelling) {
-                out.push(Finding::new(
+                let all: Vec<&Convention> = applying.iter().map(|(_, c)| *c).collect();
+                let mut finding = Finding::new(
                     leak_id(kind),
                     decl.range,
                     format!("{} `{}` {problem}", decl.kind.describe(), decl.spelling),
-                ));
+                );
+                finding.rename = suggest(&decl.spelling, &all);
+                out.push(finding);
                 break;
             }
         }
@@ -243,6 +363,36 @@ mod tests {
         let c = convention("pattern = \"[a-z]+_(i|o)\"");
         assert_eq!(c.check("clk_i"), None);
         assert!(c.check("clk").is_some());
+    }
+
+    #[test]
+    fn suggestions_follow_the_conventions() {
+        let snake = convention("prefix = \"s_\"\ncase = \"snake\"");
+        assert_eq!(
+            suggest("dataValid", &[&snake]).as_deref(),
+            Some("s_data_valid")
+        );
+        assert_eq!(suggest("S_Valid", &[&snake]).as_deref(), Some("s_valid"));
+        let upper = convention("prefix = \"C_\"\ncase = \"upper\"");
+        assert_eq!(
+            suggest("maxWidth", &[&upper]).as_deref(),
+            Some("C_MAX_WIDTH")
+        );
+        let pascal = convention("case = \"pascal\"\nsuffix = \"_t\"");
+        assert_eq!(
+            suggest("http_state", &[&pascal]).as_deref(),
+            Some("HttpState_t")
+        );
+        let camel = convention("case = \"camel\"");
+        assert_eq!(
+            suggest("HTTPServer", &[&camel]).as_deref(),
+            Some("httpServer")
+        );
+        let port = convention("case = \"snake\"");
+        let input = convention("suffix = \"_i\"");
+        assert_eq!(suggest("Clk", &[&port, &input]).as_deref(), Some("clk_i"));
+        let pattern = convention("pattern = \"[a-z]+_(i|o)\"");
+        assert_eq!(suggest("clk", &[&pattern]), None);
     }
 
     #[test]

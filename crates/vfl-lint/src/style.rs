@@ -1,7 +1,7 @@
 //! Rules that only look at the text and the syntax tree of one file.
 
 use vfl_sema::{Edit, Fix};
-use vfl_syntax::{SyntaxKind, SyntaxNode, TextRange, TextSize};
+use vfl_syntax::{Standard, SyntaxKind, SyntaxNode, TextRange, TextSize};
 
 use crate::Finding;
 
@@ -12,6 +12,9 @@ pub struct StyleContext<'a> {
     pub file_stem: Option<String>,
     /// `style/line-length`'s limit.
     pub max_line_length: usize,
+    /// Columns per indentation level: what a tab becomes.
+    pub indent: usize,
+    pub standard: Standard,
 }
 
 pub fn check(ctx: &StyleContext, enabled: impl Fn(&str) -> bool, out: &mut Vec<Finding>) {
@@ -27,11 +30,23 @@ pub fn check(ctx: &StyleContext, enabled: impl Fn(&str) -> bool, out: &mut Vec<F
                     .filter_map(|e| e.into_token())
                     .find(|t| t.kind() == SyntaxKind::BUFFER_KW)
                 {
-                    out.push(Finding::new(
+                    let mut finding = Finding::new(
                         "style/no-buffer-ports",
                         token.text_range(),
                         "port of mode `buffer`; use `out` (readable since VHDL-2008) or an internal signal",
-                    ));
+                    );
+                    // Before VHDL-2008, an `out` port cannot be read.
+                    if ctx.standard >= Standard::Vhdl2008 {
+                        finding = finding.with_fix(Fix {
+                            title: "Change the mode to `out`".into(),
+                            edits: vec![Edit {
+                                range: token.text_range(),
+                                text: "out".into(),
+                            }],
+                            safe: false,
+                        });
+                    }
+                    out.push(finding);
                 }
             }
             SyntaxKind::USE_CLAUSE if enabled("style/no-std-logic-arith") => {
@@ -42,13 +57,34 @@ pub fn check(ctx: &StyleContext, enabled: impl Fn(&str) -> bool, out: &mut Vec<F
                         package,
                         "std_logic_arith" | "std_logic_unsigned" | "std_logic_signed"
                     ) {
-                        out.push(Finding::new(
-                            "style/no-std-logic-arith",
-                            item.text_range(),
-                            format!(
-                                "`{package}` is not a standard package; use `ieee.numeric_std`"
-                            ),
-                        ));
+                        // `std_logic_unsigned` became `numeric_std_unsigned`
+                        // in VHDL-2008; the others have `numeric_std`.
+                        let standard = if package == "std_logic_unsigned"
+                            && ctx.standard >= Standard::Vhdl2008
+                        {
+                            "numeric_std_unsigned"
+                        } else {
+                            "numeric_std"
+                        };
+                        let library = item.to_string();
+                        let library = library.split('.').next().unwrap_or("ieee").trim();
+                        out.push(
+                            Finding::new(
+                                "style/no-std-logic-arith",
+                                item.text_range(),
+                                format!(
+                                    "`{package}` is not a standard package; use `ieee.numeric_std`"
+                                ),
+                            )
+                            .with_fix(Fix {
+                                title: format!("Use `{library}.{standard}` instead"),
+                                edits: vec![Edit {
+                                    range: item.text_range(),
+                                    text: format!("{library}.{standard}.all"),
+                                }],
+                                safe: false,
+                            }),
+                        );
                     }
                 }
             }
@@ -149,11 +185,26 @@ fn lines(ctx: &StyleContext, enabled: &impl Fn(&str) -> bool, out: &mut Vec<Find
         if enabled("style/tabs") {
             let indent = content.len() - content.trim_start_matches([' ', '\t']).len();
             if content[..indent].contains('\t') {
-                out.push(Finding::new(
-                    "style/tabs",
-                    range(start, start + indent),
-                    "line is indented with tabs",
-                ));
+                let r = range(start, start + indent);
+                let tab = ctx.indent.max(1);
+                let mut column = 0;
+                for c in content[..indent].chars() {
+                    column = if c == '\t' {
+                        (column / tab + 1) * tab
+                    } else {
+                        column + 1
+                    };
+                }
+                out.push(
+                    Finding::new("style/tabs", r, "line is indented with tabs").with_fix(Fix {
+                        title: "Indent with spaces".into(),
+                        edits: vec![Edit {
+                            range: r,
+                            text: " ".repeat(column),
+                        }],
+                        safe: true,
+                    }),
+                );
             }
         }
     }

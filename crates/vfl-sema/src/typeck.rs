@@ -21,7 +21,9 @@ use rowan::NodeOrToken;
 use vfl_syntax::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange, identifier_key};
 
 use crate::analysis::{Ctx, UnitResult};
-use crate::decl::{Access, Decl, DeclId, DeclKind, Mode, Reference, Target, TypeDef, UnitId};
+use crate::decl::{
+    Access, Decl, DeclId, DeclKind, ElementRef, Mode, Reference, Target, TypeDef, UnitId,
+};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::resolver::{mark_token, operator_token};
 use crate::syntax::{designator, has_token, is_designator};
@@ -196,6 +198,7 @@ pub(crate) struct Outcome {
     narrowed: Vec<(usize, Vec<Target>)>,
     dropped: Vec<usize>,
     added: Vec<Reference>,
+    elements: Vec<ElementRef>,
     diagnostics: Vec<Diagnostic>,
 }
 
@@ -216,6 +219,11 @@ impl Outcome {
             result.refs.extend(self.added);
             result.refs.sort_by_key(|r| r.range.start());
         }
+        result.elements = self.elements;
+        result
+            .elements
+            .sort_by_key(|e| (e.range.start(), e.range.end()));
+        result.elements.dedup();
         result.diagnostics.extend(self.diagnostics);
     }
 }
@@ -247,6 +255,7 @@ pub(crate) fn check_unit(
         narrowed: checker.narrowed,
         dropped: checker.dropped,
         added: checker.added,
+        elements: checker.elements,
         diagnostics: checker.diags,
     }
 }
@@ -268,6 +277,7 @@ struct Checker<'a> {
     narrowed: Vec<(usize, Vec<Target>)>,
     dropped: Vec<usize>,
     added: Vec<Reference>,
+    elements: Vec<ElementRef>,
     diags: Vec<Diagnostic>,
     /// Inside an `ERROR` node: nothing is reported.
     quiet: u32,
@@ -326,6 +336,7 @@ impl<'a> Checker<'a> {
             narrowed: Vec::new(),
             dropped: Vec::new(),
             added: Vec::new(),
+            elements: Vec::new(),
             diags: Vec::new(),
             quiet: 0,
             depth: 0,
@@ -1062,7 +1073,11 @@ impl<'a> Checker<'a> {
             };
         }
         let key = crate::syntax::designator_key(&suffix);
-        match self.element_type(ty.ty, &key) {
+        let element = self.element_type(ty.ty, &key);
+        if element.is_some() {
+            self.element_ref(&suffix, ty.ty, key);
+        }
+        match element {
             Some(Some(t)) => Val::Types(vec![t]),
             _ => Val::Unknown,
         }
@@ -1084,6 +1099,26 @@ impl<'a> Checker<'a> {
                 .filter(|&c| self.decl(c).is_some_and(|d| Self::is_subprogram(d.kind)))
                 .collect(),
         )
+    }
+
+    /// Records that `token` names element `name` of record type `ty`, or
+    /// of the record it designates.
+    fn element_ref(&mut self, token: &SyntaxToken, ty: Ty, name: String) {
+        let record = match (ty, self.def(ty)) {
+            (Ty::Decl(id), Some(TypeDef::Record(_))) => id,
+            (_, Some(TypeDef::Access(Some(d)))) => match self.mark_type(*d) {
+                Some(TyS {
+                    ty: Ty::Decl(id), ..
+                }) => id,
+                _ => return,
+            },
+            _ => return,
+        };
+        self.elements.push(ElementRef {
+            range: token.text_range(),
+            record,
+            name,
+        });
     }
 
     /// The type of element `name` of a record (or of the record an access
@@ -2324,7 +2359,12 @@ impl<'a> Checker<'a> {
                                         .map(|t| identifier_key(t.text()))
                                         .unwrap_or_default();
                                     match fields.iter().find(|f| f.name == key) {
-                                        Some(f) => Some(Some(f.clone())),
+                                        Some(f) => {
+                                            if let Some(token) = &token {
+                                                self.element_ref(token, exp.ty, key.clone());
+                                            }
+                                            Some(Some(f.clone()))
+                                        }
                                         None => {
                                             if let Some(token) = token {
                                                 let message = format!(

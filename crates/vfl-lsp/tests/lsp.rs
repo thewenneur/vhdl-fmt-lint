@@ -614,3 +614,324 @@ fn code_generation_from_entities() {
     );
     assert!(missing.contains("no entity `nope`"), "{missing}");
 }
+
+const REFACTOR_PKG: &str = "\
+package shapes is
+  type point_t is record
+    x : integer;
+    y : integer;
+  end record;
+  function area(w : integer; h : integer) return integer;
+  function area(side : integer) return integer;
+end package shapes;
+package body shapes is
+  function area(w : integer; h : integer) return integer is
+  begin
+    return w * h;
+  end function area;
+  function area(side : integer) return integer is
+  begin
+    return side * side;
+  end function area;
+end package body shapes;
+";
+
+const REFACTOR_LEAF: &str = "\
+entity leaf is
+  generic (width : natural := 1);
+  port (clk : in bit; q : out bit);
+end entity leaf;
+architecture rtl of leaf is
+begin
+  q <= clk;
+end architecture rtl;
+";
+
+const REFACTOR_TOP: &str = "\
+use work.shapes.all;
+entity top is
+  port (clk : in bit; o1, o2 : out bit);
+end entity top;
+architecture rtl of top is
+  component leaf is
+    generic (width : natural := 1);
+    port (clk : in bit; q : out bit);
+  end component;
+  signal p : point_t := (x => 0, y => 0);
+  signal n : integer;
+begin
+  u1 : entity work.leaf generic map (width => 2) port map (clk => clk, q => o1);
+  u2 : leaf port map (clk => clk, q => o2);
+  process (clk)
+  begin
+    p.x <= area(p.y, 2);
+    n <= area(3);
+  end process;
+end architecture rtl;
+";
+
+/// The text of `original` with the edits of `edit` for `uri` applied.
+fn apply(original: &str, edit: &Value, uri: &str) -> String {
+    let starts: Vec<usize> = std::iter::once(0)
+        .chain(original.match_indices('\n').map(|(i, _)| i + 1))
+        .collect();
+    let offset = |p: &Value| {
+        starts[p["line"].as_u64().unwrap() as usize] + p["character"].as_u64().unwrap() as usize
+    };
+    let mut edits: Vec<(usize, usize, String)> = edit["changes"][uri]
+        .as_array()
+        .map(|a| a.as_slice())
+        .unwrap_or_default()
+        .iter()
+        .map(|e| {
+            (
+                offset(&e["range"]["start"]),
+                offset(&e["range"]["end"]),
+                e["newText"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    edits.sort_by_key(|e| std::cmp::Reverse(e.0));
+    let mut text = original.to_owned();
+    for (start, end, new) in edits {
+        text.replace_range(start..end, &new);
+    }
+    text
+}
+
+/// The position of the `nth` occurrence of `needle` in `text`, plus `delta`.
+fn find(uri: &str, text: &str, needle: &str, nth: usize, delta: usize) -> Value {
+    let offset = text.match_indices(needle).nth(nth).unwrap().0 + delta;
+    let line = text[..offset].matches('\n').count() as u32;
+    let character = (offset - text[..offset].rfind('\n').map_or(0, |i| i + 1)) as u32;
+    at(uri, line, character)
+}
+
+fn refactor_setup(config: &str) -> (tempfile::TempDir, Client, [String; 3]) {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("vfl.toml"), config).unwrap();
+    std::fs::write(dir.path().join("shapes.vhd"), REFACTOR_PKG).unwrap();
+    std::fs::write(dir.path().join("leaf.vhd"), REFACTOR_LEAF).unwrap();
+    std::fs::write(dir.path().join("top.vhd"), REFACTOR_TOP).unwrap();
+    let client = Client::start(dir.path());
+    let uris = ["shapes.vhd", "leaf.vhd", "top.vhd"].map(|f| url(&dir.path().join(f)));
+    (dir, client, uris)
+}
+
+fn rename(client: &mut Client, position: Value, new_name: &str) -> Value {
+    let mut params = position;
+    params["newName"] = json!(new_name);
+    client.request("textDocument/rename", params)
+}
+
+#[test]
+fn rename_covers_bodies_components_and_elements() {
+    let (_dir, mut client, [pkg, leaf, top]) = refactor_setup("");
+
+    // A subprogram: its declaration, its body, the body's end label and
+    // the calls of that overload only.
+    let edit = rename(
+        &mut client,
+        find(&pkg, REFACTOR_PKG, "area", 0, 0),
+        "surface",
+    );
+    let renamed = apply(REFACTOR_PKG, &edit, &pkg);
+    assert_eq!(renamed.matches("surface").count(), 3, "{renamed}");
+    assert_eq!(
+        renamed.matches("function area(side").count(),
+        2,
+        "{renamed}"
+    );
+    let renamed = apply(REFACTOR_TOP, &edit, &top);
+    assert!(renamed.contains("p.x <= surface(p.y, 2);"), "{renamed}");
+    assert!(renamed.contains("n <= area(3);"), "{renamed}");
+
+    // The same from the body.
+    let edit = rename(
+        &mut client,
+        find(&pkg, REFACTOR_PKG, "area", 4, 0),
+        "square",
+    );
+    let renamed = apply(REFACTOR_PKG, &edit, &pkg);
+    assert!(renamed.contains("function square(side : integer) return integer;"));
+    assert!(renamed.contains("end function square;"), "{renamed}");
+    assert!(apply(REFACTOR_TOP, &edit, &top).contains("n <= square(3);"));
+
+    // A package: its body and both end labels.
+    let edit = rename(
+        &mut client,
+        find(&pkg, REFACTOR_PKG, "shapes", 0, 0),
+        "geometry",
+    );
+    let renamed = apply(REFACTOR_PKG, &edit, &pkg);
+    assert_eq!(renamed.matches("geometry").count(), 4, "{renamed}");
+    assert!(apply(REFACTOR_TOP, &edit, &top).starts_with("use work.geometry.all;"));
+
+    // An entity's port: the component named after it and both port maps.
+    let edit = rename(
+        &mut client,
+        find(&leaf, REFACTOR_LEAF, "clk", 0, 0),
+        "clock",
+    );
+    assert!(apply(REFACTOR_LEAF, &edit, &leaf).contains("q <= clock;"));
+    let renamed = apply(REFACTOR_TOP, &edit, &top);
+    assert!(
+        renamed.contains("port (clock : in bit; q : out bit);"),
+        "{renamed}"
+    );
+    assert!(
+        renamed.contains("port map (clock => clk, q => o1)"),
+        "{renamed}"
+    );
+    assert!(
+        renamed.contains("port map (clock => clk, q => o2)"),
+        "{renamed}"
+    );
+    assert!(renamed.contains("port (clk : in bit; o1"), "{renamed}");
+
+    // The entity itself: the component and its instantiation too.
+    let edit = rename(&mut client, find(&top, REFACTOR_TOP, "leaf", 0, 0), "cell");
+    assert!(apply(REFACTOR_LEAF, &edit, &leaf).contains("architecture rtl of cell is"));
+    let renamed = apply(REFACTOR_TOP, &edit, &top);
+    assert_eq!(renamed.matches("cell").count(), 3, "{renamed}");
+
+    // A record element: its declaration, selected names and aggregates.
+    let edit = rename(&mut client, find(&top, REFACTOR_TOP, "x =>", 0, 0), "col");
+    assert!(apply(REFACTOR_PKG, &edit, &pkg).contains("    col : integer;"));
+    let renamed = apply(REFACTOR_TOP, &edit, &top);
+    assert!(renamed.contains("(col => 0, y => 0)"), "{renamed}");
+    assert!(renamed.contains("p.col <= area(p.y, 2);"), "{renamed}");
+    let mut references = find(&pkg, REFACTOR_PKG, "y :", 0, 0);
+    references["context"] = json!({ "includeDeclaration": true });
+    let references = client.request("textDocument/references", references);
+    assert_eq!(references.as_array().unwrap().len(), 3, "{references}");
+    let definition = client.request(
+        "textDocument/definition",
+        find(&top, REFACTOR_TOP, "p.y", 0, 2),
+    );
+    assert_eq!(definition[0]["uri"], pkg);
+
+    // Names that would clash.
+    let mut params = find(&top, REFACTOR_TOP, "n :", 0, 0);
+    params["newName"] = json!("p");
+    let error = client.request_error("textDocument/rename", params.clone());
+    assert!(
+        error.contains("signal `p` is already visible there"),
+        "{error}"
+    );
+    params["newName"] = json!("o1");
+    let error = client.request_error("textDocument/rename", params.clone());
+    assert!(error.contains("port `o1`"), "{error}");
+    params["newName"] = json!("process");
+    let error = client.request_error("textDocument/rename", params.clone());
+    assert!(error.contains("reserved word"), "{error}");
+    let mut params = find(&pkg, REFACTOR_PKG, "x :", 0, 0);
+    params["newName"] = json!("y");
+    let error = client.request_error("textDocument/rename", params);
+    assert!(
+        error.contains("already has an element named `y`"),
+        "{error}"
+    );
+}
+
+const FIXES_TOP: &str = "\
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.std_logic_arith.all;
+entity top is
+  port (clk : in std_logic; o : out std_logic);
+end entity top;
+architecture rtl of top is
+\tsignal sDone : std_logic;
+  signal unused_a, unused_b : std_logic;
+  constant c_pi : real := math_pi;
+begin
+  u : entity work.leaf port map (clk, o);
+end architecture rtl;
+";
+
+/// The quick fixes offered for the problems on `line`.
+fn quick_fixes(client: &mut Client, uri: &str, line: u32) -> Vec<Value> {
+    client
+        .request(
+            "textDocument/codeAction",
+            json!({
+                "textDocument": { "uri": uri },
+                "range": { "start": { "line": line, "character": 0 }, "end": { "line": line, "character": 80 } },
+                "context": { "diagnostics": [], "only": ["quickfix"] }
+            }),
+        )
+        .as_array()
+        .unwrap()
+        .clone()
+}
+
+fn fix<'a>(fixes: &'a [Value], title: &str) -> &'a Value {
+    fixes
+        .iter()
+        .find(|f| f["title"] == title)
+        .unwrap_or_else(|| panic!("no fix `{title}` in {fixes:#?}"))
+}
+
+#[test]
+fn quick_fixes_for_rules() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("vfl.toml"),
+        "[lint]\npreset = \"strict\"\n[lint.rules]\n\"naming/signal\" = { level = \"warn\", prefix = \"s_\", case = \"snake\" }\n",
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("leaf.vhd"), REFACTOR_LEAF).unwrap();
+    std::fs::write(dir.path().join("top.vhd"), FIXES_TOP).unwrap();
+    let top = url(&dir.path().join("top.vhd"));
+    let mut client = Client::start(dir.path());
+
+    let fixes = quick_fixes(&mut client, &top, 2);
+    let arith = fix(
+        &fixes,
+        "Use `ieee.numeric_std` instead (may change behavior)",
+    );
+    assert!(apply(FIXES_TOP, &arith["edit"], &top).contains("use ieee.numeric_std.all;"));
+    let ignore = fix(&fixes, "Ignore `style/no-std-logic-arith` on this line");
+    assert!(
+        apply(FIXES_TOP, &ignore["edit"], &top)
+            .contains("use ieee.std_logic_arith.all;  -- vfl-ignore style/no-std-logic-arith\n")
+    );
+    let ignore = fix(&fixes, "Ignore `style/no-std-logic-arith` in this file");
+    assert!(
+        apply(FIXES_TOP, &ignore["edit"], &top)
+            .starts_with("-- vfl-ignore-file style/no-std-logic-arith\nlibrary ieee;")
+    );
+
+    // A tab, and a name against the convention: renamed everywhere.
+    let fixes = quick_fixes(&mut client, &top, 7);
+    let tabs = fix(&fixes, "Indent with spaces");
+    assert!(apply(FIXES_TOP, &tabs["edit"], &top).contains("\n  signal sDone"));
+    let rename = fix(&fixes, "Rename `sDone` to `s_s_done` everywhere");
+    assert_eq!(rename["isPreferred"], true);
+    // Worked out when chosen.
+    assert!(rename.get("edit").is_none(), "{rename}");
+    let rename = client.request("codeAction/resolve", rename.clone());
+    assert!(apply(FIXES_TOP, &rename["edit"], &top).contains("signal s_s_done : std_logic;"));
+
+    // Unused signals declared together.
+    let fixes = quick_fixes(&mut client, &top, 8);
+    let remove = fix(
+        &fixes,
+        "Remove the unused signal `unused_a` (may change behavior)",
+    );
+    assert!(apply(FIXES_TOP, &remove["edit"], &top).contains("  signal unused_b : std_logic;\n"));
+
+    // `math_pi` is declared in `ieee.math_real`.
+    let fixes = quick_fixes(&mut client, &top, 9);
+    let import = fix(&fixes, "Add `use ieee.math_real.all;`");
+    assert!(
+        apply(FIXES_TOP, &import["edit"], &top)
+            .contains("end entity top;\nuse ieee.math_real.all;\narchitecture rtl of top is")
+    );
+
+    // Positional associations get their formals.
+    let fixes = quick_fixes(&mut client, &top, 11);
+    let named = fix(&fixes, "Name the formals");
+    assert!(apply(FIXES_TOP, &named["edit"], &top).contains("port map (clk => clk, q => o);"));
+}

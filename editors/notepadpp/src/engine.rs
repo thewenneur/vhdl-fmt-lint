@@ -1072,8 +1072,19 @@ end architecture;
         let text = "entity e is   \nend entity;\n";
         std::fs::write(&path, text).unwrap();
         let mut engine = Engine::default();
-        let fixes = engine.quick_fixes(Some(&path), text, 11, 11);
+        let all = engine.quick_fixes(Some(&path), text, 11, 11);
+        let fixes: Vec<_> = all.iter().filter(|f| !f.silences).collect();
         assert_eq!(fixes.len(), 1, "{fixes:?}");
+        assert_eq!(
+            all.iter()
+                .filter(|f| f.silences)
+                .map(|f| f.title.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "Ignore `style/trailing-whitespace` on this line",
+                "Ignore `style/trailing-whitespace` in this file"
+            ]
+        );
         assert_eq!(fixes[0].title, "Remove trailing whitespace");
         assert_eq!(fixes[0].edits, [(11..14, String::new())]);
         let (fixed, count) = engine.fix_all(Some(&path), text).expect("a fix");

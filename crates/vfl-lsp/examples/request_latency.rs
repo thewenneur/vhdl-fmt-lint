@@ -1,7 +1,8 @@
-//! Measures how long hover, signature help, completion and code actions take: opens a
-//! project, then sends each request at a spread of positions in a spread
-//! of files, and prints the median and slowest times. Then the semantic
-//! tokens of every file, whole and as a delta after the first.
+//! Measures how long hover, signature help, completion, code actions,
+//! highlights and references take: opens a project, then sends each
+//! request at a spread of positions in a spread of files, and prints the
+//! median and slowest times. Then the semantic tokens of every file, whole
+//! and as a delta after the first.
 //! Usage: request_latency DIR
 
 use std::path::PathBuf;
@@ -28,6 +29,8 @@ fn main() {
         "textDocument/signatureHelp",
         "textDocument/completion",
         "textDocument/codeAction",
+        "textDocument/documentHighlight",
+        "textDocument/references",
     ] {
         let mut times: Vec<Duration> = Vec::new();
         let mut answered = 0;
@@ -42,6 +45,12 @@ fn main() {
                         "textDocument": { "uri": uri },
                         "range": { "start": position, "end": position },
                         "context": { "diagnostics": [] },
+                    })
+                } else if method == "textDocument/references" {
+                    json!({
+                        "textDocument": { "uri": uri },
+                        "position": position,
+                        "context": { "includeDeclaration": true },
                     })
                 } else {
                     json!({ "textDocument": { "uri": uri }, "position": position })
