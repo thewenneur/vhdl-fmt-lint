@@ -15,6 +15,8 @@ pub enum SchemaKind {
     Symbol,
     /// The instantiation tree.
     Hierarchy,
+    /// The instances of an entity's architecture, wired by their signals.
+    Block,
     /// A state machine of an entity's architecture.
     Fsm,
 }
@@ -30,6 +32,7 @@ pub struct SchemaOptions {
     pub kind: SchemaKind,
     pub entity: Option<String>,
     pub signal: Option<String>,
+    pub architecture: Option<String>,
     pub format: SchemaFormat,
     pub output: Option<PathBuf>,
     pub project: PathBuf,
@@ -155,6 +158,41 @@ pub fn schema(options: &SchemaOptions) -> Result<()> {
                 SchemaFormat::Svg => svg::hierarchy(&roots, None),
                 SchemaFormat::Mermaid => text::hierarchy_mermaid(&roots),
                 SchemaFormat::Dot => text::hierarchy_dot(&roots),
+            }
+        }
+        SchemaKind::Block => {
+            let Some(entity) = entity else {
+                bail!("`vfl schema block` needs an entity name");
+            };
+            if options.format != SchemaFormat::Svg {
+                bail!("block diagrams are drawn as SVG only");
+            }
+            let e = &design.entities[entity];
+            let arch = match &options.architecture {
+                Some(name) => e
+                    .architectures
+                    .iter()
+                    .position(|a| identifier_key(&a.name) == identifier_key(name))
+                    .with_context(|| format!("`{}` has no architecture `{name}`", e.name))?,
+                None => e
+                    .architectures
+                    .len()
+                    .checked_sub(1)
+                    .with_context(|| format!("`{}` has no architecture", e.name))?,
+            };
+            match vfl_doc::block::block(&design, entity, arch, None) {
+                Some(svg) => svg,
+                None if e.architectures[arch].instances.is_empty() => bail!(
+                    "`{}({})` instantiates nothing",
+                    e.name,
+                    e.architectures[arch].name
+                ),
+                None => bail!(
+                    "`{}({})` has more than {} instances",
+                    e.name,
+                    e.architectures[arch].name,
+                    vfl_doc::block::MAX_BLOCKS
+                ),
             }
         }
         SchemaKind::Fsm => {

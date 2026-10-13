@@ -100,7 +100,8 @@ enum Command {
         #[arg(long)]
         title: Option<String>,
     },
-    /// Draw one diagram: an entity's symbol, the design hierarchy or a state machine.
+    /// Draw one diagram: an entity's symbol, the design hierarchy, the block
+    /// diagram of an architecture or a state machine.
     Schema {
         #[arg(value_enum)]
         kind: doc::SchemaKind,
@@ -110,7 +111,10 @@ enum Command {
         /// For `fsm`, the state signal (default: the entity's only state machine).
         #[arg(long)]
         signal: Option<String>,
-        /// Output format. `symbol` is SVG only.
+        /// For `block`, the architecture (default: the last one).
+        #[arg(long)]
+        architecture: Option<String>,
+        /// Output format. `symbol` and `block` are SVG only.
         #[arg(long, short, value_enum, default_value = "svg")]
         format: doc::SchemaFormat,
         /// Write to this file instead of standard output.
@@ -219,6 +223,7 @@ fn run(cli: Cli) -> Result<bool> {
             kind,
             entity,
             signal,
+            architecture,
             format,
             output,
             project,
@@ -226,6 +231,7 @@ fn run(cli: Cli) -> Result<bool> {
             kind,
             entity,
             signal,
+            architecture,
             format,
             output,
             project,

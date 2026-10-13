@@ -315,19 +315,28 @@ entity fifo is
 
 A state machine is a `case` on a signal or variable of an enumeration type (or on an element
 of a record, such as `engine.state`) whose alternatives assign literals of that type to it, or
-to a next-state object of the same type. A transition's condition is made of the `if`
-conditions around the assignment. The initial state is the literal the reset branch assigns,
-else the declaration's default.
+to a next-state object of the same type. Both one-process and two-process machines are found,
+whether the process is clocked with a synchronous or an asynchronous reset, combinational
+(the next-state logic of a two-process machine) or written with `wait` statements; so are
+next-state logic in concurrent conditional (`next <= A when c else B`) and selected
+(`with state select`) assignments, and `if state = S` tests outside of a `case`. A
+transition's condition is made of the `if` conditions around the assignment. The initial state
+is the literal the reset branch assigns, else the declaration's default.
+
+[examples/uart](../examples/uart) is a small design with its generated documentation in
+`examples/uart/doc`.
 
 ### `[doc.diagrams]`
 
-`vfl schema symbol|hierarchy|fsm [entity]` draws one of these diagrams alone, as SVG (the
-default), or for `hierarchy` and `fsm` as Mermaid (`-f mermaid`) or Graphviz DOT (`-f dot`).
+`vfl schema symbol|hierarchy|block|fsm [entity]` draws one of these diagrams alone, as SVG
+(the default), or for `hierarchy` and `fsm` as Mermaid (`-f mermaid`) or Graphviz DOT
+(`-f dot`).
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
 | `symbol` | boolean | `true` | Draw each entity (and each component of a package) as a block: inputs on the left, outputs and bidirectional ports on the right. |
-| `hierarchy` | boolean | `true` | Draw the instantiation tree on the index and the instances of each architecture. A subtree already drawn higher up is not drawn again. |
+| `hierarchy` | boolean | `true` | Draw the instantiation tree on the index (and the instances of each architecture when `block` is off). A subtree already drawn higher up is not drawn again. |
+| `block` | boolean | `true` | Draw each architecture with instances as a block diagram: its instances as blocks, wired to each other and to the ports of the entity by the signals of their port maps. Signals between neighbouring columns are drawn as wires, longer ones as named stubs. Architectures with more than 80 instances are left to the instance table. |
 | `fsm` | boolean | `true` | Draw a state diagram per state machine. Past ten labelled transitions, the conditions are left to the transition table. |
 | `port_types` | boolean | `true` | Write the port types next to the pins of a symbol. |
 | `generics` | boolean | `true` | Write the generics in a symbol. |
@@ -428,6 +437,7 @@ fsm = true
 [doc.diagrams]
 symbol = true
 hierarchy = true
+block = true
 fsm = true
 port_types = true
 generics = true

@@ -492,6 +492,7 @@ fn options_leave_sections_out() {
         diagrams: vfl_config::DiagramConfig {
             symbol: false,
             hierarchy: false,
+            block: false,
             ..Default::default()
         },
         ..DocConfig::default()
@@ -536,4 +537,162 @@ fn loads_a_project_and_skips_excluded_files() {
     assert_eq!(names, ["counter"]);
     assert_eq!(d.entities[0].file, "rtl/counter.vhd");
     assert_eq!(d.title, dir.path().file_name().unwrap().to_string_lossy());
+}
+
+fn transitions(fsm: &vfl_doc::Fsm) -> Vec<String> {
+    fsm.transitions
+        .iter()
+        .map(|t| match &t.condition {
+            Some(c) => format!("{} -> {} : {c}", t.from, t.to),
+            None => format!("{} -> {}", t.from, t.to),
+        })
+        .collect()
+}
+
+#[test]
+fn detects_state_machines_in_every_process_style() {
+    let text = "\
+entity a is port (clk, rst, go : in bit); end;
+architecture rtl of a is
+  type st is (IDLE, RUN, DONE);
+  signal t, s, s_next, u, u_next, w : st;
+begin
+  -- Asynchronous reset.
+  p1 : process (clk, rst) begin
+    if rst = '1' then
+      t <= IDLE;
+    elsif rising_edge(clk) then
+      case t is
+        when IDLE => if go = '1' then t <= RUN; end if;
+        when RUN => t <= DONE;
+        when DONE => t <= IDLE;
+      end case;
+    end if;
+  end process;
+  -- Asynchronous reset register and combinational next state.
+  reg : process (clk, rst) begin
+    if rst = '1' then s <= IDLE; elsif rising_edge(clk) then s <= s_next; end if;
+  end process;
+  comb : process (s, go) begin
+    s_next <= s;
+    case s is
+      when IDLE => s_next <= RUN when go = '1' else IDLE;
+      when RUN => s_next <= DONE;
+      when others => s_next <= IDLE;
+    end case;
+  end process;
+  -- Concurrent selected assignment.
+  with u select u_next <=
+    RUN when IDLE,
+    DONE when RUN,
+    IDLE when others;
+  -- A process with a wait statement.
+  pw : process begin
+    wait until rising_edge(clk);
+    case w is
+      when IDLE => w <= RUN;
+      when others => w <= IDLE;
+    end case;
+  end process;
+end;
+
+architecture conc of a is
+  type st is (IDLE, RUN, DONE);
+  signal v, v_next : st;
+begin
+  v <= IDLE when rst = '1' else v_next when rising_edge(clk);
+  v_next <= RUN when v = IDLE and go = '1' else DONE when v = RUN else IDLE;
+end;
+";
+    let d = design(&[("a.vhd", text)]);
+    let fsms = &d.entities[0].architectures[0].fsms;
+    let by = |name: &str| fsms.iter().find(|f| f.signal == name).unwrap();
+    let t = by("t");
+    assert_eq!(t.initial.as_deref(), Some("IDLE"));
+    assert_eq!(
+        transitions(t),
+        ["IDLE -> RUN : go = '1'", "RUN -> DONE", "DONE -> IDLE"]
+    );
+    let s = by("s");
+    assert_eq!(s.initial.as_deref(), Some("IDLE"));
+    assert_eq!(s.next.as_deref(), Some("s_next"));
+    assert_eq!(s.process.as_deref(), Some("comb"));
+    assert_eq!(
+        transitions(s),
+        [
+            "IDLE -> RUN : go = '1'",
+            "IDLE -> IDLE : not (go = '1')",
+            "RUN -> DONE",
+            "DONE -> IDLE"
+        ]
+    );
+    let u = by("u");
+    assert_eq!(u.next.as_deref(), Some("u_next"));
+    assert_eq!(
+        transitions(u),
+        ["IDLE -> RUN", "RUN -> DONE", "DONE -> IDLE"]
+    );
+    assert_eq!(
+        transitions(by("w")),
+        ["IDLE -> RUN", "RUN -> IDLE", "DONE -> IDLE"]
+    );
+
+    let v = &d.entities[0].architectures[1].fsms[0];
+    assert_eq!(v.signal, "v");
+    assert_eq!(v.initial.as_deref(), Some("IDLE"));
+    assert_eq!(
+        transitions(v),
+        [
+            "IDLE -> RUN : go = '1'",
+            "RUN -> DONE",
+            "DONE -> IDLE",
+            "IDLE -> IDLE : else"
+        ]
+    );
+}
+
+#[test]
+fn block_diagram_wires_instances_by_signals() {
+    let text = "\
+entity stage is
+  port (clk : in bit; d : in bit; q : out bit);
+end;
+architecture rtl of stage is begin end;
+
+entity pipe is
+  port (clk, din : in bit; dout : out bit);
+end;
+architecture str of pipe is
+  signal a, b : bit;
+begin
+  s1 : entity work.stage port map (clk => clk, d => din, q => a);
+  s2 : entity work.stage port map (clk, a, b);
+  s3 : entity work.stage port map (clk => clk, d => b, q => dout);
+  u_ext : vendor_buf port map (i => b, o => open);
+end;
+";
+    let d = design(&[("p.vhd", text)]);
+    let pipe = d.entities.iter().position(|e| e.name == "pipe").unwrap();
+    let svg = vfl_doc::block::block(&d, pipe, 0, None).unwrap();
+    // One block per instance, and a terminal per port.
+    for name in ["s1", "s2", "s3", "u_ext", "din", "dout"] {
+        assert!(
+            svg.contains(&format!(">{name}</text>")),
+            "{name} missing: {svg}"
+        );
+    }
+    // `a` and `b` run from one column to the next, as wires named on hover.
+    assert!(
+        svg.contains("<g><title>a</title><path class=\"vfl-wire\""),
+        "{svg}"
+    );
+    assert!(
+        svg.contains("<g><title>b</title><path class=\"vfl-wire\""),
+        "{svg}"
+    );
+    // `clk` reaches the later columns through labelled stubs.
+    assert!(svg.contains(">clk</text>"));
+    // Nothing to draw without instances.
+    let stage = d.entities.iter().position(|e| e.name == "stage").unwrap();
+    assert!(vfl_doc::block::block(&d, stage, 0, None).is_none());
 }

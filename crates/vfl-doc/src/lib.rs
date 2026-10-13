@@ -8,6 +8,7 @@
 //! diagram per state machine. The diagrams are also available alone, as
 //! SVG, Mermaid or DOT ([`svg`], [`text`]).
 
+pub mod block;
 pub mod comments;
 pub mod fsm;
 pub mod hierarchy;

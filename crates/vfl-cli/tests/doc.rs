@@ -114,3 +114,32 @@ fn schema_draws_one_diagram() {
     assert!(!ok);
     assert!(stderr.contains("SVG only"), "{stderr}");
 }
+
+/// The generated documentation committed in `examples/uart/doc` matches what
+/// `vfl doc` writes now. To update it: `cd examples/uart && vfl doc .`.
+#[test]
+fn uart_example_doc_is_up_to_date() {
+    let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/uart");
+    let out = tempfile::tempdir().unwrap();
+    let (ok, _, err) = vfl(&example, &["doc", ".", "-o", out.path().to_str().unwrap()]);
+    assert!(ok, "{err}");
+    let committed = example.join("doc");
+    let mut names: Vec<_> = std::fs::read_dir(out.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    names.sort();
+    let mut stale = Vec::new();
+    for name in &names {
+        let fresh = std::fs::read_to_string(out.path().join(name)).unwrap();
+        let old = std::fs::read_to_string(committed.join(name)).unwrap_or_default();
+        // Git may check the files out with CRLF line ends.
+        if fresh != old.replace("\r\n", "\n") {
+            stale.push(name.to_string_lossy().into_owned());
+        }
+    }
+    assert!(
+        stale.is_empty(),
+        "examples/uart/doc is out of date ({stale:?}): run `vfl doc .` in examples/uart"
+    );
+}

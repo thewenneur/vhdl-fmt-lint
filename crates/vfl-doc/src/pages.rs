@@ -323,7 +323,7 @@ fn entity(
     }
     blocks.push(Block::Para(meta));
     doc(&e.description, &mut blocks);
-    if config.diagrams.symbol {
+    if config.diagrams.symbol && !e.is_testbench() {
         blocks.push(Block::Diagram {
             file: format!("{id}.symbol"),
             alt: format!("Symbol of {}", e.name),
@@ -394,7 +394,26 @@ fn architecture(
     doc(&arch.description, blocks);
     if !arch.instances.is_empty() {
         blocks.push(heading(3, vec![text("Instances")], None));
-        if config.diagrams.hierarchy {
+        let page_link = |i: usize| format!("{}.{}", entity_page(design, i), extension(config));
+        let wired = config
+            .diagrams
+            .block
+            .then(|| {
+                let a = entity
+                    .architectures
+                    .iter()
+                    .position(|a| std::ptr::eq(a, arch))?;
+                crate::block::block(design, index, a, Some(&page_link))
+            })
+            .flatten();
+        if let Some(svg) = wired {
+            blocks.push(Block::Diagram {
+                file: format!("{page}.{arch_key}.block"),
+                alt: format!("Block diagram of {}({})", entity.name, arch.name),
+                svg,
+                mermaid: None,
+            });
+        } else if config.diagrams.hierarchy {
             let roots: Vec<Node> = Some(index)
                 .map(|i| {
                     let mut node = hierarchy::subtree(
@@ -408,12 +427,11 @@ fn architecture(
                     vec![node]
                 })
                 .unwrap_or_default();
-            let link = |i: usize| format!("{}.{}", entity_page(design, i), extension(config));
             if roots.iter().any(|r| !r.children.is_empty()) {
                 blocks.push(Block::Diagram {
                     file: format!("{page}.{arch_key}.hierarchy"),
                     alt: format!("Instances of {}({})", entity.name, arch.name),
-                    svg: svg::hierarchy(&roots, Some(&link)),
+                    svg: svg::hierarchy(&roots, Some(&page_link)),
                     mermaid: Some(diagram_text::hierarchy_mermaid(&roots)),
                 });
             }

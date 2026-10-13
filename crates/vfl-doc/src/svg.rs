@@ -22,6 +22,10 @@ const STYLE: &str = "\
 .vfl-pin{stroke:#424a53;stroke-width:1.5;fill:#424a53}\
 .vfl-edge{stroke:#57606a;stroke-width:1.2;fill:none}\
 .vfl-arrow{fill:#57606a}\
+.vfl-wire{stroke:#0969da;stroke-width:1.3;fill:none}\
+.vfl-dot{fill:#0969da}\
+.vfl-term{fill:#ddf4ff;stroke:#424a53;stroke-width:1.2}\
+.vfl-small{font-size:10px}\
 .vfl-state{fill:#f6f8fa;stroke:#424a53;stroke-width:1.5}\
 .vfl-initial{fill:#ddf4ff;stroke:#0969da;stroke-width:2}\
 .vfl-label-bg{fill:#ffffff;fill-opacity:0.85}\
@@ -36,6 +40,9 @@ a:hover text{text-decoration:underline}\
 .vfl-pin{stroke:#9198a1;fill:#9198a1}\
 .vfl-edge{stroke:#9198a1}\
 .vfl-arrow{fill:#9198a1}\
+.vfl-wire{stroke:#4493f8}\
+.vfl-dot{fill:#4493f8}\
+.vfl-term{fill:#0c2d6b;stroke:#9198a1}\
 .vfl-state{fill:#151b23;stroke:#9198a1}\
 .vfl-initial{fill:#0c2d6b;stroke:#4493f8}\
 .vfl-label-bg{fill:#0d1117}\
@@ -48,7 +55,7 @@ const MAX_FSM_LABELS: usize = 10;
 /// The longest text a diagram shows in one piece; longer texts are cut.
 const MAX_TEXT: usize = 48;
 
-fn width(text: &str) -> f64 {
+pub(crate) fn width(text: &str) -> f64 {
     text.chars().count() as f64 * CHAR_WIDTH
 }
 
@@ -68,7 +75,7 @@ pub fn escape(text: &str) -> String {
     out
 }
 
-fn cut(text: &str, max: usize) -> String {
+pub(crate) fn cut(text: &str, max: usize) -> String {
     if text.chars().count() <= max {
         text.to_owned()
     } else {
@@ -79,7 +86,7 @@ fn cut(text: &str, max: usize) -> String {
 }
 
 /// An SVG document under construction, tracking its extent.
-struct Canvas {
+pub(crate) struct Canvas {
     body: String,
     min_x: f64,
     min_y: f64,
@@ -88,7 +95,7 @@ struct Canvas {
 }
 
 impl Canvas {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Canvas {
             body: String::new(),
             min_x: f64::MAX,
@@ -98,14 +105,14 @@ impl Canvas {
         }
     }
 
-    fn extend(&mut self, x0: f64, y0: f64, x1: f64, y1: f64) {
+    pub(crate) fn extend(&mut self, x0: f64, y0: f64, x1: f64, y1: f64) {
         self.min_x = self.min_x.min(x0.min(x1));
         self.min_y = self.min_y.min(y0.min(y1));
         self.max_x = self.max_x.max(x0.max(x1));
         self.max_y = self.max_y.max(y0.max(y1));
     }
 
-    fn rect(&mut self, x: f64, y: f64, w: f64, h: f64, class: &str) {
+    pub(crate) fn rect(&mut self, x: f64, y: f64, w: f64, h: f64, class: &str) {
         self.extend(x, y, x + w, y + h);
         let _ = write!(
             self.body,
@@ -113,7 +120,7 @@ impl Canvas {
         );
     }
 
-    fn line(&mut self, x0: f64, y0: f64, x1: f64, y1: f64, class: &str) {
+    pub(crate) fn line(&mut self, x0: f64, y0: f64, x1: f64, y1: f64, class: &str) {
         self.extend(x0, y0, x1, y1);
         let _ = write!(
             self.body,
@@ -122,7 +129,7 @@ impl Canvas {
     }
 
     /// Text with its baseline at `y`; `anchor` is `start`, `middle` or `end`.
-    fn text(&mut self, x: f64, y: f64, text: &str, anchor: &str, class: &str) {
+    pub(crate) fn text(&mut self, x: f64, y: f64, text: &str, anchor: &str, class: &str) {
         let w = width(text);
         let x0 = match anchor {
             "middle" => x - w / 2.0,
@@ -142,11 +149,11 @@ impl Canvas {
         );
     }
 
-    fn raw(&mut self, text: &str) {
+    pub(crate) fn raw(&mut self, text: &str) {
         self.body.push_str(text);
     }
 
-    fn finish(self, title: &str, margin: f64) -> String {
+    pub(crate) fn finish(self, title: &str, margin: f64) -> String {
         let (x, y) = (self.min_x - margin, self.min_y - margin);
         let w = (self.max_x - self.min_x + 2.0 * margin).max(1.0);
         let h = (self.max_y - self.min_y + 2.0 * margin).max(1.0);
@@ -412,19 +419,6 @@ pub fn fsm(machine: &Fsm) -> String {
         .iter()
         .map(|s| width(&cut(s, 24)) / 2.0 + 10.0)
         .fold(24.0, f64::max);
-    let ring = if n <= 1 {
-        0.0
-    } else {
-        ((2.0 * r + 90.0) * n as f64 / (2.0 * PI)).max(r + 60.0)
-    };
-    let position = |i: usize| -> (f64, f64) {
-        if n == 2 {
-            return (i as f64 * (2.0 * ring), 0.0);
-        }
-        let angle = -PI / 2.0 + 2.0 * PI * i as f64 / n as f64;
-        (ring * angle.cos(), ring * angle.sin())
-    };
-    let center = if n == 2 { (ring, 0.0) } else { (0.0, 0.0) };
     let index = |state: &str| machine.states.iter().position(|s| s == state);
 
     // Transitions between the same states share one arrow.
@@ -437,8 +431,6 @@ pub fn fsm(machine: &Fsm) -> String {
             }
         }
     }
-    let mut c = Canvas::new();
-    let mut labels = Canvas::new();
     // Past a few labelled arrows the labels overlap more than they help:
     // the transition table of the page lists the conditions.
     let labelled = edges
@@ -446,7 +438,39 @@ pub fn fsm(machine: &Fsm) -> String {
         .filter(|c| c.iter().any(Option::is_some))
         .count();
     let show_labels = labelled <= MAX_FSM_LABELS;
-    let label = |labels: &mut Canvas, x: f64, y: f64, conditions: &[Option<String>]| {
+    let widest = if show_labels {
+        edges
+            .values()
+            .flatten()
+            .flatten()
+            .map(|c| width(&cut(c, 28)))
+            .fold(0.0, f64::max)
+    } else {
+        0.0
+    };
+    // Room between neighbouring states for the labels of their arrows.
+    let ring = if n <= 1 {
+        0.0
+    } else {
+        ((2.0 * r + 90.0 + 0.8 * widest) * n as f64 / (2.0 * PI)).max(r + 60.0 + widest / 2.0)
+    };
+    let position = |i: usize| -> (f64, f64) {
+        if n == 2 {
+            return (i as f64 * (2.0 * ring), 0.0);
+        }
+        let angle = -PI / 2.0 + 2.0 * PI * i as f64 / n as f64;
+        (ring * angle.cos(), ring * angle.sin())
+    };
+    let center = if n == 2 { (ring, 0.0) } else { (0.0, 0.0) };
+    let mut c = Canvas::new();
+    let mut labels = Canvas::new();
+    // A label centred at (x, y), or beside it on the side of the normal
+    // (nx, ny) so that it clears its arrow.
+    let label = |labels: &mut Canvas,
+                 x: f64,
+                 y: f64,
+                 normal: Option<(f64, f64)>,
+                 conditions: &[Option<String>]| {
         if !show_labels {
             return;
         }
@@ -460,6 +484,13 @@ pub fn fsm(machine: &Fsm) -> String {
         if lines.is_empty() {
             return;
         }
+        let (x, y) = match normal {
+            Some((nx, ny)) => {
+                let reach = (w / 2.0 + 2.0) * nx.abs() + (h / 2.0 + 2.0) * ny.abs() + 2.0;
+                (x + nx * reach, y + ny * reach)
+            }
+            None => (x, y),
+        };
         labels.rect(
             x - w / 2.0 - 2.0,
             y - h / 2.0 - 2.0,
@@ -495,7 +526,7 @@ pub fn fsm(machine: &Fsm) -> String {
                 r#"<path class="vfl-edge" marker-end="url(#vfl-arrow)" d="M{sx:.1},{sy:.1}C{c1x:.1},{c1y:.1} {c2x:.1},{c2y:.1} {ex:.1},{ey:.1}"/>"#
             ));
             let (lx, ly) = p(angle, r * 2.3);
-            label(&mut labels, lx, ly, conditions);
+            label(&mut labels, lx, ly, None, conditions);
             continue;
         }
         let (dx, dy) = (bx - ax, by - ay);
@@ -503,7 +534,7 @@ pub fn fsm(machine: &Fsm) -> String {
         let (ux, uy) = (dx / len, dy / len);
         // Bend both arrows of a pair, to opposite sides.
         let bend = if edges.contains_key(&(b, a)) {
-            28.0
+            32.0
         } else {
             0.0
         };
@@ -523,7 +554,9 @@ pub fn fsm(machine: &Fsm) -> String {
             0.25 * sx + 0.5 * mx + 0.25 * ex,
             0.25 * sy + 0.5 * my + 0.25 * ey,
         );
-        label(&mut labels, lx, ly, conditions);
+        // A bent arrow's label goes on the outer side of its bend.
+        let normal = (bend > 0.0).then_some((-uy, ux));
+        label(&mut labels, lx, ly, normal, conditions);
     }
     for (i, state) in machine.states.iter().enumerate() {
         let (x, y) = position(i);

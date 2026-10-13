@@ -455,6 +455,9 @@ pub struct DiagramConfig {
     pub symbol: bool,
     /// The instantiation tree of the design.
     pub hierarchy: bool,
+    /// A block diagram of each architecture with instances: the instances
+    /// wired by the signals between their ports.
+    pub block: bool,
     /// A state diagram of each detected state machine.
     pub fsm: bool,
     /// Show port types next to the pins of a symbol.
@@ -471,6 +474,7 @@ impl Default for DiagramConfig {
         DiagramConfig {
             symbol: true,
             hierarchy: true,
+            block: true,
             fsm: true,
             port_types: true,
             generics: true,

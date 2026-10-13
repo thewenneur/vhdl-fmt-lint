@@ -1,0 +1,6 @@
+# The documentation in doc/ is generated from these sources with `vfl doc`.
+root = true
+
+[doc]
+format = "markdown"
+title = "UART example"

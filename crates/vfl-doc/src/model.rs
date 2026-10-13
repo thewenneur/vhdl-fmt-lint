@@ -97,6 +97,8 @@ pub struct Architecture {
     pub processes: Vec<Process>,
     pub instances: Vec<Instance>,
     pub fsms: Vec<Fsm>,
+    /// Component declarations, for the ports of their instances.
+    pub components: Vec<Component>,
 }
 
 /// A signal, constant or other object declaration.
@@ -511,6 +513,7 @@ impl Ctx<'_> {
         arch.constants = declarations.constants;
         arch.types = declarations.types;
         arch.subprograms = declarations.subprograms;
+        arch.components = declarations.components;
         if self.config.processes {
             for process in node
                 .descendants()

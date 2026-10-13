@@ -190,47 +190,88 @@ pub fn detect(arch: &SyntaxNode, types: &StateTypes, style: &CommentStyle) -> Ve
     }
 
     let mut machines: Vec<(String, Fsm)> = Vec::new();
+    // The machine whose state object is `key`, created on first use.
+    let machine =
+        |machines: &mut Vec<(String, Fsm)>, key: &str, at: &SyntaxNode| -> Option<usize> {
+            let object = objects.get(key)?;
+            let states = enum_literals(&object.type_key)?;
+            if let Some(index) = machines.iter().position(|(k, _)| k == key) {
+                return Some(index);
+            }
+            machines.push((
+                key.to_owned(),
+                Fsm {
+                    signal: object.spelling.clone(),
+                    type_name: object.type_name.clone(),
+                    states: states.clone(),
+                    process: at
+                        .ancestors()
+                        .find(|n| n.kind() == SyntaxKind::PROCESS_STMT)
+                        .and_then(|p| label(&p)),
+                    description: object.description.clone(),
+                    ..Fsm::default()
+                },
+            ));
+            Some(machines.len() - 1)
+        };
+    // Records that the machine `key` goes from each of `from` to `to`
+    // under `condition`, through the object `target`.
+    let add = |fsm: &mut Fsm,
+               key: &str,
+               target_key: &str,
+               from: &[String],
+               to: &str,
+               condition: Option<String>| {
+        if target_key != key && fsm.next.is_none() {
+            fsm.next = objects.get(target_key).map(|o| o.spelling.clone());
+        }
+        for from in from {
+            let transition = Transition {
+                from: from.clone(),
+                to: to.to_owned(),
+                condition: condition.clone(),
+            };
+            if !fsm.transitions.contains(&transition) {
+                fsm.transitions.push(transition);
+            }
+        }
+    };
+    // The state object an assignment targets, if it has the type of `key`.
+    let target_of = |assign: &SyntaxNode, key: &str| -> Option<String> {
+        let target = match assign.kind() {
+            SyntaxKind::SELECTED_ASSIGN_STMT => {
+                let mut after_select = assign
+                    .children_with_tokens()
+                    .skip_while(|e| e.kind() != SyntaxKind::SELECT_KW)
+                    .filter_map(|e| e.into_node());
+                object_name(&after_select.next()?)?
+            }
+            _ => object_name(&assign.children().next()?)?,
+        };
+        let target_key = identifier_key(&target);
+        let object = objects.get(&target_key)?;
+        (object.type_key == objects.get(key)?.type_key).then_some(target_key)
+    };
+
+    // `case state is when S => state <= T; ...`, in clocked, asynchronous
+    // reset, combinational or `wait` processes alike.
     for case in arch
         .descendants()
         .filter(|n| n.kind() == SyntaxKind::CASE_STMT)
     {
-        let Some(selector) = selector(&case) else {
+        let Some(key) = selector(&case).map(|s| identifier_key(&s)) else {
             continue;
         };
-        let key = identifier_key(&selector);
-        let Some(object) = objects.get(&key) else {
+        let Some(index) = machine(&mut machines, &key, &case) else {
             continue;
         };
-        let Some(states) = enum_literals(&object.type_key) else {
-            continue;
-        };
-        let index = match machines.iter().position(|(k, _)| *k == key) {
-            Some(index) => index,
-            None => {
-                machines.push((
-                    key.clone(),
-                    Fsm {
-                        signal: object.spelling.clone(),
-                        type_name: object.type_name.clone(),
-                        states: states.clone(),
-                        process: case
-                            .ancestors()
-                            .find(|n| n.kind() == SyntaxKind::PROCESS_STMT)
-                            .and_then(|p| label(&p)),
-                        description: object.description.clone(),
-                        ..Fsm::default()
-                    },
-                ));
-                machines.len() - 1
-            }
-        };
-        let fsm = &mut machines[index].1;
+        let states = machines[index].1.states.clone();
         let mut covered: Vec<String> = Vec::new();
         for alternative in case
             .children()
             .filter(|n| n.kind() == SyntaxKind::CASE_ALTERNATIVE)
         {
-            let from = choices(&alternative, states, &covered);
+            let from = choices(&alternative, &states, &covered);
             covered.extend(from.iter().cloned());
             for assign in alternative.descendants().filter(|n| {
                 matches!(
@@ -238,34 +279,196 @@ pub fn detect(arch: &SyntaxNode, types: &StateTypes, style: &CommentStyle) -> Ve
                     SyntaxKind::SIGNAL_ASSIGN_STMT | SyntaxKind::VARIABLE_ASSIGN_STMT
                 )
             }) {
-                let Some(target) = assign.children().next().and_then(|t| object_name(&t)) else {
+                let Some(target_key) = target_of(&assign, &key) else {
                     continue;
                 };
-                let target_key = identifier_key(&target);
-                let Some(target_object) = objects.get(&target_key) else {
-                    continue;
-                };
-                if target_object.type_key != object.type_key {
-                    continue;
-                }
-                let Some(to) = assigned_literal(&assign, states) else {
-                    continue;
-                };
-                if target_key != key && fsm.next.is_none() {
-                    fsm.next = Some(target_object.spelling.clone());
-                }
-                let condition = conditions(&assign, &alternative);
-                for from in &from {
-                    let transition = Transition {
-                        from: from.clone(),
-                        to: to.clone(),
-                        condition: condition.clone(),
+                let outer = conditions(&assign, &alternative);
+                for (to, inner) in assigned_values(&assign, &states) {
+                    let condition = match (&outer, inner) {
+                        (Some(a), Some(b)) => Some(format!("{a} and {b}")),
+                        (a, b) => a.clone().or(b),
                     };
-                    if !fsm.transitions.contains(&transition) {
-                        fsm.transitions.push(transition);
+                    add(
+                        &mut machines[index].1,
+                        &key,
+                        &target_key,
+                        &from,
+                        &to,
+                        condition,
+                    );
+                }
+            }
+        }
+    }
+
+    // `with state select state_next <= T when S, ...`, concurrent or
+    // sequential.
+    for select in arch
+        .descendants()
+        .filter(|n| n.kind() == SyntaxKind::SELECTED_ASSIGN_STMT)
+    {
+        let Some(key) = select
+            .children()
+            .next()
+            .and_then(|n| object_name(&n))
+            .map(|s| identifier_key(&s))
+        else {
+            continue;
+        };
+        let Some(target_key) = target_of(&select, &key) else {
+            continue;
+        };
+        let Some(index) = machine(&mut machines, &key, &select) else {
+            continue;
+        };
+        let states = machines[index].1.states.clone();
+        let Some(waveforms) = select
+            .children()
+            .find(|n| n.kind() == SyntaxKind::SELECTED_WAVEFORMS)
+        else {
+            continue;
+        };
+        let mut covered: Vec<String> = Vec::new();
+        let mut to: Option<String> = None;
+        for part in waveforms.children() {
+            match part.kind() {
+                SyntaxKind::WAVEFORM => to = waveform_literal(&part, &states),
+                SyntaxKind::CHOICES => {
+                    let from = choices_of(&part, &states, &covered);
+                    covered.extend(from.iter().cloned());
+                    if let Some(to) = &to {
+                        add(&mut machines[index].1, &key, &target_key, &from, to, None);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // `state_next <= T when state = S and c else ...` outside of a `case`:
+    // the branches whose condition tests the state.
+    for assign in arch.descendants().filter(|n| {
+        n.kind() == SyntaxKind::SIGNAL_ASSIGN_STMT
+            && n.children()
+                .any(|c| c.kind() == SyntaxKind::CONDITIONAL_WAVEFORMS)
+            && !n
+                .ancestors()
+                .any(|a| a.kind() == SyntaxKind::CASE_ALTERNATIVE)
+    }) {
+        let Some(waveforms) = assign
+            .children()
+            .find(|n| n.kind() == SyntaxKind::CONDITIONAL_WAVEFORMS)
+        else {
+            continue;
+        };
+        // The branches: (value, condition), the last one without.
+        let mut branches: Vec<(SyntaxNode, Option<SyntaxNode>)> = Vec::new();
+        for element in waveforms.children_with_tokens() {
+            match element.kind() {
+                SyntaxKind::WAVEFORM => {
+                    if let Some(node) = element.into_node() {
+                        branches.push((node, None));
+                    }
+                }
+                SyntaxKind::WHEN_KW | SyntaxKind::ELSE_KW => {}
+                _ => {
+                    if let (Some(node), Some(last)) = (element.into_node(), branches.last_mut()) {
+                        last.1 = Some(node);
                     }
                 }
             }
+        }
+        // States the branches so far leave unconditionally, or under a
+        // further condition.
+        let mut machine_key: Option<String> = None;
+        let mut full: Vec<String> = Vec::new();
+        let mut partial: Vec<String> = Vec::new();
+        for (value, condition) in &branches {
+            let Some(condition) = condition else {
+                // `else T`: from every state not left yet.
+                let Some(key) = &machine_key else { break };
+                let Some(index) = machines.iter().position(|(k, _)| k == key) else {
+                    break;
+                };
+                let Some(target_key) = target_of(&assign, key) else {
+                    break;
+                };
+                let states = machines[index].1.states.clone();
+                let Some(to) = waveform_literal(value, &states) else {
+                    break;
+                };
+                let untested: Vec<String> = states
+                    .iter()
+                    .filter(|s| !full.contains(s) && !partial.contains(s))
+                    .cloned()
+                    .collect();
+                add(
+                    &mut machines[index].1,
+                    key,
+                    &target_key,
+                    &untested,
+                    &to,
+                    None,
+                );
+                let rest: Vec<String> = partial
+                    .iter()
+                    .filter(|s| !full.contains(s))
+                    .cloned()
+                    .collect();
+                add(
+                    &mut machines[index].1,
+                    key,
+                    &target_key,
+                    &rest,
+                    &to,
+                    Some("else".into()),
+                );
+                break;
+            };
+            let mut terms = Vec::new();
+            conjuncts(condition, &mut terms);
+            // The term `state = S` names the state it leaves from.
+            let found = terms.iter().enumerate().find_map(|(i, term)| {
+                let (key, literal_text) = state_test(term)?;
+                Some((i, key, literal_text))
+            });
+            let Some((i, key, literal_text)) = found else {
+                continue;
+            };
+            let Some(target_key) = target_of(&assign, &key) else {
+                continue;
+            };
+            let Some(index) = machine(&mut machines, &key, &assign) else {
+                continue;
+            };
+            machine_key = Some(key.clone());
+            let states = machines[index].1.states.clone();
+            let (Some(from), Some(to)) = (
+                literal(&literal_text, &states),
+                waveform_literal(value, &states),
+            ) else {
+                continue;
+            };
+            let rest: Vec<String> = terms
+                .iter()
+                .enumerate()
+                .filter(|(j, _)| *j != i)
+                .map(|(_, t)| compact(t))
+                .collect();
+            if rest.is_empty() {
+                full.push(from.clone());
+            } else {
+                partial.push(from.clone());
+            }
+            let condition = (!rest.is_empty()).then(|| rest.join(" and "));
+            add(
+                &mut machines[index].1,
+                &key,
+                &target_key,
+                &[from],
+                &to,
+                condition,
+            );
         }
     }
 
@@ -292,7 +495,12 @@ pub fn detect(arch: &SyntaxNode, types: &StateTypes, style: &CommentStyle) -> Ve
                         && selector(&a).is_some_and(|s| identifier_key(&s) == *key)
                 })
             })
-            .find_map(|assign| assigned_literal(&assign, &states));
+            .find_map(|assign| {
+                assigned_values(&assign, &states)
+                    .into_iter()
+                    .next()
+                    .map(|(value, _)| value)
+            });
         let default = objects[key.as_str()]
             .default
             .as_deref()
@@ -341,12 +549,15 @@ fn idents(node: &SyntaxNode) -> Vec<String> {
 /// The states an alternative's choices name; `others` is every state no
 /// earlier alternative covered.
 fn choices(alternative: &SyntaxNode, states: &[String], covered: &[String]) -> Vec<String> {
-    let Some(choices) = alternative
+    alternative
         .children()
         .find(|n| n.kind() == SyntaxKind::CHOICES)
-    else {
-        return Vec::new();
-    };
+        .map(|c| choices_of(&c, states, covered))
+        .unwrap_or_default()
+}
+
+/// The states a `CHOICES` node names; `others` is every state not covered.
+fn choices_of(choices: &SyntaxNode, states: &[String], covered: &[String]) -> Vec<String> {
     if choices
         .children_with_tokens()
         .any(|e| e.kind() == SyntaxKind::OTHERS_KW)
@@ -367,6 +578,100 @@ fn choices(alternative: &SyntaxNode, states: &[String], covered: &[String]) -> V
 fn literal(text: &str, states: &[String]) -> Option<String> {
     let key = identifier_key(text.trim());
     states.iter().find(|s| identifier_key(s) == key).cloned()
+}
+
+/// The state literal a waveform is, when it is just one.
+fn waveform_literal(waveform: &SyntaxNode, states: &[String]) -> Option<String> {
+    let elements: Vec<SyntaxNode> = waveform.children().collect();
+    if elements.len() != 1 {
+        return None;
+    }
+    literal(&compact(&elements[0].children().next()?), states)
+}
+
+/// The values an assignment can assign, each with the condition of its
+/// branch: one for `s <= T`, one per branch for `s <= A when c else B`.
+fn assigned_values(assign: &SyntaxNode, states: &[String]) -> Vec<(String, Option<String>)> {
+    let Some(waveforms) = assign
+        .children()
+        .find(|n| n.kind() == SyntaxKind::CONDITIONAL_WAVEFORMS)
+    else {
+        return assigned_literal(assign, states)
+            .map(|l| vec![(l, None)])
+            .unwrap_or_default();
+    };
+    let mut out = Vec::new();
+    let mut previous: Vec<String> = Vec::new();
+    let mut value: Option<String> = None;
+    let mut expect_condition = false;
+    let flush = |value: &mut Option<String>, condition: Option<String>, out: &mut Vec<_>| {
+        if let Some(v) = value.take() {
+            out.push((v, condition));
+        }
+    };
+    for element in waveforms.children_with_tokens() {
+        match element.kind() {
+            SyntaxKind::WHEN_KW => expect_condition = true,
+            SyntaxKind::WAVEFORM => {
+                value = element
+                    .as_node()
+                    .and_then(|w| waveform_literal(w, states))
+                    .or(Some(String::new()));
+            }
+            _ => {
+                if let Some(node) = element.as_node().filter(|_| expect_condition) {
+                    expect_condition = false;
+                    let condition = compact(node);
+                    flush(&mut value, Some(condition.clone()), &mut out);
+                    previous.push(condition);
+                }
+            }
+        }
+    }
+    // The final `else` value.
+    let otherwise = match previous.as_slice() {
+        [] => None,
+        [one] => Some(format!("not ({one})")),
+        many => Some(format!("not ({})", many.join(" or "))),
+    };
+    flush(&mut value, otherwise, &mut out);
+    out.retain(|(v, _)| !v.is_empty());
+    out
+}
+
+/// The terms of a chain of `and`s.
+fn conjuncts(node: &SyntaxNode, out: &mut Vec<SyntaxNode>) {
+    let is_and = node.kind() == SyntaxKind::BINARY_EXPR
+        && node
+            .children_with_tokens()
+            .any(|e| e.kind() == SyntaxKind::AND_KW);
+    if is_and {
+        for child in node.children() {
+            conjuncts(&child, out);
+        }
+    } else if node.kind() == SyntaxKind::PAREN_EXPR {
+        match node.children().next() {
+            Some(inner) if inner.kind() == SyntaxKind::BINARY_EXPR => conjuncts(&inner, out),
+            _ => out.push(node.clone()),
+        }
+    } else {
+        out.push(node.clone());
+    }
+}
+
+/// `state = S`: the state object's key and the literal's text.
+fn state_test(term: &SyntaxNode) -> Option<(String, String)> {
+    if term.kind() != SyntaxKind::BINARY_EXPR
+        || !term
+            .children_with_tokens()
+            .any(|e| e.kind() == SyntaxKind::EQ)
+    {
+        return None;
+    }
+    let mut sides = term.children();
+    let left = sides.next()?;
+    let right = sides.next()?;
+    Some((identifier_key(&object_name(&left)?), compact(&right)))
 }
 
 /// The state literal an assignment assigns, when its value is just one.
