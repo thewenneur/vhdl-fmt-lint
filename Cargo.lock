@@ -908,6 +908,7 @@ dependencies = [
  "tempfile",
  "toml",
  "vfl-config",
+ "vfl-doc",
  "vfl-fmt",
  "vfl-lint",
  "vfl-lsp",
@@ -923,6 +924,17 @@ dependencies = [
  "tempfile",
  "thiserror",
  "toml",
+ "vfl-syntax",
+]
+
+[[package]]
+name = "vfl-doc"
+version = "0.1.0"
+dependencies = [
+ "globset",
+ "tempfile",
+ "vfl-config",
+ "vfl-project",
  "vfl-syntax",
 ]
 

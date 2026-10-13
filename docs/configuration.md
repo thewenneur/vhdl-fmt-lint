@@ -12,6 +12,8 @@ the config files it was built from.
 - [`[format]`](#format): the formatter
 - [`[format.align]`](#formatalign): column alignment
 - [`[lint]`](#lint): presets and per-rule settings
+- [`[doc]`](#doc): documentation generation (`vfl doc`)
+- [`[doc.diagrams]`](#docdiagrams): the diagrams in the documentation (`vfl schema`)
 - [In-source comments](#in-source-comments): suppressing findings, switching the formatter off
 - [Default configuration](#default-configuration): every key with its default value
 
@@ -266,6 +268,71 @@ Each entry is either a level, or a table with an optional `level` and rule optio
 `info` findings are shown as notes. `vfl lint` exits with a failure status when there are
 `error` findings, or `warn` findings too with `--deny-warnings`.
 
+## `[doc]`
+
+`vfl doc [path]` writes the documentation of the project: an index with the design
+hierarchy and the list of entities and packages, a page per entity (description, block
+symbol, generics, ports, who instantiates it, and per architecture its instances, processes,
+state machines, signals, constants, types and subprograms) and a page per package. Options
+on the command line (`--out`, `--format`, `--title`) override these keys. `[doc]` is read
+from the configs that apply to the project root.
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `out_dir` | string | `"doc"` | Where `vfl doc` writes, relative to the project root. Existing files there are overwritten, others are kept. |
+| `format` | string | `"html"` | `"html"`: self-contained pages with the diagrams inline, light and dark. `"markdown"`: `.md` pages, with the diagrams as `.svg` files next to them (or Mermaid blocks, see `[doc.diagrams]`). |
+| `title` | string | unset | The title of the index page. Unset: the name of the project directory. |
+| `comments` | string | `"auto"` | Which comments document a declaration: `"marked"` (only comments starting with `--` and `comment_marker`, as in TerosHDL and Doxygen), `"all"` (every comment), `"auto"` (marked comments in files that have any, all comments in the others) or `"none"`. |
+| `comment_marker` | string | `"!"` | What follows `--` in a marked comment: `"!"` for `--!`. |
+| `exclude` | array of strings | `[]` | Gitignore-style globs, relative to the project root, of files whose units are left out of the documentation (their entities still count when resolving instances). |
+| `testbenches` | boolean | `true` | Document entities without ports. |
+| `signals` | boolean | `true` | List the signals of architectures and packages. |
+| `constants` | boolean | `true` | List constants. |
+| `types` | boolean | `true` | List types and subtypes. |
+| `subprograms` | boolean | `true` | List functions and procedures. |
+| `processes` | boolean | `true` | List processes, with their sensitivity list, clock and the signals they drive. |
+| `instances` | boolean | `true` | List the instances of each architecture. |
+| `fsm` | boolean | `true` | Detect state machines and list their states and transitions. |
+
+A comment documents the declaration, port, generic, process or instance directly below it
+(no blank line between), or the one it ends the line of. Comment lines are joined, and a
+blank comment line starts a new paragraph. Separator lines (`-----`) and `vfl-ignore` and
+`vfl:` directives are skipped.
+
+```vhdl
+--! A FIFO with a configurable depth.
+--!
+--! Writes to a full FIFO are dropped.
+entity fifo is
+  generic (
+    DEPTH : positive := 16  --! Number of words
+  );
+  port (
+    clk : in std_logic;     --! Rising edge clock
+    --! Synchronous, active high
+    rst : in std_logic;
+```
+
+A state machine is a `case` on a signal or variable of an enumeration type (or on an element
+of a record, such as `engine.state`) whose alternatives assign literals of that type to it, or
+to a next-state object of the same type. A transition's condition is made of the `if`
+conditions around the assignment. The initial state is the literal the reset branch assigns,
+else the declaration's default.
+
+### `[doc.diagrams]`
+
+`vfl schema symbol|hierarchy|fsm [entity]` draws one of these diagrams alone, as SVG (the
+default), or for `hierarchy` and `fsm` as Mermaid (`-f mermaid`) or Graphviz DOT (`-f dot`).
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `symbol` | boolean | `true` | Draw each entity (and each component of a package) as a block: inputs on the left, outputs and bidirectional ports on the right. |
+| `hierarchy` | boolean | `true` | Draw the instantiation tree on the index and the instances of each architecture. A subtree already drawn higher up is not drawn again. |
+| `fsm` | boolean | `true` | Draw a state diagram per state machine. Past ten labelled transitions, the conditions are left to the transition table. |
+| `port_types` | boolean | `true` | Write the port types next to the pins of a symbol. |
+| `generics` | boolean | `true` | Write the generics in a symbol. |
+| `markdown` | string | `"svg"` | How Markdown pages draw the hierarchy and state diagrams: `"svg"` files, or `"mermaid"` blocks, which GitHub and GitLab render. Symbols are always SVG. |
+
 ## In-source comments
 
 These are not config keys, but they adjust settings for part of a file.
@@ -341,6 +408,30 @@ block_boundary = "blank-line"
 preset = "recommended"
 
 [lint.rules]
+
+[doc]
+out_dir = "doc"
+format = "html"
+# title = "..."   # unset: the project directory's name
+comments = "auto"
+comment_marker = "!"
+exclude = []
+testbenches = true
+signals = true
+constants = true
+types = true
+subprograms = true
+processes = true
+instances = true
+fsm = true
+
+[doc.diagrams]
+symbol = true
+hierarchy = true
+fsm = true
+port_types = true
+generics = true
+markdown = "svg"
 ```
 
 Editor settings (the path to `vfl`, tracing) belong to the editor integration, not to

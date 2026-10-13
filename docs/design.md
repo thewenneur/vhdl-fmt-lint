@@ -410,3 +410,7 @@ and far fewer false errors, with zero configuration.
    hints (a signal sampled by two clocks without synchronization) (done).
 9. More import formats for library lists: VUnit `run.py`, FuseSoC `.core`, Vivado and
    Quartus project files, alongside today's `vhdl_ls.toml` (done).
+10. Documentation and diagrams: `vfl doc` writes HTML or Markdown pages from the project and
+    its doc comments, with entity symbols, the instantiation tree and state diagrams as SVG;
+    `vfl schema` draws one diagram as SVG, Mermaid or DOT. It reads the syntax trees only
+    and is not part of the language server (done).

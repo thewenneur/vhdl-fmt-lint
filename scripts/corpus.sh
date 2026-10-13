@@ -115,4 +115,18 @@ $inc --files 8 --std 93 "${vests[@]}" || status=1
 # Nothing may panic on the whole GHDL test suite.
 $target/release/examples/sema_corpus "$cache/ghdl/testsuite" >/dev/null || status=1
 
+# Documentation, in both formats, of every project and of the GHDL test
+# suite, broken files included: nothing may fail or panic.
+doc_out=$(mktemp -d)
+for project in OSVVM UVVM vunit neorv32 ghdl/testsuite; do
+  for format in html markdown; do
+    "$vfl" doc "$cache/$project" --format "$format" -o "$doc_out/$format" >/dev/null 2>&1 || {
+      echo "$project: vfl doc --format $format failed" >&2
+      status=1
+    }
+    rm -rf "${doc_out:?}/$format"
+  done
+done
+rm -rf "$doc_out"
+
 exit $status

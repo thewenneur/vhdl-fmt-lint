@@ -1,5 +1,6 @@
 //! The `vfl` command-line tool.
 
+mod doc;
 mod lint;
 
 use std::collections::HashMap;
@@ -78,8 +79,55 @@ enum Command {
         #[command(subcommand)]
         command: ConfigCommand,
     },
+    /// Generate documentation of the design, with diagrams.
+    ///
+    /// Writes an index, a page per entity (generics, ports, symbol,
+    /// architectures, instances, processes, state machines) and a page per
+    /// package, as HTML or Markdown. Doc comments are the comments
+    /// directly above a declaration or at the end of its line (`--!` ones
+    /// if the file has any). Settings are under `[doc]` in vfl.toml.
+    Doc {
+        /// A directory or file of the project (default: the current directory).
+        #[arg(default_value = ".")]
+        path: PathBuf,
+        /// Output directory (default: `doc.out_dir`, relative to the project root).
+        #[arg(long, short)]
+        out: Option<PathBuf>,
+        /// Output format (default: `doc.format`).
+        #[arg(long, value_enum)]
+        format: Option<DocFormatArg>,
+        /// Title of the index page (default: `doc.title`, else the project directory's name).
+        #[arg(long)]
+        title: Option<String>,
+    },
+    /// Draw one diagram: an entity's symbol, the design hierarchy or a state machine.
+    Schema {
+        #[arg(value_enum)]
+        kind: doc::SchemaKind,
+        /// The entity, as `name` or `library.name`. For `hierarchy`, the top
+        /// (default: every entity no other one instantiates).
+        entity: Option<String>,
+        /// For `fsm`, the state signal (default: the entity's only state machine).
+        #[arg(long)]
+        signal: Option<String>,
+        /// Output format. `symbol` is SVG only.
+        #[arg(long, short, value_enum, default_value = "svg")]
+        format: doc::SchemaFormat,
+        /// Write to this file instead of standard output.
+        #[arg(long, short)]
+        output: Option<PathBuf>,
+        /// A directory or file of the project.
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+    },
     /// Run the language server over stdio.
     Lsp,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum DocFormatArg {
+    Html,
+    Markdown,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -152,6 +200,37 @@ fn run(cli: Cli) -> Result<bool> {
             Ok(true)
         }
         Command::Lsp => vfl_lsp::run_stdio().map(|()| true),
+        Command::Doc {
+            path,
+            out,
+            format,
+            title,
+        } => doc::doc(
+            &path,
+            out.as_deref(),
+            format.map(|f| match f {
+                DocFormatArg::Html => vfl_config::DocFormat::Html,
+                DocFormatArg::Markdown => vfl_config::DocFormat::Markdown,
+            }),
+            title,
+        )
+        .map(|()| true),
+        Command::Schema {
+            kind,
+            entity,
+            signal,
+            format,
+            output,
+            project,
+        } => doc::schema(&doc::SchemaOptions {
+            kind,
+            entity,
+            signal,
+            format,
+            output,
+            project,
+        })
+        .map(|()| true),
         Command::Check { paths, tree } => check(&paths, tree).map(|()| true),
         Command::Project { path, vhdl_ls } => show_project(&path, vhdl_ls).map(|()| true),
         Command::Config {

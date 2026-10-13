@@ -5,6 +5,9 @@ A fast, fully configurable VHDL formatter, linter and language server, in pure R
 - **Formatter**: every rule configurable, including column alignment of ports, generics,
   assignments, associations, declarations and comments. Idempotent and token-preserving.
 - **Linter**: syntactic and cross-file semantic rules, with autofixes.
+- **Documentation**: `vfl doc` generates HTML or Markdown documentation of the design from
+  its doc comments, with entity symbols, the instantiation tree and state machine diagrams;
+  `vfl schema` draws one diagram as SVG, Mermaid or DOT.
 - **Language server**: diagnostics, formatting, navigation and refactoring in any LSP editor.
 - **Zero config**: the project root, sources and libraries are discovered from the code.
   No library list to maintain.
@@ -100,6 +103,8 @@ vfl fmt [--check] ...  # format in place, or list the files that would change
 vfl fmt -              # format standard input to standard output
 vfl lint [--fix] ...   # lint, resolving names across the whole project
 vfl rules              # list lint rules and their levels
+vfl doc [-o dir]       # write HTML (or --format markdown) documentation with diagrams
+vfl schema symbol top  # draw a diagram: symbol, hierarchy or fsm, as SVG, Mermaid or DOT
 vfl lsp                # language server over stdio
 ```
 
