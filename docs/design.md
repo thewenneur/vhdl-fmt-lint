@@ -1,8 +1,8 @@
 # vhdl-fmt-lint: design
 
 Status: draft, 2026-10-13. Implemented so far: config schema and layering (`vfl-config`), root
-discovery and source collection (`vfl-project`), the lossless parser (`vfl-syntax`), and the `vfl`
-CLI shell with `vfl check` (syntax errors).
+discovery and source collection (`vfl-project`), the lossless parser (`vfl-syntax`), the
+formatter (`vfl-fmt`), and the `vfl` CLI with `vfl check` (syntax errors) and `vfl fmt`.
 
 ## Goals
 
@@ -96,24 +96,55 @@ Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
 
 ### Formatter
 
-1. **Token pass**: keyword/identifier casing, spacing around operators and punctuation,
-   comment normalization, blank-line policy.
-2. **Layout pass**: CST to a Wadler/Prettier-style document IR (groups, indents, soft
-   line breaks), printed against `max_width`.
-3. **Alignment pass**: after layout, consecutive lines with the same shape form an
-   *alignment block* and are tabulated into columns. Targets: `:` and modes in port and
-   generic lists, `:=` / `<=` / `=>`, `is` in declarations, `when` choices, trailing
-   comments, and more. Each target can be turned on or off, and its block boundary is
-   configurable (stop at blank lines, at comments, or never).
+`vfl-fmt`, run with `vfl fmt`. Only files that parse without errors are formatted.
 
-Guarantees, enforced in tests and at runtime:
+1. **Tokens**: the tree is flattened into tokens and comments (PSL directives stay verbatim).
+   Keyword and identifier case are applied, and the optional words after `end` (`end entity
+   e`) are added or dropped. Spacing comes from the pair of neighbouring tokens: spaces
+   around binary operators, `:`, `=>`, `<=` and `:=`; none inside parentheses, before `,` and
+   `;`, after a sign, around `.` and `'`; `f(x)` and `v(7 downto 0)` stay glued, `process
+   (clk)` does not (configurable).
+2. **Line breaks**: the source's line breaks are kept (runs of blank lines capped), and every
+   statement, declaration, clause, `begin`, `end`, `else` and `elsif` starts a line. The
+   formatter adds line breaks but never removes one, which makes idempotency structural and
+   keeps diffs small. Lists are laid out one element per line, with `(` ending the opening line
+   and `)` on its own line: port and generic clauses always by default, port and generic maps
+   when already split or too long, and any other list of two or more elements (parameter
+   lists, calls, aggregates) when its line is wider than `max_width`, outermost list first. A
+   single index or argument is never split; an expression with no list to split stays long.
+3. **Indentation** follows the constructs. A line continuing a statement gets
+   `continuation_indent`; a line inside parentheses gets one `indent` more than the line that
+   opened them; continuation lines of conditional and selected assignments start under the
+   first value. A comment line is indented like the code after it, unless it was indented
+   deeper than a following `end`, `else`, `when` or `)`, in which case it stays with the
+   block above.
+4. **Alignment**: each line can carry anchors, tokens that line up with the same token on
+   neighbouring lines of the same construct. Consecutive lines with the same anchor form a
+   block, and each anchor of a block is padded to the block's rightmost column, leftmost
+   anchors first. Targets, each switchable: `:`, the subtype after the mode, and `:=` in port
+   and generic lists; `:`, `:=` and `is` in declarations; `<=` and `:=` of consecutive
+   assignments; `=>` in maps and aggregates; `=>` of one-line case alternatives and the
+   assignments after them; `when` in conditional and selected assignments; trailing
+   comments. Blocks end at blank lines, at comment lines too, or at neither
+   (`block_boundary`).
 
-- **Idempotent**: `fmt(fmt(x)) == fmt(x)`, checked on every corpus file and by fuzzing.
-- **Semantics-preserving**: the non-trivia token stream before and after formatting
-  must match (ignoring case where the config changes it). If it doesn't, the file is left
-  untouched and a bug is reported, never a broken file written.
-- **Range formatting** for the LSP (format selection, format on type).
-- Escape hatches: `-- vfl: off` / `-- vfl: on` regions and `-- vfl: skip` for the next statement.
+The plan was a Wadler/Prettier document IR printed against `max_width`. Keeping the author's
+line breaks and only adding breaks turned out simpler and closer to how VHDL is written by hand
+(aligned blocks, hand-split conditions); long lines are handled by splitting lists. Re-wrapping
+long expressions is left for later.
+
+Guarantees, enforced in tests, in the corpus job and at runtime:
+
+- **Idempotent**: `fmt(fmt(x)) == fmt(x)`, checked on every test file and on every corpus file
+  with two very different configs.
+- **Semantics-preserving**: after formatting, the output is parsed again; it must have no
+  errors, the same non-trivia tokens (ignoring case where VHDL does, and the optional words
+  after `end`) and the same comments. Otherwise `vfl fmt` reports a bug and leaves the file
+  untouched.
+- Escape hatches: `-- vfl: off` / `-- vfl: on` regions and `-- vfl: skip` for the next
+  statement or declaration are kept exactly as written.
+- Line endings (LF or CRLF), a UTF-8 byte-order mark and Latin-1 encoding are preserved.
+- Not yet: range formatting (format selection, format on type), which comes with the LSP.
 
 ### Linter
 
@@ -141,19 +172,34 @@ osvvm = ["third_party/osvvm/**/*.vhd"]
 [format]
 max_width       = 100
 indent          = 2
+# continuation_indent = 2   # defaults to `indent`
+use_tabs        = false
 keyword_case    = "lower"    # "lower" | "upper" | "preserve"
 identifier_case = "preserve"
-end_label       = "add"      # "add" | "remove" | "preserve"
+end_label       = "preserve" # "add" | "remove" | "preserve": `end entity e;`
+end_keyword     = "preserve" # "add" | "remove" | "preserve": `end entity;`
+space_before_label_colon = true   # `lbl : process`
+space_after_keyword      = true   # `process (clk)`, `port map (`
+max_blank_lines  = 2
+interface_list   = "expand"   # port/generic clauses: "expand" | "auto" | "preserve"
+association_list = "auto"     # port/generic maps: "expand" | "auto" | "preserve"
+close_paren      = "own-line" # "own-line" | "attached"
+case_alternative = "preserve" # keep `when x => stmt;` on one line, or "break"
+line_ending      = "auto"     # "auto" | "lf" | "crlf"
 
 [format.align]
-port_colon      = true
-port_mode       = true
-generic_colon   = true
-assignment      = true       # aligns <= and := in consecutive statements
-association     = true       # aligns => in port/generic maps and aggregates
-declaration     = true       # aligns names, ":" and types in declarative parts
+port_colon       = true
+port_mode        = true       # the subtype after `in`/`out`/...
+generic_colon    = true
+interface_default = true      # `:=` in port and generic lists
+assignment       = true       # aligns <= and := in consecutive statements
+association      = true       # aligns => in port/generic maps and aggregates
+declaration      = true       # aligns ":", ":=" and "is" in declarative parts
+case_choice      = true       # => of one-line case alternatives
+when_clause      = true       # `when` in conditional and selected assignments
+conditional_continuation = true  # continuation lines start under the first value
 trailing_comment = true
-block_boundary  = "blank-line"   # "blank-line" | "comment" | "never"
+block_boundary   = "blank-line"   # "blank-line" | "comment" | "never"
 
 [lint]
 preset = "recommended"       # "none" | "recommended" | "strict"
@@ -234,5 +280,5 @@ corpus (OSVVM, UVVM, VUnit, neorv32, the GHDL test suite, and others):
 
 1. Design and workspace (this document).
 2. Parser: lexer, CST, VHDL-2008 grammar, then 93 and 2019 gating; corpus round-trip tests.
-3. Formatter with full alignment; idempotency and token-preservation checks.
+3. Formatter with full alignment; idempotency and token-preservation checks (done).
 4. Project inference, semantic model, linter, CLI and LSP; benchmarks against rust_hdl.

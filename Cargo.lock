@@ -568,8 +568,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "tempfile",
  "toml",
  "vfl-config",
+ "vfl-fmt",
  "vfl-project",
  "vfl-syntax",
 ]
@@ -589,6 +591,10 @@ dependencies = [
 name = "vfl-fmt"
 version = "0.1.0"
 dependencies = [
+ "insta",
+ "rowan",
+ "thiserror",
+ "toml",
  "vfl-config",
  "vfl-syntax",
 ]
