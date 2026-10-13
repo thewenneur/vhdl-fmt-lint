@@ -24,7 +24,7 @@ all = { level = "warn", priority = -1 }
 [dependencies]
 vfl-config.workspace = true
 vfl-fmt.workspace = true
-vfl-lint.workspace = true
+vfl-lsp.workspace = true
 vfl-project.workspace = true
 
 [dev-dependencies]

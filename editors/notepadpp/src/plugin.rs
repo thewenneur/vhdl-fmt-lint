@@ -14,7 +14,10 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::ptr;
 
-use crate::engine::{BufferText, Engine, Severity, is_project_file, is_vhdl_path, minimal_edit};
+use crate::engine::{
+    BufferText, Engine, Severity, completes_after_dot, completion_labels, is_project_file,
+    is_vhdl_path, minimal_edit, plain_text, signature_tip,
+};
 use crate::win::*;
 
 /// Menu entries, in order. `None` is a separator.
@@ -25,16 +28,22 @@ const MENU: &[(&str, Option<extern "C" fn()>)] = &[
     ("Previous problem", Some(cmd_previous)),
     ("Clear problems", Some(cmd_clear)),
     ("", None),
+    ("Show type", Some(cmd_show_type)),
+    ("Show parameters", Some(cmd_show_parameters)),
+    ("Complete word", Some(cmd_complete)),
+    ("", None),
     ("Format on save", Some(cmd_toggle_format_on_save)),
     ("Lint automatically", Some(cmd_toggle_auto_lint)),
     ("Show messages under lines", Some(cmd_toggle_inline)),
+    ("Code assistance", Some(cmd_toggle_assist)),
     ("", None),
     ("Reload project", Some(cmd_reload)),
     ("About", Some(cmd_about)),
 ];
-const FORMAT_ON_SAVE: usize = 6;
-const AUTO_LINT: usize = 7;
-const INLINE: usize = 8;
+const FORMAT_ON_SAVE: usize = 10;
+const AUTO_LINT: usize = 11;
+const INLINE: usize = 12;
+const ASSIST: usize = 13;
 
 /// How long typing must pause before the buffer is linted again.
 const LINT_DELAY_MS: u32 = 400;
@@ -64,6 +73,8 @@ struct Settings {
     format_on_save: bool,
     auto_lint: bool,
     inline_messages: bool,
+    /// Types on hover, parameter hints and completion as you type.
+    assist: bool,
 }
 
 impl Default for Settings {
@@ -72,8 +83,20 @@ impl Default for Settings {
             format_on_save: false,
             auto_lint: true,
             inline_messages: true,
+            assist: true,
         }
     }
+}
+
+/// What the call tip on screen is showing.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tip {
+    None,
+    /// Problems or a type under the mouse, or from a command: closes when
+    /// the mouse moves.
+    Info,
+    /// Parameter hints: follow the caret while it stays in the call.
+    Parameters,
 }
 
 /// A problem placed in a buffer, at Scintilla positions.
@@ -98,7 +121,9 @@ struct State {
     styles: Cell<[Option<isize>; 2]>,
     funcs: Cell<*mut FuncItem>,
     timer: Cell<usize>,
-    calltip: Cell<bool>,
+    tip: Cell<Tip>,
+    /// The caret position the parameter hints were shown for.
+    tip_caret: Cell<usize>,
 }
 
 thread_local! {
@@ -116,7 +141,8 @@ thread_local! {
         styles: Cell::new([None, None]),
         funcs: Cell::new(ptr::null_mut()),
         timer: Cell::new(0),
-        calltip: Cell::new(false),
+        tip: Cell::new(Tip::None),
+        tip_caret: Cell::new(0),
     };
 }
 
@@ -197,6 +223,7 @@ pub unsafe extern "C" fn getFuncsArray(count: *mut i32) -> *mut FuncItem {
                             FORMAT_ON_SAVE => settings.format_on_save,
                             AUTO_LINT => settings.auto_lint,
                             INLINE => settings.inline_messages,
+                            ASSIST => settings.assist,
                             _ => false,
                         },
                         shortcut: ptr::null_mut(),
@@ -285,12 +312,24 @@ fn on_notification(n: &ScNotification) {
                 schedule_lint();
             }
         }
-        SCN_DWELLSTART if n.nmhdr.hwnd_from == current_scintilla().0 => {
-            if let Ok(position) = usize::try_from(n.position) {
-                show_problem_at(n.nmhdr.hwnd_from, position);
+        SCN_CHARADDED if n.nmhdr.hwnd_from == current_scintilla().0 => on_char(n.ch),
+        SCN_UPDATEUI if n.nmhdr.hwnd_from == current_scintilla().0 => {
+            if with(|s| s.tip.get()) == Tip::Parameters {
+                let sci = n.nmhdr.hwnd_from;
+                if send(sci, SCI_CALLTIPACTIVE, 0, 0) == 0 {
+                    with(|s| s.tip.set(Tip::None));
+                } else if caret(sci) != with(|s| s.tip_caret.get()) {
+                    show_parameters(Trigger::Auto);
+                }
             }
         }
-        SCN_DWELLEND if with(|s| s.calltip.replace(false)) => {
+        SCN_DWELLSTART if n.nmhdr.hwnd_from == current_scintilla().0 => {
+            if let Ok(position) = usize::try_from(n.position) {
+                show_info_at(n.nmhdr.hwnd_from, position);
+            }
+        }
+        SCN_DWELLEND if with(|s| s.tip.get()) == Tip::Info => {
+            with(|s| s.tip.set(Tip::None));
             send(n.nmhdr.hwnd_from, SCI_CALLTIPCANCEL, 0, 0);
         }
         _ => {}
@@ -329,6 +368,24 @@ extern "C" fn cmd_clear() {
     });
 }
 
+extern "C" fn cmd_show_type() {
+    guard(|| {
+        let (sci, _) = current_scintilla();
+        let position = caret(sci);
+        if !show_info_at(sci, position) {
+            message_box(npp(), "Nothing to show here.", MB_ICONINFORMATION);
+        }
+    });
+}
+
+extern "C" fn cmd_show_parameters() {
+    guard(|| show_parameters(Trigger::Command));
+}
+
+extern "C" fn cmd_complete() {
+    guard(|| complete(Trigger::Command));
+}
+
 extern "C" fn cmd_toggle_format_on_save() {
     guard(|| toggle(FORMAT_ON_SAVE, |s| &mut s.format_on_save));
 }
@@ -345,6 +402,12 @@ extern "C" fn cmd_toggle_inline() {
     guard(|| {
         toggle(INLINE, |s| &mut s.inline_messages);
         lint_current(Trigger::Refresh);
+    });
+}
+
+extern "C" fn cmd_toggle_assist() {
+    guard(|| {
+        toggle(ASSIST, |s| &mut s.assist);
     });
 }
 
@@ -365,7 +428,7 @@ extern "C" fn cmd_about() {
             npp(),
             &format!(
                 "vfl {} for Notepad++\n\
-                 VHDL formatter and linter.\n\n\
+                 VHDL formatter, linter and code assistance.\n\n\
                  Settings come from vfl.toml, found like the vfl command does.\n\n\
                  https://github.com/thewenneur/vhdl-fmt-lint",
                 env!("CARGO_PKG_VERSION")
@@ -413,6 +476,10 @@ fn current_scintilla() -> (Hwnd, usize) {
     } else {
         (data.scintilla_main, 0)
     }
+}
+
+fn caret(sci: Hwnd) -> usize {
+    send(sci, SCI_GETCURRENTPOS, 0, 0).max(0) as usize
 }
 
 fn current_buffer() -> usize {
@@ -751,7 +818,7 @@ fn step_problem(forward: bool) {
         Some((position, text)) => {
             go_to(sci, position);
             send(sci, SCI_CALLTIPSHOW, position, text.as_ptr() as isize);
-            with(|s| s.calltip.set(true));
+            with(|s| s.tip.set(Tip::Info));
         }
         None => message_box(npp(), "No problems found.", MB_ICONINFORMATION),
     }
@@ -763,26 +830,155 @@ fn go_to(sci: Hwnd, position: usize) {
     send(sci, SCI_GOTOPOS, position, 0);
 }
 
-/// Shows the message of the problem under the mouse.
-fn show_problem_at(sci: Hwnd, position: usize) {
+/// Shows the messages of the problems at `position` and, with code
+/// assistance on, the type of what is named there. Returns whether there
+/// was anything to show.
+fn show_info_at(sci: Hwnd, position: usize) -> bool {
     let id = current_buffer();
-    let text = with(|s| {
+    let mut parts: Vec<Vec<u8>> = with(|s| {
         let problems = s.problems.borrow();
-        let texts: Vec<&[u8]> = problems
-            .get(&id)?
-            .iter()
+        problems
+            .get(&id)
+            .into_iter()
+            .flatten()
             .filter(|p| {
                 p.start <= position
                     && (position < p.end || (p.start == p.end && position == p.start))
             })
-            .map(|p| p.text.as_slice())
-            .collect();
-        (!texts.is_empty()).then(|| c_string(texts.join(&b'\n')))
+            .map(|p| p.text.clone())
+            .collect()
     });
-    if let Some(text) = text {
-        send(sci, SCI_CALLTIPSHOW, position, text.as_ptr() as isize);
-        with(|s| s.calltip.set(true));
+    if with(|s| s.settings.get().assist) && is_vhdl(id) {
+        let path = buffer_path(id);
+        let buffer = read_buffer(sci);
+        let offset = buffer.offset(position);
+        let hover = with(|s| {
+            s.engine
+                .try_borrow_mut()
+                .ok()
+                .and_then(|mut engine| engine.hover(path.as_deref(), &buffer.text, offset))
+        });
+        if let Some(hover) = hover {
+            parts.push(buffer.encode(&plain_text(&hover.markdown)));
+        }
     }
+    if parts.is_empty() {
+        return false;
+    }
+    let text = c_string(parts.join(&b"\n\n"[..]));
+    send(sci, SCI_CALLTIPSHOW, position, text.as_ptr() as isize);
+    with(|s| s.tip.set(Tip::Info));
+    true
+}
+
+// Code assistance.
+
+fn on_char(ch: i32) {
+    if !with(|s| s.settings.get().assist) {
+        return;
+    }
+    let Some(ch) = u32::try_from(ch).ok().and_then(char::from_u32) else {
+        return;
+    };
+    match ch {
+        '.' => complete(Trigger::Auto),
+        '(' | ',' => show_parameters(Trigger::Auto),
+        // Typing in a call moves between parameters (`name =>`) and out
+        // of it (`)`).
+        _ if with(|s| s.tip.get()) == Tip::Parameters => show_parameters(Trigger::Auto),
+        _ => {}
+    }
+}
+
+/// Shows the parameters of the call or port map around the caret, the
+/// one being typed highlighted. Closes the hints when there is none.
+fn show_parameters(trigger: Trigger) {
+    let (sci, _) = current_scintilla();
+    let id = current_buffer();
+    if trigger == Trigger::Auto && !is_vhdl(id) {
+        return;
+    }
+    let path = buffer_path(id);
+    let buffer = read_buffer(sci);
+    let position = caret(sci);
+    let offset = buffer.offset(position);
+    let help = with(|s| {
+        s.engine
+            .try_borrow_mut()
+            .ok()
+            .and_then(|mut engine| engine.signature_help(path.as_deref(), &buffer.text, offset))
+    });
+    let Some(help) = help else {
+        if with(|s| s.tip.get()) == Tip::Parameters {
+            send(sci, SCI_CALLTIPCANCEL, 0, 0);
+            with(|s| s.tip.set(Tip::None));
+        }
+        if trigger == Trigger::Command {
+            message_box(npp(), "The caret is not in a call.", MB_ICONINFORMATION);
+        }
+        return;
+    };
+    let (tip, highlight) = signature_tip(&help);
+    let text = c_string(buffer.encode(&tip));
+    send(sci, SCI_CALLTIPSHOW, position, text.as_ptr() as isize);
+    let (start, end) = match highlight {
+        Some(range) => (
+            buffer.encoded_len(&tip[..range.start]),
+            buffer.encoded_len(&tip[..range.end]),
+        ),
+        None => (0, 0),
+    };
+    send(sci, SCI_CALLTIPSETHLT, start, end as isize);
+    with(|s| {
+        s.tip.set(Tip::Parameters);
+        s.tip_caret.set(position);
+    });
+}
+
+/// Lists what can be typed at the caret: after `name.`, what `name`
+/// contains; elsewhere, what is visible and keywords.
+fn complete(trigger: Trigger) {
+    let (sci, _) = current_scintilla();
+    let id = current_buffer();
+    if trigger == Trigger::Auto && !is_vhdl(id) {
+        return;
+    }
+    let path = buffer_path(id);
+    let buffer = read_buffer(sci);
+    let position = caret(sci);
+    let offset = buffer.offset(position);
+    if trigger == Trigger::Auto && !completes_after_dot(&buffer.text, offset) {
+        return;
+    }
+    let completions = with(|s| {
+        s.engine
+            .try_borrow_mut()
+            .ok()
+            .and_then(|mut engine| engine.completion(path.as_deref(), &buffer.text, offset))
+    });
+    let Some(completions) = completions else {
+        return;
+    };
+    let labels = completion_labels(&completions);
+    if labels.is_empty() {
+        return;
+    }
+    let entered = position.saturating_sub(buffer.position(completions.start));
+    let list = c_string(buffer.encode(&labels.join("\n")));
+    // Notepad++ uses its own separators for its lists: put them back.
+    let separator = send(sci, SCI_AUTOCGETSEPARATOR, 0, 0);
+    let type_separator = send(sci, SCI_AUTOCGETTYPESEPARATOR, 0, 0);
+    send(sci, SCI_AUTOCSETSEPARATOR, b'\n' as usize, 0);
+    send(sci, SCI_AUTOCSETTYPESEPARATOR, 0x1E, 0);
+    send(sci, SCI_AUTOCSETIGNORECASE, 1, 0);
+    send(sci, SCI_AUTOCSHOW, entered, list.as_ptr() as isize);
+    send(sci, SCI_AUTOCSETSEPARATOR, separator.max(0) as usize, 0);
+    send(
+        sci,
+        SCI_AUTOCSETTYPESEPARATOR,
+        type_separator.max(0) as usize,
+        0,
+    );
 }
 
 // Settings, kept in `plugins\Config\vfl_npp.ini`.
@@ -814,6 +1010,7 @@ fn load_settings() {
                 "format_on_save" => settings.format_on_save = value,
                 "lint_automatically" => settings.auto_lint = value,
                 "messages_under_lines" => settings.inline_messages = value,
+                "code_assistance" => settings.assist = value,
                 _ => {}
             }
         }
@@ -827,8 +1024,8 @@ fn save_settings() {
     };
     let s = with(|s| s.settings.get());
     let text = format!(
-        "format_on_save={}\nlint_automatically={}\nmessages_under_lines={}\n",
-        s.format_on_save as u8, s.auto_lint as u8, s.inline_messages as u8
+        "format_on_save={}\nlint_automatically={}\nmessages_under_lines={}\ncode_assistance={}\n",
+        s.format_on_save as u8, s.auto_lint as u8, s.inline_messages as u8, s.assist as u8
     );
     // A settings file that cannot be written only loses the settings.
     let _ = std::fs::write(path, text);

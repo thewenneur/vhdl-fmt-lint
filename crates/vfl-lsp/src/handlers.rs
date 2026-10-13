@@ -153,6 +153,10 @@ struct Hit {
 fn hit(world: &World, position: &TextDocumentPositionParams) -> Option<(FileId, Hit)> {
     let file = file_of(world, &position.text_document.uri)?;
     let offset = world.doc(file).offset(position.position);
+    Some((file, hit_at(world, file, offset)?))
+}
+
+fn hit_at(world: &World, file: FileId, offset: TextSize) -> Option<Hit> {
     let contains = |r: TextRange| r.start() <= offset && offset <= r.end();
     for (f, reference) in world.analysis.references() {
         if f == file && contains(reference.range) {
@@ -164,26 +168,20 @@ fn hit(world: &World, position: &TextDocumentPositionParams) -> Option<(FileId, 
                     Target::Library(name) => library = Some(name.clone()),
                 }
             }
-            return Some((
-                file,
-                Hit {
-                    range: reference.range,
-                    targets,
-                    library,
-                },
-            ));
+            return Some(Hit {
+                range: reference.range,
+                targets,
+                library,
+            });
         }
     }
     for (id, decl) in world.analysis.decls() {
         if decl.file == file && contains(decl.range) && !decl.spelling.is_empty() {
-            return Some((
-                file,
-                Hit {
-                    range: decl.range,
-                    targets: vec![id],
-                    library: None,
-                },
-            ));
+            return Some(Hit {
+                range: decl.range,
+                targets: vec![id],
+                library: None,
+            });
         }
     }
     None
@@ -332,21 +330,28 @@ fn declaration_text(world: &World, decl: &Decl) -> String {
 
 fn hover(world: &mut World, params: HoverParams) -> Option<Hover> {
     let position = &params.text_document_position_params;
-    let Some((file, hit)) = hit(world, position) else {
-        // A record element, which has no declaration of its own.
-        let file = file_of(world, &position.text_document.uri)?;
-        let doc = world.doc(file);
-        let (range, text) =
-            crate::types::element_hover(world, file, doc.offset(position.position))?;
-        return Some(Hover {
-            contents: HoverContents::Markup(MarkupContent {
-                kind: MarkupKind::Markdown,
-                value: text,
-            }),
-            range: Some(doc.range(range)),
-        });
-    };
+    let file = file_of(world, &position.text_document.uri)?;
     let doc = world.doc(file);
+    let (range, value) = hover_at(world, file, doc.offset(position.position))?;
+    Some(Hover {
+        contents: HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value,
+        }),
+        range: Some(doc.range(range)),
+    })
+}
+
+/// The hover text at `offset`, in Markdown, and the range it is about.
+pub(crate) fn hover_at(
+    world: &World,
+    file: FileId,
+    offset: TextSize,
+) -> Option<(TextRange, String)> {
+    let Some(hit) = hit_at(world, file, offset) else {
+        // A record element, which has no declaration of its own.
+        return crate::types::element_hover(world, file, offset);
+    };
     let mut sections = Vec::new();
     for id in &hit.targets {
         let Some(decl) = world.analysis.decl(*id) else {
@@ -380,13 +385,7 @@ fn hover(world: &mut World, params: HoverParams) -> Option<Hover> {
     if sections.is_empty() {
         return None;
     }
-    Some(Hover {
-        contents: HoverContents::Markup(MarkupContent {
-            kind: MarkupKind::Markdown,
-            value: sections.join("\n\n---\n\n"),
-        }),
-        range: Some(doc.range(hit.range)),
-    })
+    Some((hit.range, sections.join("\n\n---\n\n")))
 }
 
 fn symbol_kind(kind: DeclKind) -> Option<SymbolKind> {
@@ -897,8 +896,16 @@ pub(crate) fn visible_decls(
 fn completion(world: &mut World, params: CompletionParams) -> Option<CompletionResponse> {
     let position = &params.text_document_position;
     let file = file_of(world, &position.text_document.uri)?;
+    let offset = world.doc(file).offset(position.position);
+    Some(CompletionResponse::Array(completion_at(
+        world, file, offset,
+    )))
+}
+
+/// The completions at `offset`.
+pub(crate) fn completion_at(world: &World, file: FileId, offset: TextSize) -> Vec<CompletionItem> {
     let doc = world.doc(file);
-    let offset = doc.offset(position.position);
+    let offset = offset.min(TextSize::of(doc.text));
     let before = &doc.text[..usize::from(offset)];
     let word_start = before
         .rfind(|c: char| !(c.is_alphanumeric() || c == '_'))
@@ -950,14 +957,14 @@ fn completion(world: &mut World, params: CompletionParams) -> Option<CompletionR
             }
         }
         if found {
-            return Some(CompletionResponse::Array(items.items));
+            return items.items;
         }
         // Elements of a record, methods of a protected type.
         if let Some(members) = crate::types::members_after_dot(world, file, dot) {
             for (label, kind, detail) in members {
                 items.push(&label, kind, &detail);
             }
-            return Some(CompletionResponse::Array(items.items));
+            return items.items;
         }
     }
 
@@ -983,7 +990,7 @@ fn completion(world: &mut World, params: CompletionParams) -> Option<CompletionR
     for keyword in KEYWORDS {
         items.push(keyword, CompletionItemKind::KEYWORD, "");
     }
-    Some(CompletionResponse::Array(items.items))
+    items.items
 }
 
 fn code_actions(world: &mut World, params: CodeActionParams) -> Option<Vec<CodeActionOrCommand>> {

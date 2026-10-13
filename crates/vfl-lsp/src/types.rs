@@ -624,6 +624,11 @@ pub fn signature_help(world: &World, params: SignatureHelpParams) -> Option<Sign
     let position = &params.text_document_position_params;
     let file = world.file_id(&position.text_document.uri.to_file_path().ok()?)?;
     let offset = world.doc(file).offset(position.position);
+    signature_help_at(world, file, offset)
+}
+
+/// The signatures of the call or instantiation around `offset`.
+pub fn signature_help_at(world: &World, file: FileId, offset: TextSize) -> Option<SignatureHelp> {
     let call = enclosing_call(world, file, offset)?;
     let analysis = &world.analysis;
     let (targets, ports) = match call.before.kind() {
