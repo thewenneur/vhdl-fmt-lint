@@ -163,6 +163,7 @@ fn load(root: &ProjectRoot) -> Project {
         libraries: Vec::new(),
         unreadable: Vec::new(),
         notes: Vec::new(),
+        tool_files: Vec::new(),
     })
 }
 

@@ -324,9 +324,21 @@ own directory. In the LSP, workspace folders are also roots.
 `.gitignore` and `exclude` (via the `ignore` crate, the same walker as ripgrep).
 
 **3. Import existing tool metadata when present.** If the tree already declares libraries,
-use them. Implemented: rust_hdl `vhdl_ls.toml` (with `$VAR` expansion). Planned: FuseSoC
-`.core`, HDLmake `Manifest.py` patterns, VUnit `run.py` (`add_library` calls, best effort),
-Vivado `.xpr` and Quartus `.qsf`. This makes migration a no-op.
+use them. Implemented, all read without running the tool:
+
+- rust_hdl `vhdl_ls.toml` in the root (with `$VAR` expansion).
+- VUnit `run.py`, best effort: `add_library`/`library` and `add_source_files` calls,
+  with string variables, `Path(__file__).parent` joins and f-strings. Libraries VUnit
+  bundles (`vunit_lib`, `osvvm`) are left to the bundled copies.
+- FuseSoC `.core`: `filesets` entries of a `vhdlSource*` type, in `logical_name` or `work`.
+- Vivado `.xpr` (`Library` attribute, default `xil_defaultlib`) and Tcl `read_vhdl
+  -library` scripts.
+- Quartus `.qsf`/`.qip`: `set_global_assignment -name VHDL_FILE ... -library`.
+
+These files are found by the same walk as sources (so `.gitignore` applies). Their globs
+use the tools' semantics: `*` stays within a directory. `vfl.toml` wins over
+`vhdl_ls.toml`, which wins over tool files; a file a tool lists in no library is still
+inferred. HDLmake `Manifest.py` is not read yet. This makes migration a no-op.
 
 **4. Infer libraries from the code.** For everything else, every file is parsed (fast,
 parallel) and indexed by the primary units it declares and the references it makes
@@ -388,4 +400,4 @@ and far fewer false errors, with zero configuration.
    (combinational processes that do not assign a signal on every path), clock domain
    hints (a signal sampled by two clocks without synchronization) (done).
 9. More import formats for library lists: VUnit `run.py`, FuseSoC `.core`, Vivado and
-   Quartus project files, alongside today's `vhdl_ls.toml`.
+   Quartus project files, alongside today's `vhdl_ls.toml` (done).

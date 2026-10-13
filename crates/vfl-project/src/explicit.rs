@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use globset::{Glob, GlobSet, GlobSetBuilder};
+use globset::{GlobSet, GlobSetBuilder};
 
 use crate::infer::Reason;
 
@@ -26,11 +26,36 @@ impl LibraryGlobs {
         root: &Path,
         libraries: &BTreeMap<String, Vec<String>>,
     ) -> Result<Self, globset::Error> {
+        Self::build(source, base, root, libraries, false)
+    }
+
+    /// The same, with `*` not matching `/` (only `**` crosses directories),
+    /// as in the tools whose files are imported.
+    pub fn new_strict(
+        source: String,
+        base: &Path,
+        root: &Path,
+        libraries: &BTreeMap<String, Vec<String>>,
+    ) -> Result<Self, globset::Error> {
+        Self::build(source, base, root, libraries, true)
+    }
+
+    fn build(
+        source: String,
+        base: &Path,
+        root: &Path,
+        libraries: &BTreeMap<String, Vec<String>>,
+        literal_separator: bool,
+    ) -> Result<Self, globset::Error> {
         let mut out = Vec::new();
         for (library, patterns) in libraries {
             let mut set = GlobSetBuilder::new();
             for pattern in patterns {
-                set.add(Glob::new(&relative_pattern(base, root, pattern))?);
+                set.add(
+                    globset::GlobBuilder::new(&relative_pattern(base, root, pattern))
+                        .literal_separator(literal_separator)
+                        .build()?,
+                );
             }
             out.push((vfl_syntax::identifier_key(library), set.build()?));
         }
@@ -74,10 +99,26 @@ fn relative_pattern(base: &Path, root: &Path, pattern: &str) -> String {
         .map(path_to_slash)
         .unwrap_or_default();
     if prefix.is_empty() {
-        pattern.to_owned()
+        normalize(pattern)
     } else {
-        format!("{prefix}/{pattern}")
+        normalize(&format!("{prefix}/{pattern}"))
     }
+}
+
+/// Resolves `.` and `..` segments: `a/b/../c` is `a/c`. Leading `..` (out
+/// of the root) are kept.
+fn normalize(pattern: &str) -> String {
+    let mut segments: Vec<&str> = Vec::new();
+    for segment in pattern.split('/') {
+        match segment {
+            "." | "" => {}
+            ".." if segments.last().is_some_and(|s| *s != ".." && *s != "**") => {
+                segments.pop();
+            }
+            _ => segments.push(segment),
+        }
+    }
+    segments.join("/")
 }
 
 pub(crate) fn path_to_slash(path: &Path) -> String {
@@ -157,6 +198,10 @@ mod tests {
             "sub/rtl/*.vhd"
         );
         assert_eq!(relative_pattern(root, root, "rtl/**"), "rtl/**");
+        assert_eq!(
+            relative_pattern(Path::new("/p/a/b"), root, "../../c/*.vhd"),
+            "c/*.vhd"
+        );
     }
 
     #[test]

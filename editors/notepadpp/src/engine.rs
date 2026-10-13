@@ -237,6 +237,7 @@ fn empty_project(root: ProjectRoot, config: Config) -> Project {
         libraries: Vec::new(),
         unreadable: Vec::new(),
         notes: Vec::new(),
+        tool_files: Vec::new(),
     }
 }
 

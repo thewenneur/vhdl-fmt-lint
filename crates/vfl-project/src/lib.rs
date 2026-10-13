@@ -3,12 +3,14 @@
 //! `docs/design.md`, "Project autodiscovery".
 
 mod explicit;
+mod import;
 mod infer;
 mod load;
 mod summary;
 
 use std::path::{Path, PathBuf};
 
+pub use import::is_tool_file;
 pub use infer::{BUNDLED_LIBRARIES, Inference, Reason, infer_libraries};
 pub use load::{Encoding, LoadError, Project, SourceFile, decode, encode};
 pub use summary::{
@@ -74,12 +76,23 @@ pub fn find_root(path: &Path) -> ProjectRoot {
 /// Lists the VHDL sources under `root`, sorted, honouring `.gitignore` and
 /// the config's `extensions` and `exclude`.
 pub fn collect_sources(root: &Path, config: &ProjectConfig) -> Result<Vec<PathBuf>, ignore::Error> {
+    Ok(collect(root, config)?.0)
+}
+
+/// Lists the VHDL sources under `root` and the files of other tools that
+/// may list libraries (`run.py`, `.core`, `.xpr`, `.tcl`, `.qsf`, `.qip`),
+/// both sorted.
+pub fn collect(
+    root: &Path,
+    config: &ProjectConfig,
+) -> Result<(Vec<PathBuf>, Vec<PathBuf>), ignore::Error> {
     let mut overrides = OverrideBuilder::new(root);
     for pattern in &config.exclude {
         overrides.add(&format!("!{pattern}"))?;
     }
 
     let mut sources = Vec::new();
+    let mut tool_files = Vec::new();
     for entry in WalkBuilder::new(root)
         .overrides(overrides.build()?)
         .require_git(false)
@@ -99,10 +112,13 @@ pub fn collect_sources(root: &Path, config: &ProjectConfig) -> Result<Vec<PathBu
                 });
         if is_source {
             sources.push(path.to_owned());
+        } else if entry.file_type().is_some_and(|t| t.is_file()) && import::is_tool_file(path) {
+            tool_files.push(path.to_owned());
         }
     }
     sources.sort();
-    Ok(sources)
+    tool_files.sort();
+    Ok((sources, tool_files))
 }
 
 #[cfg(test)]
