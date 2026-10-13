@@ -1,7 +1,7 @@
 //! Checks that formatting changed nothing but layout.
 
 use vfl_syntax::SyntaxKind::{self, *};
-use vfl_syntax::SyntaxNode;
+use vfl_syntax::{Standard, SyntaxNode};
 
 use crate::kinds::{is_comment, is_container};
 
@@ -45,6 +45,46 @@ pub(crate) fn fingerprint(root: &SyntaxNode) -> Fingerprint {
             token.text().to_owned()
         };
         tokens.push((kind, text));
+    }
+    Fingerprint { tokens, comments }
+}
+
+/// The fingerprint of a run of whole lines, from its tokens alone: cheaper
+/// than parsing the file again. Every `end` is taken to start an end
+/// clause whose optional words may change.
+pub(crate) fn lexical(text: &str, std: Standard) -> Fingerprint {
+    let mut tokens = Vec::new();
+    let mut comments = Vec::new();
+    let mut in_end_tail = false;
+    let mut pos = 0usize;
+    for token in vfl_syntax::lex(text, std).0 {
+        let len = usize::from(token.len);
+        let text = &text[pos..pos + len];
+        pos += len;
+        let kind = token.kind;
+        if kind == WHITESPACE {
+            continue;
+        }
+        if is_comment(kind) {
+            comments.push(if text.contains('\n') {
+                text.to_owned()
+            } else {
+                text.trim_end().to_owned()
+            });
+            continue;
+        }
+        if in_end_tail && kind != SEMI {
+            continue;
+        }
+        in_end_tail = kind == END_KW;
+        tokens.push((
+            kind,
+            if kind.is_keyword() || kind == IDENT {
+                text.to_ascii_lowercase()
+            } else {
+                text.to_owned()
+            },
+        ));
     }
     Fingerprint { tokens, comments }
 }

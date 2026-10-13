@@ -1,6 +1,9 @@
-//! Measures how long hover, signature help, completion and code actions take: opens a
-//! project, then sends each request at a spread of positions in a spread
-//! of files, and prints the median and slowest times.
+//! Measures how long hover, signature help, completion, code actions,
+//! highlights and references take: opens a project, then sends each
+//! request at a spread of positions in a spread of files, and prints the
+//! median and slowest times. Range formatting and format on type (a new
+//! line) are timed the same way. Then the semantic tokens of every file, whole
+//! and as a delta after the first.
 //! Usage: request_latency DIR
 
 use std::path::PathBuf;
@@ -27,6 +30,10 @@ fn main() {
         "textDocument/signatureHelp",
         "textDocument/completion",
         "textDocument/codeAction",
+        "textDocument/documentHighlight",
+        "textDocument/references",
+        "textDocument/rangeFormatting",
+        "textDocument/onTypeFormatting",
     ] {
         let mut times: Vec<Duration> = Vec::new();
         let mut answered = 0;
@@ -36,14 +43,30 @@ fn main() {
             for (line, content) in lines.iter().enumerate().step_by(7) {
                 let character = content.encode_utf16().count() as u32 / 2;
                 let position = json!({ "line": line, "character": character });
-                let params = if method == "textDocument/codeAction" {
-                    json!({
+                let options = json!({ "tabSize": 2, "insertSpaces": true });
+                let params = match method {
+                    "textDocument/codeAction" => json!({
                         "textDocument": { "uri": uri },
                         "range": { "start": position, "end": position },
                         "context": { "diagnostics": [] },
-                    })
-                } else {
-                    json!({ "textDocument": { "uri": uri }, "position": position })
+                    }),
+                    "textDocument/references" => json!({
+                        "textDocument": { "uri": uri },
+                        "position": position,
+                        "context": { "includeDeclaration": true },
+                    }),
+                    "textDocument/rangeFormatting" => json!({
+                        "textDocument": { "uri": uri },
+                        "range": { "start": { "line": line, "character": 0 }, "end": position },
+                        "options": options,
+                    }),
+                    "textDocument/onTypeFormatting" => json!({
+                        "textDocument": { "uri": uri },
+                        "position": { "line": line + 1, "character": 0 },
+                        "ch": "\n",
+                        "options": options,
+                    }),
+                    _ => json!({ "textDocument": { "uri": uri }, "position": position }),
                 };
                 let start = Instant::now();
                 let result = vfl_lsp::handle(&mut world, method, params);
@@ -62,5 +85,37 @@ fn main() {
                 max
             );
         }
+    }
+    let mut times: Vec<(Duration, Duration, usize, PathBuf)> = Vec::new();
+    let paths: Vec<PathBuf> = world.project.files.iter().map(|f| f.path.clone()).collect();
+    for path in paths {
+        let uri = lsp_types::Url::from_file_path(&path).unwrap();
+        let start = Instant::now();
+        let full = vfl_lsp::handle(
+            &mut world,
+            "textDocument/semanticTokens/full",
+            json!({ "textDocument": { "uri": uri } }),
+        )
+        .unwrap_or_default();
+        let full_time = start.elapsed();
+        let start = Instant::now();
+        vfl_lsp::handle(
+            &mut world,
+            "textDocument/semanticTokens/full/delta",
+            json!({ "textDocument": { "uri": uri }, "previousResultId": full["resultId"] }),
+        );
+        let tokens = full["data"].as_array().map_or(0, |d| d.len() / 5);
+        times.push((full_time, start.elapsed(), tokens, path));
+    }
+    times.sort_by_key(|t| t.0);
+    if let Some((max, delta, tokens, path)) = times.last() {
+        let median = &times[times.len() / 2];
+        println!(
+            "textDocument/semanticTokens/full: {} files, median {:?}, max {max:?} \
+             ({tokens} tokens, delta {delta:?}, {})",
+            times.len(),
+            median.0,
+            path.display()
+        );
     }
 }

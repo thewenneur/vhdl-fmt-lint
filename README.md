@@ -110,6 +110,7 @@ vfl config show        # show the effective configuration and where it came from
 vfl check [paths]      # report syntax errors
 vfl fmt [--check] ...  # format in place, or list the files that would change
 vfl fmt -              # format standard input to standard output
+vfl fmt --lines 10:20 f.vhd  # format only those lines (and the statements around them)
 vfl lint [--fix] ...   # lint, resolving names across the whole project
 vfl rules              # list lint rules and their levels
 vfl doc [-o dir]       # write HTML (or --format markdown|asciidoc) documentation with diagrams

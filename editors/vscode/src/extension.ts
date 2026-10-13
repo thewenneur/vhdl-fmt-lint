@@ -3,8 +3,9 @@
 // The server does the work: diagnostics, quick fixes, formatting,
 // navigation, rename, completion and code generation. This file finds the
 // `vfl` binary, starts it over stdio and restarts it when its settings
-// change, and asks it for generated code. Documentation and diagrams are
-// generated on demand by running `vfl doc`, never on the server's hot path.
+// change, asks it for generated code, and drops format on type unless
+// `vfl.format.onType` is set. Documentation and diagrams are generated on
+// demand by running `vfl doc`, never on the server's hot path.
 
 import { execFile } from "node:child_process";
 import * as fs from "node:fs";
@@ -95,6 +96,13 @@ async function start(): Promise<void> {
     // The server reads files from disk by path, so only real files.
     documentSelector: [{ scheme: "file", language: "vhdl" }],
     outputChannel: output,
+    middleware: {
+      // `editor.formatOnType` is on for VHDL by default; this setting decides.
+      provideOnTypeFormattingEdits: (document, position, ch, options, token, next) =>
+        vscode.workspace.getConfiguration("vfl", document).get<boolean>("format.onType", false)
+          ? next(document, position, ch, options, token)
+          : [],
+    },
   };
 
   output.info(`Starting ${command} lsp`);

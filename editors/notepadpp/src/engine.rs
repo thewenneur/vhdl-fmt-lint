@@ -16,7 +16,7 @@ use vfl_fmt::FormatError;
 use vfl_lsp::World;
 use vfl_lsp::editor::{
     self, Completion, Completions, FileEdits, HoverInfo, Location, ProjectSymbol, QuickFix,
-    SignatureHelp, Symbol, Use,
+    SignatureHelp, Symbol, TokenKind, Use,
 };
 use vfl_lsp::generate::{self, EntityRef, Generated, Kind};
 use vfl_project::{Encoding, find_root};
@@ -39,6 +39,44 @@ impl Severity {
     }
 }
 
+/// How a name is colored, by what it resolves to. Names of other kinds
+/// keep the lexer's colors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NameColor {
+    Signal,
+    Port,
+    /// A constant, generic or enumeration literal.
+    Constant,
+    /// A variable or subprogram parameter.
+    Variable,
+    Type,
+    /// A function or procedure.
+    Subprogram,
+}
+
+impl NameColor {
+    pub const ALL: [NameColor; 6] = [
+        NameColor::Signal,
+        NameColor::Port,
+        NameColor::Constant,
+        NameColor::Variable,
+        NameColor::Type,
+        NameColor::Subprogram,
+    ];
+
+    fn of(kind: TokenKind) -> Option<NameColor> {
+        Some(match kind {
+            TokenKind::Signal => NameColor::Signal,
+            TokenKind::Port => NameColor::Port,
+            TokenKind::Constant | TokenKind::Generic | TokenKind::EnumMember => NameColor::Constant,
+            TokenKind::Variable | TokenKind::Parameter => NameColor::Variable,
+            TokenKind::Type | TokenKind::TypeParameter => NameColor::Type,
+            TokenKind::Function | TokenKind::Procedure => NameColor::Subprogram,
+            _ => return None,
+        })
+    }
+}
+
 /// A problem in a buffer. Offsets are byte offsets into the text given to
 /// [`Engine::lint`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +94,25 @@ pub struct LintOutput {
     pub findings: Vec<Finding>,
     /// Problems with the configuration (unknown rules, bad options).
     pub config_errors: Vec<String>,
+}
+
+fn format_failure(err: FormatError) -> FormatFailure {
+    match err {
+        FormatError::Syntax(errors) => {
+            let first = errors.first();
+            FormatFailure {
+                message: match first {
+                    Some(e) => format!("syntax error: {}", e.message),
+                    None => "syntax error".into(),
+                },
+                offset: first.map(|e| usize::from(e.range.start())),
+            }
+        }
+        err => FormatFailure {
+            message: err.to_string(),
+            offset: None,
+        },
+    }
 }
 
 /// Why a buffer could not be formatted.
@@ -130,24 +187,41 @@ impl Engine {
         text: &str,
     ) -> Result<Option<String>, FormatFailure> {
         let config = self.config(path);
-        match vfl_fmt::format(text, &config.format, config.standard()) {
-            Ok(out) if out == text => Ok(None),
-            Ok(out) => Ok(Some(out)),
-            Err(FormatError::Syntax(errors)) => {
-                let first = errors.first();
-                Err(FormatFailure {
-                    message: match first {
-                        Some(e) => format!("syntax error: {}", e.message),
-                        None => "syntax error".into(),
-                    },
-                    offset: first.map(|e| usize::from(e.range.start())),
-                })
-            }
-            Err(err) => Err(FormatFailure {
-                message: err.to_string(),
-                offset: None,
-            }),
-        }
+        let out =
+            vfl_fmt::format(text, &config.format, config.standard()).map_err(format_failure)?;
+        Ok((out != text).then_some(out))
+    }
+
+    /// Formats the lines of `text` that bytes `range` touch (an empty range
+    /// stands for its line), and the statements and aligned lines they are
+    /// part of. Returns `None` when they are already formatted.
+    pub fn format_range(
+        &mut self,
+        path: Option<&Path>,
+        text: &str,
+        range: Range<usize>,
+    ) -> Result<Option<String>, FormatFailure> {
+        let config = self.config(path);
+        let edits = vfl_fmt::format_range(text, range, &config.format, config.standard())
+            .map_err(format_failure)?;
+        Ok((!edits.is_empty()).then(|| vfl_fmt::apply_edits(text, &edits)))
+    }
+
+    /// Formats the line just finished after `ch` was typed at byte `cursor`
+    /// of `text`: the line of a `;`, or the line above a new line. Returns
+    /// `None` when there is nothing to change, `on_type` is off in
+    /// `vfl.toml`, or the buffer does not parse.
+    pub fn format_typed(
+        &mut self,
+        path: Option<&Path>,
+        text: &str,
+        cursor: usize,
+        ch: char,
+    ) -> Option<String> {
+        let config = self.config(path);
+        let edits =
+            vfl_fmt::format_typed(text, cursor, ch, &config.format, config.standard()).ok()?;
+        (!edits.is_empty()).then(|| vfl_fmt::apply_edits(text, &edits))
     }
 
     /// Lints `text`, the content of the file at `path` (`None` for an
@@ -230,6 +304,19 @@ impl Engine {
     ) -> Vec<(Range<usize>, Use)> {
         let (world, file_path) = self.sync(path, text);
         editor::highlights(world, &file_path, offset)
+    }
+
+    /// The names in the buffer to color, as byte ranges, in order.
+    pub fn name_colors(
+        &mut self,
+        path: Option<&Path>,
+        text: &str,
+    ) -> Vec<(Range<usize>, NameColor)> {
+        let (world, file_path) = self.sync(path, text);
+        editor::semantic_tokens(world, &file_path)
+            .into_iter()
+            .filter_map(|t| Some((t.range, NameColor::of(t.kind)?)))
+            .collect()
     }
 
     /// The buffer's declarations, nested.
@@ -681,6 +768,40 @@ end architecture;
     }
 
     #[test]
+    fn formats_a_selection() {
+        let mut engine = Engine::default();
+        let text = "ENTITY e IS\nEND ENTITY;\nENTITY f IS\nEND ENTITY;\n";
+        assert_eq!(
+            engine.format_range(None, text, 0..3),
+            Ok(Some(
+                "entity e is\nEND ENTITY;\nENTITY f IS\nEND ENTITY;\n".into()
+            ))
+        );
+        assert_eq!(
+            engine.format_range(None, "entity e is\nend;\n", 0..0),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn formats_the_line_just_typed() {
+        let mut engine = Engine::default();
+        let text = "entity e is\nend;\narchitecture a of e is\nbegin\nx<=y;\nend;\n";
+        let cursor = text.find("y;").unwrap() + 2;
+        assert_eq!(
+            engine.format_typed(None, text, cursor, ';'),
+            Some("entity e is\nend;\narchitecture a of e is\nbegin\n  x <= y;\nend;\n".into())
+        );
+        let text = "entity e is\nend;\narchitecture a of e is\nbegin\nx<=y;\n  \nend;\n";
+        let cursor = text.find("  \n").unwrap() + 2;
+        assert_eq!(
+            engine.format_typed(None, text, cursor, '\n'),
+            Some("entity e is\nend;\narchitecture a of e is\nbegin\n  x <= y;\n  \nend;\n".into())
+        );
+        assert_eq!(engine.format_typed(None, text, cursor, 'x'), None);
+    }
+
+    #[test]
     fn reports_syntax_errors_when_formatting() {
         let mut engine = Engine::default();
         let err = engine
@@ -806,6 +927,28 @@ end architecture;
             .hover(None, TYPES, at(TYPES, "count, 3"))
             .expect("hover over the element");
         assert!(plain_text(&hover.markdown).contains("element count of rec"));
+    }
+
+    #[test]
+    fn colors_names_by_meaning() {
+        let mut engine = Engine::default();
+        let colors: Vec<(&str, NameColor)> = engine
+            .name_colors(None, TYPES)
+            .into_iter()
+            .map(|(range, color)| (&TYPES[range], color))
+            .collect();
+        for expected in [
+            ("rec", NameColor::Type),
+            ("r", NameColor::Signal),
+            ("scale", NameColor::Subprogram),
+            ("x", NameColor::Variable),
+            ("integer", NameColor::Type),
+            ("n", NameColor::Signal),
+        ] {
+            assert!(colors.contains(&expected), "{expected:?} in {colors:?}");
+        }
+        // Units and labels keep the lexer's colors.
+        assert!(!colors.iter().any(|(name, _)| *name == "e" || *name == "a"));
     }
 
     #[test]
@@ -999,8 +1142,19 @@ end architecture;
         let text = "entity e is   \nend entity;\n";
         std::fs::write(&path, text).unwrap();
         let mut engine = Engine::default();
-        let fixes = engine.quick_fixes(Some(&path), text, 11, 11);
+        let all = engine.quick_fixes(Some(&path), text, 11, 11);
+        let fixes: Vec<_> = all.iter().filter(|f| !f.silences).collect();
         assert_eq!(fixes.len(), 1, "{fixes:?}");
+        assert_eq!(
+            all.iter()
+                .filter(|f| f.silences)
+                .map(|f| f.title.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "Ignore `style/trailing-whitespace` on this line",
+                "Ignore `style/trailing-whitespace` in this file"
+            ]
+        );
         assert_eq!(fixes[0].title, "Remove trailing whitespace");
         assert_eq!(fixes[0].edits, [(11..14, String::new())]);
         let (fixed, count) = engine.fix_all(Some(&path), text).expect("a fix");

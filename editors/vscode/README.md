@@ -5,6 +5,9 @@ language server:
 
 - **Diagnostics** as you type: syntax errors, cross-file semantic checks and lint rules.
 - **Quick fixes**, and **Fix All** (`vfl: Fix All Lint Findings in File`, or on save, below).
+  Besides each rule's own fix: rename a declaration to follow a naming convention
+  everywhere, add the `use` clause for a name declared in a package, or silence the rule
+  on the line or in the file with a `-- vfl-ignore` comment.
 - **Formatting** with every rule from your `vfl.toml`.
 - **Go to definition**, **find references**, **highlights**, **hover** (with types),
   **signature help**, **rename**, **completion** (including record elements and protected
@@ -17,7 +20,17 @@ language server:
   page of the current file's entity, with its symbol, block diagram, port maps, state
   machines and hierarchy, in a view beside the editor (the diagram button in the editor
   title bar).
-- **Syntax highlighting** for VHDL-93, 2008 and 2019.
+- **Rename** and **find references** treat a package and its body, a subprogram and its
+  body, and an entity and the components named after it (with their ports and generics) as
+  one thing, work on record elements, and refuse a new name that would clash with another.
+- **Syntax highlighting** for VHDL-93, 2008 and 2019, and **semantic highlighting** from
+  the analysis: signals, ports (with their mode), variables, constants, generics, types,
+  subprograms, entities, components, packages and enumeration literals each get their own
+  token type. `signal`, `port`, `constant`, `generic`, `procedure`, `label`, `unit` and
+  `attribute` fall back to standard types (`variable`, `parameter`, `function`, ...) in
+  themes that do not know them; to pick your own colors, use
+  `editor.semanticTokenColorCustomizations`, for example
+  `"rules": { "signal": "#c586c0", "port.out": { "bold": true } }`.
 
 The project root, sources and libraries are discovered from the code, so there is nothing to
 set up. Configuration lives in `vfl.toml`, shared with the `vfl` command line; see the
@@ -39,6 +52,7 @@ It is looked up in `vfl.server.path`, then on `PATH`, then in `~/.cargo/bin`.
 |---------|---------|---|
 | `vfl.server.path` | `""` | Path to `vfl`. `~` and `${workspaceFolder}` are expanded. |
 | `vfl.server.extraEnv` | `{}` | Extra environment variables for the server. |
+| `vfl.format.onType` | `false` | Format the line you just finished as you type (`;` or Enter). |
 | `vfl.trace.server` | `"off"` | Log LSP traffic (`messages` or `verbose`). |
 
 The extension makes itself the default formatter for VHDL. To format and fix on save:
@@ -49,6 +63,10 @@ The extension makes itself the default formatter for VHDL. To format and fix on 
   "editor.codeActionsOnSave": { "source.fixAll.vfl": "explicit" }
 }
 ```
+
+**Format Selection** formats the selected lines, and the whole statements and aligned lines
+they touch. With `"vfl.format.onType": true`, typing `;` formats its line and Enter formats
+the line above; `on_type = false` under `[format]` in `vfl.toml` turns it off for a project.
 
 ## Commands
 

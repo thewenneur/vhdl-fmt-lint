@@ -131,6 +131,20 @@ Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
     into a register (`sync_1 <= s;`, the first stage of a synchronizer), memories (arrays
     of arrays, as in dual-clock RAMs) and processes with `wait` statements are not
     reported.
+  - `sema/open-input` and `sema/inout-port`: an input port without a default associated
+    with `open`; an `inout` port only read or only driven by its architectures.
+  - Resets (`sema/missing-reset`, `sema/mixed-reset`, `sema/reset-polarity`): a clocked
+    process's reset is the first condition of an `if` whose last branch is the clock edge
+    (asynchronous), or the first condition of an `if` opening the clocked branch on a
+    signal named like a reset (synchronous). Registers assigned in the clocked part but
+    not in the reset part are reported (info), as are, within an architecture, reset
+    signals used both synchronously and asynchronously or tested with both polarities,
+    and active-low names (`rst_n`) tested active high.
+  - State machines (`sema/fsm-unreachable-state`, `sema/fsm-stuck-state`): a `case` on a
+    signal or variable of a project enumeration type whose alternatives assign literals
+    to it or to a same-type next-state object. Any other kind of assignment to these
+    objects leaves the machine alone. States no transition reaches, and reachable states
+    no transition leaves, are reported.
 - Unknown things degrade to "unknown" instead of cascading errors: a library that is not in
   the project (vendor primitives such as `unisim`) makes its names unchecked and is reported
   once as info, and names that may come from it are not reported.
@@ -207,7 +221,16 @@ Guarantees, enforced in tests, in the corpus job and at runtime:
 - Escape hatches: `-- vfl: off` / `-- vfl: on` regions and `-- vfl: skip` for the next
   statement or declaration are kept exactly as written.
 - Line endings (LF or CRLF), a UTF-8 byte-order mark and Latin-1 encoding are preserved.
-- Not yet: range formatting (format selection, format on type), which comes with the LSP.
+- Range formatting (`vfl fmt --lines`, LSP range and on-type formatting): the whole file is
+  formatted and only the output lines of the selected source lines are copied back, widened
+  to the statements or declarations they touch (not past the construct around them), to
+  every line of an alignment run they are part of, and to lines that start and end on the
+  same tokens in the source and the output. Protected regions are never touched.
+  Only the block around the selection is laid out: whole lines between blank lines (which end
+  alignment runs), cut between the items of a construct, and not after a comment line, whose
+  indentation follows the code below it. Files with `-- vfl:` directives, `max_blank_lines = 0`
+  or `block_boundary = "never"` are laid out whole. The corpus job checks that both give the
+  same edits.
 
 ### Linter
 
@@ -238,13 +261,16 @@ Guarantees, enforced in tests, in the corpus job and at runtime:
 `vfl lsp` (stdio) analyzes the project around the first workspace folder. Open buffers
 overlay the files on disk; edits are applied incrementally and analysis runs once a burst of
 changes is over. It provides diagnostics with quick fixes and a `source.fixAll.vfl` action,
-whole-document formatting (returned as a single minimal edit), go to definition (bundled
+whole-document formatting (returned as a single minimal edit), range formatting, format on
+type (`;` formats its line, a new line formats the line above it), go to definition (bundled
 `std` / `ieee` sources are written to a cache directory so editors can open them),
 references, document highlights (read / write), hover with the declaration's source and
 its type (an object's subtype and what the type is, a subtype's base, a function's return
 type, record elements reached through `a.b` or `a(i).b`; on a call, only the overload
 type checking chose), signature help for subprogram calls, protected type methods and
 `port map` / `generic map` (the active parameter follows commas and named formals),
+semantic tokens (whole file, range and delta: names typed by what they resolve to, with
+modifiers for port and parameter modes, declarations, writes and `std` / `ieee` names),
 document and workspace symbols, rename (including end labels and selected names) and
 completion (scope, `use`d packages, selected-name members, record elements and protected
 type methods after `value.`, libraries, keywords).

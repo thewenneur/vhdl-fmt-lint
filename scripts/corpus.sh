@@ -2,8 +2,8 @@
 # Parses pinned open-source VHDL projects and fails on any syntax error or
 # round-trip mismatch. Then formats them, with the default config and a very
 # different one, and fails on any formatter error or output that changes
-# when formatted again. Then lints them and fails on more semantic errors
-# than the known ones. Last, checks that re-analysis after edits, reusing the
+# when formatted again, also when only single lines are formatted. Then
+# lints them and fails on more semantic errors than the known ones. Last, checks that re-analysis after edits, reusing the
 # previous analysis, matches a full analysis. Usage: scripts/corpus.sh [CACHE_DIR]
 set -euo pipefail
 
@@ -58,6 +58,8 @@ $run --quiet --allow-errors "$cache/ghdl/testsuite" || status=1
 
 # Formatting. The output must parse to the same tokens and comments, and
 # formatting it again must change nothing. Files with syntax errors are skipped.
+# `--ranges` also formats single lines of each file, which must be
+# idempotent and leave the file formatting to the same text.
 alt_config=$(mktemp)
 trap 'rm -f "$alt_config"' EXIT
 printf '%s\n' \
@@ -78,8 +80,8 @@ printf '%s\n' \
 for config in "" "--config $alt_config"; do
   # shellcheck disable=SC2086 # $config is meant to split.
   {
-    $fmt --quiet $config --std 2019 --exclude _template "$cache/OSVVM" || status=1
-    $fmt --quiet $config --std 2008 "$cache/UVVM" "$cache/vunit" "$cache/neorv32" || status=1
+    $fmt --quiet --ranges $config --std 2019 --exclude _template "$cache/OSVVM" || status=1
+    $fmt --quiet --ranges $config --std 2008 "$cache/UVVM" "$cache/vunit" "$cache/neorv32" || status=1
     $fmt --quiet $config --std 93 "${vests[@]}" || status=1
     $fmt --quiet $config "$cache/ghdl/testsuite" || status=1
   }

@@ -91,7 +91,7 @@ re-analyzes everything that depends on it.
 ### Editor requests
 
 `crates/vfl-lsp/examples/request_latency.rs` opens a project, then sends hover, signature
-help and completion at every 7th line of 16 files spread over it (the middle of the line).
+help, completion, range formatting and format on type at every 7th line of 16 files spread over it (the middle of the line).
 
 | Project | Hover (median / max) | Signature help (median / max) | Completion (median / max) |
 |---|---:|---:|---:|
@@ -99,6 +99,22 @@ help and completion at every 7th line of 16 files spread over it (the middle of 
 | OSVVM | 0.2 / 10 ms | 0.02 / 1.4 ms | 1.5 / 13 ms |
 | UVVM | 0.5 / 4.5 ms | 0.02 / 0.4 ms | 1.3 / 4.3 ms |
 | VUnit | 0.3 / 2.1 ms | 0.02 / 1.8 ms | 1.2 / 7.5 ms |
+
+The same run also times range formatting (from the start of each line to its middle) and
+format on type (a new line after it). Neither waits for an analysis. Each parses the file and
+lays out only the block around the line, between blank lines, so the parse of the file is
+most of the cost: about 7 ms for OSVVM's 400 KB `AlertLogPkg.vhd`.
+
+| Project | Range formatting (median / max) | Format on type (median / max) |
+|---|---:|---:|
+| neorv32 | 0.4 / 2.5 ms | 0.5 / 1.4 ms |
+| OSVVM | 3.0 / 32 ms | 3.0 / 17 ms |
+| UVVM | 0.6 / 2.3 ms | 0.8 / 2.0 ms |
+| VUnit | 2.4 / 4.5 ms | 2.4 / 5.9 ms |
+
+It then asks for the semantic tokens of every file, whole and as a delta. On UVVM (302
+files) the median is 0.1 ms; the slowest is `methods_pkg.vhd` (490 KB, 20,357 names):
+7.4 ms whole, 4.8 ms as a delta.
 
 ## Running it
 
