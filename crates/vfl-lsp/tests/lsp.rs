@@ -230,3 +230,213 @@ fn edits_update_diagnostics_and_fixes() {
     );
     assert!(client.diagnostics(&top).is_empty());
 }
+
+const TYPES_PKG: &str = "\
+package types is
+  type pair_t is record
+    lo : integer;
+    hi : bit_vector(7 downto 0);
+  end record;
+  type outer_t is record
+    inner : pair_t;
+    flag : boolean;
+  end record;
+  type outer_array is array (natural range <>) of outer_t;
+  subtype byte is bit_vector(7 downto 0);
+  type counter_t is protected
+    procedure add(n : integer);
+    impure function get return integer;
+  end protected;
+  function scale(x : integer; factor : integer := 2) return integer;
+  function scale(x : real) return real;
+end package;
+package body types is
+  type counter_t is protected body
+    variable count : integer := 0;
+    procedure add(n : integer) is begin count := count + n; end procedure;
+    impure function get return integer is begin return count; end function;
+  end protected body;
+  function scale(x : integer; factor : integer := 2) return integer is
+  begin return x * factor; end function;
+  function scale(x : real) return real is begin return x * 2.0; end function;
+end package body;
+";
+
+const TYPES_USE: &str = "\
+use work.types.all;
+entity leaf is
+  port (a : in bit; y : out bit);
+end entity;
+architecture rtl of leaf is begin y <= a; end architecture;
+use work.types.all;
+entity user is end entity;
+architecture rtl of user is
+  signal o : outer_t;
+  signal list : outer_array(0 to 3);
+  signal b : byte;
+  shared variable c : counter_t;
+  signal s1, s2 : bit;
+begin
+  process
+    variable v : integer;
+  begin
+    v := o.inner.lo + list(0).inner.lo;
+    v := scale(v, 3);
+    c.add(1);
+    wait;
+  end process;
+  u : entity work.leaf port map (a => s1, y => s2);
+end architecture;
+";
+
+fn types_setup() -> (tempfile::TempDir, Client, String) {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("vfl.toml"), "").unwrap();
+    std::fs::write(dir.path().join("types.vhd"), TYPES_PKG).unwrap();
+    std::fs::write(dir.path().join("user.vhd"), TYPES_USE).unwrap();
+    let client = Client::start(dir.path());
+    let user = url(&dir.path().join("user.vhd"));
+    (dir, client, user)
+}
+
+fn hover_text(client: &mut Client, uri: &str, line: u32, character: u32) -> String {
+    let hover = client.request("textDocument/hover", at(uri, line, character));
+    hover["contents"]["value"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+fn labels(completion: &Value) -> Vec<String> {
+    completion
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["label"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn hover_shows_types() {
+    let (_dir, mut client, user) = types_setup();
+    // The signal `o`, its record type and elements.
+    let text = hover_text(&mut client, &user, 17, 10);
+    assert!(text.contains("type `outer_t`"), "{text}");
+    assert!(text.contains("`inner` : `pair_t`"), "{text}");
+    // A subtype shows its base type.
+    let text = hover_text(&mut client, &user, 10, 9);
+    assert!(text.contains("`byte` (subtype of `bit_vector`)"), "{text}");
+    // Record elements, through an element and an indexed array.
+    let text = hover_text(&mut client, &user, 17, 17);
+    assert!(text.contains("element `lo` of `pair_t`"), "{text}");
+    assert!(text.contains("type `integer`"), "{text}");
+    let text = hover_text(&mut client, &user, 17, 31);
+    assert!(text.contains("element `inner` of `outer_t`"), "{text}");
+    // The overload a call resolves to.
+    let text = hover_text(&mut client, &user, 18, 10);
+    assert!(text.contains("returns `integer`"), "{text}");
+    assert!(!text.contains("real"), "{text}");
+}
+
+#[test]
+fn completion_of_elements_and_methods() {
+    let (_dir, mut client, user) = types_setup();
+    client.notify(
+        "textDocument/didOpen",
+        json!({ "textDocument": { "uri": user, "languageId": "vhdl", "version": 1, "text": TYPES_USE } }),
+    );
+    let complete = |client: &mut Client, version: i32, text: &str, character: u32| {
+        client.notify(
+            "textDocument/didChange",
+            json!({
+                "textDocument": { "uri": user, "version": version },
+                "contentChanges": [
+                    { "range": { "start": { "line": 20, "character": 4 }, "end": { "line": 20, "character": 9 } }, "text": text }
+                ]
+            }),
+        );
+        let completion = client.request("textDocument/completion", at(&user, 20, character));
+        // Undo the edit.
+        client.notify(
+            "textDocument/didChange",
+            json!({
+                "textDocument": { "uri": user, "version": version + 1 },
+                "contentChanges": [
+                    { "range": { "start": { "line": 20, "character": 4 }, "end": { "line": 20, "character": 4 + text.len() as u32 } }, "text": "wait;" }
+                ]
+            }),
+        );
+        labels(&completion)
+    };
+    assert_eq!(complete(&mut client, 2, "o.", 6), ["inner", "flag"]);
+    assert_eq!(complete(&mut client, 4, "o.inner.", 12), ["lo", "hi"]);
+    assert_eq!(complete(&mut client, 6, "list(1).", 12), ["inner", "flag"]);
+    assert_eq!(complete(&mut client, 8, "c.", 6), ["add", "get"]);
+}
+
+#[test]
+fn signature_help_for_calls_and_maps() {
+    let (_dir, mut client, user) = types_setup();
+    let help = client.request("textDocument/signatureHelp", at(&user, 18, 18));
+    let signatures = help["signatures"].as_array().unwrap();
+    assert_eq!(signatures.len(), 1, "{help}");
+    assert_eq!(
+        signatures[0]["label"],
+        "function scale(x : in integer; factor : in integer := 2) return integer"
+    );
+    assert_eq!(help["activeParameter"], 1);
+
+    // A port map, named association.
+    let help = client.request("textDocument/signatureHelp", at(&user, 22, 45));
+    assert_eq!(
+        help["signatures"][0]["label"],
+        "entity leaf port map (a : in bit; y : out bit)"
+    );
+    assert_eq!(help["activeParameter"], 1, "{help}");
+
+    // A call being typed.
+    client.notify(
+        "textDocument/didOpen",
+        json!({ "textDocument": { "uri": user, "languageId": "vhdl", "version": 1, "text": TYPES_USE } }),
+    );
+    client.notify(
+        "textDocument/didChange",
+        json!({
+            "textDocument": { "uri": user, "version": 2 },
+            "contentChanges": [
+                { "range": { "start": { "line": 20, "character": 4 }, "end": { "line": 20, "character": 9 } }, "text": "v := scale(v, " }
+            ]
+        }),
+    );
+    let help = client.request("textDocument/signatureHelp", at(&user, 20, 18));
+    let signatures = help["signatures"].as_array().unwrap();
+    assert_eq!(help["activeParameter"], 1, "{help}");
+    assert!(
+        signatures[help["activeSignature"].as_u64().unwrap() as usize]["label"]
+            .as_str()
+            .unwrap()
+            .contains("factor"),
+        "{help}"
+    );
+
+    // No argument yet: the overload the assignment target selects.
+    client.notify(
+        "textDocument/didChange",
+        json!({
+            "textDocument": { "uri": user, "version": 3 },
+            "contentChanges": [
+                { "range": { "start": { "line": 20, "character": 15 }, "end": { "line": 20, "character": 18 } }, "text": "" }
+            ]
+        }),
+    );
+    let help = client.request("textDocument/signatureHelp", at(&user, 20, 15));
+    assert_eq!(help["signatures"].as_array().unwrap().len(), 1, "{help}");
+    assert_eq!(help["activeParameter"], 0, "{help}");
+
+    // Protected type methods.
+    let help = client.request("textDocument/signatureHelp", at(&user, 19, 10));
+    assert_eq!(
+        help["signatures"][0]["label"],
+        "procedure add(n : in integer)"
+    );
+}

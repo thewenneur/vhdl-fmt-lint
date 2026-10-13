@@ -49,6 +49,7 @@ pub fn request(world: &mut World, method: &str, params: Value) -> Result<Value, 
         "textDocument/rename" => json(rename(world, parse(params)?)?),
         "textDocument/completion" => json(completion(world, parse(params)?)),
         "textDocument/codeAction" => json(code_actions(world, parse(params)?)),
+        "textDocument/signatureHelp" => json(crate::types::signature_help(world, parse(params)?)),
         _ => Err(Error::Unknown),
     }
 }
@@ -330,7 +331,21 @@ fn declaration_text(world: &World, decl: &Decl) -> String {
 }
 
 fn hover(world: &mut World, params: HoverParams) -> Option<Hover> {
-    let (file, hit) = hit(world, &params.text_document_position_params)?;
+    let position = &params.text_document_position_params;
+    let Some((file, hit)) = hit(world, position) else {
+        // A record element, which has no declaration of its own.
+        let file = file_of(world, &position.text_document.uri)?;
+        let doc = world.doc(file);
+        let (range, text) =
+            crate::types::element_hover(world, file, doc.offset(position.position))?;
+        return Some(Hover {
+            contents: HoverContents::Markup(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: text,
+            }),
+            range: Some(doc.range(range)),
+        });
+    };
     let doc = world.doc(file);
     let mut sections = Vec::new();
     for id in &hit.targets {
@@ -347,8 +362,11 @@ fn hover(world: &mut World, params: HoverParams) -> Option<Hover> {
                 world.analysis.unit_decls(id.unit)[0].spelling
             )
         };
+        let types = crate::types::hover_lines(&world.analysis, *id)
+            .map(|t| format!("\n\n{t}"))
+            .unwrap_or_default();
         sections.push(format!(
-            "{} `{}` {place}\n\n```vhdl\n{}\n```",
+            "{} `{}` {place}{types}\n\n```vhdl\n{}\n```",
             decl.kind.describe(),
             decl.spelling,
             declaration_text(world, decl)
@@ -797,6 +815,85 @@ impl Items {
     }
 }
 
+/// Calls `f` with the declarations visible at `offset` in `file`: those of
+/// the file's units and their primary units, of the packages the file
+/// refers to, and of `std.standard`.
+pub(crate) fn visible_decls(
+    world: &World,
+    file: FileId,
+    offset: TextSize,
+    mut f: impl FnMut(DeclId, &Decl),
+) {
+    let analysis = &world.analysis;
+    // Declarations in scope in this file's units and their primary units.
+    let units: Vec<_> = analysis.file_units(file).collect();
+    let mut scope_units = units.clone();
+    for &unit in &units {
+        let info = &analysis.units()[unit as usize];
+        if let Some(primary) = &info.primary
+            && let Some(p) = analysis.units().iter().position(|u| {
+                u.library == info.library && u.name == *primary && u.primary.is_none()
+            })
+        {
+            scope_units.push(p as vfl_sema::UnitId);
+        }
+    }
+    for &unit in &scope_units {
+        for (index, decl) in analysis.unit_decls(unit).iter().enumerate() {
+            let visible = match decl.parent {
+                None => true,
+                Some(p) if p.index == 0 => true,
+                Some(p) => analysis.decl(p).is_some_and(|parent| {
+                    parent.file == file && parent.full_range.contains_inclusive(offset)
+                }),
+            };
+            if visible {
+                let id = DeclId {
+                    unit,
+                    index: index as u32,
+                };
+                f(id, decl);
+            }
+        }
+    }
+    // Packages this file refers to, and std.standard.
+    let mut packages: Vec<DeclId> = Vec::new();
+    for (in_file, reference) in analysis.references() {
+        if in_file != file {
+            continue;
+        }
+        for target in &reference.targets {
+            if let Target::Decl(id) = target
+                && id.index == 0
+                && matches!(
+                    analysis.units()[id.unit as usize].kind,
+                    DeclKind::Package | DeclKind::PackageInstance
+                )
+                && !packages.contains(id)
+            {
+                packages.push(*id);
+            }
+        }
+    }
+    if let Some(standard) = analysis.units().iter().position(|u| {
+        u.library == "std" && u.name == "standard" && analysis.files()[u.file as usize].builtin
+    }) {
+        packages.push(DeclId {
+            unit: standard as vfl_sema::UnitId,
+            index: 0,
+        });
+    }
+    for id in packages {
+        if let Some(members) = analysis.decl(id).and_then(|d| d.members.clone()) {
+            for member in members.iter() {
+                if let Some(decl) = analysis.decl(member) {
+                    f(member, decl);
+                }
+            }
+        }
+    }
+}
+
 fn completion(world: &mut World, params: CompletionParams) -> Option<CompletionResponse> {
     let position = &params.text_document_position;
     let file = file_of(world, &position.text_document.uri)?;
@@ -855,71 +952,16 @@ fn completion(world: &mut World, params: CompletionParams) -> Option<CompletionR
         if found {
             return Some(CompletionResponse::Array(items.items));
         }
+        // Elements of a record, methods of a protected type.
+        if let Some(members) = crate::types::members_after_dot(world, file, dot) {
+            for (label, kind, detail) in members {
+                items.push(&label, kind, &detail);
+            }
+            return Some(CompletionResponse::Array(items.items));
+        }
     }
 
-    // Declarations in scope in this file's units and their primary units.
-    let units: Vec<_> = analysis.file_units(file).collect();
-    let mut scope_units = units.clone();
-    for &unit in &units {
-        let info = &analysis.units()[unit as usize];
-        if let Some(primary) = &info.primary
-            && let Some(p) = analysis.units().iter().position(|u| {
-                u.library == info.library && u.name == *primary && u.primary.is_none()
-            })
-        {
-            scope_units.push(p as vfl_sema::UnitId);
-        }
-    }
-    for &unit in &scope_units {
-        for decl in analysis.unit_decls(unit) {
-            let visible = match decl.parent {
-                None => true,
-                Some(p) if p.index == 0 => true,
-                Some(p) => analysis.decl(p).is_some_and(|parent| {
-                    parent.file == file && parent.full_range.contains_inclusive(offset)
-                }),
-            };
-            if visible {
-                items.decl(decl);
-            }
-        }
-    }
-    // Packages this file refers to, and std.standard.
-    let mut packages: Vec<DeclId> = Vec::new();
-    for (f, reference) in analysis.references() {
-        if f != file {
-            continue;
-        }
-        for target in &reference.targets {
-            if let Target::Decl(id) = target
-                && id.index == 0
-                && matches!(
-                    analysis.units()[id.unit as usize].kind,
-                    DeclKind::Package | DeclKind::PackageInstance
-                )
-                && !packages.contains(id)
-            {
-                packages.push(*id);
-            }
-        }
-    }
-    if let Some(standard) = analysis.units().iter().position(|u| {
-        u.library == "std" && u.name == "standard" && analysis.files()[u.file as usize].builtin
-    }) {
-        packages.push(DeclId {
-            unit: standard as vfl_sema::UnitId,
-            index: 0,
-        });
-    }
-    for id in packages {
-        if let Some(members) = analysis.decl(id).and_then(|d| d.members.clone()) {
-            for member in members.iter() {
-                if let Some(decl) = analysis.decl(member) {
-                    items.decl(decl);
-                }
-            }
-        }
-    }
+    visible_decls(world, file, offset, |_, decl| items.decl(decl));
     // Libraries and their units.
     let mut libraries: Vec<&str> = vec!["work"];
     for unit in analysis.units() {

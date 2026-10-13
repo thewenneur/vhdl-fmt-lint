@@ -48,7 +48,7 @@ Verilog/SystemVerilog, mixed-language projects (designed for, not built).
 | `vfl-sema`   | Incremental semantic model: design units, scopes, name resolution, overloads, types. |
 | `vfl-fmt`    | Formatter: CST to layout IR to text, with an alignment pass. |
 | `vfl-lint`   | Rule framework and built-in rules (syntactic and semantic), fixes. |
-| `vfl-lsp`    | Language server: diagnostics, formatting, go-to, hover, completion, rename. |
+| `vfl-lsp`    | Language server: diagnostics, formatting, go-to, hover, signature help, completion, rename. |
 | `vfl-cli`    | The `vfl` binary: `vfl fmt`, `vfl lint`, `vfl check`, `vfl lsp`, `vfl project`. |
 
 Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
@@ -219,9 +219,14 @@ overlay the files on disk; edits are applied incrementally and analysis runs onc
 changes is over. It provides diagnostics with quick fixes and a `source.fixAll.vfl` action,
 whole-document formatting (returned as a single minimal edit), go to definition (bundled
 `std` / `ieee` sources are written to a cache directory so editors can open them),
-references, document highlights (read / write), hover with the declaration's source,
+references, document highlights (read / write), hover with the declaration's source and
+its type (an object's subtype and what the type is, a subtype's base, a function's return
+type, record elements reached through `a.b` or `a(i).b`; on a call, only the overload
+type checking chose), signature help for subprogram calls, protected type methods and
+`port map` / `generic map` (the active parameter follows commas and named formals),
 document and workspace symbols, rename (including end labels and selected names) and
-completion (scope, `use`d packages, selected-name members, libraries, keywords).
+completion (scope, `use`d packages, selected-name members, record elements and protected
+type methods after `value.`, libraries, keywords).
 
 ## Configuration
 
@@ -358,7 +363,7 @@ and far fewer false errors, with zero configuration.
    reusing the results of the others (done).
 7. Type-aware LSP features: hover showing an object's type and the overload a call
    resolves to, signature help for subprogram calls and instantiations, completion of
-   record elements and protected type methods.
+   record elements and protected type methods (done).
 8. More rules: width mismatches in assignments and associations, inferred latches
    (combinational processes that do not assign a signal on every path), clock domain
    hints (a signal sampled by two clocks without synchronization).

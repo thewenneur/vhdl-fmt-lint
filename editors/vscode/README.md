@@ -6,8 +6,9 @@ language server:
 - **Diagnostics** as you type: syntax errors, cross-file semantic checks and lint rules.
 - **Quick fixes**, and **Fix All** (`vfl: Fix All Lint Findings in File`, or on save, below).
 - **Formatting** with every rule from your `vfl.toml`.
-- **Go to definition**, **find references**, **highlights**, **hover**, **rename**,
-  **completion**, **document and workspace symbols**, across the whole project and into
+- **Go to definition**, **find references**, **highlights**, **hover** (with types),
+  **signature help**, **rename**, **completion** (including record elements and protected
+  type methods), **document and workspace symbols**, across the whole project and into
   the bundled `std` and `ieee` libraries.
 - **Syntax highlighting** for VHDL-93, 2008 and 2019.
 

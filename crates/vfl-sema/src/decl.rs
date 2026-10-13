@@ -30,6 +30,18 @@ pub enum Mode {
 }
 
 impl Mode {
+    /// The mode as written in VHDL.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Mode::In => "in",
+            Mode::Out => "out",
+            Mode::InOut => "inout",
+            Mode::Buffer => "buffer",
+            Mode::Linkage => "linkage",
+            Mode::View => "view",
+        }
+    }
+
     /// Whether an actual associated with this mode is read by the instance.
     pub fn reads_actual(self) -> bool {
         !matches!(self, Mode::Out)
