@@ -1,0 +1,37 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/thewenneur/vhdl-fmt-lint"
+
+[workspace.dependencies]
+vfl-syntax = { path = "crates/vfl-syntax" }
+vfl-config = { path = "crates/vfl-config" }
+vfl-project = { path = "crates/vfl-project" }
+vfl-sema = { path = "crates/vfl-sema" }
+vfl-fmt = { path = "crates/vfl-fmt" }
+vfl-lint = { path = "crates/vfl-lint" }
+vfl-lsp = { path = "crates/vfl-lsp" }
+
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+ignore = "0.4"
+serde = { version = "1", features = ["derive"] }
+tempfile = "3"
+thiserror = "2"
+toml = "1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

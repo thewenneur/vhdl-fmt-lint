@@ -1,0 +1,16 @@
+[package]
+name = "vfl-lsp"
+description = "VHDL language server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+vfl-fmt.workspace = true
+vfl-lint.workspace = true
+vfl-project.workspace = true
