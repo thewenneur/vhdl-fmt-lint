@@ -268,8 +268,18 @@ pub(crate) fn npp() -> Hwnd {
 
 /// Runs `f`, turning a panic into a message instead of taking Notepad++
 /// down with it.
+#[track_caller]
 pub(crate) fn guard<T: Default>(f: impl FnOnce() -> T) -> T {
-    match catch_unwind(AssertUnwindSafe(f)) {
+    let at = std::panic::Location::caller();
+    guard_as(format_args!("{}:{}", at.file(), at.line()), f)
+}
+
+/// [`guard`], with what to call the call in the trace.
+pub(crate) fn guard_as<T: Default>(label: std::fmt::Arguments, f: impl FnOnce() -> T) -> T {
+    let start = std::time::Instant::now();
+    let result = catch_unwind(AssertUnwindSafe(f));
+    crate::trace::record(label, start);
+    match result {
         Ok(value) => value,
         Err(payload) => {
             let message = payload
@@ -365,7 +375,9 @@ pub unsafe extern "C" fn beNotified(notification: *mut ScNotification) {
     let Some(n) = (unsafe { notification.as_ref() }) else {
         return;
     };
-    guard(|| on_notification(n));
+    guard_as(format_args!("notification {}", n.nmhdr.code), || {
+        on_notification(n)
+    });
 }
 
 #[unsafe(no_mangle)]

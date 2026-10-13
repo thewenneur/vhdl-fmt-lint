@@ -5,6 +5,7 @@
 //! glue only builds on Windows.
 
 pub mod engine;
+pub mod trace;
 
 #[cfg(windows)]
 mod plugin;
