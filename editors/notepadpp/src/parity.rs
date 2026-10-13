@@ -93,10 +93,11 @@ mod tests {
     /// The methods `handlers::request` answers, from its source.
     fn requests() -> Vec<&'static str> {
         let source = include_str!("../../../crates/vfl-lsp/src/handlers.rs");
-        let start = source.find("pub fn request(").expect("handlers::request");
-        let body = &source[start..];
-        let body = &body[..body.find("\n}\n").expect("end of handlers::request")];
-        body.lines()
+        // Line by line: a Windows checkout may have CRLF line ends.
+        source
+            .lines()
+            .skip_while(|line| !line.starts_with("pub fn request("))
+            .take_while(|line| *line != "}")
             .filter_map(|line| {
                 let rest = line.trim().strip_prefix('"')?;
                 let (method, after) = rest.split_once('"')?;
