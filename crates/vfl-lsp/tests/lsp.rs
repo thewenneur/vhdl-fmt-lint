@@ -34,6 +34,18 @@ impl Client {
     }
 
     fn request(&mut self, method: &str, params: Value) -> Value {
+        let r = self.response(method, params);
+        assert!(r.error.is_none(), "{method}: {:?}", r.error);
+        r.result.unwrap_or(Value::Null)
+    }
+
+    /// The error message of a request that fails.
+    fn request_error(&mut self, method: &str, params: Value) -> String {
+        let r = self.response(method, params);
+        r.error.expect("the request succeeded").message
+    }
+
+    fn response(&mut self, method: &str, params: Value) -> lsp_server::Response {
         self.next_id += 1;
         let id = RequestId::from(self.next_id);
         self.connection
@@ -46,10 +58,7 @@ impl Client {
             .unwrap();
         loop {
             match self.connection.receiver.recv().unwrap() {
-                Message::Response(r) if r.id == id => {
-                    assert!(r.error.is_none(), "{method}: {:?}", r.error);
-                    return r.result.unwrap_or(Value::Null);
-                }
+                Message::Response(r) if r.id == id => return r,
                 Message::Notification(n) => self.notifications.push(n),
                 _ => {}
             }
@@ -439,4 +448,97 @@ fn signature_help_for_calls_and_maps() {
         help["signatures"][0]["label"],
         "procedure add(n : in integer)"
     );
+}
+
+#[test]
+fn code_generation_from_entities() {
+    let (dir, _pkg, top) = setup();
+    let mut client = Client::start(dir.path());
+
+    let entities = client.request("vfl/entities", json!({}));
+    assert_eq!(entities[0]["library"], "work");
+    assert_eq!(entities[0]["name"], "top");
+
+    let instance = client.request(
+        "vfl/generate",
+        json!({ "kind": "instance", "entity": "top" }),
+    );
+    assert_eq!(
+        instance["text"],
+        "u_top : entity work.top\n  port map (\n    d => d\n  );\n"
+    );
+    assert!(instance.get("path").is_none());
+    let component = client.request(
+        "vfl/generate",
+        json!({ "kind": "component", "entity": "work.top" }),
+    );
+    assert!(
+        component["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("component top is\n")
+    );
+
+    let testbench = client.request(
+        "vfl/generate",
+        json!({ "kind": "testbench", "entity": "top" }),
+    );
+    let tb_path = dir.path().join("top_tb.vhd");
+    assert_eq!(testbench["path"], tb_path.to_str().unwrap());
+    let text = testbench["text"].as_str().unwrap();
+    assert!(text.contains("use work.pkg.all;"), "{text}");
+    assert!(
+        text.contains("signal d : bit_vector(width - 1 downto 0);"),
+        "{text}"
+    );
+
+    // On the entity: a code action creates the testbench file.
+    let actions = client.request(
+        "textDocument/codeAction",
+        json!({
+            "textDocument": { "uri": top },
+            "range": { "start": { "line": 1, "character": 8 }, "end": { "line": 1, "character": 8 } },
+            "context": { "diagnostics": [] }
+        }),
+    );
+    let action = actions
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["kind"] == "refactor.generate.testbench")
+        .unwrap_or_else(|| panic!("no testbench action in {actions}"));
+    assert_eq!(
+        action["title"],
+        "Generate testbench for `top` in top_tb.vhd"
+    );
+    // The edit is computed only when the action is chosen.
+    assert!(action.get("edit").is_none(), "{action}");
+    let action = client.request("codeAction/resolve", action.clone());
+    let changes = &action["edit"]["documentChanges"];
+    assert_eq!(changes[0]["kind"], "create");
+    assert_eq!(changes[0]["uri"], url(&tb_path));
+    assert_eq!(changes[1]["edits"][0]["newText"], text);
+
+    // Not elsewhere, and not once the file exists.
+    let actions_at = |client: &mut Client, line: u32| {
+        client
+            .request(
+                "textDocument/codeAction",
+                json!({
+                    "textDocument": { "uri": top },
+                    "range": { "start": { "line": line, "character": 2 }, "end": { "line": line, "character": 2 } },
+                    "context": { "diagnostics": [] }
+                }),
+            )
+            .to_string()
+    };
+    assert!(!actions_at(&mut client, 6).contains("testbench"));
+    std::fs::write(&tb_path, text).unwrap();
+    assert!(!actions_at(&mut client, 1).contains("testbench"));
+
+    let missing = client.request_error(
+        "vfl/generate",
+        json!({ "kind": "testbench", "entity": "nope" }),
+    );
+    assert!(missing.contains("no entity `nope`"), "{missing}");
 }

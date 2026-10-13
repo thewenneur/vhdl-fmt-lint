@@ -18,6 +18,7 @@ use vfl_lsp::editor::{
     self, Completion, Completions, FileEdits, HoverInfo, Location, ProjectSymbol, QuickFix,
     SignatureHelp, Symbol, Use,
 };
+use vfl_lsp::generate::{self, EntityRef, Generated, Kind};
 use vfl_project::{Encoding, find_root};
 
 /// How bad a problem is.
@@ -293,6 +294,25 @@ impl Engine {
     pub fn fix_all(&mut self, path: Option<&Path>, text: &str) -> Option<(String, usize)> {
         let (world, file_path) = self.sync(path, text);
         editor::fix_all(world, &file_path)
+    }
+
+    /// The entities of the buffer's project.
+    pub fn entities(&mut self, path: Option<&Path>, text: &str) -> Vec<EntityRef> {
+        let (world, _) = self.sync(path, text);
+        generate::entities(world)
+    }
+
+    /// Code generated from `entity` (`name` or `library.name`) of the
+    /// buffer's project.
+    pub fn generate(
+        &mut self,
+        path: Option<&Path>,
+        text: &str,
+        kind: Kind,
+        entity: &str,
+    ) -> Result<Generated, String> {
+        let (world, _) = self.sync(path, text);
+        generate::generate(world, kind, entity)
     }
 
     /// Sets the text of a buffer without asking anything about it.
@@ -917,6 +937,30 @@ end architecture;
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].name, "width");
         assert_eq!(found[0].container.as_deref(), Some("pkg"));
+    }
+
+    #[test]
+    fn generates_from_entities() {
+        let (_dir, _pkg, top) = project();
+        let mut engine = Engine::default();
+        let found = engine.entities(Some(&top), TOP);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].qualified(), "work.top");
+        let instance = engine
+            .generate(Some(&top), TOP, Kind::Instance, "top")
+            .unwrap();
+        assert_eq!(instance.text, "u_top : entity work.top;\n");
+        assert_eq!(instance.path, None);
+        let testbench = engine
+            .generate(Some(&top), TOP, Kind::Testbench, "work.top")
+            .unwrap();
+        assert!(testbench.text.contains("dut : entity work.top;"));
+        assert_eq!(testbench.path, Some(top.with_file_name("top_tb.vhd")));
+        assert!(
+            engine
+                .generate(Some(&top), TOP, Kind::Component, "nope")
+                .is_err()
+        );
     }
 
     #[test]

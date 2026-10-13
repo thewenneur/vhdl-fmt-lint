@@ -48,6 +48,7 @@ Verilog/SystemVerilog, mixed-language projects (designed for, not built).
 | `vfl-sema`   | Incremental semantic model: design units, scopes, name resolution, overloads, types. |
 | `vfl-fmt`    | Formatter: CST to layout IR to text, with an alignment pass. |
 | `vfl-lint`   | Rule framework and built-in rules (syntactic and semantic), fixes. |
+| `vfl-gen`    | Code generated from an entity: instantiations, component declarations, testbench skeletons. |
 | `vfl-lsp`    | Language server: diagnostics, formatting, go-to, hover, signature help, completion, rename. |
 | `vfl-cli`    | The `vfl` binary: `vfl fmt`, `vfl lint`, `vfl check`, `vfl lsp`, `vfl project`. |
 

@@ -8,6 +8,7 @@
 //! help and completion directly, for editors that link it.
 
 pub mod editor;
+pub mod generate;
 mod handlers;
 mod types;
 mod world;
@@ -69,7 +70,9 @@ pub fn capabilities() -> ServerCapabilities {
             code_action_kinds: Some(vec![
                 CodeActionKind::QUICKFIX,
                 CodeActionKind::new("source.fixAll.vfl"),
+                CodeActionKind::new(generate::TESTBENCH_KIND),
             ]),
+            resolve_provider: Some(true),
             ..Default::default()
         })),
         ..Default::default()
