@@ -3,6 +3,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use rayon::prelude::*;
+
 use vfl_syntax::{TextRange, TextSize};
 
 use crate::analysis::{Ctx, UnitResult};
@@ -122,96 +124,120 @@ pub(crate) fn project_checks(ctx: &Ctx) -> Vec<Diagnostic> {
         }
     }
 
+    // Each unit's findings in parallel; a use clause of a file in two
+    // libraries is then reported once.
+    let per_unit: Vec<Vec<(bool, Diagnostic)>> = (0..ctx.units.len())
+        .into_par_iter()
+        .map(|id| unit_project_checks(ctx, &secondaries, id as UnitId))
+        .collect();
     let mut reported_use_items: HashSet<(u32, TextSize)> = HashSet::new();
-    for (id, unit) in ctx.units.iter().enumerate() {
-        let id = id as UnitId;
-        if ctx.files[unit.file as usize].builtin {
+    for (is_use, diag) in per_unit.into_iter().flatten() {
+        if is_use && !reported_use_items.insert((diag.file, diag.range.start())) {
             continue;
         }
-        let Some(result) = ctx.result(id) else {
-            continue;
-        };
-        let related: Vec<UnitId> = match unit.kind {
-            DeclKind::Entity | DeclKind::Package => secondaries
-                .get(&(unit.library.as_str(), unit.name.as_str()))
-                .cloned()
-                .unwrap_or_default(),
-            _ => Vec::new(),
-        };
+        diags.push(diag);
+    }
+    diags
+}
 
-        // Unused use clauses.
-        if unit.kind != DeclKind::Context && !result.use_items.is_empty() {
-            let mut used: HashSet<u32> = HashSet::new();
-            for &u in std::iter::once(&id).chain(&related) {
-                if let Some(r) = ctx.result(u) {
-                    used.extend(
-                        r.used_imports
-                            .iter()
-                            .filter(|i| i.unit == id)
-                            .map(|i| i.index),
-                    );
-                }
+/// The cross-unit findings about one unit: unused use clauses (marked
+/// `true`), unused ports and generics, output ports never driven.
+fn unit_project_checks(
+    ctx: &Ctx,
+    secondaries: &HashMap<(&str, &str), Vec<UnitId>>,
+    id: UnitId,
+) -> Vec<(bool, Diagnostic)> {
+    let mut diags = Vec::new();
+    let unit = &ctx.units[id as usize];
+    if ctx.files[unit.file as usize].builtin {
+        return diags;
+    }
+    let Some(result) = ctx.result(id) else {
+        return diags;
+    };
+    let related: Vec<UnitId> = match unit.kind {
+        DeclKind::Entity | DeclKind::Package => secondaries
+            .get(&(unit.library.as_str(), unit.name.as_str()))
+            .cloned()
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
+
+    // Unused use clauses.
+    if unit.kind != DeclKind::Context && !result.use_items.is_empty() {
+        let mut used: HashSet<u32> = HashSet::new();
+        for &u in std::iter::once(&id).chain(&related) {
+            if let Some(r) = ctx.result(u) {
+                used.extend(
+                    r.used_imports
+                        .iter()
+                        .filter(|i| i.unit == id)
+                        .map(|i| i.index),
+                );
             }
-            for (index, item) in result.use_items.iter().enumerate() {
-                if !item.resolved
-                    || used.contains(&(index as u32))
-                    || !reported_use_items.insert((unit.file, item.range.start()))
-                {
-                    continue;
-                }
-                let text = &ctx.files[unit.file as usize].text;
-                let item_text = &text[item.range];
-                diags.push(Diagnostic {
+        }
+        for (index, item) in result.use_items.iter().enumerate() {
+            if !item.resolved || used.contains(&(index as u32)) {
+                continue;
+            }
+            let text = &ctx.files[unit.file as usize].text;
+            let item_text = &text[item.range];
+            diags.push((
+                true,
+                Diagnostic {
                     code: codes::UNUSED_USE,
                     file: unit.file,
                     range: item.range,
                     message: format!("nothing from `{item_text}` is used"),
                     fix: Some(remove_use_item(text, item)),
-                });
+                },
+            ));
+        }
+    }
+
+    // Unused ports and generics, and output ports never driven.
+    if unit.kind == DeclKind::Entity && !related.is_empty() {
+        let mut refs = result.refs.iter().collect::<Vec<_>>();
+        for &arch in &related {
+            if let Some(r) = ctx.result(arch) {
+                refs.extend(r.refs.iter());
             }
         }
-
-        // Unused ports and generics, and output ports never driven.
-        if unit.kind == DeclKind::Entity && !related.is_empty() {
-            let mut refs = result.refs.iter().collect::<Vec<_>>();
-            for &arch in &related {
-                if let Some(r) = ctx.result(arch) {
-                    refs.extend(r.refs.iter());
-                }
-            }
-            let usage = usage_of(refs.into_iter());
-            for (index, decl) in result.decls.iter().enumerate() {
-                let decl_id = DeclId {
-                    unit: id,
-                    index: index as u32,
-                };
-                let u = usage.get(&decl_id).copied().unwrap_or_default();
-                let (code, message) = match decl.kind {
-                    DeclKind::Port { .. } if u.refs == 0 => (
-                        codes::UNUSED_PORT,
-                        format!("port `{}` is never used", decl.spelling),
-                    ),
-                    DeclKind::Port {
-                        mode: Mode::Out | Mode::Buffer,
-                        ..
-                    } if u.writes == 0 => (
-                        codes::UNDRIVEN_SIGNAL,
-                        format!("output port `{}` is never assigned", decl.spelling),
-                    ),
-                    DeclKind::Generic { .. } if u.refs == 0 => (
-                        codes::UNUSED_GENERIC,
-                        format!("generic `{}` is never used", decl.spelling),
-                    ),
-                    _ => continue,
-                };
-                diags.push(Diagnostic {
+        let usage = usage_of(refs.into_iter());
+        for (index, decl) in result.decls.iter().enumerate() {
+            let decl_id = DeclId {
+                unit: id,
+                index: index as u32,
+            };
+            let u = usage.get(&decl_id).copied().unwrap_or_default();
+            let (code, message) = match decl.kind {
+                DeclKind::Port { .. } if u.refs == 0 => (
+                    codes::UNUSED_PORT,
+                    format!("port `{}` is never used", decl.spelling),
+                ),
+                DeclKind::Port {
+                    mode: Mode::Out | Mode::Buffer,
+                    ..
+                } if u.writes == 0 => (
+                    codes::UNDRIVEN_SIGNAL,
+                    format!("output port `{}` is never assigned", decl.spelling),
+                ),
+                DeclKind::Generic { .. } if u.refs == 0 => (
+                    codes::UNUSED_GENERIC,
+                    format!("generic `{}` is never used", decl.spelling),
+                ),
+                _ => continue,
+            };
+            diags.push((
+                false,
+                Diagnostic {
                     code,
                     file: decl.file,
                     range: decl.range,
                     message,
                     fix: None,
-                });
-            }
+                },
+            ));
         }
     }
     diags

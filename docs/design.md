@@ -117,12 +117,25 @@ Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
 - `std` and `ieee` are bundled as VHDL sources (`std` written from the LRM, `ieee` from the
   Apache-2.0 IEEE packages, plus the declarations of the Synopsys `std_logic_arith` family)
   and analyzed like user code, once per process.
-- Incrementality is deliberately simple instead of `salsa`: parsing is per file and cached
-  (an edit re-parses one file), library inference is a cheap pass over per-file summaries,
-  and resolution re-runs over the parsed project. On the corpus this takes 45 ms (neorv32)
-  to 250 ms (UVVM, 400 files) for a cold run including loading, which is already within
-  LSP budgets; per-unit result reuse keyed on dependency hashes is the next step if larger
-  projects need it.
+- Incrementality is deliberately simple instead of `salsa`. Parsing is per file and cached
+  (an edit re-parses one file), and library inference is a cheap pass over per-file
+  summaries. `Analysis::update` then reuses the previous analysis unit by unit, in the same
+  dependency order as a full run. A unit is analyzed again when its file's tree changed,
+  or when a unit it depends on (by name, or by a declaration its results refer to) is
+  *affected*. A re-analyzed unit is affected when its interface hash changed: its
+  declarations without their positions, its region, imports and libraries. A unit that
+  depends on an affected unit is affected too, whatever its own hash, since its
+  dependents may read through it. Unchanged files keep their line index and unit list,
+  type checking runs only for re-analyzed units, and the cross-unit checks run again in
+  parallel. When files or units are added, removed or renamed, everything is analyzed
+  again. The linter also reuses a file's findings while its tree, config, semantic
+  diagnostics and declarations are unchanged. `scripts/corpus.sh` checks on the corpus
+  that an update after edits gives exactly what a full analysis gives.
+- Only an analysis built by `Analysis::update` (the language server's) keeps the hashes and
+  dependencies reuse needs; a one-off `Analysis::new` (the CLI's) skips that bookkeeping.
+- Edit to fresh diagnostics in the language server (`crates/vfl-lsp/examples/edit_latency.rs`):
+  a median of 6 ms (neorv32) to 45 ms (UVVM), and up to a full re-analysis (about 0.8 s on
+  UVVM) for a change to a package that every unit uses.
 
 ### Formatter
 
@@ -313,14 +326,14 @@ is small and local rather than a full list.
 
 Measured by `scripts/bench_rust_hdl.py` against the latest `vhdl_ls` release on a corpus
 (OSVVM, UVVM, VUnit, neorv32, and the GHDL test suite for robustness). Current numbers are
-in [benchmarks.md](benchmarks.md): 2 to 3 times faster, 3 to 5 times less memory, and far
-fewer false errors, with zero configuration.
+in [benchmarks.md](benchmarks.md): 1.5 to 2.3 times faster, 2.8 to 4.1 times less memory,
+and far fewer false errors, with zero configuration.
 
 | Dimension | Target | Status |
 |-----------|--------|--------|
-| Cold full-project analysis time | faster | 2-3x faster |
-| Peak memory | lower | 3-5x lower |
-| LSP keystroke-to-diagnostics latency | under 50 ms on the largest corpus project | within a full re-analysis (about 100-400 ms on the corpus); per-unit reuse is the next step |
+| Cold full-project analysis time | faster | 1.5-2.3x faster |
+| Peak memory | lower | 2.8-4.1x lower |
+| LSP keystroke-to-diagnostics latency | under 50 ms on the largest corpus project | 6-45 ms median per edit; a change to a package everything uses re-analyzes its dependents |
 | False errors on valid corpus code | fewer (tracked per release) | fewer on every project |
 | Setup | zero config vs. required `vhdl_ls.toml` | done; `vfl project --vhdl-ls` exports one |
 | Features | formatter, autofixes, lossless refactorings, VHDL-2019, type checking | done |
@@ -341,6 +354,13 @@ fewer false errors, with zero configuration.
 4. Project inference, semantic model, linter, CLI and LSP; benchmarks against rust_hdl
    (done).
 5. Overload resolution and type checking (done).
-6. Next: per-unit incremental reuse for the LSP, type-aware LSP features (hover with
-   types, signature help), more rules (width mismatches, latches, clock domain hints),
-   more import formats.
+6. Incremental analysis for the LSP: an edit re-analyzes only the units it affects,
+   reusing the results of the others (done).
+7. Type-aware LSP features: hover showing an object's type and the overload a call
+   resolves to, signature help for subprogram calls and instantiations, completion of
+   record elements and protected type methods.
+8. More rules: width mismatches in assignments and associations, inferred latches
+   (combinational processes that do not assign a signal on every path), clock domain
+   hints (a signal sampled by two clocks without synchronization).
+9. More import formats for library lists: VUnit `run.py`, FuseSoC `.core`, Vivado and
+   Quartus project files, alongside today's `vhdl_ls.toml`.

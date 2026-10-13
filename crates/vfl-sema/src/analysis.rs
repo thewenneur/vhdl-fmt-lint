@@ -2,6 +2,9 @@
 //! library, orders them so each unit is analyzed after the units it uses,
 //! resolves names unit by unit (in parallel within a level), then runs the
 //! checks that need several units at once.
+//!
+//! [`Analysis::update`] analyzes a new version of the same project and
+//! reuses the results of every unit an edit cannot have affected.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -61,7 +64,7 @@ pub struct UnitInfo {
 }
 
 /// The analysis of one unit.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct UnitResult {
     pub decls: Vec<Decl>,
     pub region: Arc<Region>,
@@ -83,7 +86,7 @@ pub(crate) struct Ctx<'a> {
     pub units: &'a [UnitInfo],
     pub libraries: &'a LibraryIndex,
     pub architectures: &'a HashMap<(String, String, String), UnitId>,
-    pub results: &'a [OnceLock<UnitResult>],
+    pub results: &'a [OnceLock<Arc<UnitResult>>],
     pub standard: Option<UnitId>,
 }
 
@@ -95,7 +98,7 @@ impl Ctx<'_> {
     }
 
     pub fn result(&self, unit: UnitId) -> Option<&UnitResult> {
-        self.results.get(unit as usize)?.get()
+        self.results.get(unit as usize)?.get().map(|r| &**r)
     }
 
     pub fn decl(&self, id: DeclId) -> Option<&Decl> {
@@ -174,9 +177,21 @@ fn closest(
 pub struct Analysis {
     files: Vec<AnalyzedFile>,
     units: Vec<UnitInfo>,
-    results: Vec<UnitResult>,
+    results: Vec<Arc<UnitResult>>,
+    /// Per unit: a hash of what other units can see of it (its
+    /// declarations without their positions, its region and imports).
+    interfaces: Vec<u64>,
+    /// Per unit: the other units its results refer to.
+    uses: Vec<Vec<UnitId>>,
+    /// Per file: its units with the names they mention.
+    per_file: Vec<Arc<Vec<UnitWithDeps>>>,
     diagnostics: Vec<Diagnostic>,
     user_files: usize,
+    /// Per unit: whether it was analyzed rather than reused.
+    fresh: Vec<bool>,
+    /// Whether `interfaces` and `uses` were computed, so that a later
+    /// [`Analysis::update`] can reuse this analysis.
+    incremental: bool,
 }
 
 impl std::fmt::Debug for Analysis {
@@ -217,22 +232,70 @@ fn bundled() -> &'static [Bundled] {
 impl Analysis {
     /// Analyzes `files` together with the bundled `std` and `ieee` libraries.
     pub fn new(inputs: Vec<FileInput>) -> Analysis {
+        Analysis::build(inputs, None)
+    }
+
+    /// Analyzes a new version of the project, reusing the results of the
+    /// units that `self` analyzed and that the changes cannot affect: a unit
+    /// is analyzed again when its file changed, or when a unit it uses was
+    /// affected and what that unit shows to others (its declarations, apart
+    /// from their positions) changed. The result is the same as
+    /// [`Analysis::new`]'s. When files or design units were added, removed
+    /// or renamed, or when `self` was built by [`Analysis::new`] (which
+    /// skips the bookkeeping reuse needs), everything is analyzed again.
+    pub fn update(&self, inputs: Vec<FileInput>) -> Analysis {
+        Analysis::build(inputs, Some(self))
+    }
+
+    /// How many units were analyzed (not reused) to build this analysis.
+    pub fn reanalyzed_units(&self) -> usize {
+        self.fresh.iter().filter(|&&f| f).count()
+    }
+
+    /// Whether a unit of `file` was analyzed (not reused) to build this
+    /// analysis: if not, its declarations are those of the previous one.
+    pub fn file_reanalyzed(&self, file: FileId) -> bool {
+        self.units
+            .iter()
+            .zip(&self.fresh)
+            .any(|(u, &fresh)| u.file == file && fresh)
+    }
+
+    fn build(inputs: Vec<FileInput>, previous: Option<&Analysis>) -> Analysis {
         let user_files = inputs.len();
+        // A file unchanged since the previous analysis (same tree) keeps
+        // its line index and its units.
+        let unchanged = |id: usize, path: &Path, green: &GreenNode| -> Option<usize> {
+            let old = previous?.files.get(id)?;
+            (old.path == path && std::ptr::eq(&*old.green, &**green)).then_some(id)
+        };
         let mut files: Vec<AnalyzedFile> = inputs
             .into_par_iter()
-            .map(|input| AnalyzedFile {
-                line_index: LineIndex::new(&input.text),
-                path: input.path,
-                text: input.text,
-                green: input.green,
-                libraries: input.libraries,
-                builtin: false,
+            .enumerate()
+            .map(|(id, input)| {
+                let line_index = match unchanged(id, &input.path, &input.green) {
+                    Some(id) => previous.expect("unchanged").files[id].line_index.clone(),
+                    None => LineIndex::new(&input.text),
+                };
+                AnalyzedFile {
+                    line_index,
+                    path: input.path,
+                    text: input.text,
+                    green: input.green,
+                    libraries: input.libraries,
+                    builtin: false,
+                }
             })
             .collect();
         for (library, name, text, green) in bundled() {
+            let path = PathBuf::from(format!("<bundled>/{library}/{name}"));
+            let line_index = match unchanged(files.len(), &path, green) {
+                Some(id) => previous.expect("unchanged").files[id].line_index.clone(),
+                None => LineIndex::new(text),
+            };
             files.push(AnalyzedFile {
-                path: PathBuf::from(format!("<bundled>/{library}/{name}")),
-                line_index: LineIndex::new(text),
+                path,
+                line_index,
                 text: text.clone(),
                 green: green.clone(),
                 libraries: vec![library.clone()],
@@ -241,16 +304,24 @@ impl Analysis {
         }
 
         // Units, per file and library.
-        let per_file: Vec<Vec<UnitWithDeps>> = files
+        let per_file: Vec<Arc<Vec<UnitWithDeps>>> = files
             .par_iter()
             .enumerate()
-            .map(|(id, file)| file_units(id as FileId, file))
+            .map(|(id, file)| {
+                if let Some(p) = previous
+                    && unchanged(id, &file.path, &file.green).is_some()
+                    && p.files[id].libraries == file.libraries
+                {
+                    return p.per_file[id].clone();
+                }
+                Arc::new(file_units(id as FileId, file))
+            })
             .collect();
         let mut units = Vec::new();
         let mut raw_deps = Vec::new();
-        for file_units in per_file {
-            for (unit, deps) in file_units {
-                units.push(unit);
+        for file_units in &per_file {
+            for (unit, deps) in file_units.iter() {
+                units.push(unit.clone());
                 raw_deps.push(deps);
             }
         }
@@ -288,7 +359,7 @@ impl Analysis {
         });
         let standard = standard.map(|u| u as UnitId);
 
-        let results: Vec<OnceLock<UnitResult>> =
+        let results: Vec<OnceLock<Arc<UnitResult>>> =
             (0..units.len()).map(|_| OnceLock::new()).collect();
         let ctx = Ctx {
             files: &files,
@@ -337,11 +408,65 @@ impl Analysis {
             checks::unit_checks(&ctx, unit, result)
         };
 
+        // What can be reused: only with the same files and units, in the
+        // same order, since results refer to units and files by index.
+        // Only an analysis that may be updated later (the language server's)
+        // keeps what reuse needs; a one-off analysis (the CLI's) skips it.
+        let incremental = previous.is_some();
+        let previous = previous.filter(|p| p.incremental && same_structure(p, &files, &units));
+        let changed: Vec<bool> = match previous {
+            Some(p) => files
+                .iter()
+                .zip(&p.files)
+                .map(|(new, old)| !std::ptr::eq(&*new.green, &*old.green) && new.green != old.green)
+                .collect(),
+            None => vec![true; files.len()],
+        };
+        // A unit is affected when it was analyzed again and what it shows
+        // changed, or when a unit it uses was affected.
+        let mut affected = vec![false; units.len()];
+        let mut fresh = vec![false; units.len()];
+        let mut interfaces = vec![0u64; units.len()];
+        // Decides whether `unit` must be analyzed again; reuses it if not.
+        // Units are analyzed in the same order as in the previous analysis
+        // (the order depends only on the units and their dependencies), so
+        // a unit whose inputs did not change would get the same result, even
+        // where a dependency cycle was broken.
+        let reuse = |unit: UnitId, affected: &[bool]| -> bool {
+            let Some(p) = previous else { return false };
+            let u = unit as usize;
+            if changed[units[u].file as usize] {
+                return false;
+            }
+            let dirty = deps[u]
+                .iter()
+                .chain(&p.uses[u])
+                .any(|&d| affected[d as usize]);
+            if dirty {
+                return false;
+            }
+            let _ = results[u].set(p.results[u].clone());
+            true
+        };
+
         let mut done = vec![false; units.len()];
         let mut remaining: Vec<UnitId> = (0..units.len() as UnitId).collect();
         if let Some(standard) = standard {
-            let _ = results[standard as usize].set(analyze(standard));
-            done[standard as usize] = true;
+            let s = standard as usize;
+            if reuse(standard, &affected) {
+                interfaces[s] = previous.map_or(0, |p| p.interfaces[s]);
+            } else {
+                let result = analyze(standard);
+                interfaces[s] = if incremental {
+                    interface_hash(&result)
+                } else {
+                    0
+                };
+                affected[s] = previous.is_some_and(|p| p.interfaces[s] != interfaces[s]);
+                fresh[s] = true;
+                let _ = results[s].set(Arc::new(result));
+            }
+            done[s] = true;
             remaining.retain(|&u| u != standard);
         }
         while !remaining.is_empty() {
@@ -364,11 +489,50 @@ impl Analysis {
                     .expect("remaining is not empty");
                 ready.push(pick);
             }
-            let analyzed: Vec<(UnitId, UnitResult)> =
-                ready.par_iter().map(|&u| (u, analyze(u))).collect();
-            for (unit, result) in analyzed {
-                let _ = results[unit as usize].set(result);
-                done[unit as usize] = true;
+            let mut todo = Vec::new();
+            for &u in &ready {
+                if reuse(u, &affected) {
+                    let p = previous.expect("reused from a previous analysis");
+                    interfaces[u as usize] = p.interfaces[u as usize];
+                } else {
+                    todo.push(u);
+                }
+            }
+            let analyzed: Vec<(UnitId, UnitResult, u64)> = todo
+                .par_iter()
+                .map(|&u| {
+                    let result = analyze(u);
+                    let interface = if incremental {
+                        interface_hash(&result)
+                    } else {
+                        0
+                    };
+                    (u, result, interface)
+                })
+                .collect();
+            for (unit, result, interface) in analyzed {
+                let u = unit as usize;
+                interfaces[u] = interface;
+                // Without a previous analysis, nothing is reused, so
+                // whether a unit is affected does not matter.
+                affected[u] = previous.is_some_and(|p| p.interfaces[u] != interface);
+                fresh[u] = true;
+                let _ = results[u].set(Arc::new(result));
+            }
+            for &u in &ready {
+                let u = u as usize;
+                done[u] = true;
+                // Units that use an affected unit are affected too, whatever
+                // they show: their own dependents may read through them.
+                if let Some(p) = previous
+                    && fresh[u]
+                    && deps[u]
+                        .iter()
+                        .chain(&p.uses[u])
+                        .any(|&d| affected[d as usize])
+                {
+                    affected[u] = true;
+                }
             }
             let ready: HashSet<UnitId> = ready.into_iter().collect();
             remaining.retain(|u| !ready.contains(u));
@@ -381,25 +545,49 @@ impl Analysis {
         let outcomes: Vec<Option<typeck::Outcome>> = (0..units.len() as UnitId)
             .into_par_iter()
             .map(|unit| {
+                if !fresh[unit as usize] {
+                    return None;
+                }
                 let result = ctx.result(unit)?;
                 Some(typeck::check_unit(&ctx, unit, &design_unit(unit), result))
             })
             .collect();
-        let mut results: Vec<UnitResult> = results
+        let previous_uses = previous.map(|p| &p.uses);
+        let (results, uses): (Vec<Arc<UnitResult>>, Vec<Vec<UnitId>>) = results
             .into_iter()
-            .map(|r| r.into_inner().unwrap_or_default())
-            .collect();
-        for (result, outcome) in results.iter_mut().zip(outcomes) {
-            if let Some(outcome) = outcome {
-                outcome.apply(result);
-            }
-        }
+            .zip(outcomes)
+            .enumerate()
+            .map(|(u, (result, outcome))| {
+                let result = result.into_inner().unwrap_or_default();
+                if !fresh[u] {
+                    let uses = previous_uses.map(|p| p[u].clone()).unwrap_or_default();
+                    return (result, uses);
+                }
+                let mut result = Arc::try_unwrap(result).unwrap_or_else(|r| (*r).clone());
+                if let Some(outcome) = outcome {
+                    outcome.apply(&mut result);
+                }
+                let uses = if incremental {
+                    used_units(u as UnitId, &result)
+                } else {
+                    Vec::new()
+                };
+                (Arc::new(result), uses)
+            })
+            .unzip();
         for result in &results {
             diagnostics.extend(result.diagnostics.iter().cloned());
         }
         diagnostics.retain(|d| (d.file as usize) < user_files);
+        // The message breaks ties, so the order does not depend on hash
+        // map iteration (a unit in two libraries is reported twice).
         diagnostics.sort_by(|a, b| {
-            (a.file, a.range.start(), a.code).cmp(&(b.file, b.range.start(), b.code))
+            (a.file, a.range.start(), a.code, &a.message).cmp(&(
+                b.file,
+                b.range.start(),
+                b.code,
+                &b.message,
+            ))
         });
         diagnostics.dedup();
 
@@ -407,8 +595,13 @@ impl Analysis {
             files,
             units,
             results,
+            interfaces,
+            uses,
+            per_file,
             diagnostics,
             user_files,
+            fresh,
+            incremental,
         }
     }
 
@@ -477,6 +670,50 @@ impl Analysis {
                 )
             })
         })
+    }
+
+    /// A textual dump of everything the analysis found (declarations,
+    /// references, diagnostics), in a stable order: for checking that an
+    /// [`Analysis::update`] gives the same result as [`Analysis::new`].
+    #[doc(hidden)]
+    pub fn dump(&self) -> String {
+        use std::fmt::Write;
+        let mut out = String::new();
+        for (id, decl) in self.decls() {
+            let _ = writeln!(
+                out,
+                "decl {}:{} {} {:?} {}:{:?} {:?} {:?} {:?} {:?} {:?}",
+                id.unit,
+                id.index,
+                decl.name,
+                decl.kind,
+                decl.file,
+                decl.range,
+                decl.full_range,
+                decl.parent,
+                decl.subtype,
+                decl.type_def,
+                decl.params,
+            );
+            if let Some(members) = &decl.members {
+                let _ = writeln!(out, "  members {:?}", members.iter().collect::<Vec<_>>());
+            }
+        }
+        for (file, r) in self.references() {
+            let _ = writeln!(
+                out,
+                "ref {file}:{:?} {:?} {:?}",
+                r.range, r.targets, r.access
+            );
+        }
+        for d in &self.diagnostics {
+            let _ = writeln!(
+                out,
+                "diag {}:{:?} {} {}",
+                d.file, d.range, d.code, d.message
+            );
+        }
+        out
     }
 
     /// Every reference, with the file it is in.
@@ -585,4 +822,91 @@ fn unit_dependencies(design_unit: &SyntaxNode) -> Vec<(String, String)> {
     deps.sort();
     deps.dedup();
     deps
+}
+
+/// Whether `files` and `units` are those of `previous`, in the same order,
+/// texts aside.
+fn same_structure(previous: &Analysis, files: &[AnalyzedFile], units: &[UnitInfo]) -> bool {
+    previous.files.len() == files.len()
+        && previous.units.len() == units.len()
+        && previous
+            .files
+            .iter()
+            .zip(files)
+            .all(|(a, b)| a.path == b.path && a.libraries == b.libraries && a.builtin == b.builtin)
+        && previous.units.iter().zip(units).all(|(a, b)| {
+            a.file == b.file
+                && a.index == b.index
+                && a.kind == b.kind
+                && a.name == b.name
+                && a.primary == b.primary
+                && a.library == b.library
+        })
+}
+
+/// A hash of what other units can see of a unit: its declarations (but not
+/// where they are), its region, and the imports and libraries its
+/// secondary units inherit.
+fn interface_hash(result: &UnitResult) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for decl in &result.decls {
+        decl.name.hash(&mut h);
+        decl.spelling.hash(&mut h);
+        decl.kind.hash(&mut h);
+        decl.parent.hash(&mut h);
+        decl.subtype.hash(&mut h);
+        decl.type_def.hash(&mut h);
+        decl.params.hash(&mut h);
+        match &decl.members {
+            Some(region) => {
+                1u8.hash(&mut h);
+                region.hash_into(&mut h);
+            }
+            None => 0u8.hash(&mut h),
+        }
+    }
+    result.region.hash_into(&mut h);
+    for import in &result.imports {
+        import.hash_into(&mut h);
+    }
+    result.libraries.hash(&mut h);
+    h.finish()
+}
+
+/// The other units that a unit's results refer to.
+fn used_units(unit: UnitId, result: &UnitResult) -> Vec<UnitId> {
+    let mut out: Vec<UnitId> = Vec::new();
+    let mut add = |id: DeclId| out.push(id.unit);
+    for r in &result.refs {
+        for t in &r.targets {
+            if let crate::decl::Target::Decl(id) = t {
+                add(*id);
+            }
+        }
+    }
+    for decl in &result.decls {
+        decl.parent
+            .into_iter()
+            .chain(decl.subtype)
+            .for_each(&mut add);
+        decl.params
+            .iter()
+            .flat_map(|p| p.iter().copied())
+            .for_each(&mut add);
+        if let Some(region) = &decl.members {
+            region.iter().for_each(&mut add);
+        }
+        if let Some(def) = &decl.type_def {
+            def.decl_ids(&mut add);
+        }
+    }
+    result.region.iter().for_each(&mut add);
+    for import in &result.imports {
+        import.decl_ids(&mut add);
+    }
+    out.sort_unstable();
+    out.dedup();
+    out.retain(|&u| u != unit);
+    out
 }

@@ -191,7 +191,7 @@ pub struct Decl {
 }
 
 /// The definition of a type, as far as type checking needs it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeDef {
     /// The literals, as lookup keys: identifiers in lower case, character
     /// literals with their quotes (`'0'`).
@@ -212,8 +212,25 @@ pub enum TypeDef {
     Protected,
 }
 
+impl TypeDef {
+    /// Calls `f` with every declaration the definition refers to.
+    pub(crate) fn decl_ids(&self, mut f: impl FnMut(DeclId)) {
+        match self {
+            TypeDef::Array { indexes, element } => {
+                indexes.iter().flatten().copied().for_each(&mut f);
+                element.iter().copied().for_each(f);
+            }
+            TypeDef::Record(elements) => {
+                elements.iter().filter_map(|e| e.subtype).for_each(f);
+            }
+            TypeDef::Access(Some(id)) | TypeDef::File(Some(id)) => f(*id),
+            _ => {}
+        }
+    }
+}
+
 /// A record element.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Element {
     pub name: String,
     pub spelling: String,
@@ -259,6 +276,16 @@ impl Region {
 
     pub fn is_empty(&self) -> bool {
         self.order.is_empty()
+    }
+
+    /// Feeds the region's names and declarations to `h`.
+    pub(crate) fn hash_into(&self, h: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        let mut names: Vec<(&String, &Vec<DeclId>)> = self.names.iter().collect();
+        names.sort_unstable_by_key(|(k, _)| *k);
+        names.hash(h);
+        self.order.hash(h);
+        self.opaque.hash(h);
     }
 }
 

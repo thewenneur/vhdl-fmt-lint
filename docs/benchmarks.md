@@ -12,19 +12,20 @@ standard libraries (`vhdl_libraries` from the same release).
 ## Results
 
 rust_hdl 0.88.0 (`vhdl_lang` from crates.io) against this branch, release builds, 4-core
-Intel Xeon at 2.8 GHz, Linux, 3 runs each. vfl now resolves overloads and checks types.
+Intel Xeon at 2.8 GHz, Linux, median of 5 runs, peak resident memory. vfl resolves
+overloads and checks types.
 
 | Project | Files | vfl time | rust_hdl time | vfl memory | rust_hdl memory | vfl errors | rust_hdl errors |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| neorv32 (b262045) | 68 | 140 ms | 356 ms | 30 MiB | 124 MiB | 0 | 0 |
-| OSVVM (716d751) | 76 | 284 ms | 480 ms | 52 MiB | 185 MiB | 164 | 834 |
-| UVVM (90d56e9) | 302 | 883 ms | 1809 ms | 127 MiB | 360 MiB | 5 | 162 |
-| VUnit (98063a4) | 331 | 372 ms | 558 ms | 63 MiB | 191 MiB | 37 | 927 |
+| neorv32 (b262045) | 68 | 156 ms | 362 ms | 30 MiB | 123 MiB | 0 | 0 |
+| OSVVM (716d751) | 76 | 316 ms | 483 ms | 52 MiB | 185 MiB | 164 | 834 |
+| UVVM (90d56e9) | 302 | 812 ms | 1688 ms | 128 MiB | 360 MiB | 5 | 162 |
+| VUnit (98063a4) | 331 | 370 ms | 582 ms | 64 MiB | 191 MiB | 37 | 927 |
 
-vfl is 1.5 to 2.5 times faster and uses 3 to 4 times less memory, without a library list.
-Type checking costs about a third of vfl's time; it runs in parallel for every unit after
-name resolution. The machine was noisier than for the previous table, where rust_hdl took
-294, 345, 1189 and 436 ms.
+vfl is 1.5 to 2.3 times faster and uses 2.8 to 4.1 times less memory, without a library
+list. Type checking costs about a third of vfl's time; it runs in parallel for every unit
+after name resolution. A one-off run (the CLI's) skips the bookkeeping that incremental
+re-analysis needs, so it costs the same time and memory as before it.
 
 What the remaining vfl errors are (none of them is a type error):
 
@@ -65,6 +66,27 @@ invalid conversions, non-boolean conditions), both tools find all 20 at the same
 places. On its valid part, rust_hdl reports 2 false errors that vfl does not:
 `table(3)`, a call without arguments to a function whose array result is indexed
 (LRM 9.3.4; GHDL's VESTS test tc1071 relies on it), and `sll` on a `bit_vector`.
+
+### Editing
+
+`crates/vfl-lsp/examples/edit_latency.rs` opens a project as the language server does,
+then for 8 files spread over it makes 3 edits each and times the refresh, from the new
+text to fresh diagnostics (inference, analysis and lint). "Inside a unit" appends a
+comment; "type change" replaces the first `integer` with `natural` or `positive`. Peak
+memory is the whole process: opening the project, then the 48 edits.
+
+| Project | Open | Inside a unit (median / max) | Type change (median / max) | Peak memory |
+|---|---:|---:|---:|---:|
+| neorv32 | 124 ms | 9 / 17 ms (was 103 / 124 ms) | 6 / 10 ms (was 109 / 134 ms) | 32 MiB (was 44 MiB) |
+| OSVVM | 235 ms | 10 / 67 ms (was 180 / 243 ms) | 17 / 79 ms (was 213 / 241 ms) | 70 MiB (was 95 MiB) |
+| UVVM | 715 ms | 30 / 55 ms (was 749 / 837 ms) | 45 / 828 ms (was 785 / 926 ms) | 201 MiB (was 213 MiB) |
+| VUnit | 403 ms | 20 / 29 ms (was 305 / 358 ms) | 19 / 28 ms (was 286 / 311 ms) | 67 MiB (was 101 MiB) |
+
+"Was" is the same program built from the previous version, which re-analyzed and
+re-linted the whole project on every edit. Memory went down too: reused unit results are
+shared between the old and the new analysis instead of being built again. The slowest
+edits change a package that most of the project uses (UVVM's `types_pkg`), which
+re-analyzes everything that depends on it.
 
 ## Running it
 

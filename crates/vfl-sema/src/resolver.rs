@@ -34,6 +34,45 @@ pub(crate) struct ImportId {
     pub index: u32,
 }
 
+impl Import {
+    /// Feeds what the import makes visible to `h`.
+    pub fn hash_into(&self, h: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        self.id.hash(h);
+        match &self.kind {
+            ImportKind::All(region) => {
+                0u8.hash(h);
+                region.hash_into(h);
+            }
+            ImportKind::Names(name, targets) => {
+                1u8.hash(h);
+                name.hash(h);
+                targets.hash(h);
+            }
+            ImportKind::Library(library) => {
+                2u8.hash(h);
+                library.hash(h);
+            }
+            ImportKind::Opaque => 3u8.hash(h),
+        }
+    }
+
+    /// Calls `f` with every declaration the import makes visible.
+    pub fn decl_ids(&self, mut f: impl FnMut(DeclId)) {
+        match &self.kind {
+            ImportKind::All(region) => region.iter().for_each(f),
+            ImportKind::Names(_, targets) => {
+                for t in targets {
+                    if let Target::Decl(id) = t {
+                        f(*id);
+                    }
+                }
+            }
+            ImportKind::Library(_) | ImportKind::Opaque => {}
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) enum ImportKind {
     /// `use lib.pkg.all`.

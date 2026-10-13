@@ -2,8 +2,9 @@
 # Parses pinned open-source VHDL projects and fails on any syntax error or
 # round-trip mismatch. Then formats them, with the default config and a very
 # different one, and fails on any formatter error or output that changes
-# when formatted again. Last, lints them and fails on more semantic errors
-# than the known ones. Usage: scripts/corpus.sh [CACHE_DIR]
+# when formatted again. Then lints them and fails on more semantic errors
+# than the known ones. Last, checks that re-analysis after edits, reusing the
+# previous analysis, matches a full analysis. Usage: scripts/corpus.sh [CACHE_DIR]
 set -euo pipefail
 
 cache=${1:-.corpus}
@@ -103,6 +104,14 @@ for expected in "OSVVM 9" "UVVM 5" "vunit 37" "neorv32 0"; do
     status=1
   fi
 done
+# Incremental analysis: after edits to a spread of files, reusing the
+# previous analysis must give exactly what a full analysis gives.
+cargo build --release -q -p vfl-sema --example incremental_corpus
+inc=$target/release/examples/incremental_corpus
+$inc --files 4 "$cache/neorv32" "$cache/vunit" "$cache/UVVM" || status=1
+$inc --files 4 --std 2019 "$cache/OSVVM" || status=1
+$inc --files 8 --std 93 "${vests[@]}" || status=1
+
 # Nothing may panic on the whole GHDL test suite.
 $target/release/examples/sema_corpus "$cache/ghdl/testsuite" >/dev/null || status=1
 
