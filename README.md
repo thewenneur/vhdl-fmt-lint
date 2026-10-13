@@ -10,7 +10,7 @@ A fast, fully configurable VHDL formatter, linter and language server, in pure R
   No library list to maintain.
 - **VHDL-2008**, **VHDL-93** and **VHDL-2019**.
 
-Status: early development. See [docs/design.md](docs/design.md) for the design.
+Status: early development (first release: 0.1.0, see the [changelog](CHANGELOG.md)). See [docs/design.md](docs/design.md) for the design.
 
 Documentation:
 
@@ -23,7 +23,11 @@ Documentation:
 
 ### Command line
 
-With Rust 1.88 or later ([rustup.rs](https://rustup.rs)):
+Download the archive for your platform from the
+[latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest), unzip it and
+put `vfl` (`vfl.exe` on Windows) somewhere on the `PATH`.
+
+Or build it with Rust 1.88 or later ([rustup.rs](https://rustup.rs)):
 
 ```sh
 cargo install --git https://github.com/thewenneur/vhdl-fmt-lint vfl-cli
@@ -39,9 +43,8 @@ same.
 The extension ([editors/vscode](editors/vscode/README.md)) runs `vfl lsp`, so install `vfl`
 first (above). Then:
 
-1. Download the `vfl-vscode` artifact from the latest successful
-   [CI run on main](https://github.com/thewenneur/vhdl-fmt-lint/actions/workflows/ci.yml?query=branch%3Amain)
-   and unzip it to get `vfl-0.1.0.vsix`.
+1. Download `vfl-0.1.0.vsix` from the
+   [latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest).
 2. Install it with `code --install-extension vfl-0.1.0.vsix`, or in VS Code with
    **Extensions > ... > Install from VSIX...**.
 3. Open a folder with VHDL files. If `vfl` is not on the `PATH` or in `~/.cargo/bin`, set
@@ -54,9 +57,10 @@ To build the `.vsix` yourself: `cd editors/vscode && npm ci && npm run package`.
 The plugin ([editors/notepadpp](editors/notepadpp/README.md)) has the formatter, the linter
 and the editor features of the language server (types on hover, parameter hints, completion,
 quick fixes, go to definition, references, rename, symbols) built in, so it does not need
-`vfl` installed. Download and unzip the `vfl_npp` artifact from
-the same CI runs, close Notepad++, put `vfl_npp.dll` in a new `plugins\vfl_npp` folder of its
-install directory (usually `C:\Program Files\Notepad++\plugins\vfl_npp`) and start it again.
+`vfl` installed. Download `vfl_npp-v0.1.0-x64.zip` from the
+[latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest), close Notepad++,
+unzip it into the `plugins` folder of its install directory (usually
+`C:\Program Files\Notepad++\plugins`, giving `plugins\vfl_npp\vfl_npp.dll`) and start it again.
 The plugin's README covers building it and its commands.
 
 ### Other editors
