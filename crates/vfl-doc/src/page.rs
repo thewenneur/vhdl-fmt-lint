@@ -263,7 +263,7 @@ code{font:13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:v
 table{border-collapse:collapse;margin:8px 0 16px;display:block;overflow-x:auto;max-width:100%}\
 th,td{border:1px solid var(--line);padding:5px 10px;text-align:left;vertical-align:top}\
 th{background:var(--side)}\
-td code{overflow-wrap:anywhere}\
+td code{overflow-wrap:break-word}\
 .diagram{overflow-x:auto;margin:8px 0 16px}\
 .diagram svg{max-width:none}\
 footer{color:var(--muted);font-size:13px;margin-top:48px}\
