@@ -135,7 +135,7 @@ fn project_shows_inferred_libraries() {
     assert!(ok);
     assert!(stdout.contains("lib/pkg.vhd  [mylib]"), "{stdout}");
     assert!(
-        stdout.contains("top.vhd refers to pkg in this library"),
+        stdout.contains("mylib: top.vhd refers to pkg in this library"),
         "{stdout}"
     );
     let (ok, stdout, _) = vfl(dir.path(), &["project", "--vhdl-ls"]);

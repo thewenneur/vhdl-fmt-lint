@@ -348,13 +348,19 @@ fn show_project(path: &Path, vhdl_ls: bool) -> Result<()> {
     let project = Project::load(root)?;
     println!("standard: {}", project.config.standard());
     println!("sources ({}):", project.files.len());
-    let dir = project.root.dir.clone();
+    // Paths relative to the root, with `/` on every platform.
+    let prefix = format!(
+        "{}{}",
+        project.root.dir.display(),
+        std::path::MAIN_SEPARATOR
+    );
+    let relative = |text: String| text.replace(&prefix, "").replace('\\', "/");
     for (file, libraries) in project.files.iter().zip(&project.libraries) {
-        let shown = file.path.strip_prefix(&dir).unwrap_or(&file.path);
         let names: Vec<&str> = libraries.iter().map(|(l, _)| l.as_str()).collect();
-        println!("  {}  [{}]", shown.display(), names.join(", "));
+        let shown = relative(file.path.display().to_string());
+        println!("  {shown}  [{}]", names.join(", "));
         for (library, reason) in libraries {
-            println!("      {library}: {reason}");
+            println!("      {library}: {}", relative(reason.to_string()));
         }
     }
     for (path, error) in &project.unreadable {
