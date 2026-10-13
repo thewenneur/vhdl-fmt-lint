@@ -1,4 +1,5 @@
-//! Measures how long hover, signature help and completion take: opens a
+//! Measures how long hover, signature help, completion, range formatting
+//! and format on type (a new line) take: opens a
 //! project, then sends each request at a spread of positions in a spread
 //! of files, and prints the median and slowest times.
 //! Usage: request_latency DIR
@@ -26,6 +27,8 @@ fn main() {
         "textDocument/hover",
         "textDocument/signatureHelp",
         "textDocument/completion",
+        "textDocument/rangeFormatting",
+        "textDocument/onTypeFormatting",
     ] {
         let mut times: Vec<Duration> = Vec::new();
         let mut answered = 0;
@@ -34,10 +37,27 @@ fn main() {
             let lines: Vec<&str> = text.lines().collect();
             for (line, content) in lines.iter().enumerate().step_by(7) {
                 let character = content.encode_utf16().count() as u32 / 2;
-                let params = json!({
-                    "textDocument": { "uri": uri },
-                    "position": { "line": line, "character": character },
-                });
+                let options = json!({ "tabSize": 2, "insertSpaces": true });
+                let params = match method {
+                    "textDocument/rangeFormatting" => json!({
+                        "textDocument": { "uri": uri },
+                        "range": {
+                            "start": { "line": line, "character": 0 },
+                            "end": { "line": line, "character": character },
+                        },
+                        "options": options,
+                    }),
+                    "textDocument/onTypeFormatting" => json!({
+                        "textDocument": { "uri": uri },
+                        "position": { "line": line + 1, "character": 0 },
+                        "ch": "\n",
+                        "options": options,
+                    }),
+                    _ => json!({
+                        "textDocument": { "uri": uri },
+                        "position": { "line": line, "character": character },
+                    }),
+                };
                 let start = Instant::now();
                 let result = vfl_lsp::handle(&mut world, method, params);
                 times.push(start.elapsed());

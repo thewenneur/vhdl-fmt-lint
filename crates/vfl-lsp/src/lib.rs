@@ -46,6 +46,11 @@ pub fn capabilities() -> ServerCapabilities {
             TextDocumentSyncKind::INCREMENTAL,
         )),
         document_formatting_provider: Some(OneOf::Left(true)),
+        document_range_formatting_provider: Some(OneOf::Left(true)),
+        document_on_type_formatting_provider: Some(lsp_types::DocumentOnTypeFormattingOptions {
+            first_trigger_character: ";".into(),
+            more_trigger_character: Some(vec!["\n".into()]),
+        }),
         definition_provider: Some(OneOf::Left(true)),
         references_provider: Some(OneOf::Left(true)),
         hover_provider: Some(lsp_types::HoverProviderCapability::Simple(true)),
@@ -195,7 +200,7 @@ impl Server<'_> {
         }
     }
 
-    /// Answers a request, after analyzing the latest edits.
+    /// Answers a request, after analyzing the latest edits if it needs them.
     fn answer(&mut self, request: Request) -> Result<()> {
         let response = if self.cancelled.remove(&request.id) {
             Response::new_err(
@@ -206,7 +211,7 @@ impl Server<'_> {
         } else if request.method == <Shutdown as lsp_types::request::Request>::METHOD {
             Response::new_ok(request.id, ())
         } else {
-            if self.world.dirty {
+            if self.world.dirty && handlers::needs_analysis(&request.method) {
                 self.world.refresh();
                 self.publish()?;
             }

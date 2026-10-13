@@ -57,14 +57,15 @@ fn context(node: &SyntaxNode) -> Context {
     (node.text_range().start().into(), node.kind() as u16)
 }
 
-/// The padding to add before each element.
+/// The padding to add before each element, and the first and last line of
+/// each run of lines aligned together.
 pub(crate) fn align(
     elems: &[Elem],
     an: &Analysis,
     lines: &mut [Line],
     line_of: &[usize],
     config: &AlignConfig,
-) -> Vec<u32> {
+) -> (Vec<u32>, Vec<(usize, usize)>) {
     let mut groups: BTreeMap<(Kind, Context), Vec<(usize, usize)>> = BTreeMap::new();
     for (li, line) in lines.iter().enumerate() {
         let mut add = |kind: Kind, ctx: Context, elem: usize| {
@@ -100,6 +101,7 @@ pub(crate) fn align(
     }
 
     let mut pads = vec![0u32; elems.len()];
+    let mut spans = Vec::new();
     for rank in 0..=3 {
         if rank == 1 {
             // Continuation lines of conditional values start under the first
@@ -114,6 +116,7 @@ pub(crate) fn align(
                 if run.len() < 2 {
                     continue;
                 }
+                spans.push((run[0].0, run[run.len() - 1].0));
                 let target = run
                     .iter()
                     .map(|&(l, e)| column(&lines[l], e, elems, an, &pads))
@@ -126,7 +129,7 @@ pub(crate) fn align(
             }
         }
     }
-    pads
+    (pads, spans)
 }
 
 /// Re-indents the lines that hang under a conditional assignment's first

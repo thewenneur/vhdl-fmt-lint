@@ -18,8 +18,8 @@ use std::ptr;
 use vfl_lsp::editor::CompletionKind;
 
 use crate::engine::{
-    BufferText, Engine, Severity, completes_after_dot, completion_list, is_library_copy,
-    is_project_file, is_vhdl_path, minimal_edit, plain_text, signature_tip,
+    BufferText, Engine, FormatFailure, Severity, completes_after_dot, completion_list,
+    is_library_copy, is_project_file, is_vhdl_path, minimal_edit, plain_text, signature_tip,
 };
 use crate::tools;
 use crate::win::*;
@@ -27,6 +27,7 @@ use crate::win::*;
 /// Menu entries, in order. `None` is a separator.
 const MENU: &[(&str, Option<extern "C" fn()>)] = &[
     ("Format document", Some(cmd_format)),
+    ("Format selection", Some(cmd_format_selection)),
     ("Lint document", Some(cmd_lint)),
     ("Next problem", Some(cmd_next)),
     ("Previous problem", Some(cmd_previous)),
@@ -438,6 +439,10 @@ extern "C" fn cmd_format() {
     guard(|| format_current(Trigger::Command));
 }
 
+extern "C" fn cmd_format_selection() {
+    guard(format_selection);
+}
+
 extern "C" fn cmd_lint() {
     guard(|| {
         rescan();
@@ -687,8 +692,32 @@ fn format_current(trigger: Trigger) {
         Ok(mut engine) => Some(engine.format(path.as_deref(), &buffer.text)),
         Err(_) => None,
     });
+    show_format_result(sci, &buffer, result, trigger);
+}
+
+/// Formats the selected lines, or the caret's line, and the statements and
+/// aligned lines they are part of.
+fn format_selection() {
+    let (sci, _) = current_scintilla();
+    let path = buffer_path(current_buffer());
+    let buffer = read_buffer(sci);
+    let start = buffer.offset(send(sci, SCI_GETSELECTIONSTART, 0, 0).max(0) as usize);
+    let end = buffer.offset(send(sci, SCI_GETSELECTIONEND, 0, 0).max(0) as usize);
+    let result = with(|s| match s.engine.try_borrow_mut() {
+        Ok(mut engine) => Some(engine.format_range(path.as_deref(), &buffer.text, start..end)),
+        Err(_) => None,
+    });
+    show_format_result(sci, &buffer, result, Trigger::Command);
+}
+
+fn show_format_result(
+    sci: Hwnd,
+    buffer: &BufferText,
+    result: Option<Result<Option<String>, FormatFailure>>,
+    trigger: Trigger,
+) {
     match result {
-        Some(Ok(Some(formatted))) => replace_text(sci, &buffer, &formatted),
+        Some(Ok(Some(formatted))) => replace_text(sci, buffer, &formatted),
         Some(Err(failure)) if trigger == Trigger::Command => {
             if let Some(offset) = failure.offset {
                 go_to(sci, buffer.position(offset));

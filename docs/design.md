@@ -206,7 +206,11 @@ Guarantees, enforced in tests, in the corpus job and at runtime:
 - Escape hatches: `-- vfl: off` / `-- vfl: on` regions and `-- vfl: skip` for the next
   statement or declaration are kept exactly as written.
 - Line endings (LF or CRLF), a UTF-8 byte-order mark and Latin-1 encoding are preserved.
-- Not yet: range formatting (format selection, format on type), which comes with the LSP.
+- Range formatting (`vfl fmt --lines`, LSP range and on-type formatting): the whole file is
+  formatted and only the output lines of the selected source lines are copied back, widened
+  to the statements or declarations they touch (not past the construct around them), to
+  every line of an alignment run they are part of, and to lines that start and end on the
+  same tokens in the source and the output. Protected regions are never touched.
 
 ### Linter
 
@@ -237,7 +241,8 @@ Guarantees, enforced in tests, in the corpus job and at runtime:
 `vfl lsp` (stdio) analyzes the project around the first workspace folder. Open buffers
 overlay the files on disk; edits are applied incrementally and analysis runs once a burst of
 changes is over. It provides diagnostics with quick fixes and a `source.fixAll.vfl` action,
-whole-document formatting (returned as a single minimal edit), go to definition (bundled
+whole-document formatting (returned as a single minimal edit), range formatting, format on
+type (`;` formats its line, a new line formats the line above it), go to definition (bundled
 `std` / `ieee` sources are written to a cache directory so editors can open them),
 references, document highlights (read / write), hover with the declaration's source and
 its type (an object's subtype and what the type is, a subtype's base, a function's return

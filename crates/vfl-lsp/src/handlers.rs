@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use lsp_types::{
     CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CompletionItem,
     CompletionItemKind, CompletionParams, CompletionResponse, DocumentFormattingParams,
-    DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams, DocumentSymbol,
+    DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams,
+    DocumentOnTypeFormattingParams, DocumentRangeFormattingParams, DocumentSymbol,
     DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse,
     Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind, NumberOrString,
     PrepareRenameResponse, ReferenceParams, RenameParams, SymbolInformation, SymbolKind,
@@ -18,7 +19,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use vfl_config::Level;
 use vfl_sema::{Access, Decl, DeclId, DeclKind, FileId, Target};
-use vfl_syntax::{TextRange, TextSize};
+use vfl_syntax::{LineIndex, TextRange, TextSize};
 
 use crate::world::{Doc, World};
 
@@ -36,9 +37,22 @@ fn json<T: Serialize>(value: T) -> Result<Value, Error> {
     serde_json::to_value(value).map_err(|e| Error::Failed(e.to_string()))
 }
 
+/// Requests answered from the documents' text alone, without bringing the
+/// analysis up to date first.
+pub fn needs_analysis(method: &str) -> bool {
+    !matches!(
+        method,
+        "textDocument/formatting"
+            | "textDocument/rangeFormatting"
+            | "textDocument/onTypeFormatting"
+    )
+}
+
 pub fn request(world: &mut World, method: &str, params: Value) -> Result<Value, Error> {
     match method {
         "textDocument/formatting" => json(formatting(world, parse(params)?)),
+        "textDocument/rangeFormatting" => json(range_formatting(world, parse(params)?)),
+        "textDocument/onTypeFormatting" => json(on_type_formatting(world, parse(params)?)),
         "textDocument/definition" => json(definition(world, parse(params)?)),
         "textDocument/references" => json(references(world, parse(params)?)),
         "textDocument/documentHighlight" => json(highlight(world, parse(params)?)),
@@ -101,11 +115,25 @@ pub fn diagnostics(world: &World) -> Vec<(Url, Vec<lsp_types::Diagnostic>)> {
     out
 }
 
+/// The latest text of the document at `path` and its config. Formatting
+/// reads it instead of the analysis, so it never waits for one.
+fn latest(world: &mut World, path: &Path) -> Option<(vfl_config::Config, String)> {
+    let config = world.config(path).clone();
+    let text = match world.overlays.get(path) {
+        Some(text) => text.clone(),
+        None => world.doc(world.file_id(path)?).text.to_owned(),
+    };
+    Some((config, text))
+}
+
 fn formatting(world: &mut World, params: DocumentFormattingParams) -> Option<Vec<TextEdit>> {
     let path = params.text_document.uri.to_file_path().ok()?;
-    let file = world.file_id(&path)?;
-    let config = world.config(&path).clone();
-    let doc = world.doc(file);
+    let (config, text) = latest(world, &path)?;
+    let index = LineIndex::new(&text);
+    let doc = Doc {
+        text: &text,
+        index: &index,
+    };
     let formatted = vfl_fmt::format(doc.text, &config.format, config.standard()).ok()?;
     if formatted == doc.text {
         return Some(Vec::new());
@@ -141,6 +169,81 @@ fn formatting(world: &mut World, params: DocumentFormattingParams) -> Option<Vec
         range: doc.range(range),
         new_text: formatted[prefix..formatted.len() - suffix].to_owned(),
     }])
+}
+
+fn range_formatting(
+    world: &mut World,
+    params: DocumentRangeFormattingParams,
+) -> Option<Vec<TextEdit>> {
+    let path = params.text_document.uri.to_file_path().ok()?;
+    let (config, text) = latest(world, &path)?;
+    let index = LineIndex::new(&text);
+    let doc = Doc {
+        text: &text,
+        index: &index,
+    };
+    let range =
+        usize::from(doc.offset(params.range.start))..usize::from(doc.offset(params.range.end));
+    format_lines(&config, doc, range, None)
+}
+
+/// Formats the line just finished: the one holding a `;` just typed, or
+/// the one above a new line. Nothing when the file does not parse yet.
+fn on_type_formatting(
+    world: &mut World,
+    params: DocumentOnTypeFormattingParams,
+) -> Option<Vec<TextEdit>> {
+    let position = params.text_document_position;
+    let path = position.text_document.uri.to_file_path().ok()?;
+    let (config, text) = latest(world, &path)?;
+    let index = LineIndex::new(&text);
+    let doc = Doc {
+        text: &text,
+        index: &index,
+    };
+    let cursor = usize::from(doc.offset(position.position));
+    let line_start = text[..cursor].rfind('\n').map_or(0, |i| i + 1);
+    match params.ch.as_str() {
+        ";" => format_lines(&config, doc, cursor..cursor, None),
+        "\n" if line_start > 0 => {
+            // Leave the new line, and the indentation the editor gave it, alone.
+            let line_end = text[cursor..].find('\n').map_or(text.len(), |i| cursor + i);
+            format_lines(
+                &config,
+                doc,
+                line_start - 1..line_start - 1,
+                Some(line_start..line_end),
+            )
+        }
+        _ => Some(Vec::new()),
+    }
+}
+
+/// The edits formatting the lines of `doc` touched by bytes `range`,
+/// leaving out any that would touch `keep`.
+fn format_lines(
+    config: &vfl_config::Config,
+    doc: Doc,
+    range: std::ops::Range<usize>,
+    keep: Option<std::ops::Range<usize>>,
+) -> Option<Vec<TextEdit>> {
+    let edits = vfl_fmt::format_range(doc.text, range, &config.format, config.standard()).ok()?;
+    Some(
+        edits
+            .into_iter()
+            .filter(|e| {
+                keep.as_ref()
+                    .is_none_or(|k| e.range.end < k.start || e.range.start > k.end)
+            })
+            .map(|e| TextEdit {
+                range: doc.range(TextRange::new(
+                    TextSize::from(e.range.start as u32),
+                    TextSize::from(e.range.end as u32),
+                )),
+                new_text: e.text,
+            })
+            .collect(),
+    )
 }
 
 /// What is at a position: a reference's targets, or a declaration's name.

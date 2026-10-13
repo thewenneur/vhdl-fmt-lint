@@ -29,7 +29,7 @@ each file like `vfl lint` does, so names resolve across files, and it reads the 
 
 ![Parameter hints for a call in Notepad++](assist.png)
 - **Format document**, as one undo step that keeps the caret and scroll position.
-  Optionally on every save.
+  Optionally on every save. **Format selection** formats only the selected lines.
 - **Next problem** / **Previous problem** jump between problems.
 - **Quick fixes**: **Fix problem at caret** lists the fixes for the problem at the caret,
   **Fix all problems** applies every safe fix in the file.
@@ -50,6 +50,7 @@ Mapper > Plugin commands**.
 | Command | |
 |---|---|
 | Format document | Formats the current file with its `vfl.toml` settings. Files with syntax errors are not formatted; the caret goes to the first error. |
+| Format selection | Formats the selected lines, or the caret's line, with the whole statements and aligned lines they are part of. |
 | Lint document | Lints the current file, whatever its language, and goes to the first problem. |
 | Next problem, Previous problem | Moves to the next or previous problem and shows its message. |
 | Fix problem at caret | Lists the fixes for the problems at the caret; a single safe fix is applied directly. |

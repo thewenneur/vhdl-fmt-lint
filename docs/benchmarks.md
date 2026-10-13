@@ -91,7 +91,7 @@ re-analyzes everything that depends on it.
 ### Editor requests
 
 `crates/vfl-lsp/examples/request_latency.rs` opens a project, then sends hover, signature
-help and completion at every 7th line of 16 files spread over it (the middle of the line).
+help, completion, range formatting and format on type at every 7th line of 16 files spread over it (the middle of the line).
 
 | Project | Hover (median / max) | Signature help (median / max) | Completion (median / max) |
 |---|---:|---:|---:|
@@ -99,6 +99,18 @@ help and completion at every 7th line of 16 files spread over it (the middle of 
 | OSVVM | 0.2 / 10 ms | 0.02 / 1.4 ms | 1.5 / 13 ms |
 | UVVM | 0.5 / 4.5 ms | 0.02 / 0.4 ms | 1.3 / 4.3 ms |
 | VUnit | 0.3 / 2.1 ms | 0.02 / 1.8 ms | 1.2 / 7.5 ms |
+
+The same run also times range formatting (from the start of each line to its middle) and
+format on type (a new line after it). Both lay out the whole file without analyzing it, so
+they cost the same whatever the project, and grow with the file: OSVVM and VUnit have
+packages of 150 to 400 KB.
+
+| Project | Range formatting (median / max) | Format on type (median / max) |
+|---|---:|---:|
+| neorv32 | 1.2 / 4.5 ms | 1.2 / 3.9 ms |
+| OSVVM | 14 / 70 ms | 16 / 73 ms |
+| UVVM | 1.6 / 8.5 ms | 1.7 / 5.8 ms |
+| VUnit | 11 / 30 ms | 11 / 28 ms |
 
 ## Running it
 

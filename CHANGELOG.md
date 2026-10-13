@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Range formatting**: format only a selection (`textDocument/rangeFormatting`,
+  `vfl fmt --lines FIRST:LAST`, **Format selection** in Notepad++). The selection widens to
+  the whole statements it touches and to every line aligned with them, so alignment stays
+  consistent, and formatting the same lines again changes nothing.
+- **Format on type**: the language server formats the line of a `;` just typed, or the line
+  above a new line (`textDocument/onTypeFormatting`; in VS Code, turn on
+  `editor.formatOnType`). Lines are left alone while the file has syntax errors.
+
 ## [0.1.1] - 2026-10-13
 
 A faster language server: editing, opening and hovering in large projects no longer wait for

@@ -43,6 +43,10 @@ The extension makes itself the default formatter for VHDL. To format and fix on 
 }
 ```
 
+**Format Selection** formats the selected lines, and the whole statements and aligned lines
+they touch. With `"editor.formatOnType": true`, typing `;` formats its line and Enter formats
+the line above.
+
 ## Commands
 
 - `vfl: Restart Language Server`, after rebuilding `vfl` for instance.

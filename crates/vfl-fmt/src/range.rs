@@ -1,0 +1,373 @@
+//! Formatting part of a file: a selection, or the line just typed.
+//!
+//! The whole file is formatted, then only the output lines that hold the
+//! selected source lines are copied back, widened until the copy is
+//! consistent on its own:
+//!
+//! - to the whole statement or declaration the selection starts or ends in
+//!   (not past the construct around it: selecting `begin` does not
+//!   reformat the whole process);
+//! - to whole parenthesized lists, which may be laid out one element per
+//!   line;
+//! - to every line of an alignment run that one of the lines is part of, so
+//!   the `:` of a port list or the `<=` of a block of assignments still
+//!   line up;
+//! - to the comment lines just above, and from a comment line to the code
+//!   line it is indented after;
+//! - to lines that start and end at the same tokens in the source and in
+//!   the output, since the formatter may join or split lines.
+//!
+//! Lines kept as written (`-- vfl: off`, `-- vfl: skip`) are never touched.
+//! Formatting the same range again changes nothing.
+
+use std::ops::Range;
+
+use rowan::NodeOrToken;
+use vfl_config::FormatConfig;
+use vfl_syntax::SyntaxKind::{LPAREN, RPAREN};
+use vfl_syntax::{Standard, SyntaxNode};
+
+use crate::kinds::{is_container, is_item};
+use crate::verify::{first_difference, lexical};
+use crate::{FormatError, Laid, Source, lay_out};
+
+/// A change to a file: replace the bytes `range` of the original text by
+/// `text`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Edit {
+    pub range: Range<usize>,
+    pub text: String,
+}
+
+/// Applies edits that do not overlap, in any order.
+pub fn apply_edits(text: &str, edits: &[Edit]) -> String {
+    let mut sorted: Vec<&Edit> = edits.iter().collect();
+    sorted.sort_by_key(|e| e.range.start);
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0;
+    for edit in sorted {
+        out.push_str(&text[last..edit.range.start]);
+        out.push_str(&edit.text);
+        last = edit.range.end;
+    }
+    out.push_str(&text[last..]);
+    out
+}
+
+/// Formats the lines of `text` that the byte range `range` touches: see
+/// [`format_ranges`].
+pub fn format_range(
+    text: &str,
+    range: Range<usize>,
+    config: &FormatConfig,
+    std: Standard,
+) -> Result<Vec<Edit>, FormatError> {
+    format_ranges(text, std::slice::from_ref(&range), config, std)
+}
+
+/// Formats the lines of `text` that the byte ranges `ranges` touch, and
+/// returns the edits to make, sorted and not overlapping. An empty range
+/// stands for its line. Lines the selection does not touch may change too
+/// when they belong to the same statement or alignment run.
+///
+/// The edits keep the file's line endings, whatever `line_ending` says.
+pub fn format_ranges(
+    text: &str,
+    ranges: &[Range<usize>],
+    config: &FormatConfig,
+    std: Standard,
+) -> Result<Vec<Edit>, FormatError> {
+    let source = Source::new(text);
+    let Some(laid) = lay_out(&source.text, config, std, false)? else {
+        return Ok(Vec::new());
+    };
+    let offsets = Offsets::new(text, &source);
+    let src = source.text.as_str();
+    let view = View::new(&laid, src);
+
+    let mut spans: Vec<(usize, usize)> = ranges
+        .iter()
+        .flat_map(|r| view.selected(offsets.to_norm(r.start), offsets.to_norm(r.end)))
+        .filter_map(|(l0, l1)| view.widen(l0, l1))
+        .collect();
+    spans.sort_unstable();
+    let mut merged: Vec<(usize, usize)> = Vec::new();
+    for (l0, l1) in spans {
+        match merged.last_mut() {
+            Some(last) if l0 <= last.1 => last.1 = last.1.max(l1),
+            _ => merged.push((l0, l1)),
+        }
+    }
+
+    let edits: Vec<Edit> = merged
+        .into_iter()
+        .filter_map(|(l0, l1)| view.edit(l0, l1))
+        .collect();
+    // Only layout, case and the words after `end` may change.
+    for edit in &edits {
+        let before = lexical(&src[edit.range.clone()], std);
+        let after = lexical(&edit.text, std);
+        if before != after {
+            return Err(FormatError::Internal(first_difference(&before, &after)));
+        }
+    }
+    Ok(edits
+        .into_iter()
+        .map(|e| Edit {
+            range: offsets.to_orig(e.range.start)..offsets.to_orig(e.range.end),
+            text: if source.crlf {
+                e.text.replace('\n', "\r\n")
+            } else {
+                e.text
+            },
+        })
+        .collect())
+}
+
+/// Converts between offsets in the original text and in the normalized one
+/// (no byte order mark, `\n` line ends).
+struct Offsets {
+    bom: usize,
+    /// Where each `\r` dropped from the original was, in the original text
+    /// after the byte order mark.
+    dropped: Vec<usize>,
+    len: usize,
+}
+
+impl Offsets {
+    fn new(text: &str, source: &Source) -> Self {
+        let bom = source.bom.len();
+        let dropped = if source.crlf {
+            text[bom..].match_indices("\r\n").map(|(i, _)| i).collect()
+        } else {
+            Vec::new()
+        };
+        Offsets {
+            bom,
+            dropped,
+            len: source.text.len(),
+        }
+    }
+
+    fn to_norm(&self, orig: usize) -> usize {
+        let o = orig.saturating_sub(self.bom);
+        (o - self.dropped.partition_point(|&d| d < o)).min(self.len)
+    }
+
+    fn to_orig(&self, norm: usize) -> usize {
+        // The i-th dropped `\r` sits before normalized offset `d - i`.
+        let before = self
+            .dropped
+            .iter()
+            .enumerate()
+            .take_while(|&(i, &d)| d - i < norm)
+            .count();
+        self.bom + norm + before
+    }
+}
+
+struct View<'a> {
+    laid: &'a Laid,
+    src: &'a str,
+    /// For each parenthesis, the element of the one matching it.
+    partner: Vec<Option<usize>>,
+}
+
+impl<'a> View<'a> {
+    fn new(laid: &'a Laid, src: &'a str) -> Self {
+        let mut partner = vec![None; laid.elems.len()];
+        let mut open = Vec::new();
+        for (i, elem) in laid.elems.iter().enumerate() {
+            if elem.is_token(LPAREN) {
+                open.push(i);
+            } else if elem.is_token(RPAREN)
+                && let Some(o) = open.pop()
+            {
+                partner[o] = Some(i);
+                partner[i] = Some(o);
+            }
+        }
+        View { laid, src, partner }
+    }
+
+    fn src_range(&self, e: usize) -> Option<Range<usize>> {
+        self.laid.elems[e]
+            .src
+            .map(|r| usize::from(r.start())..usize::from(r.end()))
+    }
+
+    /// The chunks of output lines holding the source lines of `a..b`,
+    /// split around lines kept as written.
+    fn selected(&self, a: usize, b: usize) -> Vec<(usize, usize)> {
+        let src = self.src;
+        let (mut a, mut b) = (a.min(b), a.max(b));
+        while !src.is_char_boundary(a) {
+            a -= 1;
+        }
+        while !src.is_char_boundary(b) {
+            b -= 1;
+        }
+        // A selection of whole lines ends at the start of the next one.
+        let b = if b > a && src.as_bytes()[b - 1] == b'\n' {
+            b - 1
+        } else {
+            b
+        };
+        let start = src[..a].rfind('\n').map_or(0, |i| i + 1);
+        let end = src[b..].find('\n').map_or(src.len(), |i| b + i);
+        let laid = self.laid;
+        let mut chosen = (0..laid.elems.len()).filter(|&e| {
+            self.src_range(e)
+                .is_some_and(|r| r.start < end && r.end > start)
+        });
+        let Some(first) = chosen.next() else {
+            return Vec::new();
+        };
+        let last = chosen.next_back().unwrap_or(first);
+        let (l0, l1) = (laid.line_of[first], laid.line_of[last]);
+        let mut chunks: Vec<(usize, usize)> = Vec::new();
+        for li in l0..=l1 {
+            if laid.lines[li].verbatim {
+                continue;
+            }
+            match chunks.last_mut() {
+                Some(chunk) if chunk.1 + 1 == li => chunk.1 = li,
+                _ => chunks.push((li, li)),
+            }
+        }
+        chunks
+    }
+
+    /// Widens output lines `l0..=l1` until they can replace their source
+    /// lines on their own. `None` when that would take in a line kept as
+    /// written.
+    fn widen(&self, mut l0: usize, mut l1: usize) -> Option<(usize, usize)> {
+        let laid = self.laid;
+        let lines = &laid.lines;
+        loop {
+            let (old0, old1) = (l0, l1);
+            if let Some((a, b)) = self.item_lines(lines[l0].start) {
+                l0 = l0.min(a);
+                l1 = l1.max(b);
+            }
+            if let Some((a, b)) = self.item_lines(lines[l1].end - 1) {
+                l0 = l0.min(a);
+                l1 = l1.max(b);
+            }
+            for &(a, b) in &laid.runs {
+                if a <= l1 && b >= l0 {
+                    l0 = l0.min(a);
+                    l1 = l1.max(b);
+                }
+            }
+            // Lists are laid out whole.
+            for e in lines[l0].start..lines[l1].end {
+                if let Some(p) = self.partner[e] {
+                    l0 = l0.min(laid.line_of[p]);
+                    l1 = l1.max(laid.line_of[p]);
+                }
+            }
+            // A comment line is indented after the code below it, and where
+            // that code was in the source.
+            while l0 > 0 && lines[l0 - 1].comment_only && !lines[l0 - 1].verbatim {
+                l0 -= 1;
+            }
+            if let Some(next) = lines[l1]
+                .follows
+                .filter(|&next| lines[l1].comment_only && !lines[next].verbatim)
+            {
+                l1 = l1.max(next);
+            }
+            while l0 > 0 && !self.starts_src_line(lines[l0].start) {
+                l0 -= 1;
+            }
+            while l1 + 1 < lines.len() && !self.ends_src_line(lines[l1].end - 1) {
+                l1 += 1;
+            }
+            if lines[l0..=l1].iter().any(|l| l.verbatim) {
+                return None;
+            }
+            if (l0, l1) == (old0, old1) {
+                return Some((l0, l1));
+            }
+        }
+    }
+
+    /// The output lines of the statement or declaration around element `e`,
+    /// if it is not itself a construct holding others.
+    fn item_lines(&self, e: usize) -> Option<(usize, usize)> {
+        let laid = self.laid;
+        let syntax = laid.elems[e].syntax.as_ref()?;
+        let mut node: Option<SyntaxNode> = match syntax {
+            NodeOrToken::Node(n) => Some(n.clone()),
+            NodeOrToken::Token(t) => t.parent(),
+        };
+        while let Some(n) = node {
+            if is_container(n.kind()) {
+                return None;
+            }
+            if is_item(&n) {
+                let range = n.text_range();
+                let (start, end) = (usize::from(range.start()), usize::from(range.end()));
+                let in_node = |k: &usize| {
+                    self.src_range(*k)
+                        .is_some_and(|r| r.start >= start && r.end <= end)
+                };
+                let first = (0..=e)
+                    .rev()
+                    .take_while(|k| in_node(k) || self.src_range(*k).is_none())
+                    .last()?;
+                let last = (e..laid.elems.len())
+                    .take_while(|k| in_node(k) || self.src_range(*k).is_none())
+                    .last()?;
+                return Some((laid.line_of[first], laid.line_of[last]));
+            }
+            node = n.parent();
+        }
+        None
+    }
+
+    /// Whether element `e` is the first one on its source line.
+    fn starts_src_line(&self, e: usize) -> bool {
+        let Some(range) = self.src_range(e) else {
+            return false;
+        };
+        match (0..e).rev().find_map(|k| self.src_range(k)) {
+            Some(prev) => self.src[prev.end..range.start].contains('\n'),
+            None => true,
+        }
+    }
+
+    /// Whether element `e` is the last one on its source line.
+    fn ends_src_line(&self, e: usize) -> bool {
+        let Some(end) = (0..=e).rev().find_map(|k| self.src_range(k)).map(|r| r.end) else {
+            return false;
+        };
+        match (e + 1..self.laid.elems.len()).find_map(|k| self.src_range(k)) {
+            Some(next) => self.src[end..next.start].contains('\n'),
+            None => true,
+        }
+    }
+
+    /// The edit replacing the source lines of output lines `l0..=l1`, in
+    /// normalized offsets. `None` when nothing changes.
+    fn edit(&self, l0: usize, l1: usize) -> Option<Edit> {
+        let laid = self.laid;
+        let (first, last) = (laid.lines[l0].start, laid.lines[l1].end - 1);
+        let src_first = (first..=last).find_map(|k| self.src_range(k))?;
+        let src_last = (first..=last).rev().find_map(|k| self.src_range(k))?;
+        let start = self.src[..src_first.start].rfind('\n').map_or(0, |i| i + 1);
+        let end = src_last.end
+            + self.src[src_last.end..]
+                .find(|c| c != ' ' && c != '\t')
+                .unwrap_or(self.src.len() - src_last.end);
+        let pos = laid.positions[first].0;
+        let out_start = laid.raw[..pos].rfind('\n').map_or(0, |i| i + 1);
+        let out_end = laid.positions[last].1;
+        let text = &laid.raw[out_start..out_end];
+        (text != &self.src[start..end]).then(|| Edit {
+            range: start..end,
+            text: text.to_owned(),
+        })
+    }
+}
