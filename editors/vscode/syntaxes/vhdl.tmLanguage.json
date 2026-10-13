@@ -1,0 +1,420 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "VHDL",
+  "scopeName": "source.vhdl",
+  "fileTypes": [
+    "vhd",
+    "vhdl",
+    "vho",
+    "vht"
+  ],
+  "patterns": [
+    {
+      "include": "#main"
+    }
+  ],
+  "repository": {
+    "main": {
+      "patterns": [
+        {
+          "include": "#comments"
+        },
+        {
+          "include": "#strings"
+        },
+        {
+          "include": "#numbers"
+        },
+        {
+          "include": "#characters"
+        },
+        {
+          "include": "#attributes"
+        },
+        {
+          "include": "#extended-identifiers"
+        },
+        {
+          "include": "#directives"
+        },
+        {
+          "include": "#declarations"
+        },
+        {
+          "include": "#end"
+        },
+        {
+          "include": "#labels"
+        },
+        {
+          "include": "#instantiations"
+        },
+        {
+          "include": "#constants"
+        },
+        {
+          "include": "#keywords"
+        },
+        {
+          "include": "#types"
+        },
+        {
+          "include": "#functions"
+        },
+        {
+          "include": "#operators"
+        },
+        {
+          "include": "#punctuation"
+        }
+      ]
+    },
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-dash.vhdl",
+          "match": "--.*$"
+        },
+        {
+          "name": "comment.block.vhdl",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.begin.vhdl"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.end.vhdl"
+            }
+          }
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.vhdl",
+          "begin": "\"",
+          "end": "\"(?!\")|$",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.begin.vhdl"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.end.vhdl"
+            }
+          },
+          "patterns": [
+            {
+              "name": "constant.character.escape.vhdl",
+              "match": "\"\""
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.bit-string.vhdl",
+          "match": "(?i)\\b[0-9]*[us]?[bodx]\\\"[0-9a-z_\\-]*\\\""
+        },
+        {
+          "name": "constant.numeric.based.vhdl",
+          "match": "(?i)\\b[0-9][0-9_]*#[0-9a-f_]+(\\.[0-9a-f_]+)?#(e[+-]?[0-9][0-9_]*)?"
+        },
+        {
+          "name": "constant.numeric.decimal.vhdl",
+          "match": "(?i)\\b[0-9][0-9_]*(\\.[0-9][0-9_]*)?(e[+-]?[0-9][0-9_]*)?\\b"
+        }
+      ]
+    },
+    "characters": {
+      "patterns": [
+        {
+          "name": "constant.character.vhdl",
+          "match": "(?<![a-zA-Z0-9_)\\]\\\\])'.'"
+        }
+      ]
+    },
+    "attributes": {
+      "patterns": [
+        {
+          "match": "(?<=[a-zA-Z0-9_)\\]\\\\])(')([a-zA-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "punctuation.separator.attribute.vhdl"
+            },
+            "2": {
+              "name": "entity.other.attribute-name.vhdl"
+            }
+          }
+        }
+      ]
+    },
+    "extended-identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.extended.vhdl",
+          "match": "\\\\([^\\\\]|\\\\\\\\)*\\\\"
+        }
+      ]
+    },
+    "directives": {
+      "patterns": [
+        {
+          "name": "meta.preprocessor.vhdl",
+          "match": "^\\s*(`)(?i:(if|elsif|else|end|warning|error|protect))\\b.*$",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.directive.vhdl"
+            },
+            "2": {
+              "name": "keyword.control.directive.vhdl"
+            }
+          }
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "(?i)\\b(package)\\s+(body)\\s+([a-zA-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.vhdl"
+            },
+            "2": {
+              "name": "storage.type.vhdl"
+            },
+            "3": {
+              "name": "entity.name.type.package.vhdl"
+            }
+          }
+        },
+        {
+          "match": "(?i)\\b(entity|package|configuration|context)\\s+([a-zA-Z][a-zA-Z0-9_]*)\\s+(is)\\b",
+          "captures": {
+            "1": {
+              "name": "storage.type.vhdl"
+            },
+            "2": {
+              "name": "entity.name.type.vhdl"
+            },
+            "3": {
+              "name": "storage.modifier.vhdl"
+            }
+          }
+        },
+        {
+          "match": "(?i)\\b(architecture)\\s+([a-zA-Z][a-zA-Z0-9_]*)\\s+(of)\\s+([a-zA-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.vhdl"
+            },
+            "2": {
+              "name": "entity.name.type.architecture.vhdl"
+            },
+            "3": {
+              "name": "storage.modifier.vhdl"
+            },
+            "4": {
+              "name": "entity.name.type.vhdl"
+            }
+          }
+        },
+        {
+          "match": "(?i)\\b(component)\\s+([a-zA-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.vhdl"
+            },
+            "2": {
+              "name": "entity.name.type.component.vhdl"
+            }
+          }
+        },
+        {
+          "match": "(?i)\\b(?:(pure|impure)\\s+)?(function|procedure)\\s+([a-zA-Z][a-zA-Z0-9_]*|\\\"[^\\\"]*\\\")",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.vhdl"
+            },
+            "2": {
+              "name": "storage.type.vhdl"
+            },
+            "3": {
+              "name": "entity.name.function.vhdl"
+            }
+          }
+        },
+        {
+          "match": "(?i)\\b(type|subtype)\\s+([a-zA-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.vhdl"
+            },
+            "2": {
+              "name": "entity.name.type.vhdl"
+            }
+          }
+        }
+      ]
+    },
+    "end": {
+      "patterns": [
+        {
+          "match": "(?i)\\b(end)(?:\\s+(package\\s+body|entity|architecture|package|configuration|context|component|function|procedure|process|block|generate|loop|if|case|record|units|protected(?:\\s+body)?|for|view))?(?:\\s+([a-zA-Z][a-zA-Z0-9_]*))?\\s*(?=;)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.vhdl"
+            },
+            "2": {
+              "name": "keyword.control.vhdl"
+            },
+            "3": {
+              "name": "entity.name.label.vhdl"
+            }
+          }
+        }
+      ]
+    },
+    "labels": {
+      "patterns": [
+        {
+          "match": "(?i)^\\s*([a-zA-Z][a-zA-Z0-9_]*)\\s*(:)(?=\\s*(?:postponed\\s+)?(?:process|block|entity|component|configuration|for|if|case|while|loop|assert|with)\\b)",
+          "captures": {
+            "1": {
+              "name": "entity.name.label.vhdl"
+            },
+            "2": {
+              "name": "punctuation.separator.label.vhdl"
+            }
+          }
+        }
+      ]
+    },
+    "instantiations": {
+      "patterns": [
+        {
+          "match": "(?i)\\b(entity|configuration)\\s+([a-zA-Z][a-zA-Z0-9_]*)\\s*(\\.)\\s*([a-zA-Z][a-zA-Z0-9_]*)(?:\\s*(\\()\\s*([a-zA-Z][a-zA-Z0-9_]*)\\s*(\\)))?",
+          "captures": {
+            "1": {
+              "name": "storage.type.vhdl"
+            },
+            "2": {
+              "name": "entity.name.namespace.vhdl"
+            },
+            "3": {
+              "name": "punctuation.accessor.vhdl"
+            },
+            "4": {
+              "name": "entity.name.type.vhdl"
+            },
+            "5": {
+              "name": "punctuation.section.parens.begin.vhdl"
+            },
+            "6": {
+              "name": "entity.name.type.architecture.vhdl"
+            },
+            "7": {
+              "name": "punctuation.section.parens.end.vhdl"
+            }
+          }
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.vhdl",
+          "match": "(?i)\\b(failure|warning|error|false|note|true)\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.operator.word.vhdl",
+          "match": "(?i)\\b(nand|xnor|abs|and|mod|nor|not|rem|rol|ror|sla|sll|sra|srl|xor|or)\\b"
+        },
+        {
+          "name": "keyword.control.vhdl",
+          "match": "(?i)\\b(generate|severity|process|assert|report|return|select|after|begin|block|elsif|until|while|case|else|exit|loop|next|null|then|wait|when|with|end|for|if)\\b"
+        },
+        {
+          "name": "storage.type.vhdl",
+          "match": "(?i)\\b(configuration|architecture|attribute|component|procedure|protected|constant|function|variable|context|generic|library|literal|package|subtype|access|entity|record|signal|alias|array|group|label|range|units|body|file|port|type|view|map|use)\\b"
+        },
+        {
+          "name": "storage.modifier.vhdl",
+          "match": "(?i)\\b(disconnect|parameter|postponed|transport|inertial|property|register|sequence|default|guarded|linkage|private|release|buffer|downto|impure|others|reject|shared|force|inout|vunit|open|pure|all|bus|new|out|in|is|of|to)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.vhdl",
+          "match": "(?i)\\b(std_ulogic_vector|unresolved_sfixed|unresolved_ufixed|file_open_status|std_logic_vector|boolean_vector|file_open_kind|integer_vector|severity_level|delay_length|real_vector|time_vector|bit_vector|std_ulogic|u_unsigned|character|std_logic|float128|positive|u_signed|unsigned|boolean|float32|float64|integer|natural|sfixed|signed|string|ufixed|float|width|line|real|side|text|time|bit)\\b"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "support.function.vhdl",
+          "match": "(?i)\\b(to_stdulogicvector|to_stdlogicvector|resolution_limit|falling_edge|rotate_right|to_bitvector|rising_edge|rotate_left|shift_right|to_unsigned|deallocate|file_close|shift_left|to_bstring|to_hstring|to_integer|to_natural|to_ostring|file_open|std_match|to_signed|to_string|writeline|readline|endfile|maximum|minimum|to_real|to_ux01|to_x01z|finish|hwrite|owrite|resize|to_bit|to_slv|to_x01|hread|oread|to_01|write|is_x|read|stop|now)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.assignment.vhdl",
+          "match": "<=|:="
+        },
+        {
+          "name": "keyword.operator.association.vhdl",
+          "match": "=>"
+        },
+        {
+          "name": "keyword.operator.vhdl",
+          "match": "\\?\\?|\\?/=|\\?<=|\\?>=|\\?=|\\?<|\\?>|/=|>=|\\*\\*|<>|[+\\-*/&<>=|]"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.terminator.statement.vhdl",
+          "match": ";"
+        },
+        {
+          "name": "punctuation.separator.comma.vhdl",
+          "match": ","
+        },
+        {
+          "name": "punctuation.separator.colon.vhdl",
+          "match": ":"
+        },
+        {
+          "name": "punctuation.accessor.vhdl",
+          "match": "\\."
+        },
+        {
+          "name": "punctuation.section.parens.begin.vhdl",
+          "match": "\\("
+        },
+        {
+          "name": "punctuation.section.parens.end.vhdl",
+          "match": "\\)"
+        }
+      ]
+    }
+  }
+}

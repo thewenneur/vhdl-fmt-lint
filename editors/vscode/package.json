@@ -1,0 +1,143 @@
+{
+  "name": "vfl",
+  "displayName": "vfl: VHDL formatter and linter",
+  "description": "Formatting, linting, navigation and syntax highlighting for VHDL, powered by the vfl language server.",
+  "version": "0.1.0",
+  "publisher": "thewenneur",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thewenneur/vhdl-fmt-lint",
+    "directory": "editors/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/thewenneur/vhdl-fmt-lint/issues"
+  },
+  "categories": [
+    "Programming Languages",
+    "Formatters",
+    "Linters"
+  ],
+  "keywords": [
+    "vhdl",
+    "fpga",
+    "hdl",
+    "formatter",
+    "linter"
+  ],
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "workspaceContains:**/{vfl,.vfl,vhdl_ls}.toml"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "vhdl",
+        "aliases": [
+          "VHDL",
+          "vhdl"
+        ],
+        "extensions": [
+          ".vhd",
+          ".vhdl",
+          ".vho",
+          ".vht"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "vhdl",
+        "scopeName": "source.vhdl",
+        "path": "./syntaxes/vhdl.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "vfl",
+      "properties": {
+        "vfl.server.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "Path to the `vfl` executable. Leave empty to use `vfl` from `PATH`, or from `~/.cargo/bin`. `~` and `${workspaceFolder}` are expanded."
+        },
+        "vfl.server.extraEnv": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "string"
+          },
+          "scope": "machine-overridable",
+          "markdownDescription": "Extra environment variables for the language server, such as `{ \"RUST_BACKTRACE\": \"1\" }`."
+        },
+        "vfl.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "scope": "window",
+          "markdownDescription": "Log the messages between VS Code and the language server to the **vfl Language Server Trace** output."
+        }
+      }
+    },
+    "configurationDefaults": {
+      "[vhdl]": {
+        "editor.defaultFormatter": "thewenneur.vfl"
+      }
+    },
+    "commands": [
+      {
+        "command": "vfl.restartServer",
+        "title": "Restart Language Server",
+        "category": "vfl"
+      },
+      {
+        "command": "vfl.fixAll",
+        "title": "Fix All Lint Findings in File",
+        "category": "vfl",
+        "enablement": "editorLangId == vhdl"
+      },
+      {
+        "command": "vfl.showOutput",
+        "title": "Show Language Server Output",
+        "category": "vfl"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "vfl.fixAll",
+          "when": "editorLangId == vhdl"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=out/extension.js --sourcemap",
+    "vscode:prepublish": "esbuild src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=out/extension.js --minify",
+    "check": "tsc --noEmit",
+    "test": "node --test test/*.test.js",
+    "test:e2e": "npm run build && node test/e2e/run.js",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^10.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "@types/vscode": "~1.91.0",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.25.10",
+    "typescript": "~5.9.3",
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.2.0"
+  }
+}

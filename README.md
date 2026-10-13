@@ -12,6 +12,18 @@ A fast, fully configurable VHDL formatter, linter and language server, in pure R
 
 Status: early development. See [docs/design.md](docs/design.md) for the design.
 
+## Installation
+
+```sh
+cargo install --git https://github.com/thewenneur/vhdl-fmt-lint vfl-cli
+```
+
+This installs the `vfl` binary. For editors:
+
+- **VS Code**: the extension in [editors/vscode](editors/vscode). Each CI run builds it as a
+  `.vsix` (the `vfl-vscode` artifact); install it with `code --install-extension vfl-0.1.0.vsix`.
+- **Any other LSP editor**: run `vfl lsp` as the language server for VHDL files.
+
 ## Usage
 
 ```sh
