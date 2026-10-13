@@ -50,6 +50,10 @@ pub fn request(world: &mut World, method: &str, params: Value) -> Result<Value, 
         "textDocument/completion" => json(completion(world, parse(params)?)),
         "textDocument/codeAction" => json(code_actions(world, parse(params)?)),
         "textDocument/signatureHelp" => json(crate::types::signature_help(world, parse(params)?)),
+        "vfl/entities" => json(crate::generate::entities(world)),
+        "vfl/generate" => {
+            json(crate::generate::generate_request(world, parse(params)?).map_err(Error::Failed)?)
+        }
         _ => Err(Error::Unknown),
     }
 }
@@ -1118,6 +1122,9 @@ fn code_actions(world: &mut World, params: CodeActionParams) -> Option<Vec<CodeA
                 ..Default::default()
             }));
         }
+    }
+    if wants(&CodeActionKind::new(crate::generate::TESTBENCH_KIND)) {
+        out.extend(crate::generate::code_actions(world, file, start, end));
     }
     Some(out)
 }

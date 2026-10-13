@@ -6,6 +6,8 @@ A fast, fully configurable VHDL formatter, linter and language server, in pure R
   assignments, associations, declarations and comments. Idempotent and token-preserving.
 - **Linter**: syntactic and cross-file semantic rules, with autofixes.
 - **Language server**: diagnostics, formatting, navigation and refactoring in any LSP editor.
+- **Code generation**: instantiations, component declarations and testbench skeletons from
+  an entity.
 - **Zero config**: the project root, sources and libraries are discovered from the code.
   No library list to maintain.
 - **VHDL-2008**, **VHDL-93** and **VHDL-2019**.
@@ -100,6 +102,8 @@ vfl fmt [--check] ...  # format in place, or list the files that would change
 vfl fmt -              # format standard input to standard output
 vfl lint [--fix] ...   # lint, resolving names across the whole project
 vfl rules              # list lint rules and their levels
+vfl new tb counter     # write counter_tb.vhd, a testbench for entity counter
+vfl new instance counter     # print an instantiation (also: component, component-instance)
 vfl lsp                # language server over stdio
 ```
 
@@ -146,6 +150,7 @@ statement with `-- vfl: skip`.
 | `vfl-sema`    | Semantic analysis |
 | `vfl-fmt`     | Formatter |
 | `vfl-lint`    | Linter |
+| `vfl-gen`     | Code generation: instantiations, components, testbenches |
 | `vfl-lsp`     | Language server |
 | `vfl-cli`     | The `vfl` binary |
 | `vfl-npp`     | [Notepad++ plugin](editors/notepadpp/README.md) (`editors/notepadpp`) |

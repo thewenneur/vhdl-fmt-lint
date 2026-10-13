@@ -45,6 +45,7 @@ pub struct Config {
     pub project: ProjectConfig,
     pub format: FormatConfig,
     pub lint: LintConfig,
+    pub generate: GenerateConfig,
 }
 
 impl Config {
@@ -314,6 +315,50 @@ pub enum BlockBoundary {
     /// Blank lines and comments do not end a block; any other line without
     /// the aligned token does.
     Never,
+}
+
+/// `[generate]`: code generated from an entity (`vfl new`, and the
+/// editor commands): instantiations, component declarations and
+/// testbenches. The text is then laid out by the formatter.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct GenerateConfig {
+    /// The label of an instance; `{entity}` is replaced by the entity name.
+    pub instance_label: String,
+    /// The testbench entity name; `{entity}` is replaced by the entity name.
+    pub testbench_name: String,
+    /// The name of the testbench architecture.
+    pub testbench_architecture: String,
+    /// The label of the design under test in a testbench.
+    pub testbench_instance: String,
+    /// The period of the generated clocks, a VHDL time expression.
+    pub clock_period: String,
+    /// Clock cycles the reset is held active at the start of a testbench.
+    pub reset_cycles: u32,
+    /// Regular expression for port names taken as clocks, when the
+    /// architecture does not show it (`rising_edge(clk)`).
+    pub clock_pattern: String,
+    /// Regular expression for port names taken as resets.
+    pub reset_pattern: String,
+    /// Regular expression for reset names that are active low, when the
+    /// architecture does not show it (`rst = '0'`).
+    pub active_low_pattern: String,
+}
+
+impl Default for GenerateConfig {
+    fn default() -> Self {
+        GenerateConfig {
+            instance_label: "u_{entity}".into(),
+            testbench_name: "{entity}_tb".into(),
+            testbench_architecture: "sim".into(),
+            testbench_instance: "dut".into(),
+            clock_period: "10 ns".into(),
+            reset_cycles: 5,
+            clock_pattern: r"(?i)^(.*_)?(clk|clock)\d*(_i|_in|_p)?$".into(),
+            reset_pattern: r"(?i)^(.*_)?(a|s)?(rst|reset)\d*(n|_n|_b|_i|_in|_ni|_n_i)?$".into(),
+            active_low_pattern: r"(?i)([^i]n|_b|_ni|_n_i)$".into(),
+        }
+    }
 }
 
 /// `[lint]`: linter settings.
