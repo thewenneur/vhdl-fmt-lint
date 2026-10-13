@@ -1,8 +1,8 @@
 //! The language server's editor features at byte offsets, for editors that
 //! link vfl directly instead of speaking LSP, like the Notepad++ plugin:
 //! hover, signature help, completion, go to definition, references,
-//! highlights, outline, project symbols, rename, quick fixes and semantic
-//! tokens.
+//! highlights, outline, project symbols, rename, quick fixes, the problems
+//! of the whole project and semantic tokens.
 //!
 //! Each query brings the analysis up to date first, then answers from the
 //! same code as the language server.
@@ -317,6 +317,38 @@ pub struct Symbol {
     pub depth: usize,
     /// The range of its name.
     pub range: Range<usize>,
+}
+
+/// A problem somewhere in the project, as the language server publishes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectProblem {
+    pub location: Location,
+    pub level: vfl_config::Level,
+    pub rule: &'static str,
+    pub message: String,
+}
+
+/// The problems of every file of the project, by path and position, like
+/// the language server publishes them.
+pub fn problems(world: &mut World) -> Vec<ProjectProblem> {
+    world.refresh();
+    let mut out: Vec<ProjectProblem> = world
+        .lint
+        .iter()
+        .filter(|d| d.level != vfl_config::Level::Off)
+        .filter_map(|d| {
+            Some(ProjectProblem {
+                location: location(world, d.file, d.range)?,
+                level: d.level,
+                rule: d.rule,
+                message: d.message.clone(),
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        (&a.location.path, a.location.range.start).cmp(&(&b.location.path, b.location.range.start))
+    });
+    out
 }
 
 /// The declarations of the file at `path`, in order, nested as in the
