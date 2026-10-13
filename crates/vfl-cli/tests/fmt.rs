@@ -59,3 +59,30 @@ fn fmt_keeps_latin1_files_latin1() {
         b"-- caf\xe9\nentity e is\nend;\n"
     );
 }
+
+#[test]
+fn fmt_lines_formats_only_those_lines() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("a.vhd");
+    let text = "ENTITY e IS END;\n\nARCHITECTURE a OF e IS\nBEGIN\nEND;\n";
+    std::fs::write(&file, text).unwrap();
+
+    let check = vfl(dir.path(), &["fmt", "--check", "--lines", "3:4", "a.vhd"]);
+    assert!(!check.status.success());
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), text);
+
+    assert!(
+        vfl(dir.path(), &["fmt", "--lines", "3:4", "a.vhd"])
+            .status
+            .success()
+    );
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "ENTITY e IS END;\n\narchitecture a of e is\nbegin\nEND;\n"
+    );
+
+    let bad = vfl(dir.path(), &["fmt", "--lines", "4:3", "a.vhd"]);
+    assert!(!bad.status.success());
+    let many = vfl(dir.path(), &["fmt", "--lines", "1", "."]);
+    assert!(!many.status.success());
+}

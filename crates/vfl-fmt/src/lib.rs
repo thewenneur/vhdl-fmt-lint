@@ -27,6 +27,9 @@
 //! Regions between `-- vfl: off` and `-- vfl: on`, and the statement after
 //! `-- vfl: skip`, are left exactly as written.
 //!
+//! [`format_ranges`] formats only some lines, for format selection and
+//! format on type.
+//!
 //! ```
 //! use vfl_config::FormatConfig;
 //! use vfl_syntax::Standard;
@@ -44,13 +47,17 @@ mod elems;
 mod escape;
 mod kinds;
 mod layout;
+mod range;
 mod spacing;
 mod verify;
 
 use std::fmt;
+use std::ops::Range;
 
 use vfl_config::{FormatConfig, LineEnding};
-use vfl_syntax::{Standard, SyntaxError, parse};
+use vfl_syntax::{Standard, SyntaxError, SyntaxNode, parse};
+
+pub use range::{Edit, apply_edits, format_range, format_ranges, format_ranges_in, format_typed};
 
 /// Why a file could not be formatted. The file should be left as it is.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,26 +87,91 @@ impl std::error::Error for FormatError {}
 
 /// Formats a whole VHDL file.
 pub fn format(text: &str, config: &FormatConfig, std: Standard) -> Result<String, FormatError> {
-    let (bom, body) = match text.strip_prefix('\u{feff}') {
-        Some(rest) => ("\u{feff}", rest),
-        None => ("", text),
+    let source = Source::new(text);
+    let root = parse_valid(&source.text, std)?;
+    let Some(laid) = lay_out(&source.text, &root, config, std, None)? else {
+        return Ok(String::new());
     };
-    let crlf = body.contains("\r\n");
-    let source = if crlf {
-        body.replace("\r\n", "\n")
+    let use_crlf = match config.line_ending {
+        LineEnding::Auto => source.crlf,
+        LineEnding::Lf => false,
+        LineEnding::Crlf => true,
+    };
+    let out = if use_crlf {
+        laid.out.replace('\n', "\r\n")
     } else {
-        body.to_owned()
+        laid.out
     };
-    let parsed = parse(&source, std);
+    Ok(format!("{}{out}", source.bom))
+}
+
+/// A file split into its byte order mark and its text with `\n` line ends.
+pub(crate) struct Source<'a> {
+    pub bom: &'a str,
+    pub crlf: bool,
+    pub text: String,
+}
+
+impl<'a> Source<'a> {
+    pub fn new(text: &'a str) -> Self {
+        let (bom, body) = match text.strip_prefix('\u{feff}') {
+            Some(rest) => ("\u{feff}", rest),
+            None => ("", text),
+        };
+        let crlf = body.contains("\r\n");
+        let text = if crlf {
+            body.replace("\r\n", "\n")
+        } else {
+            body.to_owned()
+        };
+        Source { bom, crlf, text }
+    }
+}
+
+/// The whole file laid out, and how the output relates to the source.
+pub(crate) struct Laid {
+    pub elems: Vec<elems::Elem>,
+    pub lines: Vec<layout::Line>,
+    pub line_of: Vec<usize>,
+    /// Where each element landed in the output before the protected regions
+    /// were put back.
+    pub positions: Vec<(usize, usize)>,
+    /// That output.
+    pub raw: String,
+    /// The first and last line of each run of aligned anchors.
+    pub runs: Vec<(usize, usize)>,
+    /// The formatted file, checked. Empty unless asked for.
+    pub out: String,
+}
+
+/// The syntax tree of `source`, which must have no syntax errors.
+pub(crate) fn parse_valid(source: &str, std: Standard) -> Result<SyntaxNode, FormatError> {
+    let parsed = parse(source, std);
     if !parsed.errors().is_empty() {
         return Err(FormatError::Syntax(parsed.errors().to_vec()));
     }
-    let root = parsed.syntax();
+    Ok(parsed.syntax())
+}
 
-    let elems = elems::collect(&root, config);
+/// Formats `source` (with `\n` line ends), whose tree is `root`. `None`
+/// when there is nothing in it but whitespace.
+///
+/// Without `window`, the formatted file is put together and checked:
+/// parsed again, it must hold the same tokens and comments. With it, only
+/// the bytes `window` of the source are laid out, and the output is not
+/// put together.
+pub(crate) fn lay_out(
+    source: &str,
+    root: &SyntaxNode,
+    config: &FormatConfig,
+    std: Standard,
+    window: Option<Range<usize>>,
+) -> Result<Option<Laid>, FormatError> {
+    let whole = window.is_none();
+    let elems = elems::collect(root, config, window);
     let elems = elems::edit_end_clauses(elems, config);
     if elems.is_empty() {
-        return Ok(String::new());
+        return Ok(None);
     }
     let regions = escape::regions(&elems, source.len());
     let protected = escape::protected(&elems, &regions);
@@ -115,34 +187,33 @@ pub fn format(text: &str, config: &FormatConfig, std: Standard) -> Result<String
     for line in &mut lines {
         line.verbatim = protected[line.start..line.end].iter().any(|&p| p);
     }
-    let pads = align::align(&elems, &an, &mut lines, &line_of, &config.align);
-    let (out, positions) = layout::render(&elems, &an, &lines, &pads, config);
-    let out = escape::restore_verbatim(&source, out, &elems, &positions, &regions);
-
-    let reparsed = parse(&out, std);
-    if let Some(error) = reparsed.errors().first() {
-        return Err(FormatError::Internal(format!(
-            "the output does not parse: {}",
-            error.message
-        )));
+    let (pads, runs) = align::align(&elems, &an, &mut lines, &line_of, &config.align);
+    let (raw, positions) = layout::render(&elems, &an, &lines, &pads, config);
+    let mut out = String::new();
+    if whole {
+        out = escape::restore_verbatim(source, raw.clone(), &elems, &positions, &regions);
+        let reparsed = parse(&out, std);
+        if let Some(error) = reparsed.errors().first() {
+            return Err(FormatError::Internal(format!(
+                "the output does not parse: {}",
+                error.message
+            )));
+        }
+        let before = verify::fingerprint(root);
+        let after = verify::fingerprint(&reparsed.syntax());
+        if before != after {
+            return Err(FormatError::Internal(verify::first_difference(
+                &before, &after,
+            )));
+        }
     }
-    let before = verify::fingerprint(&root);
-    let after = verify::fingerprint(&reparsed.syntax());
-    if before != after {
-        return Err(FormatError::Internal(verify::first_difference(
-            &before, &after,
-        )));
-    }
-
-    let use_crlf = match config.line_ending {
-        LineEnding::Auto => crlf,
-        LineEnding::Lf => false,
-        LineEnding::Crlf => true,
-    };
-    let out = if use_crlf {
-        out.replace('\n', "\r\n")
-    } else {
-        out
-    };
-    Ok(format!("{bom}{out}"))
+    Ok(Some(Laid {
+        elems,
+        lines,
+        line_of,
+        positions,
+        raw,
+        runs,
+        out,
+    }))
 }

@@ -298,6 +298,72 @@ begin
 end architecture;
 ";
 
+#[test]
+fn range_and_on_type_formatting() {
+    let (dir, _, top) = setup();
+    let mut client = Client::start(dir.path());
+    let text = "use work.pkg.all;\nentity top is\nend entity top;\narchitecture rtl of top is\n\
+        signal a,b:bit;\nbegin\na<=b;\n\n    b   <=   a;\nend architecture;\n";
+    client.notify(
+        "textDocument/didOpen",
+        json!({ "textDocument": { "uri": top, "languageId": "vhdl", "version": 1, "text": text } }),
+    );
+    let edits = client.request(
+        "textDocument/rangeFormatting",
+        json!({
+            "textDocument": { "uri": top },
+            "range": { "start": { "line": 8, "character": 0 }, "end": { "line": 8, "character": 3 } },
+            "options": { "tabSize": 2, "insertSpaces": true }
+        }),
+    );
+    assert_eq!(
+        edits,
+        json!([{
+            "range": { "start": { "line": 8, "character": 0 }, "end": { "line": 8, "character": 15 } },
+            "newText": "  b <= a;"
+        }])
+    );
+
+    // A `;` just typed formats its line.
+    let typed = client.request(
+        "textDocument/onTypeFormatting",
+        json!({
+            "textDocument": { "uri": top },
+            "position": { "line": 6, "character": 5 },
+            "ch": ";",
+            "options": { "tabSize": 2, "insertSpaces": true }
+        }),
+    );
+    assert_eq!(typed[0]["newText"], "  a <= b;", "{typed}");
+
+    // A new line formats the line above it and leaves the new one alone.
+    client.notify(
+        "textDocument/didChange",
+        json!({
+            "textDocument": { "uri": top, "version": 2 },
+            "contentChanges": [
+                { "range": { "start": { "line": 4, "character": 15 }, "end": { "line": 4, "character": 15 } }, "text": "\n  " }
+            ]
+        }),
+    );
+    let typed = client.request(
+        "textDocument/onTypeFormatting",
+        json!({
+            "textDocument": { "uri": top },
+            "position": { "line": 5, "character": 2 },
+            "ch": "\n",
+            "options": { "tabSize": 2, "insertSpaces": true }
+        }),
+    );
+    assert_eq!(
+        typed,
+        json!([{
+            "range": { "start": { "line": 4, "character": 0 }, "end": { "line": 4, "character": 15 } },
+            "newText": "  signal a, b : bit;"
+        }])
+    );
+}
+
 fn types_setup() -> (tempfile::TempDir, Client, String) {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("vfl.toml"), "").unwrap();

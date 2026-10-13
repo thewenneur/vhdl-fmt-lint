@@ -195,6 +195,12 @@
           "scope": "machine-overridable",
           "markdownDescription": "Extra environment variables for the language server, such as `{ \"RUST_BACKTRACE\": \"1\" }`."
         },
+        "vfl.format.onType": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "markdownDescription": "Format the line you just finished as you type: the line of a `;`, or the line above a new line. A project can turn it off for everyone with `on_type = false` under `[format]` in `vfl.toml`."
+        },
         "vfl.trace.server": {
           "type": "string",
           "enum": [
@@ -210,7 +216,8 @@
     },
     "configurationDefaults": {
       "[vhdl]": {
-        "editor.defaultFormatter": "thewenneur.vfl"
+        "editor.defaultFormatter": "thewenneur.vfl",
+        "editor.formatOnType": true
       }
     },
     "commands": [

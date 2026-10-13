@@ -1,7 +1,8 @@
 //! Measures how long hover, signature help, completion, code actions,
 //! highlights and references take: opens a project, then sends each
 //! request at a spread of positions in a spread of files, and prints the
-//! median and slowest times. Then the semantic tokens of every file, whole
+//! median and slowest times. Range formatting and format on type (a new
+//! line) are timed the same way. Then the semantic tokens of every file, whole
 //! and as a delta after the first.
 //! Usage: request_latency DIR
 
@@ -31,6 +32,8 @@ fn main() {
         "textDocument/codeAction",
         "textDocument/documentHighlight",
         "textDocument/references",
+        "textDocument/rangeFormatting",
+        "textDocument/onTypeFormatting",
     ] {
         let mut times: Vec<Duration> = Vec::new();
         let mut answered = 0;
@@ -40,20 +43,30 @@ fn main() {
             for (line, content) in lines.iter().enumerate().step_by(7) {
                 let character = content.encode_utf16().count() as u32 / 2;
                 let position = json!({ "line": line, "character": character });
-                let params = if method == "textDocument/codeAction" {
-                    json!({
+                let options = json!({ "tabSize": 2, "insertSpaces": true });
+                let params = match method {
+                    "textDocument/codeAction" => json!({
                         "textDocument": { "uri": uri },
                         "range": { "start": position, "end": position },
                         "context": { "diagnostics": [] },
-                    })
-                } else if method == "textDocument/references" {
-                    json!({
+                    }),
+                    "textDocument/references" => json!({
                         "textDocument": { "uri": uri },
                         "position": position,
                         "context": { "includeDeclaration": true },
-                    })
-                } else {
-                    json!({ "textDocument": { "uri": uri }, "position": position })
+                    }),
+                    "textDocument/rangeFormatting" => json!({
+                        "textDocument": { "uri": uri },
+                        "range": { "start": { "line": line, "character": 0 }, "end": position },
+                        "options": options,
+                    }),
+                    "textDocument/onTypeFormatting" => json!({
+                        "textDocument": { "uri": uri },
+                        "position": { "line": line + 1, "character": 0 },
+                        "ch": "\n",
+                        "options": options,
+                    }),
+                    _ => json!({ "textDocument": { "uri": uri }, "position": position }),
                 };
                 let start = Instant::now();
                 let result = vfl_lsp::handle(&mut world, method, params);

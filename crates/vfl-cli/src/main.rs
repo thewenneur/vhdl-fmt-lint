@@ -32,6 +32,11 @@ enum Command {
         /// Report files that would change instead of rewriting them.
         #[arg(long)]
         check: bool,
+        /// Format only lines FIRST to LAST (1-based, inclusive), and the
+        /// statements and aligned lines they are part of. Repeatable; takes
+        /// a single file or `-`.
+        #[arg(long, value_name = "FIRST:LAST", value_parser = parse_lines)]
+        lines: Vec<(usize, usize)>,
     },
     /// Lint VHDL files.
     ///
@@ -146,7 +151,11 @@ fn main() -> ExitCode {
 /// Runs a command; `Ok(false)` means it found problems.
 fn run(cli: Cli) -> Result<bool> {
     match cli.command {
-        Command::Fmt { paths, check } => fmt(&paths, check).map(|()| true),
+        Command::Fmt {
+            paths,
+            check,
+            lines,
+        } => fmt(&paths, check, &lines).map(|()| true),
         Command::Lint {
             paths,
             fix,
@@ -280,10 +289,50 @@ fn check(paths: &[PathBuf], tree: bool) -> Result<()> {
     Ok(())
 }
 
+fn parse_lines(arg: &str) -> Result<(usize, usize), String> {
+    let (first, last) = arg.split_once(':').unwrap_or((arg, arg));
+    let number = |s: &str| match s.trim().parse::<usize>() {
+        Ok(n) if n > 0 => Ok(n),
+        _ => Err(format!("`{s}` is not a line number")),
+    };
+    let (first, last) = (number(first)?, number(last)?);
+    if first > last {
+        return Err(format!("{first} is after {last}"));
+    }
+    Ok((first, last))
+}
+
+/// Formats `text`, or only `lines` of it when there are some.
+fn format_text(
+    text: &str,
+    config: &Config,
+    lines: &[(usize, usize)],
+) -> Result<String, FormatError> {
+    if lines.is_empty() {
+        return vfl_fmt::format(text, &config.format, config.standard());
+    }
+    let starts: Vec<usize> = std::iter::once(0)
+        .chain(text.match_indices('\n').map(|(i, _)| i + 1))
+        .collect();
+    let line_start = |n: usize| starts.get(n - 1).copied().unwrap_or(text.len());
+    let ranges: Vec<_> = lines
+        .iter()
+        .map(|&(first, last)| {
+            let end = starts.get(last).map_or(text.len(), |&next| next - 1);
+            line_start(first)..end.max(line_start(first))
+        })
+        .collect();
+    let edits = vfl_fmt::format_ranges(text, &ranges, &config.format, config.standard())?;
+    Ok(vfl_fmt::apply_edits(text, &edits))
+}
+
 /// Formats files in place, or reports which would change with `check`.
-fn fmt(paths: &[PathBuf], check: bool) -> Result<()> {
+fn fmt(paths: &[PathBuf], check: bool, lines: &[(usize, usize)]) -> Result<()> {
+    if !lines.is_empty() && (paths.len() != 1 || paths[0].is_dir()) {
+        bail!("--lines takes a single file");
+    }
     if paths.len() == 1 && paths[0] == Path::new("-") {
-        return fmt_stdin();
+        return fmt_stdin(lines);
     }
     let mut configs = ConfigCache::default();
     let mut changed = 0usize;
@@ -293,7 +342,7 @@ fn fmt(paths: &[PathBuf], check: bool) -> Result<()> {
         let config = configs.for_file(&file)?;
         let bytes = std::fs::read(&file).with_context(|| format!("reading {}", file.display()))?;
         let (text, encoding) = decode(bytes);
-        match vfl_fmt::format(&text, &config.format, config.standard()) {
+        match format_text(&text, config, lines) {
             Ok(out) if out == text => unchanged += 1,
             Ok(out) => {
                 changed += 1;
@@ -338,12 +387,12 @@ fn fmt(paths: &[PathBuf], check: bool) -> Result<()> {
     Ok(())
 }
 
-fn fmt_stdin() -> Result<()> {
+fn fmt_stdin(lines: &[(usize, usize)]) -> Result<()> {
     let mut bytes = Vec::new();
     std::io::stdin().read_to_end(&mut bytes)?;
     let (text, encoding) = decode(bytes);
     let config = vfl_config::load_for_dir(Path::new("."))?;
-    let out = vfl_fmt::format(&text, &config.format, config.standard())?;
+    let out = format_text(&text, &config, lines)?;
     std::io::stdout().write_all(&encode(&out, encoding))?;
     Ok(())
 }
