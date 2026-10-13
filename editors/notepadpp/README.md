@@ -17,6 +17,10 @@ each file like `vfl lint` does, so names resolve across files, and it reads the 
   a moment after you stop typing, and when a VHDL file is opened, switched to or saved.
   Unsaved edits in the file count; other files are read from disk, and files changed
   outside Notepad++ are picked up when you come back to it. Unused names are greyed out.
+- **Names colored by meaning**: signals, ports, constants (and generics and enumeration
+  literals), variables (and parameters), types and subprograms each get a color, from what
+  the analysis resolved them to, refreshed along with the problems. The colors follow a
+  light or dark theme.
 - **Hover** over a name to see what it is, its type and its declaration, and over an
   underline to see the problem.
 - **Parameter hints**: typing `(` or `,` in a subprogram call, port map or generic map
@@ -73,6 +77,7 @@ Mapper > Plugin commands**.
 | Show messages under lines | Shows each message under its line (on by default); with it off, hover or use Next problem. |
 | Code assistance | Types on hover, parameter hints and completion after a dot (on by default). The three commands above work either way. |
 | Highlight uses | Highlights the uses of the name at the caret (on by default). |
+| Color names by meaning | Colors signals, ports, constants, variables, types and subprograms (on by default). |
 | Reload project | Re-reads the whole project from disk. Changed files are normally picked up by themselves, so this is rarely needed. |
 
 The five settings are kept in `plugins\Config\vfl_npp.ini`. Problems in `vfl.toml` are

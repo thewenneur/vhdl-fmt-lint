@@ -1,7 +1,8 @@
 //! The language server's editor features at byte offsets, for editors that
 //! link vfl directly instead of speaking LSP, like the Notepad++ plugin:
 //! hover, signature help, completion, go to definition, references,
-//! highlights, outline, project symbols, rename and quick fixes.
+//! highlights, outline, project symbols, rename, quick fixes and semantic
+//! tokens.
 //!
 //! Each query brings the analysis up to date first, then answers from the
 //! same code as the language server.
@@ -14,6 +15,8 @@ use vfl_sema::FileId;
 use vfl_syntax::TextSize;
 
 use crate::world::World;
+
+pub use crate::semantic::{Kind as TokenKind, modifier as token_modifier};
 
 /// What a hover shows.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,6 +95,30 @@ fn locate(world: &mut World, path: &Path, offset: usize) -> Option<(FileId, Text
         offset -= 1;
     }
     Some((file, TextSize::from(offset as u32)))
+}
+
+/// A name colored by what it resolves to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SemanticToken {
+    pub range: Range<usize>,
+    pub kind: TokenKind,
+    /// [`token_modifier`] bits.
+    pub modifiers: u32,
+}
+
+/// The names of the file at `path` with what they resolve to, in order.
+pub fn semantic_tokens(world: &mut World, path: &Path) -> Vec<SemanticToken> {
+    let Some((file, _)) = locate(world, path, 0) else {
+        return Vec::new();
+    };
+    crate::semantic::tokens(world, file, None)
+        .into_iter()
+        .map(|t| SemanticToken {
+            range: t.range.into(),
+            kind: t.kind,
+            modifiers: t.modifiers,
+        })
+        .collect()
 }
 
 /// The hover at byte `offset` of the file at `path`.

@@ -64,6 +64,33 @@ async function run() {
   );
   assert.ok(fixes && fixes.length > 0, "no quick fix for the unused signal");
 
+  // Names are colored by what they resolve to: `r` in `r <= not r;` is a
+  // signal being assigned.
+  const legend = await vscode.commands.executeCommand(
+    "vscode.provideDocumentSemanticTokensLegend",
+    uri,
+  );
+  assert.ok(legend && legend.tokenTypes.includes("signal"), "no semantic tokens legend");
+  const tokens = await vscode.commands.executeCommand(
+    "vscode.provideDocumentSemanticTokens",
+    uri,
+  );
+  assert.ok(tokens && tokens.data.length > 0, "no semantic tokens");
+  const decoded = [];
+  let line = 0;
+  let column = 0;
+  for (let i = 0; i < tokens.data.length; i += 5) {
+    line += tokens.data[i];
+    column = tokens.data[i] === 0 ? column + tokens.data[i + 1] : tokens.data[i + 1];
+    decoded.push({ line, column, type: legend.tokenTypes[tokens.data[i + 3]], modifiers: tokens.data[i + 4] });
+  }
+  const assigned = decoded.find((t) => t.line === 13 && t.column === 6);
+  assert.equal(assigned?.type, "signal", JSON.stringify(decoded));
+  assert.ok(assigned.modifiers & (1 << legend.tokenModifiers.indexOf("modification")));
+  const clk = decoded.find((t) => t.line === 4 && t.column === 8);
+  assert.equal(clk?.type, "port");
+  assert.ok(clk.modifiers & (1 << legend.tokenModifiers.indexOf("in")));
+
   // Code generation: an instantiation at the cursor, and a testbench file.
   const scratch = await vscode.workspace.openTextDocument({ language: "vhdl", content: "" });
   await vscode.window.showTextDocument(scratch);

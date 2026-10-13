@@ -50,6 +50,11 @@ pub fn request(world: &mut World, method: &str, params: Value) -> Result<Value, 
         "textDocument/completion" => json(completion(world, parse(params)?)),
         "textDocument/codeAction" => json(code_actions(world, parse(params)?)),
         "textDocument/signatureHelp" => json(crate::types::signature_help(world, parse(params)?)),
+        "textDocument/semanticTokens/full" => json(crate::semantic::full(world, parse(params)?)),
+        "textDocument/semanticTokens/full/delta" => {
+            json(crate::semantic::delta(world, parse(params)?))
+        }
+        "textDocument/semanticTokens/range" => json(crate::semantic::range(world, parse(params)?)),
         "codeAction/resolve" => {
             json(crate::generate::resolve(world, parse(params)?).map_err(Error::Failed)?)
         }
