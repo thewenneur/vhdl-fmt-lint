@@ -2,7 +2,7 @@
   "name": "vfl",
   "displayName": "vfl: VHDL formatter and linter",
   "description": "Formatting, linting, navigation and syntax highlighting for VHDL, powered by the vfl language server.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "thewenneur",
   "license": "MIT OR Apache-2.0",
   "repository": {
@@ -108,6 +108,29 @@
         "command": "vfl.showOutput",
         "title": "Show Language Server Output",
         "category": "vfl"
+      },
+      {
+        "command": "vfl.insertInstance",
+        "title": "Insert Entity Instantiation...",
+        "category": "vfl",
+        "enablement": "editorLangId == vhdl"
+      },
+      {
+        "command": "vfl.insertComponentInstance",
+        "title": "Insert Component Instantiation...",
+        "category": "vfl",
+        "enablement": "editorLangId == vhdl"
+      },
+      {
+        "command": "vfl.insertComponent",
+        "title": "Insert Component Declaration...",
+        "category": "vfl",
+        "enablement": "editorLangId == vhdl"
+      },
+      {
+        "command": "vfl.generateTestbench",
+        "title": "Generate Testbench...",
+        "category": "vfl"
       }
     ],
     "menus": {
@@ -115,6 +138,30 @@
         {
           "command": "vfl.fixAll",
           "when": "editorLangId == vhdl"
+        },
+        {
+          "command": "vfl.insertInstance",
+          "when": "editorLangId == vhdl"
+        },
+        {
+          "command": "vfl.insertComponentInstance",
+          "when": "editorLangId == vhdl"
+        },
+        {
+          "command": "vfl.insertComponent",
+          "when": "editorLangId == vhdl"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "vfl.insertInstance",
+          "when": "editorLangId == vhdl",
+          "group": "1_modification@10"
+        },
+        {
+          "command": "vfl.generateTestbench",
+          "when": "editorLangId == vhdl",
+          "group": "1_modification@11"
         }
       ]
     }

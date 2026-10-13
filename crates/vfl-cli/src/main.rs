@@ -2,6 +2,7 @@
 
 mod doc;
 mod lint;
+mod new;
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -124,6 +125,30 @@ enum Command {
         #[arg(long, default_value = ".")]
         project: PathBuf,
     },
+    /// Generate code from an entity of the project: a testbench, an
+    /// instantiation or a component declaration.
+    ///
+    /// `vfl new tb counter` writes `counter_tb.vhd` next to the entity;
+    /// the other kinds print to standard output. Names, labels and the
+    /// clock period come from `[generate]` in `vfl.toml`, the layout from
+    /// `[format]`.
+    New {
+        /// What to generate.
+        #[arg(value_enum)]
+        kind: new::Kind,
+        /// The entity, as `name` or `library.name`.
+        entity: String,
+        /// Where to write the code (`-` for standard output). Default: a
+        /// testbench goes next to the entity, the rest to standard output.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Overwrite the output file if it exists.
+        #[arg(long)]
+        force: bool,
+        /// A directory of the project (default: the current directory).
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+    },
     /// Run the language server over stdio.
     Lsp,
 }
@@ -235,6 +260,20 @@ fn run(cli: Cli) -> Result<bool> {
             format,
             output,
             project,
+        })
+        .map(|()| true),
+        Command::New {
+            kind,
+            entity,
+            output,
+            force,
+            project,
+        } => new::run(new::Options {
+            kind,
+            entity,
+            project,
+            output,
+            force,
         })
         .map(|()| true),
         Command::Check { paths, tree } => check(&paths, tree).map(|()| true),

@@ -10,6 +10,8 @@ A fast, fully configurable VHDL formatter, linter and language server, in pure R
   signal and state machine diagrams; `vfl schema` draws one diagram as SVG, Mermaid or DOT.
   See [examples/uart/doc](examples/uart/doc/index.md) for an example.
 - **Language server**: diagnostics, formatting, navigation and refactoring in any LSP editor.
+- **Code generation**: instantiations, component declarations and testbench skeletons from
+  an entity.
 - **Zero config**: the project root, sources and libraries are discovered from the code.
   No library list to maintain.
 - **VHDL-2008**, **VHDL-93** and **VHDL-2019**.
@@ -47,9 +49,9 @@ same.
 The extension ([editors/vscode](editors/vscode/README.md)) runs `vfl lsp`, so install `vfl`
 first (above). Then:
 
-1. Download `vfl-0.1.0.vsix` from the
+1. Download `vfl-0.1.1.vsix` from the
    [latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest).
-2. Install it with `code --install-extension vfl-0.1.0.vsix`, or in VS Code with
+2. Install it with `code --install-extension vfl-0.1.1.vsix`, or in VS Code with
    **Extensions > ... > Install from VSIX...**.
 3. Open a folder with VHDL files. If `vfl` is not on the `PATH` or in `~/.cargo/bin`, set
    `vfl.server.path` to it.
@@ -61,7 +63,7 @@ To build the `.vsix` yourself: `cd editors/vscode && npm ci && npm run package`.
 The plugin ([editors/notepadpp](editors/notepadpp/README.md)) has the formatter, the linter
 and the editor features of the language server (types on hover, parameter hints, completion,
 quick fixes, go to definition, references, rename, symbols) built in, so it does not need
-`vfl` installed. Download `vfl_npp-v0.1.0-x64.zip` from the
+`vfl` installed. Download `vfl_npp-v0.1.1-x64.zip` from the
 [latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest), close Notepad++,
 unzip it into the `plugins` folder of its install directory (usually
 `C:\Program Files\Notepad++\plugins`, giving `plugins\vfl_npp\vfl_npp.dll`) and start it again.
@@ -106,6 +108,8 @@ vfl lint [--fix] ...   # lint, resolving names across the whole project
 vfl rules              # list lint rules and their levels
 vfl doc [-o dir]       # write HTML (or --format markdown) documentation with diagrams
 vfl schema block top   # draw a diagram: symbol, hierarchy, block or fsm (SVG, Mermaid, DOT)
+vfl new tb counter     # write counter_tb.vhd, a testbench for entity counter
+vfl new instance counter     # print an instantiation (also: component, component-instance)
 vfl lsp                # language server over stdio
 ```
 
@@ -152,6 +156,7 @@ statement with `-- vfl: skip`.
 | `vfl-sema`    | Semantic analysis |
 | `vfl-fmt`     | Formatter |
 | `vfl-lint`    | Linter |
+| `vfl-gen`     | Code generation: instantiations, components, testbenches |
 | `vfl-lsp`     | Language server |
 | `vfl-cli`     | The `vfl` binary |
 | `vfl-npp`     | [Notepad++ plugin](editors/notepadpp/README.md) (`editors/notepadpp`) |

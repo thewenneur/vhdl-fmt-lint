@@ -1,8 +1,9 @@
 // VS Code client for the vfl language server (`vfl lsp`).
 //
 // The server does the work: diagnostics, quick fixes, formatting,
-// navigation, rename and completion. This file finds the `vfl` binary,
-// starts it over stdio and restarts it when its settings change.
+// navigation, rename, completion and code generation. This file finds the
+// `vfl` binary, starts it over stdio and restarts it when its settings
+// change, and asks it for generated code.
 
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -33,6 +34,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         apply: "first",
       }),
     ),
+    vscode.commands.registerCommand("vfl.insertInstance", (entity?: string) =>
+      insertGenerated("instance", entity),
+    ),
+    vscode.commands.registerCommand("vfl.insertComponentInstance", (entity?: string) =>
+      insertGenerated("component-instance", entity),
+    ),
+    vscode.commands.registerCommand("vfl.insertComponent", (entity?: string) =>
+      insertGenerated("component", entity),
+    ),
+    vscode.commands.registerCommand("vfl.generateTestbench", generateTestbench),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("vfl.server")) {
         void restart();
@@ -137,4 +148,106 @@ function isFile(file: string): boolean {
   } catch {
     return false;
   }
+}
+
+// Code generation.
+
+type GenerateKind = "testbench" | "instance" | "component" | "component-instance";
+
+interface EntityRef {
+  library: string;
+  name: string;
+  path: string;
+}
+
+interface Generated {
+  text: string;
+  /** For a testbench, the file it is meant for. */
+  path?: string;
+}
+
+/** Asks which entity to generate from, those of the active file first. */
+async function pickEntity(placeHolder: string): Promise<string | undefined> {
+  if (!client?.isRunning()) {
+    void vscode.window.showErrorMessage("vfl: the language server is not running.");
+    return undefined;
+  }
+  const entities = await client.sendRequest<EntityRef[]>("vfl/entities", {});
+  if (entities.length === 0) {
+    void vscode.window.showInformationMessage("vfl: no entity in this project.");
+    return undefined;
+  }
+  const active = vscode.window.activeTextEditor?.document.uri.fsPath;
+  const here = (e: EntityRef) =>
+    active !== undefined && path.resolve(e.path) === path.resolve(active) ? 0 : 1;
+  const items = [...entities]
+    .sort((a, b) => here(a) - here(b))
+    .map((e) => ({
+      label: e.name,
+      description: e.library,
+      detail: vscode.workspace.asRelativePath(e.path),
+      entity: `${e.library}.${e.name}`,
+    }));
+  if (items.length === 1) {
+    return items[0].entity;
+  }
+  const picked = await vscode.window.showQuickPick(items, { placeHolder, matchOnDetail: true });
+  return picked?.entity;
+}
+
+async function generate(kind: GenerateKind, entity: string): Promise<Generated | undefined> {
+  if (!client?.isRunning()) {
+    void vscode.window.showErrorMessage("vfl: the language server is not running.");
+    return undefined;
+  }
+  try {
+    return await client.sendRequest<Generated>("vfl/generate", { kind, entity });
+  } catch (err) {
+    void vscode.window.showErrorMessage(`vfl: ${err instanceof Error ? err.message : err}`);
+    return undefined;
+  }
+}
+
+/** Inserts an instantiation or component declaration at the cursor. */
+async function insertGenerated(kind: GenerateKind, entity?: string): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    return;
+  }
+  entity ??= await pickEntity("Entity to insert");
+  if (!entity) {
+    return;
+  }
+  const generated = await generate(kind, entity);
+  if (!generated) {
+    return;
+  }
+  // A snippet, so that the lines after the first follow the cursor's indentation.
+  const snippet = new vscode.SnippetString().appendText(generated.text.replace(/\n$/, ""));
+  await editor.insertSnippet(snippet);
+}
+
+/** Writes a testbench next to the entity and opens it. */
+async function generateTestbench(entity?: string): Promise<void> {
+  entity ??= await pickEntity("Entity to test");
+  if (!entity) {
+    return;
+  }
+  const generated = await generate("testbench", entity);
+  if (!generated?.path) {
+    return;
+  }
+  const uri = vscode.Uri.file(generated.path);
+  if (isFile(generated.path)) {
+    const choice = await vscode.window.showWarningMessage(
+      `${path.basename(generated.path)} exists. Replace it?`,
+      { modal: true },
+      "Replace",
+    );
+    if (choice !== "Replace") {
+      return;
+    }
+  }
+  await vscode.workspace.fs.writeFile(uri, Buffer.from(generated.text, "utf8"));
+  await vscode.window.showTextDocument(uri);
 }

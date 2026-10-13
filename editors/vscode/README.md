@@ -10,6 +10,9 @@ language server:
   **signature help**, **rename**, **completion** (including record elements and protected
   type methods), **document and workspace symbols**, across the whole project and into
   the bundled `std` and `ieee` libraries.
+- **Code generation**: insert an entity or component instantiation or a component
+  declaration at the cursor, or generate a testbench (also offered as a code action on an
+  entity declaration).
 - **Syntax highlighting** for VHDL-93, 2008 and 2019.
 
 The project root, sources and libraries are discovered from the code, so there is nothing to
@@ -48,6 +51,12 @@ The extension makes itself the default formatter for VHDL. To format and fix on 
 - `vfl: Restart Language Server`, after rebuilding `vfl` for instance.
 - `vfl: Fix All Lint Findings in File` applies every safe fix.
 - `vfl: Show Language Server Output`.
+- `vfl: Insert Entity Instantiation...`, `vfl: Insert Component Instantiation...` and
+  `vfl: Insert Component Declaration...` ask for an entity of the project and insert the code
+  at the cursor.
+- `vfl: Generate Testbench...` writes `<entity>_tb.vhd` next to the entity and opens it.
+
+The generated code follows `[format]` and `[generate]` in `vfl.toml`.
 
 ## Notes
 
@@ -65,4 +74,4 @@ npm run test:e2e     # runs VS Code against target/debug/vfl (build it first)
 npm run package      # builds vfl-<version>.vsix
 ```
 
-Install the package with `code --install-extension vfl-0.1.0.vsix`.
+Install the package with `code --install-extension vfl-0.1.1.vsix`.
