@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.1.1] - 2026-10-13
+
+A faster language server: editing, opening and hovering in large projects no longer wait for
+a full re-analysis. The downloads are the same as in 0.1.0, with `0.1.1` in their names.
+
+### Changed
+
+- **Analysis once per burst of keystrokes**: the language server applies every edit already
+  waiting before it analyzes, and skips requests the editor cancelled meanwhile. Before, it
+  analyzed after every keystroke, and on large projects requests queued behind those
+  analyses (hover took 860 ms after typing a comment in UVVM).
+- **Only what an edit can change is refreshed**: library inference runs again only when the
+  files, what they declare or reference, or a library list changed; linting gathers
+  declarations only for the files it re-lints; only the diagnostics that changed are sent.
+  New files and libraries are still detected.
+- **Opening or closing an unchanged file does no work**: the first hover in a newly opened
+  file no longer waits for a full refresh (70 to 190 ms on UVVM), and closing a file no
+  longer walks the project tree. The Notepad++ plugin gets the same fix.
+
+### Added
+
+- `scripts/bench_vhdl_ls.py` benchmarks the language server against rust_hdl's `vhdl_ls`
+  (open time, edit-to-diagnostics latency, hover, completion, definition, memory); results
+  are in [docs/benchmarks.md](docs/benchmarks.md).
+- The release workflow can also be started from the Actions tab (**Release > Run
+  workflow** on `main`): it tags the current version and publishes it.
+
 ## [0.1.0] - 2026-10-13
 
 First release: a VHDL formatter, linter and language server in pure Rust, with editor
