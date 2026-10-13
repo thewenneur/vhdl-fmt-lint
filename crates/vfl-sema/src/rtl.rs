@@ -1,6 +1,10 @@
 //! Hardware checks on resolved units: width mismatches in assignments and
-//! associations, latches inferred by combinational processes, and signals
-//! that cross clock domains.
+//! associations, latches inferred by combinational processes, signals
+//! that cross clock domains, input ports left open, resets, and state
+//! machines.
+
+mod fsm;
+mod reset;
 
 use std::collections::{HashMap, HashSet};
 
@@ -185,10 +189,15 @@ pub(crate) fn check_unit(
         decls_at,
         by_start: std::cell::OnceCell::new(),
         clocked: Vec::new(),
+        reset_uses: Vec::new(),
+        reset_ranges: Vec::new(),
+        cases: Vec::new(),
         diags: Vec::new(),
     };
     checker.walk(design_unit);
     checker.clock_domains();
+    checker.reset_consistency();
+    checker.state_machines(design_unit);
     checker.diags
 }
 
@@ -204,6 +213,12 @@ struct Checker<'a> {
     by_start: std::cell::OnceCell<Vec<usize>>,
     /// Clocked processes without `wait`, with their clock.
     clocked: Vec<(DeclId, SyntaxNode)>,
+    /// The resets of clocked processes.
+    reset_uses: Vec<reset::ResetUse>,
+    /// The statements that run on a reset.
+    reset_ranges: Vec<TextRange>,
+    /// `case` statements, for the state machine checks.
+    cases: Vec<SyntaxNode>,
     diags: Vec<Diagnostic>,
 }
 
@@ -530,7 +545,7 @@ impl<'a> Checker<'a> {
 
     /// The associations of a port or generic map against the instantiated
     /// unit's interface.
-    fn associations(&mut self, list: &SyntaxNode, interface: &[DeclId]) {
+    fn associations(&mut self, list: &SyntaxNode, interface: &[DeclId], ports: bool) {
         for (position, element) in list
             .children()
             .filter(|n| n.kind() == SyntaxKind::ASSOCIATION_ELEMENT)
@@ -546,7 +561,17 @@ impl<'a> Checker<'a> {
             } else {
                 (None, parts.next())
             };
-            let Some(actual) = actual else { continue };
+            let Some(actual) = actual else {
+                // `p => open`.
+                if ports
+                    && element
+                        .children_with_tokens()
+                        .any(|e| e.kind() == SyntaxKind::OPEN_KW)
+                {
+                    self.open_input(&element, formal.as_ref(), interface.get(position));
+                }
+                continue;
+            };
             if actual
                 .descendants_with_tokens()
                 .any(|e| matches!(e.kind(), SyntaxKind::OPEN_KW | SyntaxKind::INERTIAL_KW))
@@ -563,6 +588,37 @@ impl<'a> Checker<'a> {
             .filter(|d| self.is_vector(d))
             .and_then(|d| Some((d.width?, d.spelling.clone())));
             self.check_value(&formal_width, &actual);
+        }
+    }
+
+    /// An input port without a default associated with `open`.
+    fn open_input(
+        &mut self,
+        element: &SyntaxNode,
+        formal: Option<&SyntaxNode>,
+        positional: Option<&DeclId>,
+    ) {
+        let decl = match formal {
+            Some(f) if f.kind() == SyntaxKind::NAME => self.named(f),
+            Some(_) => None,
+            None => positional.and_then(|&id| self.decl(id)),
+        };
+        if let Some(decl) = decl
+            && let DeclKind::Port {
+                mode: crate::decl::Mode::In,
+                has_default: false,
+            } = decl.kind
+        {
+            self.diags.push(Diagnostic {
+                code: codes::OPEN_INPUT,
+                file: self.file,
+                range: element.text_range(),
+                message: format!(
+                    "input port `{}` is left open and has no default value",
+                    decl.spelling
+                ),
+                fix: None,
+            });
         }
     }
 
@@ -603,7 +659,7 @@ impl<'a> Checker<'a> {
                 .children()
                 .find(|n| n.kind() == SyntaxKind::ASSOCIATION_LIST)
             {
-                self.associations(&list, &interface);
+                self.associations(&list, &interface, ports);
             }
         }
     }
@@ -630,6 +686,7 @@ impl<'a> Checker<'a> {
                     events.skip_subtree();
                 }
                 PROCESS_STMT => self.process(&node),
+                CASE_STMT => self.cases.push(node.clone()),
                 // Nothing checked inside expressions and the like.
                 ERROR | BINARY_EXPR | UNARY_EXPR | PAREN_EXPR | AGGREGATE | LITERAL | NAME
                 | SELECTED_NAME | CALL_EXPR | ATTRIBUTE_NAME | QUALIFIED_EXPR
@@ -692,6 +749,7 @@ impl<'a> Checker<'a> {
                 if waits == 0
                     && let Some(clock) = self.clock_of(&edge)
                 {
+                    self.resets(process, &edge, clock);
                     self.clocked.push((clock, process.clone()));
                 }
             }
