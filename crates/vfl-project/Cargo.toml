@@ -12,7 +12,12 @@ workspace = true
 
 [dependencies]
 vfl-config.workspace = true
+vfl-syntax.workspace = true
+globset.workspace = true
 ignore.workspace = true
+rayon.workspace = true
+thiserror.workspace = true
+toml.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

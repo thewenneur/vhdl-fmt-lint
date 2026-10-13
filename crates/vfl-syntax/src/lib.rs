@@ -93,6 +93,17 @@ impl FromStr for Standard {
     }
 }
 
+/// The key under which an identifier is looked up: basic identifiers are
+/// case-insensitive and folded to lower case, extended identifiers
+/// (`\Foo\`) are kept exactly.
+pub fn identifier_key(text: &str) -> String {
+    if text.starts_with('\\') {
+        text.to_owned()
+    } else {
+        text.to_ascii_lowercase()
+    }
+}
+
 /// A problem found while lexing or parsing. Never fatal.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyntaxError {
@@ -196,6 +207,12 @@ mod tests {
         for std in Standard::ALL {
             assert_eq!(std.as_str().parse::<Standard>(), Ok(std));
         }
+    }
+
+    #[test]
+    fn identifier_keys_fold_basic_identifiers_only() {
+        assert_eq!(identifier_key("Clk_In"), "clk_in");
+        assert_eq!(identifier_key("\\Clk\\"), "\\Clk\\");
     }
 
     #[test]

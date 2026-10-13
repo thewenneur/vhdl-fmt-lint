@@ -1,0 +1,13 @@
+---
+source: crates/vfl-sema/tests/sema.rs
+expression: analyze(&text)
+input_file: crates/vfl-sema/tests/data/scopes.vhd
+---
+scopes.vhd: work
+scopes.vhd:19:10: sema/undriven-signal: signal `r` is read but never assigned
+scopes.vhd:20:10: sema/unused-signal: signal `dup` is never used
+scopes.vhd:21:10: sema/duplicate-declaration: `dup` is already declared in this region (line 20)
+scopes.vhd:21:10: sema/unused-signal: signal `dup` is never used
+scopes.vhd:25:12: sema/unread-signal: signal `local` is assigned but never read
+scopes.vhd:35:12: sema/unresolved-name: no loop labeled `nowhere`
+scopes.vhd:37:26: sema/unresolved-name: `i` is not declared

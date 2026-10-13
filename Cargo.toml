@@ -20,7 +20,10 @@ vfl-lsp = { path = "crates/vfl-lsp" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+globset = "0.4"
 ignore = "0.4"
+rayon = "1"
+rowan = "0.16"
 serde = { version = "1", features = ["derive"] }
 tempfile = "3"
 thiserror = "2"
