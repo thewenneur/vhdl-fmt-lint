@@ -87,6 +87,20 @@ pub const RULES: &[Rule] = &[
         false,
     ),
     rule(
+        codes::TYPE_MISMATCH,
+        "An expression does not have the type its context needs.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        codes::NO_MATCHING_OVERLOAD,
+        "No subprogram or operator of that name accepts the arguments.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
         codes::UNUSED_SIGNAL,
         "A signal is never used.",
         Warn,

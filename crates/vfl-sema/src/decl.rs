@@ -68,6 +68,7 @@ pub enum DeclKind {
     GenericPackage,
     Parameter {
         mode: Mode,
+        has_default: bool,
     },
     Type,
     /// `type t;`, completed by a later full declaration.
@@ -178,6 +179,45 @@ pub struct Decl {
     pub members: Option<Arc<Region>>,
     /// The enclosing declaration (unit, subprogram, process, ...), if any.
     pub parent: Option<DeclId>,
+    /// The type or subtype this declaration refers to: an object's or an
+    /// alias's subtype, a subtype's type mark, a function's return type, an
+    /// enumeration literal's or a unit's type, an incomplete type's full
+    /// declaration. `None` when unknown.
+    pub subtype: Option<DeclId>,
+    /// What a type declaration defines.
+    pub type_def: Option<Arc<TypeDef>>,
+    /// A subprogram's parameters, in order.
+    pub params: Option<Arc<[DeclId]>>,
+}
+
+/// The definition of a type, as far as type checking needs it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeDef {
+    /// The literals, as lookup keys: identifiers in lower case, character
+    /// literals with their quotes (`'0'`).
+    Enum(Vec<String>),
+    Integer,
+    Real,
+    Physical,
+    /// A range type whose bounds do not tell integer from real.
+    Scalar,
+    Array {
+        /// The index subtypes; `None` where unknown.
+        indexes: Vec<Option<DeclId>>,
+        element: Option<DeclId>,
+    },
+    Record(Vec<Element>),
+    Access(Option<DeclId>),
+    File(Option<DeclId>),
+    Protected,
+}
+
+/// A record element.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Element {
+    pub name: String,
+    pub spelling: String,
+    pub subtype: Option<DeclId>,
 }
 
 /// The declarations of one declarative region, by name, in source order.

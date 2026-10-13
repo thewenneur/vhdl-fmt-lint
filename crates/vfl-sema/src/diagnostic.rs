@@ -51,4 +51,6 @@ pub mod codes {
     pub const UNDRIVEN_SIGNAL: &str = "sema/undriven-signal";
     pub const SENSITIVITY_LIST: &str = "sema/sensitivity-list";
     pub const UNNEEDED_SENSITIVITY: &str = "sema/unneeded-sensitivity";
+    pub const TYPE_MISMATCH: &str = "sema/type-mismatch";
+    pub const NO_MATCHING_OVERLOAD: &str = "sema/no-matching-overload";
 }

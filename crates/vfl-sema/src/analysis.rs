@@ -16,6 +16,7 @@ use crate::diagnostic::Diagnostic;
 use crate::resolver::{ImportId, Resolver, UseItem};
 use crate::stdlib;
 use crate::syntax::{designator, simple_name_token};
+use crate::typeck;
 
 /// A file to analyze.
 #[derive(Debug, Clone)]
@@ -70,6 +71,8 @@ pub(crate) struct UnitResult {
     pub diagnostics: Vec<Diagnostic>,
     pub use_items: Vec<UseItem>,
     pub used_imports: Vec<ImportId>,
+    /// Operators whose visible declarations are unknown, in source order.
+    pub opaque_ops: Vec<TextRange>,
 }
 
 /// Library name -> unit name -> primary units.
@@ -321,15 +324,16 @@ impl Analysis {
             })
             .collect();
 
-        let analyze = |unit: UnitId| -> UnitResult {
+        let design_unit = |unit: UnitId| -> SyntaxNode {
             let info = &units[unit as usize];
             let root = files[info.file as usize].syntax();
-            let design_unit = root
-                .children()
+            root.children()
                 .filter(|n| n.kind() == SyntaxKind::DESIGN_UNIT)
                 .nth(info.index)
-                .expect("unit index is valid");
-            let result = Resolver::new(&ctx, unit).run(&design_unit);
+                .expect("unit index is valid")
+        };
+        let analyze = |unit: UnitId| -> UnitResult {
+            let result = Resolver::new(&ctx, unit).run(&design_unit(unit));
             checks::unit_checks(&ctx, unit, result)
         };
 
@@ -371,10 +375,25 @@ impl Analysis {
         }
 
         let mut diagnostics = checks::project_checks(&ctx);
-        let results: Vec<UnitResult> = results
+        // Type checking needs only the declarations of the units a unit
+        // depends on, and nothing depends on its outcome: it runs for every
+        // unit at once, off the dependency order's critical path.
+        let outcomes: Vec<Option<typeck::Outcome>> = (0..units.len() as UnitId)
+            .into_par_iter()
+            .map(|unit| {
+                let result = ctx.result(unit)?;
+                Some(typeck::check_unit(&ctx, unit, &design_unit(unit), result))
+            })
+            .collect();
+        let mut results: Vec<UnitResult> = results
             .into_iter()
             .map(|r| r.into_inner().unwrap_or_default())
             .collect();
+        for (result, outcome) in results.iter_mut().zip(outcomes) {
+            if let Some(outcome) = outcome {
+                outcome.apply(result);
+            }
+        }
         for result in &results {
             diagnostics.extend(result.diagnostics.iter().cloned());
         }

@@ -20,4 +20,5 @@ top.vhd:21:33: sema/unassociated-port: port `clk` of entity `sub` must be associ
 top.vhd:22:24: sema/unresolved-unit: no architecture `nope` of entity `sub`
 top.vhd:23:20: sema/unresolved-unit: no unit `missing` in library `work`
 top.vhd:25:18: sema/sensitivity-list: the process reads `never_driven`, `b` but its sensitivity list does not name them [fix: Add `never_driven`, `b` to the sensitivity list]
+top.vhd:38:26: sema/no-matching-overload: no `and` operator for `STD_ULOGIC` and `boolean`
 top.vhd:38:62: sema/unresolved-name: `nope` is not declared in package `pkg`
