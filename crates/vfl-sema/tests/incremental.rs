@@ -58,7 +58,7 @@ fn edited(before: &[FileInput], files: &[(String, String)], file: usize) -> Vec<
 fn check(fixture: &str, file: &str, edit: impl Fn(&str) -> String) -> usize {
     let mut files = split(fixture);
     let before = inputs(&files);
-    let previous = Analysis::new(before.clone());
+    let previous = Analysis::new(Vec::new()).update(before.clone());
     let index = files.iter().position(|(p, _)| p == file).unwrap();
     files[index].1 = edit(&files[index].1);
     let after = edited(&before, &files, index);
@@ -75,7 +75,7 @@ const RESOLUTION: &str = include_str!("data/resolution.vhd");
 fn nothing_changed() {
     let files = split(TYPES);
     let before = inputs(&files);
-    let previous = Analysis::new(before.clone());
+    let previous = Analysis::new(Vec::new()).update(before.clone());
     let again = previous.update(before);
     assert_eq!(again.dump(), previous.dump());
     assert_eq!(again.reanalyzed_units(), 0);

@@ -131,9 +131,11 @@ Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
   again. The linter also reuses a file's findings while its tree, config, semantic
   diagnostics and declarations are unchanged. `scripts/corpus.sh` checks on the corpus
   that an update after edits gives exactly what a full analysis gives.
+- Only an analysis built by `Analysis::update` (the language server's) keeps the hashes and
+  dependencies reuse needs; a one-off `Analysis::new` (the CLI's) skips that bookkeeping.
 - Edit to fresh diagnostics in the language server (`crates/vfl-lsp/examples/edit_latency.rs`):
-  a median of 6 ms (neorv32) to 32 ms (UVVM) for an edit inside a unit, and up to a full
-  re-analysis (about 0.7 s on UVVM) for a change to a package that every unit uses.
+  a median of 6 ms (neorv32) to 45 ms (UVVM), and up to a full re-analysis (about 0.8 s on
+  UVVM) for a change to a package that every unit uses.
 
 ### Formatter
 
@@ -324,14 +326,14 @@ is small and local rather than a full list.
 
 Measured by `scripts/bench_rust_hdl.py` against the latest `vhdl_ls` release on a corpus
 (OSVVM, UVVM, VUnit, neorv32, and the GHDL test suite for robustness). Current numbers are
-in [benchmarks.md](benchmarks.md): 2 to 3 times faster, 3 to 5 times less memory, and far
-fewer false errors, with zero configuration.
+in [benchmarks.md](benchmarks.md): 1.5 to 2.3 times faster, 2.8 to 4.1 times less memory,
+and far fewer false errors, with zero configuration.
 
 | Dimension | Target | Status |
 |-----------|--------|--------|
-| Cold full-project analysis time | faster | 2-3x faster |
-| Peak memory | lower | 3-5x lower |
-| LSP keystroke-to-diagnostics latency | under 50 ms on the largest corpus project | 6-32 ms median per edit; a change to a package everything uses re-analyzes its dependents |
+| Cold full-project analysis time | faster | 1.5-2.3x faster |
+| Peak memory | lower | 2.8-4.1x lower |
+| LSP keystroke-to-diagnostics latency | under 50 ms on the largest corpus project | 6-45 ms median per edit; a change to a package everything uses re-analyzes its dependents |
 | False errors on valid corpus code | fewer (tracked per release) | fewer on every project |
 | Setup | zero config vs. required `vhdl_ls.toml` | done; `vfl project --vhdl-ls` exports one |
 | Features | formatter, autofixes, lossless refactorings, VHDL-2019, type checking | done |

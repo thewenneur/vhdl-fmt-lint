@@ -189,6 +189,9 @@ pub struct Analysis {
     user_files: usize,
     /// Per unit: whether it was analyzed rather than reused.
     fresh: Vec<bool>,
+    /// Whether `interfaces` and `uses` were computed, so that a later
+    /// [`Analysis::update`] can reuse this analysis.
+    incremental: bool,
 }
 
 impl std::fmt::Debug for Analysis {
@@ -238,7 +241,8 @@ impl Analysis {
     /// affected and what that unit shows to others (its declarations, apart
     /// from their positions) changed. The result is the same as
     /// [`Analysis::new`]'s. When files or design units were added, removed
-    /// or renamed, everything is analyzed again.
+    /// or renamed, or when `self` was built by [`Analysis::new`] (which
+    /// skips the bookkeeping reuse needs), everything is analyzed again.
     pub fn update(&self, inputs: Vec<FileInput>) -> Analysis {
         Analysis::build(inputs, Some(self))
     }
@@ -406,7 +410,10 @@ impl Analysis {
 
         // What can be reused: only with the same files and units, in the
         // same order, since results refer to units and files by index.
-        let previous = previous.filter(|p| same_structure(p, &files, &units));
+        // Only an analysis that may be updated later (the language server's)
+        // keeps what reuse needs; a one-off analysis (the CLI's) skips it.
+        let incremental = previous.is_some();
+        let previous = previous.filter(|p| p.incremental && same_structure(p, &files, &units));
         let changed: Vec<bool> = match previous {
             Some(p) => files
                 .iter()
@@ -450,7 +457,11 @@ impl Analysis {
                 interfaces[s] = previous.map_or(0, |p| p.interfaces[s]);
             } else {
                 let result = analyze(standard);
-                interfaces[s] = interface_hash(&result);
+                interfaces[s] = if incremental {
+                    interface_hash(&result)
+                } else {
+                    0
+                };
                 affected[s] = previous.is_some_and(|p| p.interfaces[s] != interfaces[s]);
                 fresh[s] = true;
                 let _ = results[s].set(Arc::new(result));
@@ -491,7 +502,11 @@ impl Analysis {
                 .par_iter()
                 .map(|&u| {
                     let result = analyze(u);
-                    let interface = interface_hash(&result);
+                    let interface = if incremental {
+                        interface_hash(&result)
+                    } else {
+                        0
+                    };
                     (u, result, interface)
                 })
                 .collect();
@@ -552,7 +567,11 @@ impl Analysis {
                 if let Some(outcome) = outcome {
                     outcome.apply(&mut result);
                 }
-                let uses = used_units(u as UnitId, &result);
+                let uses = if incremental {
+                    used_units(u as UnitId, &result)
+                } else {
+                    Vec::new()
+                };
                 (Arc::new(result), uses)
             })
             .unzip();
@@ -582,6 +601,7 @@ impl Analysis {
             diagnostics,
             user_files,
             fresh,
+            incremental,
         }
     }
 

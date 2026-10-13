@@ -48,7 +48,8 @@ fn main() {
                 libraries: libs.iter().map(|(l, _)| l.clone()).collect(),
             })
             .collect();
-        let base = Analysis::new(inputs.clone());
+        // Built by `update`, as the language server does, so it can be reused.
+        let base = Analysis::new(Vec::new()).update(inputs.clone());
         let step = (inputs.len() / count.max(1)).max(1);
         let edits: [(&str, Edit); 4] = [
             ("comment", |t| format!("{t}\n-- edit\n")),
