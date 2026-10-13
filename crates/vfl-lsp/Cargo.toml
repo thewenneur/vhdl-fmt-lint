@@ -11,6 +11,17 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+vfl-config.workspace = true
 vfl-fmt.workspace = true
 vfl-lint.workspace = true
 vfl-project.workspace = true
+vfl-sema.workspace = true
+vfl-syntax.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+lsp-server.workspace = true
+lsp-types.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

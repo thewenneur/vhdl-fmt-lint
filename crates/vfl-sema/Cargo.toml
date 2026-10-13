@@ -12,3 +12,11 @@ workspace = true
 
 [dependencies]
 vfl-syntax.workspace = true
+rayon.workspace = true
+rowan.workspace = true
+
+[dev-dependencies]
+vfl-config.workspace = true
+vfl-project.workspace = true
+toml.workspace = true
+insta = { version = "1", features = ["glob"] }

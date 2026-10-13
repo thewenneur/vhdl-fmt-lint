@@ -2,7 +2,8 @@
 # Parses pinned open-source VHDL projects and fails on any syntax error or
 # round-trip mismatch. Then formats them, with the default config and a very
 # different one, and fails on any formatter error or output that changes
-# when formatted again. Usage: scripts/corpus.sh [CACHE_DIR]
+# when formatted again. Last, lints them and fails on more semantic errors
+# than the known ones. Usage: scripts/corpus.sh [CACHE_DIR]
 set -euo pipefail
 
 cache=${1:-.corpus}
@@ -30,6 +31,8 @@ done
 
 cargo build --release -q -p vfl-syntax --example parse_corpus
 cargo build --release -q -p vfl-fmt --example fmt_corpus
+cargo build --release -q -p vfl-cli
+cargo build --release -q -p vfl-sema --example sema_corpus
 target=${CARGO_TARGET_DIR:-target}
 run=$target/release/examples/parse_corpus
 fmt=$target/release/examples/fmt_corpus
@@ -80,5 +83,27 @@ for config in "" "--config $alt_config"; do
     $fmt --quiet $config "$cache/ghdl/testsuite" || status=1
   }
 done
+
+# Linting. Each project is analyzed as a whole, with zero configuration.
+# The known semantic errors are real: OSVVM's demos call a removed `print`,
+# UVVM's testbenches name DUTs that are not in the repository and one of its
+# templates names what each VVC provides, and VUnit's OSVVM submodule is
+# not checked out.
+vfl=$(cd "$target/release" && pwd)/vfl
+lint_errors() {
+  (cd "$1" && "$vfl" lint --output-format concise 2>/dev/null || true) |
+    grep -c ': error\[sema/' || true
+}
+for expected in "OSVVM 9" "UVVM 5" "vunit 37" "neorv32 0"; do
+  read -r name known <<<"$expected"
+  found=$(lint_errors "$cache/$name")
+  if [ "$found" -gt "$known" ]; then
+    echo "$name: $found semantic errors, expected at most $known" >&2
+    (cd "$cache/$name" && "$vfl" lint --output-format concise 2>/dev/null | grep ': error\[sema/' >&2) || true
+    status=1
+  fi
+done
+# Nothing may panic on the whole GHDL test suite.
+$target/release/examples/sema_corpus "$cache/ghdl/testsuite" >/dev/null || status=1
 
 exit $status

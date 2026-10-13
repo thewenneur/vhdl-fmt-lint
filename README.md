@@ -15,13 +15,14 @@ Status: early development. See [docs/design.md](docs/design.md) for the design.
 ## Usage
 
 ```sh
-vfl project            # show the discovered root and sources
+vfl project            # show the root, the sources and why each is in its library
 vfl config show        # show the effective configuration and where it came from
 vfl check [paths]      # report syntax errors
 vfl fmt [--check] ...  # format in place, or list the files that would change
 vfl fmt -               # format standard input to standard output
-vfl lint ...           # lint (not implemented yet)
-vfl lsp                # language server (not implemented yet)
+vfl lint [--fix] ...   # lint, resolving names across the whole project
+vfl rules              # list lint rules and their levels
+vfl lsp                # language server over stdio
 ```
 
 ## Configuration
@@ -39,6 +40,19 @@ end_label = "add"
 [format.align]
 block_boundary = "never"   # align whole port lists, across blank lines and comments
 ```
+
+```toml
+[lint]
+preset = "strict"            # "none" | "recommended" (default) | "strict"
+
+[lint.rules]
+"sema/unused-port" = "off"
+"style/line-length" = { max = 100 }
+"naming/signal" = { prefix = "s_", case = "snake" }
+```
+
+A lint finding can be silenced with `-- vfl-ignore rule-id` at the end of its line (or on
+the line above), or for a whole file with `-- vfl-ignore-file rule-id`.
 
 Formatting can be switched off for a region with `-- vfl: off` / `-- vfl: on`, or for the next
 statement with `-- vfl: skip`.

@@ -5,7 +5,7 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/thewenneur/vhdl-fmt-lint"
 
@@ -20,8 +20,15 @@ vfl-lsp = { path = "crates/vfl-lsp" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+globset = "0.4"
 ignore = "0.4"
+lsp-server = "0.7"
+lsp-types = "0.95"
+rayon = "1"
+regex = "1"
+rowan = "0.16"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 tempfile = "3"
 thiserror = "2"
 toml = "1"

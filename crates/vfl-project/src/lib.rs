@@ -1,9 +1,19 @@
-//! VHDL project discovery: finding the project root and its sources.
-//!
-//! Library inference (step 4 of the design) will live here too. See
+//! VHDL project discovery: finding the project root, its sources and the
+//! library of every file, without a hand-written library list. See
 //! `docs/design.md`, "Project autodiscovery".
 
+mod explicit;
+mod infer;
+mod load;
+mod summary;
+
 use std::path::{Path, PathBuf};
+
+pub use infer::{BUNDLED_LIBRARIES, Inference, Reason, infer_libraries};
+pub use load::{Encoding, LoadError, Project, SourceFile, decode, encode};
+pub use summary::{
+    FileSummary, UnitKind, UnitRef, UnitSummary, name_token, simple_name, summarize,
+};
 
 use ignore::WalkBuilder;
 use ignore::overrides::OverrideBuilder;

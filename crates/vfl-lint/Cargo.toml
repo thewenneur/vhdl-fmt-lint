@@ -12,5 +12,11 @@ workspace = true
 
 [dependencies]
 vfl-config.workspace = true
+vfl-project.workspace = true
 vfl-sema.workspace = true
 vfl-syntax.workspace = true
+rayon.workspace = true
+regex.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+

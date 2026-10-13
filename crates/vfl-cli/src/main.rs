@@ -1,15 +1,18 @@
 //! The `vfl` command-line tool.
 
+mod lint;
+
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use vfl_config::Config;
 use vfl_fmt::FormatError;
-use vfl_project::{collect_sources, find_root};
+use vfl_lint::report::Format;
+use vfl_project::{Project, collect_sources, decode, encode, find_root};
 
 #[derive(Parser)]
 #[command(name = "vfl", version, about = "VHDL formatter and linter")]
@@ -30,7 +33,30 @@ enum Command {
         check: bool,
     },
     /// Lint VHDL files.
-    Lint { paths: Vec<PathBuf> },
+    ///
+    /// The whole project around each path is analyzed, so names are
+    /// resolved across files, but only the given files are reported.
+    Lint {
+        /// Files or directories (default: the project around the current directory).
+        paths: Vec<PathBuf>,
+        /// Apply safe fixes.
+        #[arg(long)]
+        fix: bool,
+        /// Also apply fixes that may change behavior (with `--fix`).
+        #[arg(long)]
+        unsafe_fixes: bool,
+        /// How to print diagnostics.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Human)]
+        output_format: OutputFormat,
+        /// Fail on warnings too.
+        #[arg(long)]
+        deny_warnings: bool,
+        /// Colorize output (default: when printing to a terminal).
+        #[arg(long, value_name = "WHEN", default_value = "auto")]
+        color: ColorChoice,
+    },
+    /// List the lint rules and their levels in each preset.
+    Rules,
     /// Parse VHDL files and report syntax errors.
     Check {
         /// Files or directories (default: the project around the current directory).
@@ -43,6 +69,9 @@ enum Command {
     Project {
         #[arg(default_value = ".")]
         path: PathBuf,
+        /// Print the libraries as a rust_hdl `vhdl_ls.toml` instead.
+        #[arg(long)]
+        vhdl_ls: bool,
     },
     /// Inspect configuration.
     Config {
@@ -51,6 +80,22 @@ enum Command {
     },
     /// Run the language server over stdio.
     Lsp,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum OutputFormat {
+    Human,
+    Concise,
+    Json,
+    Sarif,
+    Github,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum ColorChoice {
+    Auto,
+    Always,
+    Never,
 }
 
 #[derive(Subcommand)]
@@ -64,7 +109,8 @@ enum ConfigCommand {
 
 fn main() -> ExitCode {
     match run(Cli::parse()) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(true) => ExitCode::SUCCESS,
+        Ok(false) => ExitCode::FAILURE,
         Err(err) => {
             eprintln!("error: {err:#}");
             ExitCode::FAILURE
@@ -72,16 +118,45 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(cli: Cli) -> Result<()> {
+/// Runs a command; `Ok(false)` means it found problems.
+fn run(cli: Cli) -> Result<bool> {
     match cli.command {
-        Command::Fmt { paths, check } => fmt(&paths, check),
-        Command::Lint { .. } => bail!("`vfl lint` is not implemented yet"),
-        Command::Lsp => bail!("`vfl lsp` is not implemented yet"),
-        Command::Check { paths, tree } => check(&paths, tree),
-        Command::Project { path } => show_project(&path),
+        Command::Fmt { paths, check } => fmt(&paths, check).map(|()| true),
+        Command::Lint {
+            paths,
+            fix,
+            unsafe_fixes,
+            output_format,
+            deny_warnings,
+            color,
+        } => lint::run(lint::Options {
+            paths,
+            fix,
+            unsafe_fixes,
+            format: match output_format {
+                OutputFormat::Human => Format::Human,
+                OutputFormat::Concise => Format::Concise,
+                OutputFormat::Json => Format::Json,
+                OutputFormat::Sarif => Format::Sarif,
+                OutputFormat::Github => Format::Github,
+            },
+            deny_warnings,
+            color: match color {
+                ColorChoice::Auto => None,
+                ColorChoice::Always => Some(true),
+                ColorChoice::Never => Some(false),
+            },
+        }),
+        Command::Rules => {
+            show_rules();
+            Ok(true)
+        }
+        Command::Lsp => vfl_lsp::run_stdio().map(|()| true),
+        Command::Check { paths, tree } => check(&paths, tree).map(|()| true),
+        Command::Project { path, vhdl_ls } => show_project(&path, vhdl_ls).map(|()| true),
         Command::Config {
             command: ConfigCommand::Show { path },
-        } => show_config(&path),
+        } => show_config(&path).map(|()| true),
     }
 }
 
@@ -166,32 +241,6 @@ fn check(paths: &[PathBuf], tree: bool) -> Result<()> {
     Ok(())
 }
 
-/// How a source file was encoded.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Encoding {
-    Utf8,
-    Latin1,
-}
-
-/// Decodes a source file: UTF-8 if valid, else Latin-1 (common in VHDL), byte for byte.
-fn decode(bytes: Vec<u8>) -> (String, Encoding) {
-    match String::from_utf8(bytes) {
-        Ok(text) => (text, Encoding::Utf8),
-        Err(err) => (
-            err.into_bytes().iter().map(|&b| char::from(b)).collect(),
-            Encoding::Latin1,
-        ),
-    }
-}
-
-fn encode(text: &str, encoding: Encoding) -> Vec<u8> {
-    match encoding {
-        Encoding::Utf8 => text.as_bytes().to_vec(),
-        // Decoded byte for byte, and formatting only adds ASCII.
-        Encoding::Latin1 => text.chars().map(|c| c as u8).collect(),
-    }
-}
-
 /// Formats files in place, or reports which would change with `check`.
 fn fmt(paths: &[PathBuf], check: bool) -> Result<()> {
     if paths.len() == 1 && paths[0] == Path::new("-") {
@@ -260,19 +309,99 @@ fn fmt_stdin() -> Result<()> {
     Ok(())
 }
 
-fn show_project(path: &Path) -> Result<()> {
-    let root = find_root(path);
-    let config = vfl_config::load_for_dir(&root.dir)?;
+fn show_project(path: &Path, vhdl_ls: bool) -> Result<()> {
+    let root = find_root(&std::path::absolute(path)?);
+    if vhdl_ls {
+        let project = Project::load(root)?;
+        let mut libraries: Vec<(String, Vec<String>)> = Vec::new();
+        for (file, libs) in project.files.iter().zip(&project.libraries) {
+            let shown = file
+                .path
+                .strip_prefix(&project.root.dir)
+                .unwrap_or(&file.path);
+            let shown = shown.to_string_lossy().replace('\\', "/");
+            for (library, _) in libs {
+                // rust_hdl rejects a library named `work`.
+                let library = if library == "work" {
+                    "defaultlib"
+                } else {
+                    library.as_str()
+                };
+                match libraries.iter_mut().find(|(l, _)| l == library) {
+                    Some((_, files)) => files.push(shown.clone()),
+                    None => libraries.push((library.to_owned(), vec![shown.clone()])),
+                }
+            }
+        }
+        let mut table = toml::Table::new();
+        for (library, files) in libraries {
+            let mut entry = toml::Table::new();
+            entry.insert("files".into(), files.into());
+            table.insert(library, entry.into());
+        }
+        let mut out = toml::Table::new();
+        out.insert("libraries".into(), table.into());
+        print!("{}", toml::to_string(&out)?);
+        return Ok(());
+    }
     println!("root: {} ({:?})", root.dir.display(), root.kind);
-    println!("standard: {}", config.standard());
-    let sources = collect_sources(&root.dir, &config.project)
-        .with_context(|| format!("scanning {}", root.dir.display()))?;
-    println!("sources ({}):", sources.len());
-    for source in sources {
-        let shown = source.strip_prefix(&root.dir).unwrap_or(&source);
-        println!("  {}", shown.display());
+    let project = Project::load(root)?;
+    println!("standard: {}", project.config.standard());
+    println!("sources ({}):", project.files.len());
+    // Paths relative to the root, with `/` on every platform.
+    let prefix = format!(
+        "{}{}",
+        project.root.dir.display(),
+        std::path::MAIN_SEPARATOR
+    );
+    let relative = |text: String| text.replace(&prefix, "").replace('\\', "/");
+    for (file, libraries) in project.files.iter().zip(&project.libraries) {
+        let names: Vec<&str> = libraries.iter().map(|(l, _)| l.as_str()).collect();
+        let shown = relative(file.path.display().to_string());
+        println!("  {shown}  [{}]", names.join(", "));
+        for (library, reason) in libraries {
+            println!("      {library}: {}", relative(reason.to_string()));
+        }
+    }
+    for (path, error) in &project.unreadable {
+        println!("unreadable: {}: {error}", path.display());
+    }
+    for note in &project.notes {
+        println!("note: {note}");
     }
     Ok(())
+}
+
+fn show_rules() {
+    let name = |level: vfl_config::Level| match level {
+        vfl_config::Level::Off => "off",
+        vfl_config::Level::Info => "info",
+        vfl_config::Level::Warn => "warn",
+        vfl_config::Level::Error => "error",
+    };
+    println!(
+        "{:<30} {:<12} {:<7} {:<4} summary",
+        "rule", "recommended", "strict", "fix"
+    );
+    for rule in vfl_lint::RULES {
+        println!(
+            "{:<30} {:<12} {:<7} {:<4} {}",
+            rule.id,
+            name(rule.recommended),
+            name(rule.strict),
+            if rule.fixable { "yes" } else { "" },
+            rule.summary
+        );
+    }
+    for (kind, what) in vfl_lint::NAMING_KINDS {
+        println!(
+            "{:<30} {:<12} {:<7} {:<4} Naming convention for {what} (on when configured).",
+            format!("naming/{kind}"),
+            "off",
+            "off",
+            ""
+        );
+    }
 }
 
 fn show_config(path: &Path) -> Result<()> {

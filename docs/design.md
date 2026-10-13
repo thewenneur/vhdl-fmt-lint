@@ -84,15 +84,30 @@ Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
 
 ### Semantic model
 
-- Built on `salsa` (incremental, demand-driven queries). An edit re-parses one file and
-  only recomputes what depends on its changed declarations, which keeps LSP latency low
-  on large projects.
-- Analysis is per design unit: primary units (entity, package, context, configuration)
-  are indexed project-wide, secondary units (architecture, package body) attach to them.
-- Standard libraries (`std`, `ieee`, per standard version) are bundled as VHDL sources and
-  analyzed like user code. Vendor libraries (`unisim`, `altera_mf`, ...) can be pointed at
-  or stubbed; missing ones degrade to "unknown" rather than cascading errors.
-- Files parse and index in parallel (`rayon`).
+- Analysis is per design unit. Primary units (entity, package, context, configuration,
+  package instance) are indexed per library; secondary units (architecture, package body)
+  attach to them. A file in two libraries is analyzed once per library.
+- Units resolve in dependency order: `std.standard` first, then levels of a topological
+  sort, each level in parallel (`rayon`). A dependency cycle is broken at the unit with the
+  fewest missing dependencies, so broken code still gets analyzed.
+- Name resolution walks scopes from the innermost: local declarations of every enclosing
+  region first, then `use`-imported names, then library names, as in the LRM. Overloaded
+  names (subprograms, enumeration literals) keep every candidate; full overload resolution
+  by type is future work, so a reference to an overloaded name points at all candidates.
+- Each resolved reference records its access (read, write, both), which feeds the
+  unused / unread / undriven / sensitivity checks.
+- Unknown things degrade to "unknown" instead of cascading errors: a library that is not in
+  the project (vendor primitives such as `unisim`) makes its names unchecked and is reported
+  once as info, and names that may come from it are not reported.
+- `std` and `ieee` are bundled as VHDL sources (`std` written from the LRM, `ieee` from the
+  Apache-2.0 IEEE packages, plus the declarations of the Synopsys `std_logic_arith` family)
+  and analyzed like user code, once per process.
+- Incrementality is deliberately simple instead of `salsa`: parsing is per file and cached
+  (an edit re-parses one file), library inference is a cheap pass over per-file summaries,
+  and resolution re-runs over the parsed project. On the corpus this takes 45 ms (neorv32)
+  to 250 ms (UVVM, 400 files) for a cold run including loading, which is already within
+  LSP budgets; per-unit result reuse keyed on dependency hashes is the next step if larger
+  projects need it.
 
 ### Formatter
 
@@ -148,12 +163,37 @@ Guarantees, enforced in tests, in the corpus job and at runtime:
 
 ### Linter
 
-- A `Rule` has an id (`naming/signal-prefix`), a category, a default severity, typed options,
-  and optionally a fix (safe or unsafe).
-- Syntactic rules walk the CST; semantic rules query `vfl-sema` (unused signals, missing
-  sensitivity entries, unresolved names, width mismatches, ...).
-- Suppression: `-- vfl-ignore rule-id` on a line, or `-- vfl-ignore-file rule-id`.
-- Output formats: human, JSON, SARIF, GitHub annotations.
+- Rules have an id `category/name` (`sema/unused-signal`, `style/clock-edge`,
+  `naming/signal`), a level in each preset, and optionally a fix marked safe or unsafe.
+  `vfl rules` lists them.
+- Categories: `syntax/*` (parse errors), `sema/*` (cross-file semantic checks: unresolved
+  names and units, duplicates, unassociated ports, unused signals / variables / constants /
+  ports / generics / use clauses, unread and undriven signals, incomplete or unneeded
+  sensitivity lists), `style/*` (one file: buffer ports, Synopsys arithmetic packages, line
+  length, trailing whitespace, tabs, process labels, positional association, `'event` clock
+  edges, file names) and `naming/*` (one rule per kind of declaration, off until
+  configured, with `prefix`, `suffix`, `case` and `pattern` options).
+- Presets: `none` (only syntax errors), `recommended` (default: likely bugs), `strict`
+  (everything but naming). Per-rule overrides set a level, options, or both; options alone
+  turn a rule on at `warn`.
+- Suppression: `-- vfl-ignore [rules]` at the end of a line silences that line, on a line
+  of its own the next line of code; `-- vfl-ignore-file [rules]` the whole file. Without
+  rules, everything; a category (`naming`) silences all its rules.
+- `vfl lint` analyzes the whole project around the given paths but reports only the given
+  files. `--fix` applies safe fixes (`--unsafe-fixes` also the others) and re-lints.
+  Output formats: human (with source excerpts), concise, JSON, SARIF, GitHub annotations.
+  The exit code is non-zero on errors, or on warnings with `--deny-warnings`.
+
+### Language server
+
+`vfl lsp` (stdio) analyzes the project around the first workspace folder. Open buffers
+overlay the files on disk; edits are applied incrementally and analysis runs once a burst of
+changes is over. It provides diagnostics with quick fixes and a `source.fixAll.vfl` action,
+whole-document formatting (returned as a single minimal edit), go to definition (bundled
+`std` / `ieee` sources are written to a cache directory so editors can open them),
+references, document highlights (read / write), hover with the declaration's source,
+document and workspace symbols, rename (including end labels and selected names) and
+completion (scope, `use`d packages, selected-name members, libraries, keywords).
 
 ## Configuration
 
@@ -205,7 +245,7 @@ block_boundary   = "blank-line"   # "blank-line" | "comment" | "never"
 preset = "recommended"       # "none" | "recommended" | "strict"
 
 [lint.rules]
-"naming/signal-prefix" = { level = "warn", prefix = "s_" }
+"naming/signal" = { prefix = "s_", case = "snake" }
 "style/no-buffer-ports" = "error"
 "sema/unused-signal" = "off"
 ```
@@ -231,9 +271,9 @@ own directory. In the LSP, workspace folders are also roots.
 `.gitignore` and `exclude` (via the `ignore` crate, the same walker as ripgrep).
 
 **3. Import existing tool metadata when present.** If the tree already declares libraries,
-use them: rust_hdl `vhdl_ls.toml`, FuseSoC `.core`, HDLmake `Manifest.py` patterns,
-VUnit `run.py` (`add_library` calls, best effort), Vivado `.xpr` and Quartus `.qsf`.
-This makes migration a no-op.
+use them. Implemented: rust_hdl `vhdl_ls.toml` (with `$VAR` expansion). Planned: FuseSoC
+`.core`, HDLmake `Manifest.py` patterns, VUnit `run.py` (`add_library` calls, best effort),
+Vivado `.xpr` and Quartus `.qsf`. This makes migration a no-op.
 
 **4. Infer libraries from the code.** For everything else, every file is parsed (fast,
 parallel) and indexed by the primary units it declares and the references it makes
@@ -256,17 +296,19 @@ is small and local rather than a full list.
 
 ## Beating rust_hdl
 
-Tracked by a benchmark harness in CI against the latest `vhdl_ls` release, on a pinned
-corpus (OSVVM, UVVM, VUnit, neorv32, the GHDL test suite, and others):
+Measured by `scripts/bench_rust_hdl.py` against the latest `vhdl_ls` release on a corpus
+(OSVVM, UVVM, VUnit, neorv32, and the GHDL test suite for robustness). Current numbers are
+in [benchmarks.md](benchmarks.md): 2 to 3 times faster, 3 to 5 times less memory, and far
+fewer false errors, with zero configuration.
 
-| Dimension | Target |
-|-----------|--------|
-| Cold full-project analysis time | faster |
-| Peak memory | lower |
-| LSP keystroke-to-diagnostics latency | under 50 ms on the largest corpus project |
-| False errors on valid corpus code | fewer (tracked per release) |
-| Setup | zero config vs. required `vhdl_ls.toml` |
-| Features | formatter, autofixes, lossless refactorings, VHDL-2019 |
+| Dimension | Target | Status |
+|-----------|--------|--------|
+| Cold full-project analysis time | faster | 2-3x faster |
+| Peak memory | lower | 3-5x lower |
+| LSP keystroke-to-diagnostics latency | under 50 ms on the largest corpus project | within a full re-analysis (about 100-400 ms on the corpus); per-unit reuse is the next step |
+| False errors on valid corpus code | fewer (tracked per release) | fewer on every project |
+| Setup | zero config vs. required `vhdl_ls.toml` | done; `vfl project --vhdl-ls` exports one |
+| Features | formatter, autofixes, lossless refactorings, VHDL-2019 | done except type-aware checks |
 
 ## Repository and CI
 
@@ -281,4 +323,7 @@ corpus (OSVVM, UVVM, VUnit, neorv32, the GHDL test suite, and others):
 1. Design and workspace (this document).
 2. Parser: lexer, CST, VHDL-2008 grammar, then 93 and 2019 gating; corpus round-trip tests.
 3. Formatter with full alignment; idempotency and token-preservation checks (done).
-4. Project inference, semantic model, linter, CLI and LSP; benchmarks against rust_hdl.
+4. Project inference, semantic model, linter, CLI and LSP; benchmarks against rust_hdl
+   (done).
+5. Next: overload resolution and type checking, more import formats, per-unit incremental
+   reuse, more rules (width mismatches, latches, clock domain hints).

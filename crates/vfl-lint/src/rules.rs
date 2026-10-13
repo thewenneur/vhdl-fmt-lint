@@ -1,0 +1,352 @@
+//! The rule registry: every rule's id, summary and default levels.
+
+use vfl_config::{Level, LintConfig, Preset, RuleSetting};
+use vfl_sema::codes;
+
+/// A lint rule.
+#[derive(Debug, Clone, Copy)]
+pub struct Rule {
+    /// `category/name`.
+    pub id: &'static str,
+    pub summary: &'static str,
+    /// Level in the `recommended` preset.
+    pub recommended: Level,
+    /// Level in the `strict` preset.
+    pub strict: Level,
+    /// Whether the rule can fix what it reports.
+    pub fixable: bool,
+}
+
+const fn rule(
+    id: &'static str,
+    summary: &'static str,
+    recommended: Level,
+    strict: Level,
+    fixable: bool,
+) -> Rule {
+    Rule {
+        id,
+        summary,
+        recommended,
+        strict,
+        fixable,
+    }
+}
+
+use Level::{Error, Info, Off, Warn};
+
+/// Every built-in rule except the `naming/*` family (see [`NAMING_KINDS`]).
+pub const RULES: &[Rule] = &[
+    rule(
+        "syntax/error",
+        "The file does not parse.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        codes::UNRESOLVED_NAME,
+        "A name is not declared, or a port or generic does not exist.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        codes::UNRESOLVED_UNIT,
+        "A library unit, entity or architecture does not exist.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        codes::UNKNOWN_LIBRARY,
+        "A library is not part of the project, so names from it are not checked.",
+        Info,
+        Info,
+        false,
+    ),
+    rule(
+        codes::DUPLICATE_DECLARATION,
+        "Two declarations of a region have the same name.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        codes::DUPLICATE_UNIT,
+        "Two design units of a library have the same name.",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        codes::UNASSOCIATED_PORT,
+        "An input port or generic without a default is not associated.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        codes::UNUSED_SIGNAL,
+        "A signal is never used.",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        codes::UNUSED_VARIABLE,
+        "A variable is never used.",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        codes::UNUSED_CONSTANT,
+        "A local constant is never used.",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        codes::UNUSED_PORT,
+        "A port is not used by any architecture of its entity.",
+        Off,
+        Warn,
+        false,
+    ),
+    rule(
+        codes::UNUSED_GENERIC,
+        "A generic is not used by its entity or any of its architectures.",
+        Off,
+        Warn,
+        false,
+    ),
+    rule(
+        codes::UNUSED_USE,
+        "Nothing a use clause makes visible is used.",
+        Off,
+        Warn,
+        true,
+    ),
+    rule(
+        codes::UNREAD_SIGNAL,
+        "A signal is assigned but never read.",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        codes::UNDRIVEN_SIGNAL,
+        "A signal is read but never assigned, or an output port is never assigned.",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        codes::SENSITIVITY_LIST,
+        "A process reads signals its sensitivity list does not name.",
+        Warn,
+        Warn,
+        true,
+    ),
+    rule(
+        codes::UNNEEDED_SENSITIVITY,
+        "A sensitivity list names a signal the process never reads.",
+        Off,
+        Warn,
+        false,
+    ),
+    rule(
+        "style/no-buffer-ports",
+        "A port has mode `buffer`.",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        "style/no-std-logic-arith",
+        "The non-standard Synopsys packages (`std_logic_arith`, `std_logic_unsigned`, `std_logic_signed`) are used instead of `numeric_std`.",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        "style/line-length",
+        "A line is longer than `max` columns (default 120).",
+        Off,
+        Warn,
+        false,
+    ),
+    rule(
+        "style/trailing-whitespace",
+        "A line ends with spaces or tabs.",
+        Off,
+        Warn,
+        true,
+    ),
+    rule(
+        "style/tabs",
+        "A line is indented with tabs.",
+        Off,
+        Warn,
+        false,
+    ),
+    rule(
+        "style/process-label",
+        "A process has no label.",
+        Off,
+        Warn,
+        false,
+    ),
+    rule(
+        "style/positional-association",
+        "An instantiation maps ports or generics by position.",
+        Off,
+        Warn,
+        false,
+    ),
+    rule(
+        "style/clock-edge",
+        "A clock edge is tested with `clk'event` instead of `rising_edge` or `falling_edge`.",
+        Off,
+        Warn,
+        true,
+    ),
+    rule(
+        "style/file-name",
+        "A file's name differs from the name of the primary unit it declares.",
+        Off,
+        Warn,
+        false,
+    ),
+];
+
+/// The kinds of declaration `naming/<kind>` rules apply to. They are off
+/// until configured: setting options (`{ prefix = "s_" }`) turns one on
+/// at `warn`.
+pub const NAMING_KINDS: &[(&str, &str)] = &[
+    ("entity", "entities"),
+    ("architecture", "architectures"),
+    ("package", "packages"),
+    ("component", "components"),
+    ("signal", "signals"),
+    ("variable", "variables"),
+    ("constant", "constants"),
+    ("generic", "generics"),
+    ("port", "ports (all modes)"),
+    ("input-port", "ports of mode `in`"),
+    ("output-port", "ports of mode `out` or `buffer`"),
+    ("inout-port", "ports of mode `inout`"),
+    ("type", "types"),
+    ("subtype", "subtypes"),
+    ("function", "functions"),
+    ("procedure", "procedures"),
+    ("alias", "aliases"),
+    ("process", "process labels"),
+    ("instance", "instance labels"),
+    ("generate", "generate statement labels"),
+];
+
+/// Looks up a rule by id.
+pub fn find(id: &str) -> Option<&'static Rule> {
+    RULES.iter().find(|r| r.id == id)
+}
+
+/// Whether `id` names a rule (including `naming/<kind>`).
+pub fn exists(id: &str) -> bool {
+    find(id).is_some()
+        || id
+            .strip_prefix("naming/")
+            .is_some_and(|kind| NAMING_KINDS.iter().any(|(k, _)| *k == kind))
+}
+
+/// The configured level of rule `id`.
+pub fn level(config: &LintConfig, id: &str) -> Level {
+    if let Some(setting) = config.rules.get(id) {
+        match setting {
+            RuleSetting::Level(level) => return *level,
+            RuleSetting::Detailed {
+                level: Some(level), ..
+            } => return *level,
+            // Options without a level turn a rule on.
+            RuleSetting::Detailed { level: None, .. } => {
+                let default = preset_level(config.preset, id);
+                return if default == Off { Warn } else { default };
+            }
+        }
+    }
+    preset_level(config.preset, id)
+}
+
+fn preset_level(preset: Preset, id: &str) -> Level {
+    let Some(rule) = find(id) else {
+        return Off;
+    };
+    match preset {
+        Preset::None if id == "syntax/error" => Error,
+        Preset::None => Off,
+        Preset::Recommended => rule.recommended,
+        Preset::Strict => rule.strict,
+    }
+}
+
+/// The options table of rule `id`, if it has one.
+pub fn options<'a>(config: &'a LintConfig, id: &str) -> Option<&'a toml::Table> {
+    match config.rules.get(id)? {
+        RuleSetting::Detailed { options, .. } => Some(options),
+        RuleSetting::Level(_) => None,
+    }
+}
+
+/// Rule ids in `config` that do not exist.
+pub fn unknown_rules(config: &LintConfig) -> Vec<String> {
+    config
+        .rules
+        .keys()
+        .filter(|id| !exists(id))
+        .cloned()
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn levels_follow_presets_and_overrides() {
+        let mut config = LintConfig::default();
+        assert_eq!(level(&config, codes::UNRESOLVED_NAME), Error);
+        assert_eq!(level(&config, codes::UNUSED_PORT), Off);
+        config.preset = Preset::Strict;
+        assert_eq!(level(&config, codes::UNUSED_PORT), Warn);
+        config.preset = Preset::None;
+        assert_eq!(level(&config, codes::UNRESOLVED_NAME), Off);
+        assert_eq!(level(&config, "syntax/error"), Error);
+        config.rules.insert(
+            "naming/signal".into(),
+            RuleSetting::Detailed {
+                level: None,
+                options: toml::Table::new(),
+            },
+        );
+        assert_eq!(level(&config, "naming/signal"), Warn);
+        config
+            .rules
+            .insert("style/tabs".into(), RuleSetting::Level(Error));
+        assert_eq!(level(&config, "style/tabs"), Error);
+    }
+
+    #[test]
+    fn rule_ids_are_unique_and_well_formed() {
+        for (i, rule) in RULES.iter().enumerate() {
+            assert!(rule.id.contains('/'), "{}", rule.id);
+            assert!(
+                RULES[i + 1..].iter().all(|r| r.id != rule.id),
+                "{}",
+                rule.id
+            );
+        }
+        assert!(exists("naming/signal"));
+        assert!(!exists("naming/nothing"));
+    }
+}

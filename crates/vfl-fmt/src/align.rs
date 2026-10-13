@@ -81,15 +81,16 @@ pub(crate) fn align(
         }
         line_anchors(elems, an, line, config, &mut add);
         for (i, elem) in (line.start + 1..line.end).zip(&elems[line.start + 1..line.end]) {
-            if config.when_clause && elem.is_token(WHEN_KW) {
-                if let Some(parent) = elem.parent.as_ref().filter(|p| {
+            if config.when_clause
+                && elem.is_token(WHEN_KW)
+                && let Some(parent) = elem.parent.as_ref().filter(|p| {
                     matches!(
                         p.kind(),
                         CONDITIONAL_WAVEFORMS | SELECTED_WAVEFORMS | CONDITIONAL_EXPR
                     )
-                }) {
-                    add(Kind::When, context(parent), i);
-                }
+                })
+            {
+                add(Kind::When, context(parent), i);
             }
         }
         let last = line.end - 1;
@@ -251,10 +252,10 @@ fn anchors_of(
                     }
                 }
             }
-            if config.interface_default {
-                if let Some(default) = child_token(node, an, &[COLON_EQ]) {
-                    add(Kind::InterfaceDefault, ctx, default);
-                }
+            if config.interface_default
+                && let Some(default) = child_token(node, an, &[COLON_EQ])
+            {
+                add(Kind::InterfaceDefault, ctx, default);
             }
             true
         }
@@ -284,26 +285,26 @@ fn anchors_of(
             true
         }
         TYPE_DECL | SUBTYPE_DECL => {
-            if config.declaration {
-                if let Some(is) = child_token(node, an, &[IS_KW]) {
-                    add(Kind::DeclIs, ctx, is);
-                }
+            if config.declaration
+                && let Some(is) = child_token(node, an, &[IS_KW])
+            {
+                add(Kind::DeclIs, ctx, is);
             }
             true
         }
         SIGNAL_ASSIGN_STMT | VARIABLE_ASSIGN_STMT => {
-            if config.assignment {
-                if let Some(op) = child_token(node, an, &[LTE, COLON_EQ]) {
-                    add(Kind::Assign, ctx, op);
-                }
+            if config.assignment
+                && let Some(op) = child_token(node, an, &[LTE, COLON_EQ])
+            {
+                add(Kind::Assign, ctx, op);
             }
             true
         }
         ASSOCIATION_ELEMENT | ELEMENT_ASSOCIATION => {
-            if config.association {
-                if let Some(arrow) = child_token(node, an, &[ARROW]) {
-                    add(Kind::Arrow, ctx, arrow);
-                }
+            if config.association
+                && let Some(arrow) = child_token(node, an, &[ARROW])
+            {
+                add(Kind::Arrow, ctx, arrow);
             }
             true
         }
@@ -318,10 +319,11 @@ fn anchors_of(
                 add(Kind::CaseArrow, ctx, arrow);
             }
             // Aligning the statements only makes sense when the choices are.
-            if config.case_choice && config.assignment {
-                if let Some(op) = statement_assignment(&elems[arrow + 1], an) {
-                    add(Kind::AlternativeAssign, ctx, op);
-                }
+            if config.case_choice
+                && config.assignment
+                && let Some(op) = statement_assignment(&elems[arrow + 1], an)
+            {
+                add(Kind::AlternativeAssign, ctx, op);
             }
             true
         }
