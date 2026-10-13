@@ -69,6 +69,9 @@ enum Command {
     Project {
         #[arg(default_value = ".")]
         path: PathBuf,
+        /// Print the libraries as a rust_hdl `vhdl_ls.toml` instead.
+        #[arg(long)]
+        vhdl_ls: bool,
     },
     /// Inspect configuration.
     Config {
@@ -150,7 +153,7 @@ fn run(cli: Cli) -> Result<bool> {
         }
         Command::Lsp => vfl_lsp::run_stdio().map(|()| true),
         Command::Check { paths, tree } => check(&paths, tree).map(|()| true),
-        Command::Project { path } => show_project(&path).map(|()| true),
+        Command::Project { path, vhdl_ls } => show_project(&path, vhdl_ls).map(|()| true),
         Command::Config {
             command: ConfigCommand::Show { path },
         } => show_config(&path).map(|()| true),
@@ -306,8 +309,41 @@ fn fmt_stdin() -> Result<()> {
     Ok(())
 }
 
-fn show_project(path: &Path) -> Result<()> {
+fn show_project(path: &Path, vhdl_ls: bool) -> Result<()> {
     let root = find_root(&std::path::absolute(path)?);
+    if vhdl_ls {
+        let project = Project::load(root)?;
+        let mut libraries: Vec<(String, Vec<String>)> = Vec::new();
+        for (file, libs) in project.files.iter().zip(&project.libraries) {
+            let shown = file
+                .path
+                .strip_prefix(&project.root.dir)
+                .unwrap_or(&file.path);
+            let shown = shown.to_string_lossy().replace('\\', "/");
+            for (library, _) in libs {
+                // rust_hdl rejects a library named `work`.
+                let library = if library == "work" {
+                    "defaultlib"
+                } else {
+                    library.as_str()
+                };
+                match libraries.iter_mut().find(|(l, _)| l == library) {
+                    Some((_, files)) => files.push(shown.clone()),
+                    None => libraries.push((library.to_owned(), vec![shown.clone()])),
+                }
+            }
+        }
+        let mut table = toml::Table::new();
+        for (library, files) in libraries {
+            let mut entry = toml::Table::new();
+            entry.insert("files".into(), files.into());
+            table.insert(library, entry.into());
+        }
+        let mut out = toml::Table::new();
+        out.insert("libraries".into(), table.into());
+        print!("{}", toml::to_string(&out)?);
+        return Ok(());
+    }
     println!("root: {} ({:?})", root.dir.display(), root.kind);
     let project = Project::load(root)?;
     println!("standard: {}", project.config.standard());

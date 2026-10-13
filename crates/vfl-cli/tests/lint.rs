@@ -138,6 +138,12 @@ fn project_shows_inferred_libraries() {
         stdout.contains("top.vhd refers to pkg in this library"),
         "{stdout}"
     );
+    let (ok, stdout, _) = vfl(dir.path(), &["project", "--vhdl-ls"]);
+    assert!(ok);
+    assert_eq!(
+        stdout,
+        "[libraries.defaultlib]\nfiles = [\"top.vhd\"]\n\n[libraries.mylib]\nfiles = [\"lib/pkg.vhd\"]\n"
+    );
     let (ok, stdout, _) = vfl(dir.path(), &["rules"]);
     assert!(ok);
     assert!(stdout.contains("sema/unresolved-name"));

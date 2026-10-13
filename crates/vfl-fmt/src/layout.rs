@@ -121,12 +121,11 @@ pub(crate) fn analyze(elems: &[Elem], config: &FormatConfig) -> Analysis {
         let mut child = syntax.clone();
         let mut ancestor = child.parent();
         while let Some(a) = ancestor {
-            if is_container(a.kind()) {
-                if let NodeOrToken::Node(c) = &child {
-                    if is_item_kind(c.kind()) {
-                        level += 1;
-                    }
-                }
+            if is_container(a.kind())
+                && let NodeOrToken::Node(c) = &child
+                && is_item_kind(c.kind())
+            {
+                level += 1;
             }
             ancestor = a.parent();
             child = NodeOrToken::Node(a);
@@ -194,10 +193,10 @@ pub(crate) fn analyze(elems: &[Elem], config: &FormatConfig) -> Analysis {
                 }
             }
             RPAREN => {
-                if let Some(&id) = list_of_node.get(&parent) {
-                    if parent.last_token().as_ref() == Some(token) {
-                        an.lists[id].close = Some(i);
-                    }
+                if let Some(&id) = list_of_node.get(&parent)
+                    && parent.last_token().as_ref() == Some(token)
+                {
+                    an.lists[id].close = Some(i);
                 }
             }
             _ => {}
@@ -299,10 +298,10 @@ pub(crate) fn breaks(
                 forced[j] = true;
             }
         }
-        if let Some(close) = list.close {
-            if config.close_paren == CloseParen::OwnLine {
-                forced[close] = true;
-            }
+        if let Some(close) = list.close
+            && config.close_paren == CloseParen::OwnLine
+        {
+            forced[close] = true;
         }
     }
     let mut nl = Vec::with_capacity(n);
@@ -404,10 +403,10 @@ pub(crate) fn lines(
             }
             indented[li] = true;
         }
-        if let Some(end) = an.shift_end[i] {
-            if lines[li].start == i {
-                shifts.push(end);
-            }
+        if let Some(end) = an.shift_end[i]
+            && lines[li].start == i
+        {
+            shifts.push(end);
         }
         if elem.is_token(LPAREN) {
             open.push(li);
