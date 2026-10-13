@@ -131,6 +131,20 @@ Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
     into a register (`sync_1 <= s;`, the first stage of a synchronizer), memories (arrays
     of arrays, as in dual-clock RAMs) and processes with `wait` statements are not
     reported.
+  - `sema/open-input` and `sema/inout-port`: an input port without a default associated
+    with `open`; an `inout` port only read or only driven by its architectures.
+  - Resets (`sema/missing-reset`, `sema/mixed-reset`, `sema/reset-polarity`): a clocked
+    process's reset is the first condition of an `if` whose last branch is the clock edge
+    (asynchronous), or the first condition of an `if` opening the clocked branch on a
+    signal named like a reset (synchronous). Registers assigned in the clocked part but
+    not in the reset part are reported (info), as are, within an architecture, reset
+    signals used both synchronously and asynchronously or tested with both polarities,
+    and active-low names (`rst_n`) tested active high.
+  - State machines (`sema/fsm-unreachable-state`, `sema/fsm-stuck-state`): a `case` on a
+    signal or variable of a project enumeration type whose alternatives assign literals
+    to it or to a same-type next-state object. Any other kind of assignment to these
+    objects leaves the machine alone. States no transition reaches, and reachable states
+    no transition leaves, are reported.
 - Unknown things degrade to "unknown" instead of cascading errors: a library that is not in
   the project (vendor primitives such as `unisim`) makes its names unchecked and is reported
   once as info, and names that may come from it are not reported.

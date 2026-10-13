@@ -56,4 +56,11 @@ pub mod codes {
     pub const WIDTH_MISMATCH: &str = "sema/width-mismatch";
     pub const INFERRED_LATCH: &str = "sema/inferred-latch";
     pub const CLOCK_DOMAIN_CROSSING: &str = "sema/clock-domain-crossing";
+    pub const OPEN_INPUT: &str = "sema/open-input";
+    pub const INOUT_PORT: &str = "sema/inout-port";
+    pub const MISSING_RESET: &str = "sema/missing-reset";
+    pub const MIXED_RESET: &str = "sema/mixed-reset";
+    pub const RESET_POLARITY: &str = "sema/reset-polarity";
+    pub const FSM_UNREACHABLE_STATE: &str = "sema/fsm-unreachable-state";
+    pub const FSM_STUCK_STATE: &str = "sema/fsm-stuck-state";
 }

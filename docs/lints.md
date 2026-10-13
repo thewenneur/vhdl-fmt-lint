@@ -68,6 +68,13 @@ A finding can be silenced in the source with `-- vfl-ignore rule-id` at the end 
 | [`sema/width-mismatch`](#semawidth-mismatch) | warn | error | |
 | [`sema/inferred-latch`](#semainferred-latch) | warn | error | |
 | [`sema/clock-domain-crossing`](#semaclock-domain-crossing) | info | warn | |
+| [`sema/open-input`](#semaopen-input) | warn | error | |
+| [`sema/inout-port`](#semainout-port) | info | warn | |
+| [`sema/missing-reset`](#semamissing-reset) | info | warn | |
+| [`sema/mixed-reset`](#semamixed-reset) | warn | warn | |
+| [`sema/reset-polarity`](#semareset-polarity) | warn | error | |
+| [`sema/fsm-unreachable-state`](#semafsm-unreachable-state) | warn | warn | |
+| [`sema/fsm-stuck-state`](#semafsm-stuck-state) | info | warn | |
 | [`style/no-buffer-ports`](#styleno-buffer-ports) | warn | warn | |
 | [`style/no-std-logic-arith`](#styleno-std-logic-arith) | warn | warn | |
 | [`style/line-length`](#styleline-length) | off | warn | |
@@ -330,6 +337,141 @@ Clocked processes are those that test `rising_edge(clk)`, `falling_edge(clk)` or
 (`sync1 <= a_reg;`, the first stage of a synchronizer), memories (arrays of arrays, such as
 the two ports of a dual-clock RAM), signals registered on several clocks, and processes with
 `wait` (testbenches). `info` in `recommended`, `warn` in `strict`.
+
+### `sema/open-input`
+
+An instantiation associates an input port with `open`, and the port has no default value,
+so the input floats. VHDL requires an input port that is left open to have a default.
+
+```vhdl
+-- entity leaf has `port (a : in std_logic; ...)`
+u1 : entity work.leaf port map (a => open, y => y);   -- input port `a` is left open and has no default value
+```
+
+Both named (`a => open`) and positional (`open`) associations are checked. Leaving an
+input out of the map altogether is [`sema/unassociated-port`](#semaunassociated-port).
+`warn` in `recommended`, `error` in `strict`.
+
+### `sema/inout-port`
+
+An `inout` port is only read, or only driven, by its entity and its architectures, so it
+could be `in` or `out`.
+
+```vhdl
+port (pad : inout std_logic);   -- inout port `pad` is never driven, so it could be `in`
+...
+y <= pad;
+```
+
+An `inout` port passed to an instance's `inout` port counts as both read and driven.
+Entities without an architecture in the project are skipped. `info` in `recommended`,
+`warn` in `strict`.
+
+### `sema/missing-reset`
+
+A clocked process with a reset assigns a register that the reset branch does not. While
+the reset is active, that register has to keep its value, so the reset becomes an enable
+on it: extra logic, and a register that cannot use the flip-flop's reset.
+
+```vhdl
+process (clk, rst) begin
+  if rst = '1' then
+    count <= (others => '0');
+  elsif rising_edge(clk) then
+    count <= count + 1;
+    data  <= din;   -- `data` is not reset by `rst` in this process, so the reset acts as an enable on it
+  end if;
+end process;
+```
+
+To fix it, reset the register too, or move it to a process without a reset. A reset is the
+first condition of an `if` whose last branch is the clock edge (asynchronous), or the
+first condition of an `if` that opens the clocked branch and tests a signal named like a
+reset (`rst`, `reset`, `arst_n`, ...; synchronous). A synchronous reset written last in
+the clocked branch, so that it overrides what comes before, does not affect the registers
+it leaves out and is not reported. Not reported: memories (arrays of arrays), variables,
+and processes with `wait`. `info` in `recommended`, `warn` in `strict`.
+
+### `sema/mixed-reset`
+
+A reset signal resets one process synchronously and another asynchronously, within one
+architecture. The two kinds of register see the reset at different times, and a reset
+used asynchronously should be synchronized on release.
+
+```vhdl
+a : process (clk, rst) begin
+  if rst = '1' then x <= '0'; elsif rising_edge(clk) then x <= d; end if;
+end process;
+b : process (clk) begin
+  if rising_edge(clk) then
+    if rst = '1' then   -- `rst` resets this process synchronously but the process at line 1 asynchronously
+      y <= '0'; else y <= x; end if;
+  end if;
+end process;
+```
+
+Processes inside `if` and `case` generate statements are not compared, since they often
+pick one style or the other from a generic. `warn` in every preset.
+
+### `sema/reset-polarity`
+
+A reset signal is tested active high in one process and active low in another, within one
+architecture; or its name says it is active low (`rst_n`, `resetn`, `nrst`, `rst_l`,
+`rst_b`) but a process resets when it is high.
+
+```vhdl
+if rst = '1' then ...     -- in one process
+if rst = '0' then ...     -- `rst` resets when low here but when high at line 1
+if rst_n = '1' then ...   -- `rst_n` is named as active low but resets when high here
+```
+
+Resets are found as for [`sema/missing-reset`](#semamissing-reset). A level given by a
+constant or generic (`rst = RESET_LEVEL`) is not compared. Processes inside `if` and `case`
+generate statements are not compared with each other. `warn` in `recommended`, `error` in
+`strict`.
+
+### `sema/fsm-unreachable-state`
+
+A state machine has a state that no transition reaches, from its initial value or reset.
+
+A state machine is a `case` on a signal or variable of an enumeration type declared in the
+project, whose alternatives assign literals of that type to it, or to a next-state object
+of the same type that is then copied into it. Transitions are the literals assigned within
+each alternative; a literal assigned outside the `case` (a default, an abort) can come from
+any state, and one assigned in a reset branch is a starting state, as is the initial value
+(or the first literal when there is none).
+
+```vhdl
+type state_t is (IDLE, RUN, SPARE);
+...
+case state is
+  when IDLE  => if go = '1' then next_state <= RUN; end if;
+  when RUN   => next_state <= IDLE;
+  when SPARE => next_state <= IDLE;   -- no transition of `state` reaches state `SPARE` of `state_t`
+end case;
+```
+
+The state machine is left alone when the state is assigned anything but a literal or the
+next-state object (another signal, `state_t'succ(state)`, a function), assigned through a
+procedure, an aggregate or a port map, or when a choice is a range. Only states named by a
+choice are reported. `warn` in every preset.
+
+### `sema/fsm-stuck-state`
+
+A state machine has a reachable state that it never leaves: no transition from that state
+goes to another one, so only a reset gets it out.
+
+```vhdl
+case state is
+  when IDLE => if go = '1' then next_state <= DONE; end if;
+  when DONE => null;   -- `state` never leaves state `DONE` once there, except by a reset
+end case;
+```
+
+State machines are found as for
+[`sema/fsm-unreachable-state`](#semafsm-unreachable-state). Nothing is reported when the
+state is assigned a literal outside the `case` other than by a reset. A final state that
+waits for a reset is sometimes intended, hence `info` in `recommended`; `warn` in `strict`.
 
 ## `style`
 

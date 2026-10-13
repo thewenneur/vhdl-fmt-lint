@@ -141,7 +141,8 @@ pub(crate) fn project_checks(ctx: &Ctx) -> Vec<Diagnostic> {
 }
 
 /// The cross-unit findings about one unit: unused use clauses (marked
-/// `true`), unused ports and generics, output ports never driven.
+/// `true`), unused ports and generics, output ports never driven, inout
+/// ports used in one direction only.
 fn unit_project_checks(
     ctx: &Ctx,
     secondaries: &HashMap<(&str, &str), Vec<UnitId>>,
@@ -221,6 +222,24 @@ fn unit_project_checks(
                 } if u.writes == 0 => (
                     codes::UNDRIVEN_SIGNAL,
                     format!("output port `{}` is never assigned", decl.spelling),
+                ),
+                DeclKind::Port {
+                    mode: Mode::InOut, ..
+                } if u.reads > 0 && u.writes == 0 => (
+                    codes::INOUT_PORT,
+                    format!(
+                        "inout port `{}` is never driven, so it could be `in`",
+                        decl.spelling
+                    ),
+                ),
+                DeclKind::Port {
+                    mode: Mode::InOut, ..
+                } if u.writes > 0 && u.reads == 0 => (
+                    codes::INOUT_PORT,
+                    format!(
+                        "inout port `{}` is never read, so it could be `out`",
+                        decl.spelling
+                    ),
                 ),
                 DeclKind::Generic { .. } if u.refs == 0 => (
                     codes::UNUSED_GENERIC,
