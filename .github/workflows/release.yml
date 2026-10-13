@@ -1,11 +1,13 @@
 name: Release
 
-# Pushing a `v*` tag builds every artifact and publishes a GitHub Release with
-# the matching CHANGELOG.md section as its notes. A pull request that touches
-# this file runs the same builds without publishing.
+# Pushing a `v*` tag, or running this workflow by hand on main (which creates
+# the tag for the workspace version), builds every artifact and publishes a
+# GitHub Release with the matching CHANGELOG.md section as its notes. A pull
+# request that touches this file runs the same builds without publishing.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
   pull_request:
     paths:
       - .github/workflows/release.yml
@@ -32,6 +34,16 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "v$version" ]]; then
             echo "::error::tag $GITHUB_REF_NAME does not match the workspace version $version"
             exit 1
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+              echo "::error::run the release from main, not $GITHUB_REF_NAME"
+              exit 1
+            fi
+            if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+              echo "::error::v$version is already tagged; bump the version first"
+              exit 1
+            fi
           fi
           if ! grep -q "^## \[$version\]" CHANGELOG.md; then
             echo "::error::CHANGELOG.md has no section for $version"
@@ -154,3 +166,11 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
             --title "vfl $GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+      - name: Tag and publish the release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=v${{ needs.version.outputs.version }}
+          gh release create "$tag" dist/* --target "$GITHUB_SHA" \
+            --title "vfl $tag" --notes-file notes.md
