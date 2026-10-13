@@ -305,11 +305,7 @@ impl Server<'_> {
                 if let Some(p) = params::<lsp_types::DidOpenTextDocumentParams>(notification.params)
                     && let Ok(path) = p.text_document.uri.to_file_path()
                 {
-                    if world.overlays.get(&path) != Some(&p.text_document.text) {
-                        world.set_text(path, p.text_document.text);
-                    } else {
-                        world.overlays.insert(path, p.text_document.text);
-                    }
+                    world.set_text(path, p.text_document.text);
                 }
             }
             n::DidChangeTextDocument::METHOD => {
