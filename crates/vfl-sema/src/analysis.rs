@@ -14,7 +14,7 @@ use rayon::prelude::*;
 use vfl_syntax::{GreenNode, LineIndex, Standard, SyntaxKind, SyntaxNode, TextRange, TextSize};
 
 use crate::checks;
-use crate::decl::{Decl, DeclId, DeclKind, FileId, Reference, Region, UnitId};
+use crate::decl::{Decl, DeclId, DeclKind, ElementRef, FileId, Reference, Region, UnitId};
 use crate::diagnostic::Diagnostic;
 use crate::resolver::{ImportId, Resolver, UseItem};
 use crate::stdlib;
@@ -71,6 +71,8 @@ pub(crate) struct UnitResult {
     pub imports: Vec<crate::resolver::Import>,
     pub libraries: Vec<String>,
     pub refs: Vec<Reference>,
+    /// Names of record elements, in source order.
+    pub elements: Vec<ElementRef>,
     pub diagnostics: Vec<Diagnostic>,
     pub use_items: Vec<UseItem>,
     pub used_imports: Vec<ImportId>,
@@ -722,6 +724,13 @@ impl Analysis {
                 r.range, r.targets, r.access
             );
         }
+        for (file, e) in self.element_references() {
+            let _ = writeln!(
+                out,
+                "element {file}:{:?} {:?} {}",
+                e.range, e.record, e.name
+            );
+        }
         for d in &self.diagnostics {
             let _ = writeln!(
                 out,
@@ -730,6 +739,19 @@ impl Analysis {
             );
         }
         out
+    }
+
+    /// The names of record elements in a unit, in source order.
+    pub fn unit_element_references(&self, unit: UnitId) -> &[ElementRef] {
+        &self.results[unit as usize].elements
+    }
+
+    /// Every name of a record element, with the file it is in.
+    pub fn element_references(&self) -> impl Iterator<Item = (FileId, &ElementRef)> {
+        self.units
+            .iter()
+            .zip(&self.results)
+            .flat_map(|(unit, result)| result.elements.iter().map(move |r| (unit.file, r)))
     }
 
     /// Every reference, with the file it is in.

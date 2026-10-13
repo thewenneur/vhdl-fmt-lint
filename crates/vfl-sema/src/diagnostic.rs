@@ -21,6 +21,26 @@ pub struct Fix {
     pub safe: bool,
 }
 
+/// What removing `item` from a comma-separated list takes: the item and
+/// the comma after it, or the comma before it when it is last. `None` when
+/// it is the only item.
+pub(crate) fn list_item_removal(text: &str, item: TextRange) -> Option<TextRange> {
+    let start = usize::from(item.start());
+    let end = usize::from(item.end());
+    let after = &text[end..];
+    let gap = after.len() - after.trim_start().len();
+    if after[gap..].starts_with(',') {
+        let rest = &after[gap + 1..];
+        let spaces = rest.len() - rest.trim_start_matches([' ', '\t']).len();
+        let end = end + gap + 1 + spaces;
+        return Some(TextRange::new(item.start(), (end as u32).into()));
+    }
+    let before = text[..start].trim_end();
+    before
+        .strip_suffix(',')
+        .map(|b| TextRange::new((b.len() as u32).into(), item.end()))
+}
+
 /// A problem found by semantic analysis. `code` is the lint rule id
 /// (`sema/unresolved-name`); the rule's configured level decides whether
 /// and how it is reported.

@@ -5,6 +5,9 @@ language server:
 
 - **Diagnostics** as you type: syntax errors, cross-file semantic checks and lint rules.
 - **Quick fixes**, and **Fix All** (`vfl: Fix All Lint Findings in File`, or on save, below).
+  Besides each rule's own fix: rename a declaration to follow a naming convention
+  everywhere, add the `use` clause for a name declared in a package, or silence the rule
+  on the line or in the file with a `-- vfl-ignore` comment.
 - **Formatting** with every rule from your `vfl.toml`.
 - **Go to definition**, **find references**, **highlights**, **hover** (with types),
   **signature help**, **rename**, **completion** (including record elements and protected
@@ -13,6 +16,9 @@ language server:
 - **Code generation**: insert an entity or component instantiation or a component
   declaration at the cursor, or generate a testbench (also offered as a code action on an
   entity declaration).
+- **Rename** and **find references** treat a package and its body, a subprogram and its
+  body, and an entity and the components named after it (with their ports and generics) as
+  one thing, work on record elements, and refuse a new name that would clash with another.
 - **Syntax highlighting** for VHDL-93, 2008 and 2019.
 
 The project root, sources and libraries are discovered from the code, so there is nothing to

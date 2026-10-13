@@ -63,6 +63,30 @@ async function run() {
     unused.range,
   );
   assert.ok(fixes && fixes.length > 0, "no quick fix for the unused signal");
+  const titles = fixes.map((f) => f.title);
+  assert.ok(
+    titles.includes("Remove the unused signal `unused_s` (may change behavior)"),
+    `no removal in ${JSON.stringify(titles)}`,
+  );
+  assert.ok(titles.includes("Ignore `sema/unused-signal` on this line"));
+
+  // Renaming `r` changes its declaration and its three uses.
+  const rename = await vscode.commands.executeCommand(
+    "vscode.executeDocumentRenameProvider",
+    uri,
+    new vscode.Position(16, use),
+    "state",
+  );
+  const renamed = rename.get(uri);
+  assert.equal(renamed.length, 4, JSON.stringify(renamed));
+  assert.ok(renamed.every((e) => e.newText === "state"));
+
+  const references = await vscode.commands.executeCommand(
+    "vscode.executeReferenceProvider",
+    uri,
+    new vscode.Position(16, use),
+  );
+  assert.equal(references.length, 4, JSON.stringify(references));
 
   // Code generation: an instantiation at the cursor, and a testbench file.
   const scratch = await vscode.workspace.openTextDocument({ language: "vhdl", content: "" });

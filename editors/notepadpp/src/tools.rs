@@ -179,8 +179,7 @@ pub(crate) fn list_selected(n: &ScNotification) {
                 tell("The file changed since the fixes were listed. Try again.");
                 return;
             }
-            apply_edits(here.sci, &here.buffer, &fix.edits);
-            lint_current(Trigger::Refresh);
+            apply_fix(&here, fix);
         }
         Action::Generate(kind, entity) => generate_from(kind, &entity),
     }
@@ -391,10 +390,18 @@ fn apply_edits(sci: Hwnd, buffer: &BufferText, edits: &[(Range<usize>, String)])
 }
 
 fn fix_label(fix: &QuickFix) -> String {
-    if fix.safe {
-        format!("{}  [{}]", fix.title, fix.rule)
-    } else {
-        format!("{} (may change behavior)  [{}]", fix.title, fix.rule)
+    // The titles of unsafe fixes say so already.
+    format!("{}  [{}]", fix.title, fix.rule)
+}
+
+/// Applies a fix to the buffer it was listed for, which is in front.
+fn apply_fix(here: &Here, fix: QuickFix) {
+    match &fix.rename {
+        Some(new_name) => rename_to(here, fix.at, new_name),
+        None => {
+            apply_edits(here.sci, &here.buffer, &fix.edits);
+            lint_current(Trigger::Refresh);
+        }
     }
 }
 
@@ -402,11 +409,13 @@ pub(crate) fn quick_fix() {
     let here = here();
     let fixes = engine(|e| e.quick_fixes(here.path(), &here.buffer.text, here.offset, here.offset))
         .unwrap_or_default();
-    match fixes.as_slice() {
-        [] => tell("No fix for a problem at the caret."),
-        [one] if one.safe => {
-            apply_edits(here.sci, &here.buffer, &one.edits);
-            lint_current(Trigger::Refresh);
+    let fixing: Vec<&QuickFix> = fixes.iter().filter(|f| !f.silences).collect();
+    match fixing.as_slice() {
+        [] if fixes.is_empty() => tell("No fix for a problem at the caret."),
+        // A single safe fix is applied; the list offers the others.
+        [one] if one.safe && one.rename.is_none() => {
+            let one = (*one).clone();
+            apply_fix(&here, one);
         }
         _ => show_list(
             &here,
@@ -453,7 +462,16 @@ pub(crate) fn rename() {
     if new == old {
         return;
     }
-    let files = match engine(|e| e.rename(here.path(), &here.buffer.text, here.offset, &new)) {
+    rename_to(&here, here.offset, &new);
+}
+
+/// Renames the name at byte `offset` of the buffer in front to `new`,
+/// asking first when other files change.
+fn rename_to(here: &Here, offset: usize, new: &str) {
+    let old = engine(|e| e.prepare_rename(here.path(), &here.buffer.text, offset))
+        .and_then(Result::ok)
+        .map_or_else(String::new, |range| here.buffer.text[range].to_owned());
+    let files = match engine(|e| e.rename(here.path(), &here.buffer.text, offset, new)) {
         Some(Ok(files)) => files,
         Some(Err(why)) => {
             tell(&format!("Cannot rename: {why}."));

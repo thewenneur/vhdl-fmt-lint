@@ -20,6 +20,7 @@ use vfl_config::Level;
 use vfl_sema::{Access, Decl, DeclId, DeclKind, FileId, Target};
 use vfl_syntax::{TextRange, TextSize};
 
+use crate::refactor::{self, Symbol};
 use crate::world::{Doc, World};
 
 pub enum Error {
@@ -45,7 +46,7 @@ pub fn request(world: &mut World, method: &str, params: Value) -> Result<Value, 
         "textDocument/hover" => json(hover(world, parse(params)?)),
         "textDocument/documentSymbol" => json(document_symbols(world, parse(params)?)),
         "workspace/symbol" => json(workspace_symbols(world, parse(params)?)),
-        "textDocument/prepareRename" => json(prepare_rename(world, parse(params)?)),
+        "textDocument/prepareRename" => json(prepare_rename(world, parse(params)?)?),
         "textDocument/rename" => json(rename(world, parse(params)?)?),
         "textDocument/completion" => json(completion(world, parse(params)?)),
         "textDocument/codeAction" => json(code_actions(world, parse(params)?)),
@@ -157,12 +158,6 @@ pub(crate) struct Hit {
     pub library: Option<String>,
 }
 
-fn hit(world: &World, position: &TextDocumentPositionParams) -> Option<(FileId, Hit)> {
-    let file = file_of(world, &position.text_document.uri)?;
-    let offset = world.doc(file).offset(position.position);
-    Some((file, hit_at(world, file, offset)?))
-}
-
 pub(crate) fn hit_at(world: &World, file: FileId, offset: TextSize) -> Option<Hit> {
     let contains = |r: TextRange| r.start() <= offset && offset <= r.end();
     for (f, reference) in world.analysis.references() {
@@ -229,13 +224,38 @@ fn bundled_path(path: &Path, text: &str) -> Option<PathBuf> {
 }
 
 fn definition(world: &mut World, params: GotoDefinitionParams) -> Option<GotoDefinitionResponse> {
-    let (_, hit) = hit(world, &params.text_document_position_params)?;
-    let locations: Vec<Location> = hit
-        .targets
-        .iter()
-        .filter_map(|id| location(world, world.analysis.decl(*id)?))
+    let position = &params.text_document_position_params;
+    let file = file_of(world, &position.text_document.uri)?;
+    let offset = world.doc(file).offset(position.position);
+    let locations: Vec<Location> = definitions(world, file, offset)
+        .into_iter()
+        .filter_map(|(file, range)| {
+            Some(Location {
+                uri: uri(&openable_path(world, file)?)?,
+                range: world.doc(file).range(range),
+            })
+        })
         .collect();
     (!locations.is_empty()).then_some(GotoDefinitionResponse::Array(locations))
+}
+
+/// Where what is named at `offset` is declared.
+pub(crate) fn definitions(
+    world: &World,
+    file: FileId,
+    offset: TextSize,
+) -> Vec<(FileId, TextRange)> {
+    if let Some((_, Symbol::Element { record, name })) = refactor::symbol_at(world, file, offset) {
+        return refactor::element_decls(world, record, &name);
+    }
+    let Some(hit) = hit_at(world, file, offset) else {
+        return Vec::new();
+    };
+    hit.targets
+        .iter()
+        .filter_map(|id| world.analysis.decl(*id))
+        .map(|decl| (decl.file, decl.range))
+        .collect()
 }
 
 /// Every place that names one of `targets`: declarations and references,
@@ -268,8 +288,11 @@ pub(crate) fn occurrences(
 }
 
 fn references(world: &mut World, params: ReferenceParams) -> Option<Vec<Location>> {
-    let (_, hit) = hit(world, &params.text_document_position)?;
-    let found = occurrences(world, &hit.targets, params.context.include_declaration);
+    let position = &params.text_document_position;
+    let file = file_of(world, &position.text_document.uri)?;
+    let offset = world.doc(file).offset(position.position);
+    let (_, symbol) = refactor::symbol_at(world, file, offset)?;
+    let found = refactor::occurrences(world, &symbol, params.context.include_declaration);
     Some(
         found
             .into_iter()
@@ -285,10 +308,12 @@ fn references(world: &mut World, params: ReferenceParams) -> Option<Vec<Location
 }
 
 fn highlight(world: &mut World, params: DocumentHighlightParams) -> Option<Vec<DocumentHighlight>> {
-    let (file, hit) = hit(world, &params.text_document_position_params)?;
+    let position = &params.text_document_position_params;
+    let file = file_of(world, &position.text_document.uri)?;
     let doc = world.doc(file);
+    let (_, symbol) = refactor::symbol_at(world, file, doc.offset(position.position))?;
     Some(
-        occurrences(world, &hit.targets, true)
+        refactor::occurrences(world, &symbol, true)
             .into_iter()
             .filter(|(f, _, _)| *f == file)
             .map(|(_, range, access)| DocumentHighlight {
@@ -600,29 +625,35 @@ pub(crate) fn workspace_decls(world: &World, query: &str) -> Vec<DeclId> {
     out
 }
 
-/// The declarations a rename at `position` would change, if it may.
+/// The name a rename at `position` would change, if it may.
 fn rename_targets(
     world: &World,
     position: &TextDocumentPositionParams,
-) -> Result<(FileId, Hit), String> {
+) -> Result<(FileId, TextRange, Symbol), String> {
     let file = file_of(world, &position.text_document.uri).ok_or("nothing to rename here")?;
     let offset = world.doc(file).offset(position.position);
-    Ok((file, rename_targets_at(world, file, offset)?))
+    let (range, symbol) = rename_targets_at(world, file, offset)?;
+    Ok((file, range, symbol))
 }
 
-/// The name a rename at `offset` would change, if it may.
+/// The name a rename at `offset` would change and what it stands for, if
+/// it may be renamed.
 pub(crate) fn rename_targets_at(
     world: &World,
     file: FileId,
     offset: TextSize,
-) -> Result<Hit, String> {
-    let Some(hit) = hit_at(world, file, offset) else {
-        return Err("nothing to rename here".into());
+) -> Result<(TextRange, Symbol), String> {
+    let Some((range, symbol)) = refactor::symbol_at(world, file, offset) else {
+        return Err(match hit_at(world, file, offset) {
+            Some(_) => "this name is not declared in the project".into(),
+            None => "nothing to rename here".into(),
+        });
     };
-    if hit.targets.is_empty() {
-        return Err("this name is not declared in the project".into());
-    }
-    for id in &hit.targets {
+    let ids: &[DeclId] = match &symbol {
+        Symbol::Decls(ids) => ids,
+        Symbol::Element { record, .. } => std::slice::from_ref(record),
+    };
+    for id in ids {
         let decl = world.analysis.decl(*id).ok_or("unknown declaration")?;
         if world.analysis.files()[decl.file as usize].builtin {
             return Err(format!(
@@ -630,46 +661,73 @@ pub(crate) fn rename_targets_at(
                 decl.spelling
             ));
         }
-        if decl.spelling.starts_with('"') || decl.spelling.starts_with('\'') {
+        if matches!(symbol, Symbol::Decls(_))
+            && (decl.spelling.starts_with('"') || decl.spelling.starts_with('\''))
+        {
             return Err("operators and character literals cannot be renamed".into());
         }
     }
     // Selected names (`work.pkg.x`) cover more than the identifier.
     let doc = world.doc(file);
-    if doc.text[std::ops::Range::<usize>::from(hit.range)].contains('.') {
+    if doc.text[std::ops::Range::<usize>::from(range)].contains('.') {
         return Err("rename the name where it is declared or used alone".into());
     }
-    Ok(hit)
+    Ok((range, symbol))
 }
 
 fn prepare_rename(
     world: &mut World,
     params: TextDocumentPositionParams,
-) -> Option<PrepareRenameResponse> {
-    let (file, hit) = rename_targets(world, &params).ok()?;
-    Some(PrepareRenameResponse::Range(
-        world.doc(file).range(hit.range),
-    ))
+) -> Result<Option<PrepareRenameResponse>, Error> {
+    let (file, range, _) = rename_targets(world, &params).map_err(Error::Failed)?;
+    Ok(Some(PrepareRenameResponse::Range(
+        world.doc(file).range(range),
+    )))
 }
 
 fn rename(world: &mut World, params: RenameParams) -> Result<Option<WorkspaceEdit>, Error> {
     let new_name = params.new_name.trim();
-    check_identifier(new_name).map_err(Error::Failed)?;
-    let (_, hit) = rename_targets(world, &params.text_document_position).map_err(Error::Failed)?;
+    let (_, _, symbol) =
+        rename_targets(world, &params.text_document_position).map_err(Error::Failed)?;
+    let edits = rename_edits(world, &symbol, new_name).map_err(Error::Failed)?;
+    Ok(Some(workspace_edit(world, edits)))
+}
+
+/// A workspace edit making `edits`, by file.
+pub(crate) fn workspace_edit(
+    world: &World,
+    edits: impl IntoIterator<Item = (FileId, TextRange, String)>,
+) -> WorkspaceEdit {
     let mut changes: HashMap<Url, Vec<TextEdit>> = HashMap::new();
-    for (file, range) in rename_ranges(world, &hit.targets) {
+    for (file, range, text) in edits {
         let Some(uri) = uri(&world.analysis.files()[file as usize].path) else {
             continue;
         };
         changes.entry(uri).or_default().push(TextEdit {
             range: world.doc(file).range(range),
-            new_text: new_name.to_owned(),
+            new_text: text,
         });
     }
-    Ok(Some(WorkspaceEdit {
+    WorkspaceEdit {
         changes: Some(changes),
         ..Default::default()
-    }))
+    }
+}
+
+/// The edits renaming `symbol` to `new_name`, or why it may not be.
+pub(crate) fn rename_edits(
+    world: &World,
+    symbol: &Symbol,
+    new_name: &str,
+) -> Result<Vec<(FileId, TextRange, String)>, String> {
+    check_identifier(new_name)?;
+    if let Some(conflict) = refactor::rename_conflict(world, symbol, new_name) {
+        return Err(format!("cannot rename to `{new_name}`: {conflict}"));
+    }
+    Ok(rename_ranges(world, symbol)
+        .into_iter()
+        .map(|(file, range)| (file, range, new_name.to_owned()))
+        .collect())
 }
 
 /// Whether `name` is a VHDL identifier, basic or extended.
@@ -688,25 +746,31 @@ pub(crate) fn check_identifier(name: &str) -> Result<(), String> {
             && !new_name.contains("__")
             && !new_name.ends_with('_')
     };
-    if valid {
-        Ok(())
-    } else {
+    if !valid {
         Err(format!("`{new_name}` is not a VHDL identifier"))
+    } else if KEYWORDS.contains(&new_name.to_ascii_lowercase().as_str()) {
+        Err(format!("`{new_name}` is a reserved word"))
+    } else {
+        Ok(())
     }
 }
 
-/// What renaming `targets` replaces: each name, or the last part of a
-/// selected name.
-pub(crate) fn rename_ranges(world: &World, targets: &[DeclId]) -> Vec<(FileId, TextRange)> {
-    occurrences(world, targets, true)
+/// What renaming `symbol` replaces: each name, or the last part of a
+/// selected name, in the project's own files, once each.
+pub(crate) fn rename_ranges(world: &World, symbol: &Symbol) -> Vec<(FileId, TextRange)> {
+    let mut out: Vec<(FileId, TextRange)> = refactor::occurrences(world, symbol, true)
         .into_iter()
+        .filter(|(file, _, _)| !world.analysis.files()[*file as usize].builtin)
         .map(|(file, range, _)| {
             let text = &world.doc(file).text[std::ops::Range::<usize>::from(range)];
             let start = text.rfind('.').map_or(0, |i| i + 1);
             let range = TextRange::new(range.start() + TextSize::from(start as u32), range.end());
             (file, range)
         })
-        .collect()
+        .collect();
+    out.sort_by_key(|(f, r)| (*f, r.start()));
+    out.dedup();
+    out
 }
 
 const KEYWORDS: &[&str] = &[
@@ -1059,69 +1123,50 @@ fn code_actions(world: &mut World, params: CodeActionParams) -> Option<Vec<CodeA
     let start = doc.offset(params.range.start);
     let end = doc.offset(params.range.end);
     let uri = params.text_document.uri.clone();
-    let edit = |fixes: &[&vfl_lint::Fix]| {
-        let edits: Vec<TextEdit> = fixes
-            .iter()
-            .flat_map(|f| &f.edits)
-            .map(|e| TextEdit {
-                range: doc.range(e.range),
-                new_text: e.text.clone(),
-            })
-            .collect();
-        WorkspaceEdit {
-            changes: Some(HashMap::from([(uri.clone(), edits)])),
-            ..Default::default()
-        }
-    };
     let only = params.context.only.as_ref();
     let wants = |kind: &CodeActionKind| {
         only.is_none_or(|only| only.iter().any(|k| kind.as_str().starts_with(k.as_str())))
     };
     let mut out = Vec::new();
-    let in_file: Vec<&vfl_lint::Diagnostic> =
-        world.lint.iter().filter(|d| d.file == file).collect();
     if wants(&CodeActionKind::QUICKFIX) {
-        for d in &in_file {
-            let Some(fix) = &d.fix else { continue };
-            if d.range.end() < start || d.range.start() > end {
-                continue;
-            }
-            let diagnostic = diagnostics(world)
-                .into_iter()
-                .find(|(u, _)| *u == uri)
-                .and_then(|(_, list)| {
-                    list.into_iter().find(|x| {
-                        x.range == doc.range(d.range)
-                            && x.code == Some(NumberOrString::String(d.rule.into()))
-                    })
-                });
+        let published = diagnostics(world)
+            .into_iter()
+            .find(|(u, _)| *u == uri)
+            .map(|(_, list)| list)
+            .unwrap_or_default();
+        for action in crate::actions::actions(world, file, start, end) {
+            let problem = &world.lint[action.problem];
+            let diagnostic = published.iter().find(|x| {
+                x.range == doc.range(problem.range)
+                    && x.code == Some(NumberOrString::String(problem.rule.into()))
+            });
             out.push(CodeActionOrCommand::CodeAction(CodeAction {
-                title: if fix.safe {
-                    fix.title.clone()
-                } else {
-                    format!("{} (may change behavior)", fix.title)
-                },
+                title: action.title,
                 kind: Some(CodeActionKind::QUICKFIX),
-                diagnostics: diagnostic.map(|d| vec![d]),
-                edit: Some(edit(&[fix])),
-                is_preferred: Some(fix.safe),
+                diagnostics: diagnostic.map(|d| vec![d.clone()]),
+                edit: Some(workspace_edit(world, action.edits)),
+                is_preferred: action.preferred.then_some(true),
                 ..Default::default()
             }));
         }
     }
     let fix_all = CodeActionKind::new("source.fixAll.vfl");
     if wants(&fix_all) {
+        let in_file = world.lint.iter().filter(|d| d.file == file);
         let fixes: Vec<&vfl_lint::Fix> = in_file
-            .iter()
             .filter_map(|d| d.fix.as_ref())
             .filter(|f| f.safe)
             .collect();
         if !fixes.is_empty() {
             let kept = compatible_fixes(doc.text, fixes);
+            let edits = kept
+                .iter()
+                .flat_map(|f| &f.edits)
+                .map(|e| (file, e.range, e.text.clone()));
             out.push(CodeActionOrCommand::CodeAction(CodeAction {
                 title: "Fix all safe vfl problems".into(),
                 kind: Some(fix_all),
-                edit: Some(edit(&kept)),
+                edit: Some(workspace_edit(world, edits)),
                 ..Default::default()
             }));
         }

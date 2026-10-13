@@ -337,6 +337,17 @@ impl Access {
     }
 }
 
+/// A name of a record element: `r.field`, or a choice of a record
+/// aggregate (`(field => x)`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ElementRef {
+    pub range: TextRange,
+    /// The record type.
+    pub record: DeclId,
+    /// The element's key (lower case unless extended).
+    pub name: String,
+}
+
 /// A resolved reference.
 #[derive(Debug, Clone)]
 pub struct Reference {

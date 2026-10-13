@@ -7,9 +7,11 @@
 //! symbols, rename and completion. [`editor`] answers hover, signature
 //! help and completion directly, for editors that link it.
 
+mod actions;
 pub mod editor;
 pub mod generate;
 mod handlers;
+mod refactor;
 mod types;
 mod world;
 

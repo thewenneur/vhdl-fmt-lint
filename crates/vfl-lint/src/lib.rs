@@ -34,6 +34,9 @@ pub struct Finding {
     pub range: TextRange,
     pub message: String,
     pub fix: Option<Fix>,
+    /// For a naming finding: a name for the declaration that follows the
+    /// convention, which editors offer to rename it to everywhere.
+    pub rename: Option<String>,
 }
 
 impl Finding {
@@ -43,6 +46,7 @@ impl Finding {
             range,
             message: message.into(),
             fix: None,
+            rename: None,
         }
     }
 
@@ -61,6 +65,9 @@ pub struct Diagnostic {
     pub range: TextRange,
     pub message: String,
     pub fix: Option<Fix>,
+    /// For a naming problem: a name that follows the convention, to rename
+    /// the declaration to everywhere (not applied by `--fix`).
+    pub rename: Option<String>,
 }
 
 /// What [`lint`] needs to know about one file.
@@ -249,10 +256,17 @@ fn lint_file(
                 .file_stem()
                 .map(|s| s.to_string_lossy().into_owned()),
             max_line_length,
+            indent: settings.config.format.indent as usize,
+            standard: settings.config.standard(),
         },
         enabled,
         &mut findings,
     );
+    for finding in &mut findings {
+        if finding.rule == "style/positional-association" {
+            finding.fix = name_formals(analysis, settings.file, &root, finding.range);
+        }
+    }
     let (conventions, naming_errors) = naming::conventions(lint_config);
     errors.extend(naming_errors);
     naming::check(decls, &file.text, &root, &conventions, &mut findings);
@@ -282,9 +296,94 @@ fn lint_file(
             range: finding.range,
             message: finding.message,
             fix: finding.fix,
+            rename: finding.rename,
         });
     }
     (out, errors)
+}
+
+/// Names the formals of the positional associations of the generic or
+/// port map at `range`, from the instantiated entity or component.
+fn name_formals(
+    analysis: &Analysis,
+    file: FileId,
+    root: &vfl_syntax::SyntaxNode,
+    range: TextRange,
+) -> Option<Fix> {
+    use vfl_sema::{DeclKind, Target};
+    use vfl_syntax::SyntaxKind;
+    let map = root.covering_element(range).into_node()?;
+    let statement = map.parent()?;
+    let ports = map.kind() == SyntaxKind::PORT_MAP_ASPECT;
+    let reference_at = |range: TextRange| {
+        analysis.file_units(file).find_map(|unit| {
+            let refs = analysis.unit_references(unit);
+            let i = refs.partition_point(|r| r.range.start() < range.start());
+            refs[i..].iter().find(|r| r.range == range)
+        })
+    };
+    // The unit's name comes before the maps.
+    let unit = statement
+        .descendants_with_tokens()
+        .filter_map(|e| e.into_token())
+        .take_while(|t| t.text_range().end() <= map.text_range().start())
+        .filter(|t| matches!(t.kind(), SyntaxKind::IDENT | SyntaxKind::EXT_IDENT))
+        .filter_map(|t| reference_at(t.text_range()))
+        .flat_map(|r| r.targets.iter())
+        .find_map(|t| match t {
+            Target::Decl(id) => analysis
+                .decl(*id)
+                .filter(|d| matches!(d.kind, DeclKind::Entity | DeclKind::Component)),
+            _ => None,
+        })?;
+    let formals: Vec<&str> = unit
+        .members
+        .as_ref()?
+        .iter()
+        .filter_map(|m| analysis.decl(m))
+        .filter(|d| match d.kind {
+            DeclKind::Port { .. } => ports,
+            DeclKind::Generic { .. }
+            | DeclKind::GenericType
+            | DeclKind::GenericSubprogram
+            | DeclKind::GenericPackage => !ports,
+            _ => false,
+        })
+        .map(|d| d.spelling.as_str())
+        .collect();
+    let elements: Vec<vfl_syntax::SyntaxNode> = map
+        .descendants()
+        .filter(|n| n.kind() == SyntaxKind::ASSOCIATION_ELEMENT)
+        .filter(|n| n.parent().and_then(|p| p.parent()).as_ref() == Some(&map))
+        .collect();
+    let mut edits = Vec::new();
+    for (i, element) in elements.iter().enumerate() {
+        if element
+            .children_with_tokens()
+            .any(|e| e.kind() == SyntaxKind::ARROW)
+        {
+            continue;
+        }
+        let formal = formals.get(i)?;
+        let start = element.first_token()?;
+        let start = if start.kind().is_trivia() {
+            element
+                .descendants_with_tokens()
+                .filter_map(|e| e.into_token())
+                .find(|t| !t.kind().is_trivia())?
+        } else {
+            start
+        };
+        edits.push(Edit {
+            range: TextRange::empty(start.text_range().start()),
+            text: format!("{formal} => "),
+        });
+    }
+    (!edits.is_empty()).then(|| Fix {
+        title: "Name the formals".into(),
+        edits,
+        safe: true,
+    })
 }
 
 /// Analyzes a loaded project: every readable file with its inferred

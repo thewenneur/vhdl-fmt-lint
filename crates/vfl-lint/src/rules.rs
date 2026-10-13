@@ -105,21 +105,21 @@ pub const RULES: &[Rule] = &[
         "A signal is never used.",
         Warn,
         Warn,
-        false,
+        true,
     ),
     rule(
         codes::UNUSED_VARIABLE,
         "A variable is never used.",
         Warn,
         Warn,
-        false,
+        true,
     ),
     rule(
         codes::UNUSED_CONSTANT,
         "A local constant is never used.",
         Warn,
         Warn,
-        false,
+        true,
     ),
     rule(
         codes::UNUSED_PORT,
@@ -168,7 +168,7 @@ pub const RULES: &[Rule] = &[
         "A sensitivity list names a signal the process never reads.",
         Off,
         Warn,
-        false,
+        true,
     ),
     rule(
         codes::WIDTH_MISMATCH,
@@ -196,14 +196,14 @@ pub const RULES: &[Rule] = &[
         "A port has mode `buffer`.",
         Warn,
         Warn,
-        false,
+        true,
     ),
     rule(
         "style/no-std-logic-arith",
         "The non-standard Synopsys packages (`std_logic_arith`, `std_logic_unsigned`, `std_logic_signed`) are used instead of `numeric_std`.",
         Warn,
         Warn,
-        false,
+        true,
     ),
     rule(
         "style/line-length",
@@ -224,7 +224,7 @@ pub const RULES: &[Rule] = &[
         "A line is indented with tabs.",
         Off,
         Warn,
-        false,
+        true,
     ),
     rule(
         "style/process-label",
@@ -238,7 +238,7 @@ pub const RULES: &[Rule] = &[
         "An instantiation maps ports or generics by position.",
         Off,
         Warn,
-        false,
+        true,
     ),
     rule(
         "style/clock-edge",
