@@ -909,6 +909,7 @@ dependencies = [
  "toml",
  "vfl-config",
  "vfl-fmt",
+ "vfl-gen",
  "vfl-lint",
  "vfl-lsp",
  "vfl-project",
@@ -939,6 +940,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "vfl-gen"
+version = "0.1.1"
+dependencies = [
+ "regex",
+ "rowan",
+ "vfl-config",
+ "vfl-fmt",
+ "vfl-syntax",
+]
+
+[[package]]
 name = "vfl-lint"
 version = "0.1.1"
 dependencies = [
@@ -964,6 +976,7 @@ dependencies = [
  "tempfile",
  "vfl-config",
  "vfl-fmt",
+ "vfl-gen",
  "vfl-lint",
  "vfl-project",
  "vfl-sema",

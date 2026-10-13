@@ -16,6 +16,7 @@ use std::path::PathBuf;
 use std::ptr;
 
 use vfl_lsp::editor::CompletionKind;
+use vfl_lsp::generate::Kind;
 
 use crate::engine::{
     BufferText, Engine, NameColor, Severity, completes_after_dot, completion_list, is_library_copy,
@@ -40,6 +41,14 @@ const MENU: &[(&str, Option<extern "C" fn()>)] = &[
     ("Rename symbol", Some(cmd_rename)),
     ("Go to symbol in file", Some(cmd_outline)),
     ("Go to symbol in project", Some(cmd_project_symbols)),
+    ("", None),
+    ("Insert entity instantiation", Some(cmd_insert_instance)),
+    (
+        "Insert component instantiation",
+        Some(cmd_insert_component_instance),
+    ),
+    ("Insert component declaration", Some(cmd_insert_component)),
+    ("Generate testbench", Some(cmd_testbench)),
     ("", None),
     ("Show type", Some(cmd_show_type)),
     ("Show parameters", Some(cmd_show_parameters)),
@@ -526,6 +535,22 @@ extern "C" fn cmd_outline() {
 
 extern "C" fn cmd_project_symbols() {
     guard(tools::project_symbols);
+}
+
+extern "C" fn cmd_insert_instance() {
+    guard(|| tools::generate(Kind::Instance));
+}
+
+extern "C" fn cmd_insert_component_instance() {
+    guard(|| tools::generate(Kind::ComponentInstance));
+}
+
+extern "C" fn cmd_insert_component() {
+    guard(|| tools::generate(Kind::Component));
+}
+
+extern "C" fn cmd_testbench() {
+    guard(|| tools::generate(Kind::Testbench));
 }
 
 extern "C" fn cmd_toggle_highlight() {

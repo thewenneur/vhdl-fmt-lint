@@ -1,4 +1,4 @@
-//! Measures how long hover, signature help and completion take: opens a
+//! Measures how long hover, signature help, completion and code actions take: opens a
 //! project, then sends each request at a spread of positions in a spread
 //! of files, and prints the median and slowest times. Then the semantic
 //! tokens of every file, whole and as a delta after the first.
@@ -27,6 +27,7 @@ fn main() {
         "textDocument/hover",
         "textDocument/signatureHelp",
         "textDocument/completion",
+        "textDocument/codeAction",
     ] {
         let mut times: Vec<Duration> = Vec::new();
         let mut answered = 0;
@@ -35,10 +36,16 @@ fn main() {
             let lines: Vec<&str> = text.lines().collect();
             for (line, content) in lines.iter().enumerate().step_by(7) {
                 let character = content.encode_utf16().count() as u32 / 2;
-                let params = json!({
-                    "textDocument": { "uri": uri },
-                    "position": { "line": line, "character": character },
-                });
+                let position = json!({ "line": line, "character": character });
+                let params = if method == "textDocument/codeAction" {
+                    json!({
+                        "textDocument": { "uri": uri },
+                        "range": { "start": position, "end": position },
+                        "context": { "diagnostics": [] },
+                    })
+                } else {
+                    json!({ "textDocument": { "uri": uri }, "position": position })
+                };
                 let start = Instant::now();
                 let result = vfl_lsp::handle(&mut world, method, params);
                 times.push(start.elapsed());

@@ -90,6 +90,18 @@ async function run() {
   const clk = decoded.find((t) => t.line === 4 && t.column === 8);
   assert.equal(clk?.type, "port");
   assert.ok(clk.modifiers & (1 << legend.tokenModifiers.indexOf("in")));
+
+  // Code generation: an instantiation at the cursor, and a testbench file.
+  const scratch = await vscode.workspace.openTextDocument({ language: "vhdl", content: "" });
+  await vscode.window.showTextDocument(scratch);
+  await vscode.commands.executeCommand("vfl.insertInstance", "work.e2e_top");
+  assert.match(scratch.getText(), /^u_e2e_top : entity work\.e2e_top\n  port map \(/);
+  await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor");
+
+  await vscode.commands.executeCommand("vfl.generateTestbench", "e2e_top");
+  const tb = vscode.window.activeTextEditor?.document;
+  assert.equal(tb && path.basename(tb.uri.fsPath), "e2e_top_tb.vhd");
+  assert.match(tb.getText(), /dut : entity work\.e2e_top/);
 }
 
 module.exports = { run };

@@ -45,6 +45,8 @@ each file like `vfl lint` does, so names resolve across files, and it reads the 
   one undo step per file. Renaming in files other than the current one asks first.
 - **Go to symbol in file** lists the file's declarations, nested; **Go to symbol in project**
   searches the declarations of the whole project.
+- **Code generation**: insert an entity or component instantiation or a component
+  declaration at the caret, or generate a testbench next to the entity.
 
 ## Commands
 
@@ -65,6 +67,8 @@ Mapper > Plugin commands**.
 | Rename symbol | Asks for a new name and renames the name at the caret everywhere. Files that change on disk since they were analyzed are skipped. |
 | Go to symbol in file | Lists the declarations of the current file. |
 | Go to symbol in project | Searches the declarations of the project by name, starting from the word at the caret. |
+| Insert entity instantiation, Insert component instantiation, Insert component declaration | Lists the entities of the project, those of the current file first, and inserts the code for the one picked at the caret. |
+| Generate testbench | Lists the entities of the project and writes a testbench for the one picked next to it (`<entity>_tb.vhd`, see `[generate]` in `vfl.toml`), then opens it. |
 | Show type | Shows what the name at the caret is, as hovering it does. |
 | Show parameters | Shows the parameter hints of the call around the caret. |
 | Complete word | Lists the completions at the caret. Notepad++ keeps **Ctrl+Space** for its own completion, so map this to another key if you use it often. |
