@@ -19,7 +19,7 @@ pub use summary::{
 
 use ignore::WalkBuilder;
 use ignore::overrides::OverrideBuilder;
-use vfl_config::{ProjectConfig, find_config};
+use vfl_config::{ProjectConfig, config_chain, find_config};
 
 /// Directories whose presence marks a version-control root.
 const VCS_MARKERS: [&str; 3] = [".git", ".hg", ".jj"];
@@ -43,25 +43,42 @@ pub struct ProjectRoot {
 
 /// Finds the project root for `path` (a file or a directory).
 ///
-/// The nearest directory holding a config file wins; failing that, the
-/// nearest version-control root; failing that, the directory itself.
+/// The outermost directory holding a config file wins, so that nested
+/// configs, which only override settings for their subtree, do not split
+/// the project. The search stops at a config with `root = true` and does not
+/// go above the nearest version-control root. Without a config, the nearest
+/// version-control root is used; failing that, the directory itself.
 pub fn find_root(path: &Path) -> ProjectRoot {
     let start = if path.is_file() {
         path.parent().unwrap_or(Path::new("."))
     } else {
         path
     };
+    let vcs = start
+        .ancestors()
+        .find(|dir| VCS_MARKERS.iter().any(|marker| dir.join(marker).exists()));
 
-    if let Some(dir) = start.ancestors().find(|dir| find_config(dir).is_some()) {
+    let within_vcs = |dir: &Path| vcs.is_none_or(|vcs| dir.starts_with(vcs));
+    let config_dir = match config_chain(start) {
+        Ok(chain) => chain
+            .iter()
+            .filter_map(|file| file.parent())
+            .find(|dir| within_vcs(dir))
+            .map(Path::to_owned),
+        // An unreadable config is reported when it is loaded; the nearest
+        // one still marks the root.
+        Err(_) => start
+            .ancestors()
+            .find(|dir| find_config(dir).is_some())
+            .map(Path::to_owned),
+    };
+    if let Some(dir) = config_dir {
         return ProjectRoot {
-            dir: dir.to_owned(),
+            dir,
             kind: RootKind::Config,
         };
     }
-    if let Some(dir) = start
-        .ancestors()
-        .find(|dir| VCS_MARKERS.iter().any(|marker| dir.join(marker).exists()))
-    {
+    if let Some(dir) = vcs {
         return ProjectRoot {
             dir: dir.to_owned(),
             kind: RootKind::Vcs,
@@ -142,6 +159,39 @@ mod tests {
         let found = find_root(&root.join("hw/rtl/top.vhd"));
         assert_eq!(found.dir, root.join("hw"));
         assert_eq!(found.kind, RootKind::Config);
+    }
+
+    #[test]
+    fn nested_configs_do_not_split_the_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir(root.join(".git")).unwrap();
+        touch(&root.join("hw/vfl.toml"));
+        touch(&root.join("hw/tb/vfl.toml"));
+        touch(&root.join("hw/tb/tb.vhd"));
+
+        let found = find_root(&root.join("hw/tb/tb.vhd"));
+        assert_eq!(found.dir, root.join("hw"));
+        assert_eq!(found.kind, RootKind::Config);
+    }
+
+    #[test]
+    fn root_true_and_vcs_roots_bound_the_search() {
+        let dir = tempfile::tempdir().unwrap();
+        let outer = dir.path();
+        // A config above the repository is layered but is not the root.
+        touch(&outer.join("vfl.toml"));
+        let repo = outer.join("repo");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        touch(&repo.join("a/vfl.toml"));
+        touch(&repo.join("a/b/c/x.vhd"));
+        fs::write(repo.join("a/b/vfl.toml"), "root = true\n").unwrap();
+        touch(&repo.join("d/y.vhd"));
+
+        assert_eq!(find_root(&repo.join("a/b/c/x.vhd")).dir, repo.join("a/b"));
+        let found = find_root(&repo.join("d/y.vhd"));
+        assert_eq!(found.dir, repo);
+        assert_eq!(found.kind, RootKind::Vcs);
     }
 
     #[test]

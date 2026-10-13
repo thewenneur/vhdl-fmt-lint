@@ -466,4 +466,43 @@ mod tests {
         let text = toml::to_string(&Config::default()).unwrap();
         assert_eq!(Config::from_toml_str(&text).unwrap(), Config::default());
     }
+
+    #[test]
+    fn every_key_is_documented() {
+        // Git may check the doc out with CRLF line endings on Windows.
+        let doc = include_str!("../../../docs/configuration.md").replace("\r\n", "\n");
+        let mut config = Config::default();
+        config.format.continuation_indent = Some(2);
+        let toml::Value::Table(table) = toml::Value::try_from(&config).unwrap() else {
+            panic!("the config is not a table");
+        };
+        fn walk(table: &toml::Table, path: &str, doc: &str) {
+            for (key, value) in table {
+                let section = if path.is_empty() {
+                    format!("## `[{key}]`")
+                } else {
+                    format!("## `[{path}.{key}]`")
+                };
+                match value {
+                    toml::Value::Table(inner) if !(path == "project" && key == "libraries") => {
+                        assert!(
+                            doc.contains(&section),
+                            "docs/configuration.md has no {section}"
+                        );
+                        let path = if path.is_empty() {
+                            key.clone()
+                        } else {
+                            format!("{path}.{key}")
+                        };
+                        walk(inner, &path, doc);
+                    }
+                    _ => assert!(
+                        doc.contains(&format!("| `{key}` |")),
+                        "docs/configuration.md does not describe {path}.{key}"
+                    ),
+                }
+            }
+        }
+        walk(&table, "", &doc);
+    }
 }

@@ -309,16 +309,19 @@ Lookup and layering:
 - A nested config inherits from the ones above it and overrides only the keys it sets, so a
   subtree can relax rules without copying everything. `root = true` stops the upward search.
   `extends = "path.toml"` layers a shared team config underneath the file.
-- CLI flags override the file (`--set format.indent=4`).
-- `vfl config show <file>` prints the effective config with where each value came from.
+- `vfl config show <file>` prints the effective config and the files it came from.
+- Every key is described in [configuration.md](configuration.md), every rule in
+  [lints.md](lints.md).
 
 ## Project autodiscovery
 
 The aim: open any VHDL file and get correct cross-file analysis, without a library list.
 
-**1. Find the root.** Walk up from the file and stop at the first directory that has
-`vfl.toml`, then the first that is a VCS root (`.git`, `.hg`, `.jj`). Fall back to the file's
-own directory. In the LSP, workspace folders are also roots.
+**1. Find the root.** Walk up from the file: the outermost directory with a `vfl.toml`
+wins, so nested override configs do not split the project, stopping at a config with
+`root = true` and never going above the nearest VCS root (`.git`, `.hg`, `.jj`). Without a
+config, the VCS root; failing that, the file's own directory. In the LSP, workspace folders
+are also roots.
 
 **2. Collect sources.** Every `*.vhd` / `*.vhdl` (configurable) under the root, honouring
 `.gitignore` and `exclude` (via the `ignore` crate, the same walker as ripgrep).

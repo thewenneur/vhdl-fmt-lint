@@ -384,4 +384,32 @@ mod tests {
         assert!(exists("naming/signal"));
         assert!(!exists("naming/nothing"));
     }
+
+    #[test]
+    fn every_rule_is_documented_with_its_levels() {
+        // Git may check the doc out with CRLF line endings on Windows.
+        let doc = include_str!("../../../docs/lints.md").replace("\r\n", "\n");
+        let name = |level: Level| format!("{level:?}").to_ascii_lowercase();
+        for rule in RULES {
+            assert!(
+                doc.contains(&format!("\n### `{}`\n", rule.id)),
+                "docs/lints.md has no section for {}",
+                rule.id
+            );
+            let row = doc
+                .lines()
+                .find(|l| l.starts_with(&format!("| [`{}`]", rule.id)))
+                .unwrap_or_else(|| panic!("docs/lints.md has no summary row for {}", rule.id));
+            let cells: Vec<&str> = row.split('|').map(str::trim).collect();
+            assert_eq!(cells[2], name(rule.recommended), "{}", rule.id);
+            assert_eq!(cells[3], name(rule.strict), "{}", rule.id);
+            assert_eq!(cells[4].is_empty(), !rule.fixable, "{}", rule.id);
+        }
+        for (kind, _) in NAMING_KINDS {
+            assert!(
+                doc.contains(&format!("| `naming/{kind}` |")),
+                "docs/lints.md does not list naming/{kind}"
+            );
+        }
+    }
 }
