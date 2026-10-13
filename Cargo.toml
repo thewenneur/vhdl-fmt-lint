@@ -23,8 +23,10 @@ clap = { version = "4", features = ["derive"] }
 globset = "0.4"
 ignore = "0.4"
 rayon = "1"
+regex = "1"
 rowan = "0.16"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 tempfile = "3"
 thiserror = "2"
 toml = "1"
