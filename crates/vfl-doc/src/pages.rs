@@ -13,7 +13,7 @@ use crate::text as diagram_text;
 
 /// A file name from a unit name: lower case, and only safe characters.
 fn file_safe(text: &str) -> String {
-    identifier_key(text)
+    let safe: String = identifier_key(text)
         .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
@@ -22,8 +22,18 @@ fn file_safe(text: &str) -> String {
                 '_'
             }
         })
-        .collect()
+        .collect();
+    // A file name has at most 255 bytes and is made of up to four of
+    // these: past the limit, keep the start and a hash of the whole.
+    if safe.len() > MAX_NAME_PART {
+        format!("{}-{:016x}", &safe[..MAX_NAME_PART - 17], fnv(&safe))
+    } else {
+        safe
+    }
 }
+
+/// The longest part of a file name taken from one identifier.
+const MAX_NAME_PART: usize = 48;
 
 fn extension(config: &DocConfig) -> &'static str {
     match config.format {

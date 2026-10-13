@@ -1019,3 +1019,25 @@ fn bit_fields_of_records_and_aliased_slices() {
     assert_eq!(maps[0].0, "stages");
     assert!(maps[0].1.contains(">stable</text>") && maps[0].1.contains(">meta</text>"));
 }
+
+#[test]
+fn long_identifiers_make_short_file_names() {
+    let long = format!("r_{}", "0123456789_".repeat(300));
+    let text = format!(
+        "entity {long} is end;\narchitecture a of {long} is\n  type {long}_t is record\n    x : bit;\n  end record;\nbegin\nend;\n"
+    );
+    let config = DocConfig {
+        format: DocFormat::Markdown,
+        ..DocConfig::default()
+    };
+    let d = design_with(&[("l.vhd", &text)], &config);
+    let files = vfl_doc::generate(&d, &config);
+    assert!(
+        files.iter().any(|f| f.path.contains(".fields-")),
+        "{:?}",
+        files.iter().map(|f| &f.path).collect::<Vec<_>>()
+    );
+    for f in &files {
+        assert!(f.path.len() < 200, "{}", f.path);
+    }
+}
