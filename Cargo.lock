@@ -938,6 +938,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "vfl-npp"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+ "vfl-config",
+ "vfl-fmt",
+ "vfl-lint",
+ "vfl-project",
+]
+
+[[package]]
 name = "vfl-project"
 version = "0.1.0"
 dependencies = [
