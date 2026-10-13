@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.2.0] - 2026-10-13
+
+Documentation and diagrams of the design, code generation, design-level checks, semantic
+highlighting, project-wide refactoring, range formatting, and a Notepad++ plugin that never
+freezes and matches the language server feature for feature.
+
+### Added
+
+- **Documentation and diagrams** (`vfl doc`, `vfl schema`): HTML, Markdown or AsciiDoc pages
+  from the design and its doc comments, with entity symbols, the instantiation tree, the top
+  level and every architecture as block diagrams wired by signal, port maps, data flow,
+  clock domains and their crossings, reset trees, package dependencies, record and register
+  bit fields, state machines and WaveDrom timing diagrams. `vfl schema` draws one diagram as
+  SVG, Mermaid or DOT. Settings under `[doc]`; an example in `examples/uart/doc`. In VS Code,
+  **vfl: Generate Documentation** and **vfl: Show Diagrams** (a view beside the editor); in
+  Notepad++, **Generate documentation** and **Show diagrams**.
+- **Code generation** (`vfl new`): entity and component instantiations, component
+  declarations and testbench skeletons (clock, reset and stimulus process) from an entity,
+  also as editor commands and as a code action on an entity. Settings under `[generate]`.
+- **Design checks**: `sema/missing-reset`, `sema/mixed-reset`, `sema/reset-polarity`,
+  `sema/open-input`, `sema/inout-port`, `sema/fsm-unreachable-state` and
+  `sema/fsm-stuck-state`.
+- **Semantic highlighting**: signals, ports (with their mode), variables, constants,
+  generics, types, subprograms, entities, components, packages and enumeration literals are
+  colored by what the analysis resolved them to, in VS Code and Notepad++.
+- **Range formatting and format on type**: `vfl fmt --lines`, Format Selection, and
+  formatting of the line just typed (`;` and Enter; `format.on_type`, opt-in in the
+  editors).
+- **More quick fixes**: removing unused signals, variables and constants and unneeded
+  sensitivity entries, indenting with spaces, `numeric_std` for the Synopsys packages, `out`
+  for `buffer` ports (VHDL-2008), naming the formals of positional maps, renaming to follow
+  a naming convention, adding the `use` clause for an undeclared name, and silencing any
+  rule with a `vfl-ignore` comment.
+- **Notepad++**: **List problems in project**, quick fixes for a selection, and a test that
+  fails when the language server gains a feature the plugin does not have.
+- **Documentation**: a [command-line reference](docs/cli.md), and the README, editor READMEs
+  and design document brought up to date.
+
+### Changed
+
+- **Rename and find references** treat a package and its body, a subprogram and its body,
+  and an entity and the components named after it (with their ports and generics) as one
+  thing, work on record elements, and refuse a new name that would clash with another.
+- **Notepad++ never freezes**: loading a project, linting, hover, completion, navigation,
+  fixes, rename, code generation and documentation run on a background thread, and name
+  colors are painted only for the lines on screen.
+- Editor requests (highlights, hover, definition, completion, code actions) no longer scan
+  the whole project, and formatting no longer waits for an analysis.
+
 ## Unreleased
 
 ### Added

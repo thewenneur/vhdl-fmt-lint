@@ -4,7 +4,12 @@ A fast, fully configurable VHDL formatter, linter and language server, in pure R
 
 - **Formatter**: every rule configurable, including column alignment of ports, generics,
   assignments, associations, declarations and comments. Idempotent and token-preserving.
-- **Linter**: syntactic and cross-file semantic rules, with autofixes.
+  Formats a whole file, a range of lines, or the line you just typed.
+- **Linter**: 58 rules with autofixes: syntax, name resolution and type checking across the
+  whole project, unused objects, width mismatches, inferred latches, clock domain
+  crossings, design checks (missing or mixed resets, reset polarity, open inputs, `inout`
+  ports used one way, unreachable or stuck state machine states), naming conventions and
+  style. `recommended` and `strict` presets, every rule configurable.
 - **Documentation**: `vfl doc` generates HTML, Markdown or AsciiDoc documentation of the design
   from its doc comments, with entity symbols, the instantiation tree, the top level and every
   architecture as block diagrams wired by signal, port maps, data flow, clock domains and their
@@ -15,21 +20,31 @@ A fast, fully configurable VHDL formatter, linter and language server, in pure R
   In VS Code, **vfl: Generate Documentation** and **vfl: Show Diagrams** (a button in the
   editor title bar, showing the current file's entity in a view beside it); in Notepad++,
   **Generate documentation** and **Show diagrams** in the plugin's menu.
-- **Language server**: diagnostics, formatting, navigation and refactoring in any LSP editor.
+- **Language server** for any LSP editor: diagnostics as you type, quick fixes, formatting,
+  hover with types, signature help, completion, go to definition, references, rename across
+  bodies and components, symbols, and semantic highlighting of names by what they resolve
+  to. Plugins for [VS Code](editors/vscode/README.md) and
+  [Notepad++](editors/notepadpp/README.md).
 - **Code generation**: instantiations, component declarations and testbench skeletons from
-  an entity.
+  an entity, from the command line (`vfl new`) or the editor.
 - **Zero config**: the project root, sources and libraries are discovered from the code.
   No library list to maintain.
 - **VHDL-2008**, **VHDL-93** and **VHDL-2019**.
 
-Status: early development (first release: 0.1.0, see the [changelog](CHANGELOG.md)). See [docs/design.md](docs/design.md) for the design.
+Status: early development; see the [changelog](CHANGELOG.md) for what each release brings.
 
 Documentation:
 
+- [Command-line reference](docs/cli.md): every command, its options and its exit status,
+  and what the language server offers.
 - [Configuration reference](docs/configuration.md): every `vfl.toml` key, config lookup and
   layering, suppression comments.
 - [Lint rules](docs/lints.md): what each rule reports, its level in each preset, its fix and
   its options.
+- [VS Code extension](editors/vscode/README.md) and [Notepad++ plugin](editors/notepadpp/README.md):
+  features, commands and settings.
+- [Benchmarks](docs/benchmarks.md) against rust_hdl, and the [design](docs/design.md) of the
+  parser, the analysis and the project discovery.
 
 ## Installation
 
@@ -55,9 +70,9 @@ same.
 The extension ([editors/vscode](editors/vscode/README.md)) runs `vfl lsp`, so install `vfl`
 first (above). Then:
 
-1. Download `vfl-0.1.1.vsix` from the
+1. Download `vfl-0.2.0.vsix` from the
    [latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest).
-2. Install it with `code --install-extension vfl-0.1.1.vsix`, or in VS Code with
+2. Install it with `code --install-extension vfl-0.2.0.vsix`, or in VS Code with
    **Extensions > ... > Install from VSIX...**.
 3. Open a folder with VHDL files. If `vfl` is not on the `PATH` or in `~/.cargo/bin`, set
    `vfl.server.path` to it.
@@ -69,7 +84,7 @@ To build the `.vsix` yourself: `cd editors/vscode && npm ci && npm run package`.
 The plugin ([editors/notepadpp](editors/notepadpp/README.md)) has the formatter, the linter
 and the editor features of the language server (types on hover, parameter hints, completion,
 quick fixes, go to definition, references, rename, symbols) built in, so it does not need
-`vfl` installed. Download `vfl_npp-v0.1.1-x64.zip` from the
+`vfl` installed. Download `vfl_npp-v0.2.0-x64.zip` from the
 [latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest), close Notepad++,
 unzip it into the `plugins` folder of its install directory (usually
 `C:\Program Files\Notepad++\plugins`, giving `plugins\vfl_npp\vfl_npp.dll`) and start it again.
@@ -120,6 +135,8 @@ vfl new instance counter     # print an instantiation (also: component, componen
 vfl lsp                # language server over stdio
 ```
 
+Every command and option is described in the [command-line reference](docs/cli.md).
+
 ## Configuration
 
 Optional. Put a `vfl.toml` at the project root; nested `vfl.toml` files override only the
@@ -164,6 +181,7 @@ statement with `-- vfl: skip`.
 | `vfl-fmt`     | Formatter |
 | `vfl-lint`    | Linter |
 | `vfl-gen`     | Code generation: instantiations, components, testbenches |
+| `vfl-doc`     | Documentation and diagrams (`vfl doc`, `vfl schema`) |
 | `vfl-lsp`     | Language server |
 | `vfl-cli`     | The `vfl` binary |
 | `vfl-npp`     | [Notepad++ plugin](editors/notepadpp/README.md) (`editors/notepadpp`) |

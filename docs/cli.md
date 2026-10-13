@@ -1,0 +1,236 @@
+# Command-line reference
+
+Every command of the `vfl` binary, its arguments and its options. `vfl <command> --help`
+prints the same.
+
+Commands that take paths default to the project around the current directory. Its root
+is the outermost directory holding a `vfl.toml`, without going past one with `root = true`
+or above the nearest version-control root; without a config, the nearest version-control
+root; failing that, the current directory. Settings come from the `vfl.toml` files that
+apply to each file ([configuration.md](configuration.md#lookup)).
+
+| Command | Does |
+|---------|------|
+| [`vfl fmt`](#vfl-fmt) | Format files in place, check that they are formatted, or format standard input |
+| [`vfl lint`](#vfl-lint) | Lint, with names resolved across the whole project, and apply fixes |
+| [`vfl check`](#vfl-check) | Report syntax errors only |
+| [`vfl rules`](#vfl-rules) | List the lint rules and their level in each preset |
+| [`vfl project`](#vfl-project) | Show the project root, its sources and their libraries |
+| [`vfl config show`](#vfl-config-show) | Show the effective configuration and where each value came from |
+| [`vfl doc`](#vfl-doc) | Write the documentation of the design, with diagrams |
+| [`vfl schema`](#vfl-schema) | Draw one diagram |
+| [`vfl new`](#vfl-new) | Generate a testbench, an instantiation or a component declaration |
+| [`vfl lsp`](#vfl-lsp) | Run the language server over standard input and output |
+
+## Exit status
+
+`0` when the command succeeded and found nothing to report; `1` when it found problems
+(syntax errors, lint findings at the failing level, files that `fmt --check` would change)
+or failed (an unreadable file, an invalid `vfl.toml`, an unknown entity), with the error
+on standard error.
+
+## `vfl fmt`
+
+```sh
+vfl fmt [OPTIONS] [PATHS]...
+```
+
+Formats VHDL files in place with the `[format]` settings
+([configuration.md](configuration.md#format)). Paths are files or directories; `-` reads
+standard input and writes the result to standard output.
+
+| Option | |
+|--------|---|
+| `--check` | Do not write anything; list the files that would change and exit with `1` if any would. |
+| `--lines FIRST:LAST` | Format only lines `FIRST` to `LAST` (1-based, inclusive), and the whole statements and aligned lines they are part of. Repeatable. Takes a single file or `-`. |
+
+Formatting is idempotent and keeps every token and comment. Regions between
+`-- vfl: off` and `-- vfl: on`, and the statement after `-- vfl: skip`, are left as they
+are.
+
+```sh
+vfl fmt                       # the whole project
+vfl fmt --check src/          # in CI
+vfl fmt - < top.vhd           # from an editor
+vfl fmt --lines 40:52 top.vhd # one block
+```
+
+## `vfl lint`
+
+```sh
+vfl lint [OPTIONS] [PATHS]...
+```
+
+Analyzes the whole project around each path, so names, types and overloads are resolved
+across files and libraries, then reports the findings in the given files only. Which rules
+run and at which level comes from `[lint]` ([configuration.md](configuration.md#lint));
+every rule is described in [lints.md](lints.md).
+
+| Option | |
+|--------|---|
+| `--fix` | Apply the safe fixes, then report what is left. |
+| `--unsafe-fixes` | With `--fix`, also apply fixes that may change behavior. |
+| `--output-format FORMAT` | `human` (default: source excerpts), `concise` (one line per finding), `json`, `sarif` (for code scanning dashboards) or `github` (annotations in GitHub Actions). |
+| `--deny-warnings` | Exit with `1` on warnings too, not only on errors. |
+| `--color WHEN` | `auto` (default: when printing to a terminal), `always` or `never`. |
+
+```sh
+vfl lint                                  # the whole project
+vfl lint --fix src/uart                   # fix one directory
+vfl lint --output-format github           # in a GitHub Actions step
+vfl lint --output-format sarif > vfl.sarif
+```
+
+A finding can be silenced with `-- vfl-ignore rule-id` at the end of its line or on the
+line above, or for a whole file with `-- vfl-ignore-file rule-id`.
+
+## `vfl check`
+
+```sh
+vfl check [PATHS]...
+```
+
+Parses the files and reports syntax errors only, without analyzing the project. Faster
+than `vfl lint` when only the syntax matters.
+
+## `vfl rules`
+
+```sh
+vfl rules
+```
+
+Prints every lint rule with its level in the `recommended` and `strict` presets, whether
+it has a fix, and a one-line summary.
+
+## `vfl project`
+
+```sh
+vfl project [--vhdl-ls] [PATH]
+```
+
+Shows what vfl discovers for the project around `PATH` (default: the current directory):
+its root, the config files that apply, every source file, the library each file is in and
+why (a `[project.libraries]` entry, a `vhdl_ls.toml`, a tool file such as VUnit's `run.py`,
+a FuseSoC `.core`, a Vivado or Quartus project, or inference from `library.unit`
+references).
+
+| Option | |
+|--------|---|
+| `--vhdl-ls` | Print the libraries as a rust_hdl `vhdl_ls.toml` instead. |
+
+## `vfl config show`
+
+```sh
+vfl config show [PATH]
+```
+
+Prints the configuration that applies to `PATH` (a file or directory, default: the current
+directory), as TOML, with every key, including defaults, and the files it was read from.
+
+## `vfl doc`
+
+```sh
+vfl doc [OPTIONS] [PATH]
+```
+
+Writes the documentation of the design: an index, a page per entity (generics, ports,
+symbol, architectures, instances, processes, state machines and their diagrams) and a page
+per package, as HTML, Markdown or AsciiDoc. Doc comments are the comments directly above a
+declaration or at the end of its line, or only the `--!` ones if the file has any. What is
+documented and which diagrams are drawn comes from `[doc]` and `[doc.diagrams]`
+([configuration.md](configuration.md#doc)). See [examples/uart/doc](../examples/uart/doc/index.md)
+for an example.
+
+| Option | |
+|--------|---|
+| `-o, --out DIR` | Output directory (default: `doc.out_dir`, relative to the project root). |
+| `--format FORMAT` | `html`, `markdown` or `asciidoc` (default: `doc.format`). |
+| `--title TITLE` | Title of the index page (default: `doc.title`, else the project directory's name). |
+| `--page-for FILE` | Print the page of the first entity (else package) `FILE` declares instead of writing the whole documentation. Editors use it for their diagram views. |
+
+## `vfl schema`
+
+```sh
+vfl schema [OPTIONS] KIND [ENTITY]
+```
+
+Draws one diagram. `ENTITY` is `name` or `library.name`.
+
+| Kind | Draws |
+|------|-------|
+| `symbol` | The block symbol of an entity, with its generics and ports. |
+| `hierarchy` | The instantiation tree. `ENTITY` is the top (default: every entity no other one instantiates). |
+| `block` | The instances of an entity's architecture, wired by their signals. |
+| `port-map` | One instance of an architecture, with the actual of each port. |
+| `fsm` | A state machine of an entity's architecture. |
+| `dataflow` | The processes, assignments and instances of an architecture, wired by the signals they read and drive. |
+| `clocks` | The clock domains of an architecture and the signals crossing them. |
+| `resets` | Where each reset of an entity goes, down to the processes. |
+| `dependencies` | Which units use which packages (`ENTITY` is not used). |
+| `wave` | A WaveDrom timing diagram; the argument is a WaveJSON file. |
+
+| Option | |
+|--------|---|
+| `--architecture NAME` | For `block`, `port-map`, `dataflow`, `clocks` and `resets` (default: the last architecture). |
+| `--instance LABEL` | For `port-map` (default: the only instance). |
+| `--signal NAME` | For `fsm`, the state signal (default: the entity's only state machine). |
+| `-f, --format FORMAT` | `svg` (default), `mermaid` or `dot`. Only `hierarchy` and `fsm` have Mermaid and DOT. |
+| `-o, --output FILE` | Write to `FILE` instead of standard output. |
+| `--project PATH` | A directory or file of the project (default: the current directory). |
+
+```sh
+vfl schema symbol uart_tx -o uart_tx.svg
+vfl schema fsm uart_rx --signal state -f mermaid
+vfl schema hierarchy -f dot | dot -Tpng > hierarchy.png
+```
+
+## `vfl new`
+
+```sh
+vfl new [OPTIONS] KIND ENTITY
+```
+
+Generates code from an entity of the project. `ENTITY` is `name` or `library.name`.
+
+| Kind | Generates |
+|------|-----------|
+| `tb` | A testbench: a signal for every port, the design under test, a clock for every clock input, and a stimulus process that holds the resets for `reset_cycles` clock cycles. Written to `<entity>_tb.vhd` next to the entity. |
+| `instance` | An entity instantiation (`u_e : entity work.e port map (...)`), printed. |
+| `component` | A component declaration, printed. |
+| `component-instance` | A component instantiation (`u_e : e port map (...)`), printed. |
+
+| Option | |
+|--------|---|
+| `-o, --output FILE` | Where to write the code (`-` for standard output). |
+| `--force` | Overwrite the output file if it exists. |
+| `--project PATH` | A directory of the project (default: the current directory). |
+
+Labels, the testbench's name, architecture and instance, the clock period, the reset length
+and how clock and reset ports are recognized come from `[generate]`
+([configuration.md](configuration.md#generate)); the layout from `[format]`.
+
+## `vfl lsp`
+
+```sh
+vfl lsp
+```
+
+Runs the language server over standard input and output, for any editor with an LSP
+client. It offers:
+
+- diagnostics as you type, from the syntax, the cross-file analysis and the lint rules;
+- quick fixes and a fix-all source action (`source.fixAll.vfl`);
+- formatting of the document, of a range, and on type (`;` and Enter, unless
+  `format.on_type = false`);
+- hover with types and resolved overloads, signature help, completion (including record
+  elements, protected type methods, library units and package declarations);
+- go to definition (also into the bundled `std` and `ieee` sources), find references,
+  document highlights, rename (packages with their bodies, subprograms with their bodies,
+  entities with their components, record elements; clashes refused), document and
+  workspace symbols;
+- semantic highlighting: signals, ports (with their mode), variables, constants,
+  generics, types, subprograms, entities, components, packages and enumeration literals;
+- code actions that insert an instantiation or a component declaration, or generate a
+  testbench, from an entity.
+
+Setup for VS Code, Notepad++, Neovim and Helix is in the [README](../README.md#installation).

@@ -1,8 +1,8 @@
 # vhdl-fmt-lint: design
 
-Status: draft, 2026-10-13. Implemented so far: config schema and layering (`vfl-config`), root
-discovery and source collection (`vfl-project`), the lossless parser (`vfl-syntax`), the
-formatter (`vfl-fmt`), and the `vfl` CLI with `vfl check` (syntax errors) and `vfl fmt`.
+Status: implemented. Every step of the [roadmap](#roadmap) is done; the sections below
+describe how the parser, the project discovery, the analysis, the formatter, the linter and
+the language server work.
 
 ## Goals
 
@@ -442,3 +442,16 @@ and far fewer false errors, with zero configuration.
     of the top level and of each architecture, port maps and state diagrams as SVG;
     `vfl schema` draws one diagram as SVG, Mermaid or DOT. It reads the syntax trees only
     and is not part of the language server (done).
+11. Code generation: entity and component instantiations, component declarations and
+    testbench skeletons from an entity, in `vfl new` and as editor commands and code
+    actions (done).
+12. Semantic highlighting: names colored by what the analysis resolved them to, in the
+    language server and the Notepad++ plugin (done).
+13. Design checks: missing, mixed and wrongly polarized resets, open inputs, `inout`
+    ports used one way, unreachable and stuck state machine states (done).
+14. Refactoring: rename across a package and its body, a subprogram and its body, an
+    entity and its components, and record elements, with clash checks; quick fixes for
+    naming conventions, missing `use` clauses and suppressions (done).
+15. Range formatting and format on type (done).
+16. Notepad++ parity: the plugin analyzes on a background thread and offers every
+    feature of the language server (done).

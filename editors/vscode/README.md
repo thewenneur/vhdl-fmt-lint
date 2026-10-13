@@ -38,7 +38,9 @@ set up. Configuration lives in `vfl.toml`, shared with the `vfl` command line; s
 
 ## Requirements
 
-The extension runs `vfl lsp`, so `vfl` must be installed:
+The extension runs `vfl lsp`, so `vfl` must be installed: download it for your platform
+from the [latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest), or
+build it with Rust:
 
 ```sh
 cargo install --git https://github.com/thewenneur/vhdl-fmt-lint vfl-cli
@@ -107,4 +109,4 @@ npm run test:e2e     # runs VS Code against target/debug/vfl (build it first)
 npm run package      # builds vfl-<version>.vsix
 ```
 
-Install the package with `code --install-extension vfl-0.1.1.vsix`.
+Install the package with `code --install-extension vfl-0.2.0.vsix`.
