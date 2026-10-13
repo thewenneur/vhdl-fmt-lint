@@ -171,13 +171,18 @@ impl Server<'_> {
     }
 
     fn register_watchers(&mut self) -> Result<()> {
-        let watchers = ["**/*.{vhd,vhdl,vho,vht}", "**/{vfl,.vfl,vhdl_ls}.toml"]
-            .iter()
-            .map(|glob| FileSystemWatcher {
-                glob_pattern: GlobPattern::String(glob.to_string()),
-                kind: None,
-            })
-            .collect();
+        let watchers = [
+            "**/*.{vhd,vhdl,vho,vht}",
+            "**/{vfl,.vfl,vhdl_ls,.vhdl_ls}.toml",
+            "**/run.py",
+            "**/*.{core,xpr,qsf,qip,tcl}",
+        ]
+        .iter()
+        .map(|glob| FileSystemWatcher {
+            glob_pattern: GlobPattern::String(glob.to_string()),
+            kind: None,
+        })
+        .collect();
         let params = RegistrationParams {
             registrations: vec![Registration {
                 id: "vfl-watch".into(),
@@ -265,7 +270,9 @@ impl Server<'_> {
                         let Ok(path) = change.uri.to_file_path() else {
                             continue;
                         };
-                        if path.extension().is_some_and(|e| e == "toml") {
+                        if path.extension().is_some_and(|e| e == "toml")
+                            || vfl_project::is_tool_file(&path)
+                        {
                             world.reload();
                             break;
                         }

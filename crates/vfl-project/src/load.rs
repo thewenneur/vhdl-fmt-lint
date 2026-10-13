@@ -11,7 +11,7 @@ use vfl_syntax::{Parse, Standard};
 use crate::explicit::{LibraryGlobs, path_to_slash, vhdl_ls_libraries};
 use crate::infer::{Inference, Reason, infer_libraries};
 use crate::summary::{FileSummary, summarize};
-use crate::{ProjectRoot, collect_sources};
+use crate::{ProjectRoot, collect};
 
 /// How a source file was encoded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,6 +86,10 @@ pub struct Project {
     pub unreadable: Vec<(PathBuf, String)>,
     /// Inference ambiguities and other things worth telling the user.
     pub notes: Vec<String>,
+    /// Files of other tools that may list libraries (VUnit `run.py`,
+    /// FuseSoC `.core`, Vivado and Quartus projects), read on each
+    /// inference.
+    pub tool_files: Vec<PathBuf>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -109,12 +113,12 @@ impl Project {
     /// parallel and infers libraries.
     pub fn load(root: ProjectRoot) -> Result<Project, LoadError> {
         let config = vfl_config::load_for_dir(&root.dir)?;
-        let paths =
-            collect_sources(&root.dir, &config.project).map_err(|source| LoadError::Walk {
+        let (paths, tool_files) =
+            collect(&root.dir, &config.project).map_err(|source| LoadError::Walk {
                 path: root.dir.clone(),
                 source,
             })?;
-        Self::from_paths(root, config, paths)
+        Self::from_parts(root, config, paths, tool_files)
     }
 
     /// Loads the given files as a project rooted at `root`.
@@ -122,6 +126,18 @@ impl Project {
         root: ProjectRoot,
         config: Config,
         paths: Vec<PathBuf>,
+    ) -> Result<Project, LoadError> {
+        let tool_files = collect(&root.dir, &config.project)
+            .map(|(_, tools)| tools)
+            .unwrap_or_default();
+        Self::from_parts(root, config, paths, tool_files)
+    }
+
+    fn from_parts(
+        root: ProjectRoot,
+        config: Config,
+        paths: Vec<PathBuf>,
+        tool_files: Vec<PathBuf>,
     ) -> Result<Project, LoadError> {
         let standard = config.standard();
         let results: Vec<_> = paths
@@ -146,6 +162,7 @@ impl Project {
             libraries: Vec::new(),
             unreadable,
             notes: Vec::new(),
+            tool_files,
         };
         project.infer()?;
         Ok(project)
@@ -172,6 +189,13 @@ impl Project {
             let base = path.parent().unwrap_or(&root).to_owned();
             // A broken vhdl_ls.toml is not ours to reject; skip it.
             if let Ok(globs) = LibraryGlobs::new(source, &base, &root, &libraries) {
+                sources.push(globs);
+            }
+        }
+        for (path, libraries) in crate::import::import_all(&self.tool_files) {
+            let source = path.display().to_string();
+            let base = path.parent().unwrap_or(&root).to_owned();
+            if let Ok(globs) = LibraryGlobs::new_strict(source, &base, &root, &libraries) {
                 sources.push(globs);
             }
         }
@@ -261,5 +285,32 @@ mod tests {
         })
         .unwrap();
         assert_eq!(project.libraries[0][0].0, "mylib");
+    }
+
+    #[test]
+    fn tool_files_assign_libraries() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("rtl/sub")).unwrap();
+        std::fs::create_dir(root.join(".git")).unwrap();
+        std::fs::write(root.join("rtl/a.vhd"), "package a is end package;\n").unwrap();
+        std::fs::write(root.join("rtl/sub/b.vhd"), "package b is end package;\n").unwrap();
+        std::fs::write(
+            root.join("build.tcl"),
+            "read_vhdl -library mylib [glob rtl/*.vhd]\n",
+        )
+        .unwrap();
+        let project = Project::load(crate::find_root(root)).unwrap();
+        let library = |name: &str| {
+            let index = project
+                .files
+                .iter()
+                .position(|f| f.path.ends_with(name))
+                .unwrap();
+            project.libraries[index][0].0.clone()
+        };
+        assert_eq!(library("a.vhd"), "mylib");
+        // `*` stays within `rtl/`, as in Vivado.
+        assert_eq!(library("b.vhd"), "work");
     }
 }

@@ -134,9 +134,9 @@ pub fn infer_libraries(
                 let Some(candidates) = declared.get(r.unit.as_str()) else {
                     continue;
                 };
-                let candidates: Vec<usize> =
-                    candidates.iter().copied().filter(|&c| c != file).collect();
-                if candidates.is_empty() {
+                // A unit declared in the same file is the one meant (a
+                // package body's own package), whatever else declares it.
+                if candidates.contains(&file) {
                     continue;
                 }
                 // Forward: the referenced unit is in each of my libraries.
@@ -179,14 +179,10 @@ pub fn infer_libraries(
                 let Some(candidates) = declared.get(r.unit.as_str()) else {
                     continue;
                 };
-                let picked = closest(
-                    file,
-                    &candidates
-                        .iter()
-                        .copied()
-                        .filter(|&c| c != file)
-                        .collect::<Vec<_>>(),
-                );
+                if candidates.contains(&file) {
+                    continue;
+                }
+                let picked = closest(file, candidates);
                 for c in picked {
                     for (lib, _) in &libs[c] {
                         if joined.insert(lib.clone()) && via.is_empty() {
@@ -325,5 +321,27 @@ mod tests {
         let inference = infer_libraries(&paths, &summaries, &explicit);
         assert_eq!(inference.libraries[0].len(), 1);
         assert_eq!(inference.libraries[0][0].0, "mylib");
+    }
+
+    #[test]
+    fn a_package_body_means_its_own_package() {
+        let result = infer(&[
+            (
+                "src/pkg.vhd",
+                "package pkg is end; package body pkg is end;",
+            ),
+            (
+                "docs/pkg.vhd",
+                "package pkg is end; package body pkg is end;",
+            ),
+            (
+                "docs/tb.vhd",
+                "library lib; use lib.pkg.all; entity tb is end;",
+            ),
+        ]);
+        // `lib.pkg` from docs/ picks docs/pkg.vhd; its body's implicit
+        // `work.pkg` must not drag src/pkg.vhd into `lib` too.
+        assert_eq!(result[1].1, ["lib"]);
+        assert_eq!(result[0].1, ["work"]);
     }
 }

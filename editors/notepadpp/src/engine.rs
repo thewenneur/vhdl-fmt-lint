@@ -341,9 +341,12 @@ pub fn is_vhdl_path(path: &Path) -> bool {
 
 /// Whether saving `path` changes how projects load, so they need reloading.
 pub fn is_project_file(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|n| n.to_str())
-        .is_some_and(|n| matches!(n, "vfl.toml" | ".vfl.toml" | "vhdl_ls.toml"))
+    path.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+        matches!(
+            n,
+            "vfl.toml" | ".vfl.toml" | "vhdl_ls.toml" | ".vhdl_ls.toml"
+        )
+    }) || vfl_project::is_tool_file(path)
 }
 
 /// A buffer's bytes as text, and how to map offsets back.
@@ -675,5 +678,6 @@ end architecture;
         assert!(is_vhdl_path(Path::new("tb.vhdl")));
         assert!(!is_vhdl_path(Path::new("top.v")));
         assert!(is_project_file(Path::new("x/vfl.toml")));
+        assert!(is_project_file(Path::new("x/sim/run.py")));
     }
 }
