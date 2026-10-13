@@ -47,6 +47,7 @@ const MENU: &[(&str, Option<extern "C" fn()>)] = &[
     ("Complete word", Some(cmd_complete)),
     ("", None),
     ("Format on save", Some(cmd_toggle_format_on_save)),
+    ("Format on type", Some(cmd_toggle_format_on_type)),
     ("Lint automatically", Some(cmd_toggle_auto_lint)),
     ("Show messages under lines", Some(cmd_toggle_inline)),
     ("Code assistance", Some(cmd_toggle_assist)),
@@ -83,6 +84,7 @@ const fn eq(a: &[u8], b: &[u8]) -> bool {
 }
 
 const FORMAT_ON_SAVE: usize = item("Format on save");
+const FORMAT_ON_TYPE: usize = item("Format on type");
 const AUTO_LINT: usize = item("Lint automatically");
 const INLINE: usize = item("Show messages under lines");
 const ASSIST: usize = item("Code assistance");
@@ -122,6 +124,8 @@ fn severity_index(severity: Severity) -> usize {
 #[derive(Clone, Copy)]
 pub(crate) struct Settings {
     format_on_save: bool,
+    /// Formats the line of a `;` just typed, or the line above a new line.
+    format_on_type: bool,
     auto_lint: bool,
     inline_messages: bool,
     /// Types on hover, parameter hints and completion as you type.
@@ -134,6 +138,7 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             format_on_save: false,
+            format_on_type: false,
             auto_lint: true,
             inline_messages: true,
             assist: true,
@@ -291,6 +296,7 @@ pub unsafe extern "C" fn getFuncsArray(count: *mut i32) -> *mut FuncItem {
                         cmd_id: 0,
                         init_checked: match i {
                             FORMAT_ON_SAVE => settings.format_on_save,
+                            FORMAT_ON_TYPE => settings.format_on_type,
                             AUTO_LINT => settings.auto_lint,
                             INLINE => settings.inline_messages,
                             ASSIST => settings.assist,
@@ -533,6 +539,10 @@ extern "C" fn cmd_toggle_format_on_save() {
     guard(|| toggle(FORMAT_ON_SAVE, |s| &mut s.format_on_save));
 }
 
+extern "C" fn cmd_toggle_format_on_type() {
+    guard(|| toggle(FORMAT_ON_TYPE, |s| &mut s.format_on_type));
+}
+
 extern "C" fn cmd_toggle_auto_lint() {
     guard(|| {
         if toggle(AUTO_LINT, |s| &mut s.auto_lint) {
@@ -708,6 +718,27 @@ fn format_selection() {
         Err(_) => None,
     });
     show_format_result(sci, &buffer, result, Trigger::Command);
+}
+
+/// Formats the line just finished after `ch` was typed, silently.
+fn format_typed(ch: char) {
+    let (sci, _) = current_scintilla();
+    let id = current_buffer();
+    if !is_vhdl(id) {
+        return;
+    }
+    let path = buffer_path(id);
+    let buffer = read_buffer(sci);
+    let cursor = buffer.offset(caret(sci));
+    let result = with(|s| {
+        s.engine
+            .try_borrow_mut()
+            .ok()
+            .and_then(|mut engine| engine.format_typed(path.as_deref(), &buffer.text, cursor, ch))
+    });
+    if let Some(formatted) = result {
+        replace_text(sci, &buffer, &formatted);
+    }
 }
 
 fn show_format_result(
@@ -1088,12 +1119,15 @@ fn show_info_at(sci: Hwnd, position: usize) -> bool {
 // Code assistance.
 
 fn on_char(ch: i32) {
-    if !with(|s| s.settings.get().assist) {
-        return;
-    }
     let Some(ch) = u32::try_from(ch).ok().and_then(char::from_u32) else {
         return;
     };
+    if matches!(ch, ';' | '\n') && with(|s| s.settings.get().format_on_type) {
+        format_typed(ch);
+    }
+    if !with(|s| s.settings.get().assist) {
+        return;
+    }
     match ch {
         '.' => complete(Trigger::Auto),
         '(' | ',' => show_parameters(Trigger::Auto),
@@ -1343,6 +1377,7 @@ fn load_settings() {
             let value = value.trim() == "1";
             match key.trim() {
                 "format_on_save" => settings.format_on_save = value,
+                "format_on_type" => settings.format_on_type = value,
                 "lint_automatically" => settings.auto_lint = value,
                 "messages_under_lines" => settings.inline_messages = value,
                 "code_assistance" => settings.assist = value,
@@ -1360,9 +1395,10 @@ fn save_settings() {
     };
     let s = with(|s| s.settings.get());
     let text = format!(
-        "format_on_save={}\nlint_automatically={}\nmessages_under_lines={}\n\
+        "format_on_save={}\nformat_on_type={}\nlint_automatically={}\nmessages_under_lines={}\n\
          code_assistance={}\nhighlight_uses={}\n",
         s.format_on_save as u8,
+        s.format_on_type as u8,
         s.auto_lint as u8,
         s.inline_messages as u8,
         s.assist as u8,

@@ -211,6 +211,11 @@ Guarantees, enforced in tests, in the corpus job and at runtime:
   to the statements or declarations they touch (not past the construct around them), to
   every line of an alignment run they are part of, and to lines that start and end on the
   same tokens in the source and the output. Protected regions are never touched.
+  Only the block around the selection is laid out: whole lines between blank lines (which end
+  alignment runs), cut between the items of a construct, and not after a comment line, whose
+  indentation follows the code below it. Files with `-- vfl:` directives, `max_blank_lines = 0`
+  or `block_boundary = "never"` are laid out whole. The corpus job checks that both give the
+  same edits.
 
 ### Linter
 

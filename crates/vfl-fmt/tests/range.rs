@@ -5,7 +5,7 @@ use std::ops::Range;
 use std::path::Path;
 
 use vfl_config::FormatConfig;
-use vfl_fmt::{Edit, apply_edits, format, format_range};
+use vfl_fmt::{Edit, apply_edits, format, format_range, format_ranges_in, format_typed};
 use vfl_syntax::Standard;
 
 fn edits(text: &str, range: Range<usize>) -> Vec<Edit> {
@@ -164,6 +164,15 @@ fn each_line_alone_is_idempotent() {
             let path = entry.unwrap().path();
             let text = std::fs::read_to_string(&path).unwrap();
             for n in 1..=text.lines().count() {
+                // Laying out only the part around the line changes nothing.
+                let config = FormatConfig::default();
+                let r = line(&text, n);
+                assert_eq!(
+                    edits(&text, r.clone()),
+                    format_ranges_in(&text, &[r], &config, Standard::Vhdl2019, false).unwrap(),
+                    "{} line {n}",
+                    path.display()
+                );
                 let out = fmt_range(&text, line(&text, n));
                 // The result still formats to the same file.
                 assert_eq!(
@@ -175,4 +184,24 @@ fn each_line_alone_is_idempotent() {
             }
         }
     }
+}
+
+#[test]
+fn format_on_type_follows_the_config() {
+    let text = "architecture a of e is\nbegin\nx<=a;\nend;\n";
+    let cursor = text.find("a;").unwrap() + 2;
+    let mut config = FormatConfig::default();
+    let typed = |config: &FormatConfig, ch| {
+        apply_edits(
+            text,
+            &format_typed(text, cursor, ch, config, Standard::Vhdl2019).unwrap(),
+        )
+    };
+    assert_eq!(
+        typed(&config, ';'),
+        "architecture a of e is\nbegin\n  x <= a;\nend;\n"
+    );
+    assert_eq!(typed(&config, 'x'), text);
+    config.on_type = false;
+    assert_eq!(typed(&config, ';'), text);
 }

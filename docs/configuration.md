@@ -150,6 +150,7 @@ Settings of `vfl fmt` and of formatting in the language server.
 | `close_paren` | string | `"own-line"` | Where `)` goes in a list laid out one element per line: `"own-line"` (on its own line, at the indentation of the line that opened the list) or `"attached"` (right after the last element). |
 | `case_alternative` | string | `"preserve"` | `"preserve"` keeps a first statement written on the `when ... =>` line there; `"break"` starts every statement of a case alternative on its own line. |
 | `line_ending` | string | `"auto"` | `"auto"` keeps the line endings the file uses (LF for new files), `"lf"` or `"crlf"` converts. |
+| `on_type` | boolean | `true` | Lets editors format the line you just finished as you type: the line of a `;`, or the line above a new line. Editors have their own switch as well (`vfl.format.onType` in VS Code, **Format on type** in Notepad++), off by default; `false` here turns it off for everyone working on the project. |
 
 `end_label` and `end_keyword` apply to entities, architectures, packages, package bodies,
 contexts, configurations, components, subprogram bodies, processes, blocks, `if`, `case`,
@@ -322,6 +323,7 @@ association_list = "auto"
 close_paren = "own-line"
 case_alternative = "preserve"
 line_ending = "auto"
+on_type = true
 
 [format.align]
 port_colon = true

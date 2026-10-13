@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use vfl_config::{Config, FormatConfig};
-use vfl_fmt::{FormatError, apply_edits, format, format_range};
+use vfl_fmt::{FormatError, apply_edits, format, format_range, format_ranges_in};
 use vfl_syntax::Standard;
 
 fn main() {
@@ -145,6 +145,19 @@ fn check_ranges(
         let at = |what: &str| format!("line {}: {what}", n + 1);
         let edits =
             format_range(text, start..start, config, std).map_err(|e| at(&e.to_string()))?;
+        let full = format_ranges_in(
+            text,
+            std::slice::from_ref(&(start..start)),
+            config,
+            std,
+            false,
+        )
+        .map_err(|e| at(&e.to_string()))?;
+        if full != edits {
+            return Err(at(&format!(
+                "laying out part of the file differs from laying out all of it: {edits:?} vs {full:?}"
+            )));
+        }
         let out = apply_edits(text, &edits);
         let mut shift = 0isize;
         for edit in &edits {

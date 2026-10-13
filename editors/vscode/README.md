@@ -32,6 +32,7 @@ It is looked up in `vfl.server.path`, then on `PATH`, then in `~/.cargo/bin`.
 |---------|---------|---|
 | `vfl.server.path` | `""` | Path to `vfl`. `~` and `${workspaceFolder}` are expanded. |
 | `vfl.server.extraEnv` | `{}` | Extra environment variables for the server. |
+| `vfl.format.onType` | `false` | Format the line you just finished as you type (`;` or Enter). |
 | `vfl.trace.server` | `"off"` | Log LSP traffic (`messages` or `verbose`). |
 
 The extension makes itself the default formatter for VHDL. To format and fix on save:
@@ -44,8 +45,8 @@ The extension makes itself the default formatter for VHDL. To format and fix on 
 ```
 
 **Format Selection** formats the selected lines, and the whole statements and aligned lines
-they touch. With `"editor.formatOnType": true`, typing `;` formats its line and Enter formats
-the line above.
+they touch. With `"vfl.format.onType": true`, typing `;` formats its line and Enter formats
+the line above; `on_type = false` under `[format]` in `vfl.toml` turns it off for a project.
 
 ## Commands
 

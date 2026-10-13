@@ -171,22 +171,6 @@ fn formatting(world: &mut World, params: DocumentFormattingParams) -> Option<Vec
     }])
 }
 
-fn range_formatting(
-    world: &mut World,
-    params: DocumentRangeFormattingParams,
-) -> Option<Vec<TextEdit>> {
-    let path = params.text_document.uri.to_file_path().ok()?;
-    let (config, text) = latest(world, &path)?;
-    let index = LineIndex::new(&text);
-    let doc = Doc {
-        text: &text,
-        index: &index,
-    };
-    let range =
-        usize::from(doc.offset(params.range.start))..usize::from(doc.offset(params.range.end));
-    format_lines(&config, doc, range, None)
-}
-
 /// Formats the line just finished: the one holding a `;` just typed, or
 /// the one above a new line. Nothing when the file does not parse yet.
 fn on_type_formatting(
@@ -202,48 +186,39 @@ fn on_type_formatting(
         index: &index,
     };
     let cursor = usize::from(doc.offset(position.position));
-    let line_start = text[..cursor].rfind('\n').map_or(0, |i| i + 1);
-    match params.ch.as_str() {
-        ";" => format_lines(&config, doc, cursor..cursor, None),
-        "\n" if line_start > 0 => {
-            // Leave the new line, and the indentation the editor gave it, alone.
-            let line_end = text[cursor..].find('\n').map_or(text.len(), |i| cursor + i);
-            format_lines(
-                &config,
-                doc,
-                line_start - 1..line_start - 1,
-                Some(line_start..line_end),
-            )
-        }
-        _ => Some(Vec::new()),
-    }
+    let ch = params.ch.chars().next()?;
+    let edits = vfl_fmt::format_typed(&text, cursor, ch, &config.format, config.standard()).ok()?;
+    Some(text_edits(doc, edits))
 }
 
-/// The edits formatting the lines of `doc` touched by bytes `range`,
-/// leaving out any that would touch `keep`.
-fn format_lines(
-    config: &vfl_config::Config,
-    doc: Doc,
-    range: std::ops::Range<usize>,
-    keep: Option<std::ops::Range<usize>>,
+fn range_formatting(
+    world: &mut World,
+    params: DocumentRangeFormattingParams,
 ) -> Option<Vec<TextEdit>> {
-    let edits = vfl_fmt::format_range(doc.text, range, &config.format, config.standard()).ok()?;
-    Some(
-        edits
-            .into_iter()
-            .filter(|e| {
-                keep.as_ref()
-                    .is_none_or(|k| e.range.end < k.start || e.range.start > k.end)
-            })
-            .map(|e| TextEdit {
-                range: doc.range(TextRange::new(
-                    TextSize::from(e.range.start as u32),
-                    TextSize::from(e.range.end as u32),
-                )),
-                new_text: e.text,
-            })
-            .collect(),
-    )
+    let path = params.text_document.uri.to_file_path().ok()?;
+    let (config, text) = latest(world, &path)?;
+    let index = LineIndex::new(&text);
+    let doc = Doc {
+        text: &text,
+        index: &index,
+    };
+    let range =
+        usize::from(doc.offset(params.range.start))..usize::from(doc.offset(params.range.end));
+    let edits = vfl_fmt::format_range(&text, range, &config.format, config.standard()).ok()?;
+    Some(text_edits(doc, edits))
+}
+
+fn text_edits(doc: Doc, edits: Vec<vfl_fmt::Edit>) -> Vec<TextEdit> {
+    edits
+        .into_iter()
+        .map(|e| TextEdit {
+            range: doc.range(TextRange::new(
+                TextSize::from(e.range.start as u32),
+                TextSize::from(e.range.end as u32),
+            )),
+            new_text: e.text,
+        })
+        .collect()
 }
 
 /// What is at a position: a reference's targets, or a declaration's name.

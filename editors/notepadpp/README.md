@@ -29,7 +29,7 @@ each file like `vfl lint` does, so names resolve across files, and it reads the 
 
 ![Parameter hints for a call in Notepad++](assist.png)
 - **Format document**, as one undo step that keeps the caret and scroll position.
-  Optionally on every save. **Format selection** formats only the selected lines.
+  Optionally on every save, or as you type. **Format selection** formats only the selected lines.
 - **Next problem** / **Previous problem** jump between problems.
 - **Quick fixes**: **Fix problem at caret** lists the fixes for the problem at the caret,
   **Fix all problems** applies every safe fix in the file.
@@ -65,6 +65,7 @@ Mapper > Plugin commands**.
 | Show type | Shows what the name at the caret is, as hovering it does. |
 | Show parameters | Shows the parameter hints of the call around the caret. |
 | Complete word | Lists the completions at the caret. Notepad++ keeps **Ctrl+Space** for its own completion, so map this to another key if you use it often. |
+| Format on type | Formats the line of a `;` just typed, or the line above a new line (off by default). `on_type = false` under `[format]` in `vfl.toml` turns it off for a project. |
 | Format on save | Formats VHDL files when they are saved (off by default). With **Save All**, only the file in front is formatted. |
 | Lint automatically | Lints VHDL files as described above (on by default). |
 | Show messages under lines | Shows each message under its line (on by default); with it off, hover or use Next problem. |

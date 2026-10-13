@@ -111,7 +111,7 @@ pub(crate) fn is_container(kind: SyntaxKind) -> bool {
 }
 
 /// Nodes whose items stay at the node's own indentation.
-fn is_flat_container(kind: SyntaxKind) -> bool {
+pub(crate) fn is_flat_container(kind: SyntaxKind) -> bool {
     matches!(kind, SOURCE_FILE | DESIGN_UNIT | CONTEXT_CLAUSE)
 }
 

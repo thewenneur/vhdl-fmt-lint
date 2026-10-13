@@ -52,11 +52,12 @@ mod spacing;
 mod verify;
 
 use std::fmt;
+use std::ops::Range;
 
 use vfl_config::{FormatConfig, LineEnding};
-use vfl_syntax::{Standard, SyntaxError, parse};
+use vfl_syntax::{Standard, SyntaxError, SyntaxNode, parse};
 
-pub use range::{Edit, apply_edits, format_range, format_ranges};
+pub use range::{Edit, apply_edits, format_range, format_ranges, format_ranges_in, format_typed};
 
 /// Why a file could not be formatted. The file should be left as it is.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,7 +88,8 @@ impl std::error::Error for FormatError {}
 /// Formats a whole VHDL file.
 pub fn format(text: &str, config: &FormatConfig, std: Standard) -> Result<String, FormatError> {
     let source = Source::new(text);
-    let Some(laid) = lay_out(&source.text, config, std, true)? else {
+    let root = parse_valid(&source.text, std)?;
+    let Some(laid) = lay_out(&source.text, &root, config, std, None)? else {
         return Ok(String::new());
     };
     let use_crlf = match config.line_ending {
@@ -142,22 +144,31 @@ pub(crate) struct Laid {
     pub out: String,
 }
 
-/// Formats `source` (with `\n` line ends). `None` for a file with nothing
-/// in it but whitespace. With `whole`, the formatted file is put together
-/// and checked: parsed again, it must hold the same tokens and comments.
-pub(crate) fn lay_out(
-    source: &str,
-    config: &FormatConfig,
-    std: Standard,
-    whole: bool,
-) -> Result<Option<Laid>, FormatError> {
+/// The syntax tree of `source`, which must have no syntax errors.
+pub(crate) fn parse_valid(source: &str, std: Standard) -> Result<SyntaxNode, FormatError> {
     let parsed = parse(source, std);
     if !parsed.errors().is_empty() {
         return Err(FormatError::Syntax(parsed.errors().to_vec()));
     }
-    let root = parsed.syntax();
+    Ok(parsed.syntax())
+}
 
-    let elems = elems::collect(&root, config);
+/// Formats `source` (with `\n` line ends), whose tree is `root`. `None`
+/// when there is nothing in it but whitespace.
+///
+/// Without `window`, the formatted file is put together and checked:
+/// parsed again, it must hold the same tokens and comments. With it, only
+/// the bytes `window` of the source are laid out, and the output is not
+/// put together.
+pub(crate) fn lay_out(
+    source: &str,
+    root: &SyntaxNode,
+    config: &FormatConfig,
+    std: Standard,
+    window: Option<Range<usize>>,
+) -> Result<Option<Laid>, FormatError> {
+    let whole = window.is_none();
+    let elems = elems::collect(root, config, window);
     let elems = elems::edit_end_clauses(elems, config);
     if elems.is_empty() {
         return Ok(None);
@@ -188,7 +199,7 @@ pub(crate) fn lay_out(
                 error.message
             )));
         }
-        let before = verify::fingerprint(&root);
+        let before = verify::fingerprint(root);
         let after = verify::fingerprint(&reparsed.syntax());
         if before != after {
             return Err(FormatError::Internal(verify::first_difference(

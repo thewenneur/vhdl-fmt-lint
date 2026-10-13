@@ -23,13 +23,17 @@
 use std::ops::Range;
 
 use rowan::NodeOrToken;
-use vfl_config::FormatConfig;
-use vfl_syntax::SyntaxKind::{LPAREN, RPAREN};
-use vfl_syntax::{Standard, SyntaxNode};
+use vfl_config::{BlockBoundary, FormatConfig};
+use vfl_syntax::SyntaxKind::{
+    LPAREN, PHYSICAL_TYPE_DEF, PROTECTED_TYPE_BODY, PROTECTED_TYPE_DEF, RECORD_TYPE_DEF, RPAREN,
+    TYPE_DECL, UNITS_KW, WHITESPACE,
+};
+use vfl_syntax::{Standard, SyntaxNode, SyntaxToken, TextSize};
 
+use crate::kinds::is_flat_container;
 use crate::kinds::{is_container, is_item};
 use crate::verify::{first_difference, lexical};
-use crate::{FormatError, Laid, Source, lay_out};
+use crate::{FormatError, Laid, Source, lay_out, parse_valid};
 
 /// A change to a file: replace the bytes `range` of the original text by
 /// `text`.
@@ -65,6 +69,35 @@ pub fn format_range(
     format_ranges(text, std::slice::from_ref(&range), config, std)
 }
 
+/// Formats the line just finished after `ch` was typed and the cursor is at
+/// byte `cursor`: the line of a `;`, or after a new line the line above it.
+/// The new line, and the indentation the editor gave it, are left alone.
+/// Nothing when `on_type` is off, for other characters, or while the file
+/// does not parse.
+pub fn format_typed(
+    text: &str,
+    cursor: usize,
+    ch: char,
+    config: &FormatConfig,
+    std: Standard,
+) -> Result<Vec<Edit>, FormatError> {
+    if !config.on_type || cursor > text.len() || !text.is_char_boundary(cursor) {
+        return Ok(Vec::new());
+    }
+    let line_start = text[..cursor].rfind('\n').map_or(0, |i| i + 1);
+    match ch {
+        ';' => format_range(text, cursor..cursor, config, std),
+        '\n' if line_start > 0 => {
+            let above = line_start - 1;
+            let mut edits = format_range(text, above..above, config, std)?;
+            let line_end = text[cursor..].find('\n').map_or(text.len(), |i| cursor + i);
+            edits.retain(|e| e.range.end < line_start || e.range.start > line_end);
+            Ok(edits)
+        }
+        _ => Ok(Vec::new()),
+    }
+}
+
 /// Formats the lines of `text` that the byte ranges `ranges` touch, and
 /// returns the edits to make, sorted and not overlapping. An empty range
 /// stands for its line. Lines the selection does not touch may change too
@@ -77,12 +110,40 @@ pub fn format_ranges(
     config: &FormatConfig,
     std: Standard,
 ) -> Result<Vec<Edit>, FormatError> {
+    format_ranges_in(text, ranges, config, std, true)
+}
+
+/// [`format_ranges`], laying out the whole file when `!incremental`. For
+/// tests: the edits must be the same.
+#[doc(hidden)]
+pub fn format_ranges_in(
+    text: &str,
+    ranges: &[Range<usize>],
+    config: &FormatConfig,
+    std: Standard,
+    incremental: bool,
+) -> Result<Vec<Edit>, FormatError> {
     let source = Source::new(text);
-    let Some(laid) = lay_out(&source.text, config, std, false)? else {
+    let src = source.text.as_str();
+    let root = parse_valid(src, std)?;
+    let offsets = Offsets::new(text, &source);
+    let whole = 0..src.len();
+    let window = ranges
+        .iter()
+        .map(|r| {
+            let (a, b) = (offsets.to_norm(r.start), offsets.to_norm(r.end));
+            match incremental {
+                true => window(&root, src, a.min(b), a.max(b), config).unwrap_or(whole.clone()),
+                false => whole.clone(),
+            }
+        })
+        .reduce(|x, y| x.start.min(y.start)..x.end.max(y.end));
+    let Some(window) = window else {
         return Ok(Vec::new());
     };
-    let offsets = Offsets::new(text, &source);
-    let src = source.text.as_str();
+    let Some(laid) = lay_out(src, &root, config, std, Some(window))? else {
+        return Ok(Vec::new());
+    };
     let view = View::new(&laid, src);
 
     let mut spans: Vec<(usize, usize)> = ranges
@@ -122,6 +183,138 @@ pub fn format_ranges(
             },
         })
         .collect())
+}
+
+/// The part of the file that lays out the same alone as within the file,
+/// around the lines of bytes `a..b`: whole lines between blank lines, which
+/// end alignment runs, cut between the items of a construct. `None` when the
+/// file has to be laid out whole.
+fn window(
+    root: &SyntaxNode,
+    src: &str,
+    a: usize,
+    b: usize,
+    config: &FormatConfig,
+) -> Option<Range<usize>> {
+    if config.max_blank_lines == 0 || config.align.block_boundary == BlockBoundary::Never {
+        return None;
+    }
+    // `-- vfl: off` may start a region far above.
+    if src
+        .as_bytes()
+        .windows(4)
+        .any(|w| w.eq_ignore_ascii_case(b"vfl:"))
+    {
+        return None;
+    }
+    let line_start = |i: usize| src[..i].rfind('\n').map_or(0, |k| k + 1);
+    let line_end = |i: usize| src[i..].find('\n').map_or(src.len(), |k| i + k);
+    let blank = |start: usize| src[start..line_end(start)].trim().is_empty();
+
+    // Start: the first line after a blank line.
+    let mut start = line_start(a.min(src.len()));
+    loop {
+        if start == 0 {
+            break;
+        }
+        let prev = line_start(start - 1);
+        // Comment lines above take their indentation from the code below.
+        if blank(prev)
+            && !blank(start)
+            && cuts_between_items(root, src, start)
+            && last_token_before(root, start).is_none_or(|t| !crate::kinds::is_comment(t.kind()))
+        {
+            break;
+        }
+        start = prev;
+    }
+    // End: the last line before a blank line, not a comment, whose
+    // indentation follows the code after it.
+    let mut end = line_end(b.min(src.len()));
+    loop {
+        if end >= src.len() {
+            end = src.len();
+            break;
+        }
+        let next = end + 1;
+        if blank(next)
+            && !blank(line_start(end))
+            && cuts_between_items(root, src, next)
+            && first_token_after(root, src, line_start(end))
+                .is_some_and(|t| !crate::kinds::is_comment(t.kind()))
+        {
+            break;
+        }
+        end = line_end(next);
+    }
+    Some(start..end)
+}
+
+/// Whether the source can be cut at `at`, the start of a line: between
+/// tokens, and outside everything but constructs holding items (and not in
+/// the body of a record, physical or protected type that is shifted in
+/// because its keyword starts a line).
+fn cuts_between_items(root: &SyntaxNode, src: &str, at: usize) -> bool {
+    let starts_line = |token: Option<SyntaxToken>| {
+        token.is_some_and(|t| {
+            let start = usize::from(t.text_range().start());
+            src[..start]
+                .rsplit('\n')
+                .next()
+                .is_some_and(|before| before.trim().is_empty())
+        })
+    };
+    let shifted = |n: &SyntaxNode| match n.kind() {
+        RECORD_TYPE_DEF | PROTECTED_TYPE_DEF | PROTECTED_TYPE_BODY => starts_line(n.first_token()),
+        PHYSICAL_TYPE_DEF => starts_line(
+            n.children_with_tokens()
+                .filter_map(NodeOrToken::into_token)
+                .find(|t| t.kind() == UNITS_KW),
+        ),
+        _ => false,
+    };
+    let Some(next) = first_token_after(root, src, at) else {
+        return true;
+    };
+    let start = next.text_range().start();
+    if usize::from(start) < at {
+        return false;
+    }
+    next.parent_ancestors()
+        .filter(|n| n.text_range().start() < start)
+        .all(|n| {
+            // A type's declaration holds its record or protected body.
+            (crate::kinds::is_container(n.kind())
+                || is_flat_container(n.kind())
+                || n.kind() == TYPE_DECL)
+                && !shifted(&n)
+        })
+}
+
+/// The first token that is not whitespace at or after `at`, or the one
+/// running over it.
+fn first_token_after(root: &SyntaxNode, src: &str, at: usize) -> Option<SyntaxToken> {
+    if at >= src.len() {
+        return None;
+    }
+    let mut token = root
+        .token_at_offset(TextSize::from(at as u32))
+        .right_biased()?;
+    while token.kind() == WHITESPACE {
+        token = token.next_token()?;
+    }
+    Some(token)
+}
+
+/// The last token that is not whitespace before `at`.
+fn last_token_before(root: &SyntaxNode, at: usize) -> Option<SyntaxToken> {
+    let mut token = root
+        .token_at_offset(TextSize::from(at as u32))
+        .left_biased()?;
+    while token.kind() == WHITESPACE || usize::from(token.text_range().end()) > at {
+        token = token.prev_token()?;
+    }
+    Some(token)
 }
 
 /// Converts between offsets in the original text and in the normalized one
@@ -297,6 +490,10 @@ impl<'a> View<'a> {
     /// if it is not itself a construct holding others.
     fn item_lines(&self, e: usize) -> Option<(usize, usize)> {
         let laid = self.laid;
+        // A comment between items belongs to none of them.
+        if laid.elems[e].is_comment() {
+            return None;
+        }
         let syntax = laid.elems[e].syntax.as_ref()?;
         let mut node: Option<SyntaxNode> = match syntax {
             NodeOrToken::Node(n) => Some(n.clone()),
@@ -307,6 +504,11 @@ impl<'a> View<'a> {
                 return None;
             }
             if is_item(&n) {
+                // A type declaration holding a record or protected body is
+                // a construct too.
+                if n.children().any(|c| is_container(c.kind())) {
+                    return None;
+                }
                 let range = n.text_range();
                 let (start, end) = (usize::from(range.start()), usize::from(range.end()));
                 let in_node = |k: &usize| {

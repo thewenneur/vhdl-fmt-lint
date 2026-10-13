@@ -168,6 +168,23 @@ impl Engine {
         Ok((!edits.is_empty()).then(|| vfl_fmt::apply_edits(text, &edits)))
     }
 
+    /// Formats the line just finished after `ch` was typed at byte `cursor`
+    /// of `text`: the line of a `;`, or the line above a new line. Returns
+    /// `None` when there is nothing to change, `on_type` is off in
+    /// `vfl.toml`, or the buffer does not parse.
+    pub fn format_typed(
+        &mut self,
+        path: Option<&Path>,
+        text: &str,
+        cursor: usize,
+        ch: char,
+    ) -> Option<String> {
+        let config = self.config(path);
+        let edits =
+            vfl_fmt::format_typed(text, cursor, ch, &config.format, config.standard()).ok()?;
+        (!edits.is_empty()).then(|| vfl_fmt::apply_edits(text, &edits))
+    }
+
     /// Lints `text`, the content of the file at `path` (`None` for an
     /// unsaved buffer), within its project.
     pub fn lint(&mut self, path: Option<&Path>, text: &str) -> LintOutput {
@@ -693,6 +710,24 @@ end architecture;
             engine.format_range(None, "entity e is\nend;\n", 0..0),
             Ok(None)
         );
+    }
+
+    #[test]
+    fn formats_the_line_just_typed() {
+        let mut engine = Engine::default();
+        let text = "entity e is\nend;\narchitecture a of e is\nbegin\nx<=y;\nend;\n";
+        let cursor = text.find("y;").unwrap() + 2;
+        assert_eq!(
+            engine.format_typed(None, text, cursor, ';'),
+            Some("entity e is\nend;\narchitecture a of e is\nbegin\n  x <= y;\nend;\n".into())
+        );
+        let text = "entity e is\nend;\narchitecture a of e is\nbegin\nx<=y;\n  \nend;\n";
+        let cursor = text.find("  \n").unwrap() + 2;
+        assert_eq!(
+            engine.format_typed(None, text, cursor, '\n'),
+            Some("entity e is\nend;\narchitecture a of e is\nbegin\n  x <= y;\n  \nend;\n".into())
+        );
+        assert_eq!(engine.format_typed(None, text, cursor, 'x'), None);
     }
 
     #[test]

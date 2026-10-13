@@ -158,6 +158,9 @@ pub struct FormatConfig {
     /// Whether `when x => stmt;` may keep its statement on the `when` line.
     pub case_alternative: CaseAlternative,
     pub line_ending: LineEnding,
+    /// Whether editors may format the line just typed (after `;` or a new
+    /// line). Editors have their own switch too.
+    pub on_type: bool,
     pub align: AlignConfig,
 }
 
@@ -180,6 +183,7 @@ impl Default for FormatConfig {
             close_paren: CloseParen::OwnLine,
             case_alternative: CaseAlternative::Preserve,
             line_ending: LineEnding::Auto,
+            on_type: true,
             align: AlignConfig::default(),
         }
     }

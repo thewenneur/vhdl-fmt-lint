@@ -101,16 +101,16 @@ help, completion, range formatting and format on type at every 7th line of 16 fi
 | VUnit | 0.3 / 2.1 ms | 0.02 / 1.8 ms | 1.2 / 7.5 ms |
 
 The same run also times range formatting (from the start of each line to its middle) and
-format on type (a new line after it). Both lay out the whole file without analyzing it, so
-they cost the same whatever the project, and grow with the file: OSVVM and VUnit have
-packages of 150 to 400 KB.
+format on type (a new line after it). Neither waits for an analysis. Each parses the file and
+lays out only the block around the line, between blank lines, so the parse of the file is
+most of the cost: about 7 ms for OSVVM's 400 KB `AlertLogPkg.vhd`.
 
 | Project | Range formatting (median / max) | Format on type (median / max) |
 |---|---:|---:|
-| neorv32 | 1.2 / 4.5 ms | 1.2 / 3.9 ms |
-| OSVVM | 14 / 70 ms | 16 / 73 ms |
-| UVVM | 1.6 / 8.5 ms | 1.7 / 5.8 ms |
-| VUnit | 11 / 30 ms | 11 / 28 ms |
+| neorv32 | 0.4 / 2.5 ms | 0.5 / 1.4 ms |
+| OSVVM | 3.0 / 32 ms | 3.0 / 17 ms |
+| UVVM | 0.6 / 2.3 ms | 0.8 / 2.0 ms |
+| VUnit | 2.4 / 4.5 ms | 2.4 / 5.9 ms |
 
 ## Running it
 
