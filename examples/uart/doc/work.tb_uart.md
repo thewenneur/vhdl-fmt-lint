@@ -16,6 +16,12 @@ Sends a byte through the UART looped back on itself.
 |---|---|---|
 | `dut` | [`uart`](work.uart.md) | entity |
 
+### Port maps
+
+#### `dut`
+
+![Port map of dut](work.tb_uart.sim.map-dut.svg)
+
 ### Processes
 
 | Process | Clock | Drives | Description |

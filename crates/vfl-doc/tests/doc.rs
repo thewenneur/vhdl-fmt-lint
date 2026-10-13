@@ -493,6 +493,7 @@ fn options_leave_sections_out() {
             symbol: false,
             hierarchy: false,
             block: false,
+            port_map: false,
             ..Default::default()
         },
         ..DocConfig::default()
@@ -695,4 +696,68 @@ end;
     // Nothing to draw without instances.
     let stage = d.entities.iter().position(|e| e.name == "stage").unwrap();
     assert!(vfl_doc::block::block(&d, stage, 0, None).is_none());
+}
+
+#[test]
+fn port_map_shows_actuals_and_generics() {
+    let d = design(&[("rtl/counter.vhd", COUNTER), ("top.vhd", TOP)]);
+    let top = d.entities.iter().position(|e| e.name == "top").unwrap();
+    let svg = vfl_doc::block::port_map(&d, top, 0, 0).unwrap();
+    // The instance, its unit, the mapped generic and the actuals.
+    assert!(svg.contains(">u_cnt<"), "{svg}");
+    assert!(svg.contains(">counter(rtl)<"), "{svg}");
+    assert!(svg.contains(">WIDTH =&gt; 4<"), "{svg}");
+    assert!(svg.contains(r#"class="vfl-actual">clk<"#), "{svg}");
+    assert!(svg.contains(r#"class="vfl-actual">&#39;1&#39;<"#), "{svg}");
+    // A positional association to a component, and an unknown primitive.
+    let svg = vfl_doc::block::port_map(&d, top, 0, 1).unwrap();
+    assert!(svg.contains(">gen.u_c<"), "{svg}");
+    assert!(svg.contains(r#"class="vfl-actual">clk<"#), "{svg}");
+    let svg = vfl_doc::block::port_map(&d, top, 0, 2).unwrap();
+    assert!(svg.contains(">I<") && svg.contains(">O<"), "{svg}");
+    assert!(vfl_doc::block::port_map(&d, top, 0, 3).is_none());
+}
+
+#[test]
+fn index_draws_the_top_level_under_its_testbench() {
+    let config = DocConfig {
+        format: DocFormat::Markdown,
+        ..DocConfig::default()
+    };
+    let d = design(&[("rtl/counter.vhd", COUNTER), ("top.vhd", TOP)]);
+    let files = vfl_doc::generate(&d, &config);
+    let index = file(&files, "index.md");
+    // `tb` is the root; the top level is the design it tests.
+    assert!(index.contains("### [`top`](work.top.md) (str)"), "{index}");
+    assert!(index.contains("](top.work.top.block.svg)"), "{index}");
+    let top = file(&files, "work.top.md");
+    assert!(top.contains("### Port maps"), "{top}");
+    assert!(top.contains("](work.top.str.map-u_cnt.svg)"), "{top}");
+    assert!(top.contains("](work.top.str.map-gen_u_c.svg)"), "{top}");
+}
+
+#[test]
+fn writes_asciidoc_pages() {
+    let config = DocConfig {
+        format: DocFormat::Asciidoc,
+        ..DocConfig::default()
+    };
+    let d = design(&[("rtl/counter.vhd", COUNTER), ("top.vhd", TOP)]);
+    let files = vfl_doc::generate(&d, &config);
+    let index = file(&files, "index.adoc");
+    assert!(index.starts_with("= "), "{index}");
+    assert!(
+        index.contains("image::hierarchy.svg[\"Design hierarchy\"]"),
+        "{index}"
+    );
+    assert!(
+        index.contains(
+            "|xref:work.counter.adoc[``++counter++``] |``++work++`` |A simple up counter."
+        ),
+        "{index}"
+    );
+    let counter = file(&files, "work.counter.adoc");
+    assert!(counter.contains("[[ports]]\n== Ports"), "{counter}");
+    assert!(counter.contains("|===\n"), "{counter}");
+    file(&files, "work.counter.symbol.svg");
 }

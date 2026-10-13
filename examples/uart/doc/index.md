@@ -8,6 +8,14 @@
 
 ![Design hierarchy](hierarchy.svg)
 
+<a id="top"></a>
+
+## Top level
+
+### [`uart`](work.uart.md) (rtl)
+
+![Top level uart](top.work.uart.block.svg)
+
 <a id="entities"></a>
 
 ## Entities

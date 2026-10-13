@@ -84,7 +84,7 @@ enum Command {
     ///
     /// Writes an index, a page per entity (generics, ports, symbol,
     /// architectures, instances, processes, state machines) and a page per
-    /// package, as HTML or Markdown. Doc comments are the comments
+    /// package, as HTML, Markdown or AsciiDoc. Doc comments are the comments
     /// directly above a declaration or at the end of its line (`--!` ones
     /// if the file has any). Settings are under `[doc]` in vfl.toml.
     Doc {
@@ -112,10 +112,13 @@ enum Command {
         /// For `fsm`, the state signal (default: the entity's only state machine).
         #[arg(long)]
         signal: Option<String>,
-        /// For `block`, the architecture (default: the last one).
+        /// For `block` and `port-map`, the architecture (default: the last one).
         #[arg(long)]
         architecture: Option<String>,
-        /// Output format. `symbol` and `block` are SVG only.
+        /// For `port-map`, the instance label (default: the only instance).
+        #[arg(long)]
+        instance: Option<String>,
+        /// Output format. `symbol`, `block` and `port-map` are SVG only.
         #[arg(long, short, value_enum, default_value = "svg")]
         format: doc::SchemaFormat,
         /// Write to this file instead of standard output.
@@ -157,6 +160,7 @@ enum Command {
 enum DocFormatArg {
     Html,
     Markdown,
+    Asciidoc,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -240,6 +244,7 @@ fn run(cli: Cli) -> Result<bool> {
             format.map(|f| match f {
                 DocFormatArg::Html => vfl_config::DocFormat::Html,
                 DocFormatArg::Markdown => vfl_config::DocFormat::Markdown,
+                DocFormatArg::Asciidoc => vfl_config::DocFormat::Asciidoc,
             }),
             title,
         )
@@ -249,6 +254,7 @@ fn run(cli: Cli) -> Result<bool> {
             entity,
             signal,
             architecture,
+            instance,
             format,
             output,
             project,
@@ -257,6 +263,7 @@ fn run(cli: Cli) -> Result<bool> {
             entity,
             signal,
             architecture,
+            instance,
             format,
             output,
             project,

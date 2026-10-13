@@ -271,7 +271,7 @@ Each entry is either a level, or a table with an optional `level` and rule optio
 ## `[doc]`
 
 `vfl doc [path]` writes the documentation of the project: an index with the design
-hierarchy and the list of entities and packages, a page per entity (description, block
+hierarchy, the block diagram of the top level and the list of entities and packages, a page per entity (description, block
 symbol, generics, ports, who instantiates it, and per architecture its instances, processes,
 state machines, signals, constants, types and subprograms) and a page per package. Options
 on the command line (`--out`, `--format`, `--title`) override these keys. `[doc]` is read
@@ -280,7 +280,7 @@ from the configs that apply to the project root.
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
 | `out_dir` | string | `"doc"` | Where `vfl doc` writes, relative to the project root. Existing files there are overwritten, others are kept. |
-| `format` | string | `"html"` | `"html"`: self-contained pages with the diagrams inline, light and dark. `"markdown"`: `.md` pages, with the diagrams as `.svg` files next to them (or Mermaid blocks, see `[doc.diagrams]`). |
+| `format` | string | `"html"` | `"html"`: self-contained pages with the diagrams inline, light and dark. `"markdown"`: `.md` pages, with the diagrams as `.svg` files next to them (or Mermaid blocks, see `[doc.diagrams]`). `"asciidoc"`: `.adoc` pages for Asciidoctor (or Antora), with the diagrams as `.svg` files next to them. |
 | `title` | string | unset | The title of the index page. Unset: the name of the project directory. |
 | `comments` | string | `"auto"` | Which comments document a declaration: `"marked"` (only comments starting with `--` and `comment_marker`, as in TerosHDL and Doxygen), `"all"` (every comment), `"auto"` (marked comments in files that have any, all comments in the others) or `"none"`. |
 | `comment_marker` | string | `"!"` | What follows `--` in a marked comment: `"!"` for `--!`. |
@@ -328,15 +328,17 @@ is the literal the reset branch assigns, else the declaration's default.
 
 ### `[doc.diagrams]`
 
-`vfl schema symbol|hierarchy|block|fsm [entity]` draws one of these diagrams alone, as SVG
-(the default), or for `hierarchy` and `fsm` as Mermaid (`-f mermaid`) or Graphviz DOT
-(`-f dot`).
+`vfl schema symbol|hierarchy|block|port-map|fsm [entity]` draws one of these diagrams alone,
+as SVG (the default), or for `hierarchy` and `fsm` as Mermaid (`-f mermaid`) or Graphviz DOT
+(`-f dot`). `port-map` takes the instance with `--instance label`.
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
 | `symbol` | boolean | `true` | Draw each entity (and each component of a package) as a block: inputs on the left, outputs and bidirectional ports on the right. |
 | `hierarchy` | boolean | `true` | Draw the instantiation tree on the index (and the instances of each architecture when `block` is off). A subtree already drawn higher up is not drawn again. |
 | `block` | boolean | `true` | Draw each architecture with instances as a block diagram: its instances as blocks, wired to each other and to the ports of the entity by the signals of their port maps. Signals between neighbouring columns are drawn as wires, longer ones as named stubs. Architectures with more than 80 instances are left to the instance table. |
+| `top` | boolean | `true` | Draw the top level on the index: the block diagram (or, without instances, the symbol) of each entity at the root of the hierarchy, or for a testbench of the entities it instantiates. |
+| `port_map` | boolean | `true` | Draw each instance of an architecture as the block it instantiates, with the actual connected to each port (`open` and defaulted inputs muted) and its generic map. |
 | `fsm` | boolean | `true` | Draw a state diagram per state machine. Past ten labelled transitions, the conditions are left to the transition table. |
 | `port_types` | boolean | `true` | Write the port types next to the pins of a symbol. |
 | `generics` | boolean | `true` | Write the generics in a symbol. |
@@ -472,6 +474,8 @@ fsm = true
 symbol = true
 hierarchy = true
 block = true
+top = true
+port_map = true
 fsm = true
 port_types = true
 generics = true

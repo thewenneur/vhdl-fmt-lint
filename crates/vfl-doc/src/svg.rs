@@ -26,6 +26,7 @@ const STYLE: &str = "\
 .vfl-dot{fill:#0969da}\
 .vfl-term{fill:#ddf4ff;stroke:#424a53;stroke-width:1.2}\
 .vfl-small{font-size:10px}\
+.vfl-actual{fill:#0550ae}\
 .vfl-state{fill:#f6f8fa;stroke:#424a53;stroke-width:1.5}\
 .vfl-initial{fill:#ddf4ff;stroke:#0969da;stroke-width:2}\
 .vfl-label-bg{fill:#ffffff;fill-opacity:0.85}\
@@ -47,6 +48,7 @@ a:hover text{text-decoration:underline}\
 .vfl-initial{fill:#0c2d6b;stroke:#4493f8}\
 .vfl-label-bg{fill:#0d1117}\
 text{fill:#f0f6fc}\
+.vfl-actual{fill:#79c0ff}\
 .vfl-muted{fill:#9198a1}}";
 
 /// The most arrows of a state diagram that get their conditions written.
@@ -195,10 +197,46 @@ pub(crate) fn symbol_of(
     ports: &[Interface],
     options: SymbolOptions,
 ) -> String {
+    let generic_lines: Vec<(String, bool)> = if options.generics {
+        generics
+            .iter()
+            .map(|g| {
+                let mut line = format!("{} : {}", g.name, g.ty);
+                if let Some(default) = &g.default {
+                    let _ = write!(line, " := {default}");
+                }
+                (line, true)
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let outside = |port: &Interface| {
+        options
+            .port_types
+            .then(|| (port.ty.clone(), true))
+            .filter(|(ty, _)| !ty.is_empty())
+    };
+    draw_symbol(name, None, &generic_lines, ports, &outside).finish(name, 8.0)
+}
+
+/// What a symbol writes beyond the end of a pin, and whether it is muted.
+pub(crate) type PinText<'a> = &'a dyn Fn(&Interface) -> Option<(String, bool)>;
+
+/// A block with a title (and a subtitle), lines of generics, and a pin per
+/// port: inputs on the left, the others on the right. `outside` gives the
+/// text beyond each pin: the type in a symbol, the actual in a port map.
+pub(crate) fn draw_symbol(
+    title: &str,
+    subtitle: Option<&str>,
+    generic_lines: &[(String, bool)],
+    ports: &[Interface],
+    outside: PinText,
+) -> Canvas {
     const PAD: f64 = 10.0;
     const ROW: f64 = 18.0;
     const PIN: f64 = 24.0;
-    const HEAD: f64 = 26.0;
+    let head = if subtitle.is_some() { 38.0 } else { 26.0 };
     let left: Vec<&Interface> = ports
         .iter()
         .filter(|p| p.direction() == Direction::In)
@@ -207,28 +245,25 @@ pub(crate) fn symbol_of(
         .iter()
         .filter(|p| p.direction() != Direction::In)
         .collect();
-    let generic_lines: Vec<String> = if options.generics {
-        generics
-            .iter()
-            .map(|g| {
-                let mut line = format!("{} : {}", g.name, g.ty);
-                if let Some(default) = &g.default {
-                    let _ = write!(line, " := {default}");
-                }
-                cut(&line, MAX_TEXT)
-            })
-            .collect()
-    } else {
-        Vec::new()
-    };
+    let generic_lines: Vec<(String, bool)> = generic_lines
+        .iter()
+        .map(|(l, muted)| (cut(l, MAX_TEXT), *muted))
+        .collect();
     let name_w = |list: &[&Interface]| {
         list.iter()
             .map(|p| width(&cut(&p.name, MAX_TEXT)))
             .fold(0.0, f64::max)
     };
     let inner = (name_w(&left) + name_w(&right) + 4.0 * PAD)
-        .max(width(name) + 2.0 * PAD)
-        .max(generic_lines.iter().map(|l| width(l)).fold(0.0, f64::max) + 2.0 * PAD)
+        .max(width(&cut(title, MAX_TEXT)) + 2.0 * PAD)
+        .max(subtitle.map_or(0.0, |s| width(&cut(s, MAX_TEXT))) + 2.0 * PAD)
+        .max(
+            generic_lines
+                .iter()
+                .map(|(l, _)| width(l))
+                .fold(0.0, f64::max)
+                + 2.0 * PAD,
+        )
         .max(120.0);
     let rows = left.len().max(right.len()).max(1) as f64;
     let generics_h = if generic_lines.is_empty() {
@@ -240,24 +275,33 @@ pub(crate) fn symbol_of(
 
     let mut c = Canvas::new();
     let (x, y) = (0.0, 0.0);
-    c.rect(x, y, inner, HEAD + body_h, "vfl-box");
-    c.rect(x, y, inner, HEAD, "vfl-head");
+    c.rect(x, y, inner, head + body_h, "vfl-box");
+    c.rect(x, y, inner, head, "vfl-head");
     c.text(
         x + inner / 2.0,
         y + 17.0,
-        &cut(name, MAX_TEXT),
+        &cut(title, MAX_TEXT),
         "middle",
         "vfl-title",
     );
-    let mut row_y = y + HEAD;
+    if let Some(subtitle) = subtitle {
+        c.text(
+            x + inner / 2.0,
+            y + 31.0,
+            &cut(subtitle, MAX_TEXT),
+            "middle",
+            "vfl-muted",
+        );
+    }
+    let mut row_y = y + head;
     if !generic_lines.is_empty() {
-        for (i, line) in generic_lines.iter().enumerate() {
+        for (i, (line, muted)) in generic_lines.iter().enumerate() {
             c.text(
                 x + PAD,
                 row_y + 14.0 + i as f64 * ROW,
                 line,
                 "start",
-                "vfl-muted",
+                if *muted { "vfl-muted" } else { "" },
             );
         }
         row_y += generics_h;
@@ -270,6 +314,7 @@ pub(crate) fn symbol_of(
         );
     }
     row_y += PAD / 2.0;
+    let class = |muted: bool| if muted { "vfl-muted" } else { "vfl-actual" };
     for (i, port) in left.iter().enumerate() {
         let py = row_y + i as f64 * ROW + ROW / 2.0;
         c.line(x - PIN, py, x, py, "vfl-pin");
@@ -280,13 +325,13 @@ pub(crate) fn symbol_of(
             py
         ));
         c.text(x + 6.0, py + 4.0, &cut(&port.name, MAX_TEXT), "start", "");
-        if options.port_types {
+        if let Some((text, muted)) = outside(port) {
             c.text(
                 x - PIN - 4.0,
                 py + 4.0,
-                &cut(&port.ty, MAX_TEXT),
+                &cut(&text, MAX_TEXT),
                 "end",
-                "vfl-muted",
+                class(muted),
             );
         }
     }
@@ -312,19 +357,19 @@ pub(crate) fn symbol_of(
             port.name.clone()
         };
         c.text(rx - 6.0, py + 4.0, &cut(&label, MAX_TEXT), "end", "");
-        if options.port_types {
+        if let Some((text, muted)) = outside(port) {
             c.text(
                 rx + PIN + 4.0,
                 py + 4.0,
-                &cut(&port.ty, MAX_TEXT),
+                &cut(&text, MAX_TEXT),
                 "start",
-                "vfl-muted",
+                class(muted),
             );
         }
     }
     // Room for the pins of an entity without types.
     c.extend(x - PIN - 2.0, y, rx + PIN + 2.0, y);
-    c.finish(name, 8.0)
+    c
 }
 
 /// The instantiation tree, drawn as an indented outline. `link` gives the

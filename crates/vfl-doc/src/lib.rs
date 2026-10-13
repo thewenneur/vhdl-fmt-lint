@@ -101,6 +101,17 @@ pub fn generate(design: &Design, config: &DocConfig) -> Vec<OutputFile> {
                 files.extend(extra);
             }
         }
+        DocFormat::Asciidoc => {
+            for page in &pages {
+                let mut extra = Vec::new();
+                let contents = page::asciidoc(page, &mut extra);
+                files.push(OutputFile {
+                    path: format!("{}.adoc", page.id),
+                    contents,
+                });
+                files.extend(extra);
+            }
+        }
         DocFormat::Html => {
             let nav = pages::nav(design);
             for page in &pages {

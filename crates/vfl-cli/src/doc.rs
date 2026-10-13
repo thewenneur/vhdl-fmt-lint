@@ -17,6 +17,8 @@ pub enum SchemaKind {
     Hierarchy,
     /// The instances of an entity's architecture, wired by their signals.
     Block,
+    /// One instance of an entity's architecture, with the actual of each port.
+    PortMap,
     /// A state machine of an entity's architecture.
     Fsm,
 }
@@ -33,6 +35,7 @@ pub struct SchemaOptions {
     pub entity: Option<String>,
     pub signal: Option<String>,
     pub architecture: Option<String>,
+    pub instance: Option<String>,
     pub format: SchemaFormat,
     pub output: Option<PathBuf>,
     pub project: PathBuf,
@@ -72,6 +75,7 @@ pub fn doc(
     let index = match config.format {
         DocFormat::Html => "index.html",
         DocFormat::Markdown => "index.md",
+        DocFormat::Asciidoc => "index.adoc",
     };
     eprintln!(
         "{} entities, {} packages: {} files written to {}",
@@ -115,6 +119,22 @@ fn find_entity(design: &Design, name: &str) -> Result<usize> {
                 names.join(", ")
             )
         }
+    }
+}
+
+/// The architecture named `name`, else the last one.
+fn architecture(e: &vfl_doc::model::Entity, name: Option<&str>) -> Result<usize> {
+    match name {
+        Some(name) => e
+            .architectures
+            .iter()
+            .position(|a| identifier_key(&a.name) == identifier_key(name))
+            .with_context(|| format!("`{}` has no architecture `{name}`", e.name)),
+        None => e
+            .architectures
+            .len()
+            .checked_sub(1)
+            .with_context(|| format!("`{}` has no architecture", e.name)),
     }
 }
 
@@ -168,18 +188,7 @@ pub fn schema(options: &SchemaOptions) -> Result<()> {
                 bail!("block diagrams are drawn as SVG only");
             }
             let e = &design.entities[entity];
-            let arch = match &options.architecture {
-                Some(name) => e
-                    .architectures
-                    .iter()
-                    .position(|a| identifier_key(&a.name) == identifier_key(name))
-                    .with_context(|| format!("`{}` has no architecture `{name}`", e.name))?,
-                None => e
-                    .architectures
-                    .len()
-                    .checked_sub(1)
-                    .with_context(|| format!("`{}` has no architecture", e.name))?,
-            };
+            let arch = architecture(e, options.architecture.as_deref())?;
             match vfl_doc::block::block(&design, entity, arch, None) {
                 Some(svg) => svg,
                 None if e.architectures[arch].instances.is_empty() => bail!(
@@ -194,6 +203,45 @@ pub fn schema(options: &SchemaOptions) -> Result<()> {
                     vfl_doc::block::MAX_BLOCKS
                 ),
             }
+        }
+        SchemaKind::PortMap => {
+            let Some(entity) = entity else {
+                bail!("`vfl schema port-map` needs an entity name");
+            };
+            if options.format != SchemaFormat::Svg {
+                bail!("port maps are drawn as SVG only");
+            }
+            let e = &design.entities[entity];
+            let arch = architecture(e, options.architecture.as_deref())?;
+            let instances = &e.architectures[arch].instances;
+            let index = match &options.instance {
+                Some(label) => instances
+                    .iter()
+                    .position(|i| {
+                        identifier_key(&i.path()) == identifier_key(label)
+                            || identifier_key(&i.label) == identifier_key(label)
+                    })
+                    .with_context(|| {
+                        format!(
+                            "`{}({})` has no instance `{label}`",
+                            e.name, e.architectures[arch].name
+                        )
+                    })?,
+                None if instances.len() == 1 => 0,
+                None => {
+                    let labels: Vec<String> = instances.iter().map(|i| i.path()).collect();
+                    bail!(
+                        "name the instance with --instance: {}",
+                        if labels.is_empty() {
+                            "there is none".to_owned()
+                        } else {
+                            labels.join(", ")
+                        }
+                    )
+                }
+            };
+            vfl_doc::block::port_map(&design, entity, arch, index)
+                .context("the instance could not be drawn")?
         }
         SchemaKind::Fsm => {
             let Some(entity) = entity else {

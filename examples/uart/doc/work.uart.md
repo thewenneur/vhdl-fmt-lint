@@ -58,6 +58,24 @@ on `rxd` are queued until read from `rx_data`.
 | `receiver` | [`uart_rx`](work.uart_rx.md) | entity |  |
 | `rx_fifo` | [`fifo`](work.fifo.md) | entity | Bytes received and not read yet. |
 
+### Port maps
+
+#### `tx_fifo`
+
+![Port map of tx\_fifo](work.uart.rtl.map-tx_fifo.svg)
+
+#### `transmitter`
+
+![Port map of transmitter](work.uart.rtl.map-transmitter.svg)
+
+#### `receiver`
+
+![Port map of receiver](work.uart.rtl.map-receiver.svg)
+
+#### `rx_fifo`
+
+![Port map of rx\_fifo](work.uart.rtl.map-rx_fifo.svg)
+
 ### Signals
 
 | Name | Type | Description |

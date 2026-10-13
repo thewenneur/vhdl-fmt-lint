@@ -476,6 +476,7 @@ impl Default for DocConfig {
 pub enum DocFormat {
     Html,
     Markdown,
+    Asciidoc,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -503,6 +504,12 @@ pub struct DiagramConfig {
     /// A block diagram of each architecture with instances: the instances
     /// wired by the signals between their ports.
     pub block: bool,
+    /// On the index, the block diagram of each top-level entity (for a
+    /// testbench, of the design it tests).
+    pub top: bool,
+    /// A diagram per instance: the instantiated block with the actual of
+    /// each port and generic.
+    pub port_map: bool,
     /// A state diagram of each detected state machine.
     pub fsm: bool,
     /// Show port types next to the pins of a symbol.
@@ -520,6 +527,8 @@ impl Default for DiagramConfig {
             symbol: true,
             hierarchy: true,
             block: true,
+            top: true,
+            port_map: true,
             fsm: true,
             port_types: true,
             generics: true,

@@ -29,6 +29,7 @@ fn extension(config: &DocConfig) -> &'static str {
     match config.format {
         vfl_config::DocFormat::Html => "html",
         vfl_config::DocFormat::Markdown => "md",
+        vfl_config::DocFormat::Asciidoc => "adoc",
     }
 }
 
@@ -209,6 +210,129 @@ pub fn nav(design: &Design) -> Vec<NavItem> {
     items
 }
 
+/// A diagram of each instance of an architecture with its actuals.
+fn port_maps(
+    design: &Design,
+    index: usize,
+    entity: &Entity,
+    arch: &Architecture,
+    page: &str,
+    arch_key: &str,
+    blocks: &mut Vec<Block>,
+) {
+    let Some(a) = entity
+        .architectures
+        .iter()
+        .position(|a| std::ptr::eq(a, arch))
+    else {
+        return;
+    };
+    let mut first = true;
+    for (i, instance) in arch.instances.iter().enumerate() {
+        let Some(svg) = crate::block::port_map(design, index, a, i) else {
+            continue;
+        };
+        if first {
+            blocks.push(heading(3, vec![text("Port maps")], None));
+            first = false;
+        }
+        let path = instance.path();
+        blocks.push(heading(4, vec![code(path.clone())], None));
+        blocks.push(Block::Diagram {
+            file: format!("{page}.{arch_key}.map-{}", file_safe(&path)),
+            alt: format!("Port map of {path}"),
+            svg,
+            mermaid: None,
+        });
+    }
+}
+
+/// The most top-level entities the index draws.
+const MAX_TOPS: usize = 4;
+
+/// The top-level entities: the roots of the hierarchy, or for a testbench
+/// the documented entities it instantiates, each with its architecture.
+fn tops(design: &Design, roots: &[Node]) -> Vec<(usize, Option<String>)> {
+    let mut tops: Vec<(usize, Option<String>)> = Vec::new();
+    for root in roots {
+        let Some(e) = root.entity else { continue };
+        let candidates: Vec<(usize, Option<String>)> = if design.entities[e].is_testbench() {
+            root.children
+                .iter()
+                .filter_map(|c| Some((c.entity?, c.architecture.clone())))
+                .filter(|(c, _)| !design.entities[*c].is_testbench())
+                .collect()
+        } else {
+            vec![(e, root.architecture.clone())]
+        };
+        for top in candidates {
+            if !tops.iter().any(|(t, _)| *t == top.0) {
+                tops.push(top);
+            }
+        }
+    }
+    tops.truncate(MAX_TOPS);
+    tops
+}
+
+/// The block diagram of each top-level entity, or its symbol when it has
+/// no instances.
+fn top_level(design: &Design, roots: &[Node], config: &DocConfig, blocks: &mut Vec<Block>) {
+    let page_link = |i: usize| format!("{}.{}", entity_page(design, i), extension(config));
+    let mut diagrams = Vec::new();
+    for (top, architecture) in tops(design, roots) {
+        let entity = &design.entities[top];
+        let arch = match &architecture {
+            Some(name) => entity
+                .architectures
+                .iter()
+                .position(|a| identifier_key(&a.name) == identifier_key(name)),
+            None => entity.architectures.len().checked_sub(1),
+        };
+        let wired = if config.diagrams.block {
+            arch.and_then(|a| crate::block::block(design, top, a, Some(&page_link)))
+        } else {
+            None
+        };
+        let page = entity_page(design, top);
+        let (svg, what) = match wired {
+            Some(svg) => (svg, "block"),
+            None if config.diagrams.symbol => (
+                svg::symbol(
+                    entity,
+                    svg::SymbolOptions {
+                        port_types: config.diagrams.port_types,
+                        generics: config.diagrams.generics,
+                    },
+                ),
+                "symbol",
+            ),
+            None => continue,
+        };
+        let mut title = vec![link(&entity.name, page.clone(), None)];
+        if let Some(a) = arch {
+            title.push(text(format!(" ({})", entity.architectures[a].name)));
+        }
+        diagrams.push((
+            title,
+            Block::Diagram {
+                file: format!("top.{page}.{what}"),
+                alt: format!("Top level {}", entity.name),
+                svg,
+                mermaid: None,
+            },
+        ));
+    }
+    if diagrams.is_empty() {
+        return;
+    }
+    blocks.push(heading(2, vec![text("Top level")], Some("top".into())));
+    for (title, diagram) in diagrams {
+        blocks.push(heading(3, title, None));
+        blocks.push(diagram);
+    }
+}
+
 fn index(design: &Design, roots: &[Node], config: &DocConfig) -> Page {
     let mut blocks = vec![heading(1, vec![text(design.title.clone())], None)];
     let libraries = {
@@ -246,6 +370,9 @@ fn index(design: &Design, roots: &[Node], config: &DocConfig) -> Page {
             svg: svg::hierarchy(roots, Some(&link)),
             mermaid: Some(diagram_text::hierarchy_mermaid(roots)),
         });
+    }
+    if config.diagrams.top {
+        top_level(design, roots, config, &mut blocks);
     }
     if !design.entities.is_empty() {
         blocks.push(heading(2, vec![text("Entities")], Some("entities".into())));
@@ -466,6 +593,9 @@ fn architecture(
                 })
                 .collect(),
         });
+        if config.diagrams.port_map && arch.instances.len() <= crate::block::MAX_BLOCKS {
+            port_maps(design, index, entity, arch, page, &arch_key, blocks);
+        }
     }
     if !arch.processes.is_empty() {
         blocks.push(heading(3, vec![text("Processes")], None));

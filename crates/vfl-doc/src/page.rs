@@ -241,6 +241,135 @@ pub fn markdown(page: &Page, mermaid: bool, files: &mut Vec<OutputFile>) -> Stri
     out
 }
 
+// ---------------------------------------------------------------- AsciiDoc
+
+/// Text shown as is: wrapped in a passthrough, which only escapes `<`,
+/// `>` and `&`, when it holds a character AsciiDoc could read as markup.
+fn adoc_text(text: &str) -> String {
+    if !text.contains(|c: char| "*_`#+^~{}[]<>&|\\:'\"".contains(c)) {
+        text.to_owned()
+    } else {
+        adoc_pass(text)
+    }
+}
+
+fn adoc_pass(text: &str) -> String {
+    if text.contains('+') {
+        format!("pass:c[{}]", text.replace(']', "\\]"))
+    } else {
+        format!("++{text}++")
+    }
+}
+
+fn adoc_code(text: &str) -> String {
+    format!("``{}``", adoc_pass(text))
+}
+
+fn adoc_inline(inlines: &[Inline]) -> String {
+    let mut out = String::new();
+    for inline in inlines {
+        match inline {
+            Inline::Text(t) => out.push_str(&adoc_text(t)),
+            Inline::Code(t) => out.push_str(&adoc_code(t)),
+            Inline::Link {
+                text,
+                code,
+                page,
+                anchor,
+            } => {
+                let label = if *code {
+                    adoc_code(text)
+                } else {
+                    adoc_text(text)
+                };
+                let anchor = anchor.as_ref().map(|a| format!("#{a}")).unwrap_or_default();
+                let _ = write!(out, "xref:{page}.adoc{anchor}[{label}]");
+            }
+        }
+    }
+    out
+}
+
+/// A table cell: one line, with the cell separator escaped.
+fn adoc_cell(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .replace('|', "\\|")
+}
+
+pub fn asciidoc(page: &Page, files: &mut Vec<OutputFile>) -> String {
+    let mut out = String::new();
+    for block in &page.blocks {
+        match block {
+            Block::Heading { level, content, id } => {
+                if let Some(id) = id {
+                    let _ = writeln!(out, "[[{id}]]");
+                }
+                let _ = writeln!(
+                    out,
+                    "{} {}\n",
+                    "=".repeat(*level as usize),
+                    adoc_inline(content)
+                );
+                if *level == 1 {
+                    // Diagrams sit next to the pages.
+                    out.truncate(out.len() - 1);
+                    out.push_str(":imagesdir: .\n\n");
+                }
+            }
+            Block::Para(content) => {
+                let _ = writeln!(out, "{}\n", adoc_inline(content));
+            }
+            Block::Doc(text) => {
+                // Comments are often written in a lightweight markup already;
+                // their paragraphs and `-`/`*` lists read the same in AsciiDoc.
+                let _ = writeln!(out, "{}\n", text.trim_end());
+            }
+            Block::Table { head, rows } => {
+                let (head, rows) = prune(head, rows);
+                let _ = writeln!(out, "[options=\"header\"]\n|===");
+                let _ = writeln!(out, "|{}", head.join(" |"));
+                for row in &rows {
+                    let cells: Vec<String> = row
+                        .iter()
+                        .map(|cell| match cell.as_slice() {
+                            // The last column of every table is a description,
+                            // kept as written like other doc comments.
+                            [Inline::Text(t)] => adoc_cell(t),
+                            _ => adoc_cell(&adoc_inline(cell)),
+                        })
+                        .collect();
+                    let _ = writeln!(out, "|{}", cells.join(" |"));
+                }
+                out.push_str("|===\n\n");
+            }
+            Block::List(items) => {
+                for item in items {
+                    let _ = writeln!(out, "* {}", adoc_inline(item));
+                }
+                out.push('\n');
+            }
+            Block::Diagram { file, alt, svg, .. } => {
+                let path = format!("{file}.svg");
+                let _ = writeln!(
+                    out,
+                    "image::{path}[\"{}\"]\n",
+                    alt.replace('"', "'").replace(']', ")")
+                );
+                files.push(OutputFile {
+                    path,
+                    contents: svg.clone(),
+                });
+            }
+        }
+    }
+    let trimmed = out.trim_end().len();
+    out.truncate(trimmed);
+    out.push('\n');
+    out
+}
+
 // -------------------------------------------------------------------- HTML
 
 const CSS: &str = "\
@@ -265,9 +394,28 @@ th,td{border:1px solid var(--line);padding:5px 10px;text-align:left;vertical-ali
 th{background:var(--side)}\
 td code{overflow-wrap:break-word}\
 .diagram{overflow-x:auto;margin:8px 0 16px}\
-.diagram svg{max-width:none}\
+.diagram svg{max-width:100%;height:auto}\
 footer{color:var(--muted);font-size:13px;margin-top:48px}\
 @media (max-width:760px){.layout{display:block}nav{width:auto;height:auto;position:static}main{padding:16px}}";
+
+/// Lets a diagram shrink to the width of the page, down to 60% of its size;
+/// a larger one scrolls.
+fn fit(svg: &str) -> std::borrow::Cow<'_, str> {
+    let width = svg
+        .split_once(" width=\"")
+        .and_then(|(_, rest)| rest.split_once('"'))
+        .and_then(|(w, _)| w.parse::<f64>().ok());
+    match width {
+        Some(w) => svg
+            .replacen(
+                "<svg ",
+                &format!("<svg style=\"min-width:{:.0}px\" ", w * 0.6),
+                1,
+            )
+            .into(),
+        None => svg.into(),
+    }
+}
 
 fn html_inline(inlines: &[Inline]) -> String {
     let mut out = String::new();
@@ -408,7 +556,7 @@ pub fn html(page: &Page, site_title: &str, nav: &[NavItem]) -> String {
                 out.push_str("</ul>\n");
             }
             Block::Diagram { svg, .. } => {
-                let _ = writeln!(out, "<div class=\"diagram\">{svg}</div>");
+                let _ = writeln!(out, "<div class=\"diagram\">{}</div>", fit(svg));
             }
         }
     }

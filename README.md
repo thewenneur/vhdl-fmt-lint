@@ -5,9 +5,9 @@ A fast, fully configurable VHDL formatter, linter and language server, in pure R
 - **Formatter**: every rule configurable, including column alignment of ports, generics,
   assignments, associations, declarations and comments. Idempotent and token-preserving.
 - **Linter**: syntactic and cross-file semantic rules, with autofixes.
-- **Documentation**: `vfl doc` generates HTML or Markdown documentation of the design from
-  its doc comments, with entity symbols, the instantiation tree, block diagrams wired by
-  signal and state machine diagrams; `vfl schema` draws one diagram as SVG, Mermaid or DOT.
+- **Documentation**: `vfl doc` generates HTML, Markdown or AsciiDoc documentation of the design
+  from its doc comments, with entity symbols, the instantiation tree, the top level and every
+  architecture as block diagrams wired by signal, port maps and state machine diagrams; `vfl schema` draws one diagram as SVG, Mermaid or DOT.
   See [examples/uart/doc](examples/uart/doc/index.md) for an example.
 - **Language server**: diagnostics, formatting, navigation and refactoring in any LSP editor.
 - **Code generation**: instantiations, component declarations and testbench skeletons from
@@ -106,8 +106,8 @@ vfl fmt [--check] ...  # format in place, or list the files that would change
 vfl fmt -              # format standard input to standard output
 vfl lint [--fix] ...   # lint, resolving names across the whole project
 vfl rules              # list lint rules and their levels
-vfl doc [-o dir]       # write HTML (or --format markdown) documentation with diagrams
-vfl schema block top   # draw a diagram: symbol, hierarchy, block or fsm (SVG, Mermaid, DOT)
+vfl doc [-o dir]       # write HTML (or --format markdown|asciidoc) documentation with diagrams
+vfl schema block top   # draw a diagram: symbol, hierarchy, block, port-map or fsm
 vfl new tb counter     # write counter_tb.vhd, a testbench for entity counter
 vfl new instance counter     # print an instantiation (also: component, component-instance)
 vfl lsp                # language server over stdio

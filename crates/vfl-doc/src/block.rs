@@ -636,3 +636,120 @@ pub fn block(
     }
     Some(c.finish(&format!("Block diagram of {}({})", e.name, a.name), 10.0))
 }
+
+/// The port map of one instance of an architecture: the block of the bound
+/// entity or component, with the actual of each port at the end of its pin
+/// and the generic map under the title. Ports of an unknown unit are drawn
+/// from the association list, as inputs.
+pub fn port_map(design: &Design, entity: usize, arch: usize, instance: usize) -> Option<String> {
+    let instance = design.entities[entity]
+        .architectures
+        .get(arch)?
+        .instances
+        .get(instance)?;
+    let (target, ports) = ports_of(design, entity, arch, instance);
+    let mut ports: Vec<Interface> = ports.map(<[Interface]>::to_vec).unwrap_or_default();
+    let known = !ports.is_empty();
+    let mut actuals: Vec<Option<String>> = vec![None; ports.len()];
+    for (k, (formal, actual)) in instance.port_map.iter().enumerate() {
+        let index = if formal.is_empty() {
+            (k < ports.len()).then_some(k)
+        } else {
+            let key = base(formal).map(|(k, _)| k);
+            ports
+                .iter()
+                .position(|p| Some(identifier_key(&p.name)) == key)
+        };
+        let actual = compact_actual(actual);
+        match index {
+            // `slice(0) => a, slice(1) => b`: one pin with every actual.
+            Some(i)
+                if known
+                    && !formal.is_empty()
+                    && base(formal).is_some_and(|(_, s)| s != formal.trim()) =>
+            {
+                let part = format!("{} => {actual}", formal.trim());
+                actuals[i] = Some(match actuals[i].take() {
+                    Some(before) => format!("{before}, {part}"),
+                    None => part,
+                });
+            }
+            Some(i) => actuals[i] = Some(actual),
+            None => {
+                ports.push(Interface {
+                    name: if formal.is_empty() {
+                        format!("#{}", k + 1)
+                    } else {
+                        formal.trim().to_owned()
+                    },
+                    mode: String::new(),
+                    ty: String::new(),
+                    default: None,
+                    description: String::new(),
+                });
+                actuals.push(Some(actual));
+            }
+        }
+    }
+    // Generics: the mapped ones as associated, the others with their
+    // default, muted.
+    let generics: &[Interface] = match target {
+        Some(t) => &design.entities[t].generics,
+        None => &[],
+    };
+    let mut generic_lines: Vec<(String, bool)> = Vec::new();
+    let mut mapped = vec![false; generics.len()];
+    for (k, (formal, actual)) in instance.generic_map.iter().enumerate() {
+        let index = if formal.is_empty() {
+            (k < generics.len()).then_some(k)
+        } else {
+            generics
+                .iter()
+                .position(|g| identifier_key(&g.name) == identifier_key(formal.trim()))
+        };
+        let name = match index {
+            Some(i) => {
+                mapped[i] = true;
+                generics[i].name.clone()
+            }
+            None if formal.is_empty() => format!("#{}", k + 1),
+            None => formal.trim().to_owned(),
+        };
+        generic_lines.push((format!("{name} => {}", compact_actual(actual)), false));
+    }
+    for (g, _) in generics.iter().zip(&mapped).filter(|(_, m)| !**m) {
+        if let Some(default) = &g.default {
+            generic_lines.push((format!("{} := {default}", g.name), true));
+        }
+    }
+    let actual_of_port = |port: &Interface| {
+        let i = ports.iter().position(|p| std::ptr::eq(p, port))?;
+        Some(match &actuals[i] {
+            Some(a) if !a.eq_ignore_ascii_case("open") => (a.clone(), false),
+            Some(_) => ("open".to_owned(), true),
+            // An unassociated input takes its default, an output is open.
+            None => match &port.default {
+                Some(d) if port.direction() == Direction::In => (format!("default {d}"), true),
+                _ => ("open".to_owned(), true),
+            },
+        })
+    };
+    let title = instance.path();
+    let subtitle = match &instance.architecture {
+        Some(a) => format!("{}({a})", instance.unit),
+        None => instance.unit.clone(),
+    };
+    let canvas = crate::svg::draw_symbol(
+        &title,
+        Some(&subtitle),
+        &generic_lines,
+        &ports,
+        &actual_of_port,
+    );
+    Some(canvas.finish(&format!("{title} : {subtitle}"), 8.0))
+}
+
+/// An actual on one line, with runs of white space collapsed.
+fn compact_actual(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
