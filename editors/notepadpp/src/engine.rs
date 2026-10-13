@@ -9,11 +9,15 @@
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use vfl_config::{Config, Level};
 use vfl_fmt::FormatError;
 use vfl_lsp::World;
-use vfl_lsp::editor::{self, Completions, HoverInfo, SignatureHelp};
+use vfl_lsp::editor::{
+    self, Completion, Completions, FileEdits, HoverInfo, Location, ProjectSymbol, QuickFix,
+    SignatureHelp, Symbol, Use,
+};
 use vfl_project::{Encoding, find_root};
 
 /// How bad a problem is.
@@ -69,7 +73,49 @@ pub struct Engine {
     untitled: Option<World>,
     /// Effective configs, by directory.
     configs: HashMap<PathBuf, Config>,
+    /// When each file a project reads was last modified, by root
+    /// directory, to notice changes made outside the editor.
+    stamps: HashMap<PathBuf, Stamps>,
 }
+
+#[derive(Default)]
+struct Stamps {
+    sources: HashMap<PathBuf, SystemTime>,
+    /// Configuration and other tools' project files.
+    settings: HashMap<PathBuf, SystemTime>,
+}
+
+impl Stamps {
+    /// The modification times of the files `world`'s project reads.
+    fn of(world: &World) -> Option<Stamps> {
+        let (sources, tool_files) =
+            vfl_project::collect(&world.root.dir, &world.project.config.project).ok()?;
+        let stamp = |paths: Vec<PathBuf>| -> HashMap<PathBuf, SystemTime> {
+            paths
+                .into_iter()
+                .filter_map(|p| {
+                    let modified = std::fs::metadata(&p).and_then(|m| m.modified()).ok()?;
+                    Some((p, modified))
+                })
+                .collect()
+        };
+        let settings: Vec<PathBuf> = std::fs::read_dir(&world.root.dir)
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| is_project_file(p))
+            .chain(tool_files)
+            .collect();
+        Some(Stamps {
+            sources: stamp(sources),
+            settings: stamp(settings),
+        })
+    }
+}
+
+/// How many changed sources are re-read one by one before reloading the
+/// whole project is cheaper.
+const MAX_REREADS: usize = 16;
 
 /// The name unsaved buffers are analyzed under.
 const UNTITLED: &str = "untitled.vhd";
@@ -162,16 +208,164 @@ impl Engine {
         editor::completion(world, &file_path, offset)
     }
 
+    /// Where what is named at byte `offset` is declared.
+    pub fn definition(&mut self, path: Option<&Path>, text: &str, offset: usize) -> Vec<Location> {
+        let (world, file_path) = self.sync(path, text);
+        editor::definition(world, &file_path, offset)
+    }
+
+    /// Every place in the project that names what is named at `offset`.
+    pub fn references(&mut self, path: Option<&Path>, text: &str, offset: usize) -> Vec<Location> {
+        let (world, file_path) = self.sync(path, text);
+        editor::references(world, &file_path, offset)
+    }
+
+    /// The places in this buffer that name what is named at `offset`.
+    pub fn highlights(
+        &mut self,
+        path: Option<&Path>,
+        text: &str,
+        offset: usize,
+    ) -> Vec<(Range<usize>, Use)> {
+        let (world, file_path) = self.sync(path, text);
+        editor::highlights(world, &file_path, offset)
+    }
+
+    /// The buffer's declarations, nested.
+    pub fn outline(&mut self, path: Option<&Path>, text: &str) -> Vec<Symbol> {
+        let (world, file_path) = self.sync(path, text);
+        editor::outline(world, &file_path)
+    }
+
+    /// The declarations in the buffer's project whose name contains
+    /// `query`.
+    pub fn project_symbols(
+        &mut self,
+        path: Option<&Path>,
+        text: &str,
+        query: &str,
+    ) -> Vec<ProjectSymbol> {
+        let (world, _) = self.sync(path, text);
+        editor::project_symbols(world, query)
+    }
+
+    /// The name a rename at `offset` would change, or why it cannot.
+    pub fn prepare_rename(
+        &mut self,
+        path: Option<&Path>,
+        text: &str,
+        offset: usize,
+    ) -> Result<Range<usize>, String> {
+        let (world, file_path) = self.sync(path, text);
+        editor::prepare_rename(world, &file_path, offset)
+    }
+
+    /// The edits renaming what is named at `offset`, by file.
+    pub fn rename(
+        &mut self,
+        path: Option<&Path>,
+        text: &str,
+        offset: usize,
+        new_name: &str,
+    ) -> Result<Vec<FileEdits>, String> {
+        let (world, file_path) = self.sync(path, text);
+        let mut edits = editor::rename(world, &file_path, offset, new_name)?;
+        if path.is_none_or(|p| !p.is_absolute()) {
+            // Unsaved buffers are analyzed under a made-up name.
+            edits.retain(|e| e.path == file_path);
+        }
+        Ok(edits)
+    }
+
+    /// The fixes of the problems touching bytes `start..end`.
+    pub fn quick_fixes(
+        &mut self,
+        path: Option<&Path>,
+        text: &str,
+        start: usize,
+        end: usize,
+    ) -> Vec<QuickFix> {
+        let (world, file_path) = self.sync(path, text);
+        editor::quick_fixes(world, &file_path, start, end)
+    }
+
+    /// The buffer's text with every safe fix applied, and how many were.
+    pub fn fix_all(&mut self, path: Option<&Path>, text: &str) -> Option<(String, usize)> {
+        let (world, file_path) = self.sync(path, text);
+        editor::fix_all(world, &file_path)
+    }
+
+    /// Sets the text of a buffer without asking anything about it.
+    pub fn update(&mut self, path: Option<&Path>, text: &str) {
+        self.sync(path, text);
+    }
+
+    /// Re-reads what changed on disk since the last call in the projects
+    /// loaded so far: sources added, changed or deleted outside the editor,
+    /// and settings files. Returns whether anything did.
+    pub fn rescan(&mut self) -> bool {
+        let mut changed = false;
+        for (root, world) in &mut self.worlds {
+            let Some(now) = Stamps::of(world) else {
+                continue;
+            };
+            let Some(before) = self.stamps.insert(root.clone(), now) else {
+                continue;
+            };
+            let now = &self.stamps[root];
+            if before.settings != now.settings {
+                world.reload();
+                changed = true;
+                continue;
+            }
+            let mut differ: Vec<&PathBuf> = now
+                .sources
+                .iter()
+                .filter(|(p, t)| before.sources.get(*p) != Some(t))
+                .map(|(p, _)| p)
+                .collect();
+            differ.extend(
+                before
+                    .sources
+                    .keys()
+                    .filter(|p| !now.sources.contains_key(*p)),
+            );
+            if differ.len() > MAX_REREADS {
+                world.reload();
+            } else {
+                for path in &differ {
+                    world.reread(path);
+                }
+            }
+            changed |= !differ.is_empty();
+        }
+        if changed {
+            self.configs.clear();
+        }
+        changed
+    }
+
+    /// The text the engine analyzes for the file at `path`, if it has
+    /// loaded it: the buffer's last text, or the file on disk.
+    pub fn analyzed_text(&self, path: &Path) -> Option<&str> {
+        let world = self.worlds.get(&find_root(path).dir)?;
+        let index = world.project.file_index(path)?;
+        Some(&world.project.files[index].text)
+    }
+
     /// The world a buffer belongs to, with the buffer's text in place of
     /// the file on disk, and the path it is analyzed under.
     fn sync(&mut self, path: Option<&Path>, text: &str) -> (&mut World, PathBuf) {
         let (world, file_path) = match path.filter(|p| p.is_absolute()) {
             Some(path) => {
                 let root = find_root(path);
-                let world = self
-                    .worlds
-                    .entry(root.dir.clone())
-                    .or_insert_with(|| World::new(&root.dir));
+                let world = self.worlds.entry(root.dir.clone()).or_insert_with(|| {
+                    let world = World::new(&root.dir);
+                    if let Some(stamps) = Stamps::of(&world) {
+                        self.stamps.insert(root.dir.clone(), stamps);
+                    }
+                    world
+                });
                 (world, path.to_owned())
             }
             None => (
@@ -201,6 +395,7 @@ impl Engine {
         self.worlds.clear();
         self.untitled = None;
         self.configs.clear();
+        self.stamps.clear();
     }
 
     fn config(&mut self, path: Option<&Path>) -> &Config {
@@ -270,19 +465,24 @@ pub fn signature_tip(help: &SignatureHelp) -> (String, Option<Range<usize>>) {
     (text, highlight)
 }
 
-/// Completion labels for Scintilla's list: unique ignoring case, without
-/// labels that cannot be typed as they are.
-pub fn completion_labels(completions: &Completions) -> Vec<&str> {
+/// Completions for Scintilla's list: unique labels ignoring case, sorted,
+/// without labels that cannot be typed as they are.
+pub fn completion_list(completions: &Completions) -> Vec<&Completion> {
     let mut seen = std::collections::HashSet::new();
-    let mut labels: Vec<&str> = completions
+    let mut items: Vec<&Completion> = completions
         .items
         .iter()
-        .map(|c| c.label.as_str())
-        .filter(|l| !l.is_empty() && !l.contains(['\n', '\0']))
-        .filter(|l| seen.insert(l.to_ascii_lowercase()))
+        .filter(|c| !c.label.is_empty() && !c.label.contains(['\n', '\0', '\x1e']))
+        .filter(|c| seen.insert(c.label.to_ascii_lowercase()))
         .collect();
-    labels.sort_by_key(|l| l.to_ascii_lowercase());
-    labels
+    items.sort_by_key(|c| c.label.to_ascii_lowercase());
+    items
+}
+
+/// Whether `path` is a copy of a bundled library source (`ieee`, `std`)
+/// that go to definition wrote for the editor to open.
+pub fn is_library_copy(path: &Path) -> bool {
+    path.starts_with(std::env::temp_dir().join(format!("vfl-{}", env!("CARGO_PKG_VERSION"))))
 }
 
 /// Whether typing `.` just before byte `offset` should offer completions:
@@ -610,12 +810,19 @@ end architecture;
         let offset = at(&text, "r.co") + 4;
         let completions = engine.completion(None, &text, offset).expect("completions");
         assert_eq!(&text[completions.start..offset], "co");
-        assert_eq!(completion_labels(&completions), ["count", "valid"]);
+        let labels: Vec<&str> = completion_list(&completions)
+            .iter()
+            .map(|c| c.label.as_str())
+            .collect();
+        assert_eq!(labels, ["count", "valid"]);
 
         // Elsewhere: what is visible, and keywords.
         let offset = at(TYPES, "n <=");
         let completions = engine.completion(None, TYPES, offset).unwrap();
-        let labels = completion_labels(&completions);
+        let labels: Vec<&str> = completion_list(&completions)
+            .iter()
+            .map(|c| c.label.as_str())
+            .collect();
         for label in ["scale", "r", "rec", "process", "integer"] {
             assert!(labels.contains(&label), "{label} missing");
         }
@@ -633,6 +840,151 @@ end architecture;
         assert!(!ok("x <= ."));
         assert!(ok("x <= '1' when r."));
         assert!(ok("x <= a'length + r."));
+    }
+
+    /// A project with a package and a top level using it.
+    fn project() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::write(root.join("vfl.toml"), "").unwrap();
+        let pkg = root.join("pkg.vhd");
+        std::fs::write(
+            &pkg,
+            "package pkg is\n  constant width : integer := 8;\nend package;\n",
+        )
+        .unwrap();
+        let top = root.join("top.vhd");
+        std::fs::write(&top, TOP).unwrap();
+        (dir, pkg, top)
+    }
+
+    const TOP: &str = "\
+use work.pkg.all;
+entity top is
+end entity;
+architecture a of top is
+  signal n : integer;
+  signal m : integer;
+begin
+  n <= width;
+  m <= n + width;
+end architecture;
+";
+
+    #[test]
+    fn goes_to_definitions_and_references() {
+        let (_dir, pkg, top) = project();
+        let mut engine = Engine::default();
+        let found = engine.definition(Some(&top), TOP, at(TOP, "width;"));
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].path, pkg);
+        assert_eq!(found[0].line, 2);
+        assert_eq!(found[0].line_text, "constant width : integer := 8;");
+
+        let refs = engine.references(Some(&top), TOP, at(TOP, "width;"));
+        let places: Vec<(&Path, u32)> = refs.iter().map(|l| (l.path.as_path(), l.line)).collect();
+        assert_eq!(
+            places,
+            [(pkg.as_path(), 2), (top.as_path(), 8), (top.as_path(), 9)]
+        );
+
+        // `n` is written on line 8 and read on line 9.
+        let uses = engine.highlights(Some(&top), TOP, at(TOP, "n <="));
+        let kinds: Vec<Use> = uses.iter().map(|(_, u)| *u).collect();
+        assert_eq!(kinds, [Use::Other, Use::Write, Use::Read]);
+        assert!(uses.iter().all(|(r, _)| &TOP[r.clone()] == "n"));
+    }
+
+    #[test]
+    fn lists_symbols() {
+        let (_dir, _pkg, top) = project();
+        let mut engine = Engine::default();
+        let outline: Vec<(String, usize)> = engine
+            .outline(Some(&top), TOP)
+            .into_iter()
+            .map(|s| (s.name, s.depth))
+            .collect();
+        assert_eq!(
+            outline,
+            [
+                ("top".to_owned(), 0),
+                ("a".to_owned(), 0),
+                ("n".to_owned(), 1),
+                ("m".to_owned(), 1)
+            ]
+        );
+        let found = engine.project_symbols(Some(&top), TOP, "WID");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].name, "width");
+        assert_eq!(found[0].container.as_deref(), Some("pkg"));
+    }
+
+    #[test]
+    fn renames_across_files() {
+        let (_dir, pkg, top) = project();
+        let mut engine = Engine::default();
+        let offset = at(TOP, "width;");
+        assert_eq!(
+            engine.prepare_rename(Some(&top), TOP, offset),
+            Ok(offset..offset + 5)
+        );
+        let edits = engine.rename(Some(&top), TOP, offset, "bits").unwrap();
+        let files: Vec<(&Path, usize)> = edits
+            .iter()
+            .map(|e| (e.path.as_path(), e.edits.len()))
+            .collect();
+        assert_eq!(files, [(pkg.as_path(), 1), (top.as_path(), 2)]);
+        assert!(engine.rename(Some(&top), TOP, offset, "2bits").is_err());
+        assert!(
+            engine
+                .prepare_rename(Some(&top), TOP, at(TOP, "integer"))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn fixes_problems() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::write(
+            root.join("vfl.toml"),
+            "[lint.rules]\n\"style/trailing-whitespace\" = \"warn\"\n",
+        )
+        .unwrap();
+        let path = root.join("e.vhd");
+        let text = "entity e is   \nend entity;\n";
+        std::fs::write(&path, text).unwrap();
+        let mut engine = Engine::default();
+        let fixes = engine.quick_fixes(Some(&path), text, 11, 11);
+        assert_eq!(fixes.len(), 1, "{fixes:?}");
+        assert_eq!(fixes[0].title, "Remove trailing whitespace");
+        assert_eq!(fixes[0].edits, [(11..14, String::new())]);
+        let (fixed, count) = engine.fix_all(Some(&path), text).expect("a fix");
+        assert_eq!((fixed.as_str(), count), ("entity e is\nend entity;\n", 1));
+        assert!(engine.fix_all(Some(&path), &fixed).is_none());
+    }
+
+    #[test]
+    fn notices_changes_on_disk() {
+        let (_dir, pkg, top) = project();
+        let mut engine = Engine::default();
+        let unresolved = |e: &mut Engine| {
+            e.lint(Some(&top), TOP)
+                .findings
+                .iter()
+                .any(|f| f.message.contains("`width`"))
+        };
+        assert!(!unresolved(&mut engine));
+        assert!(!engine.rescan());
+        // Make sure the modification time moves on coarse file systems.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::fs::write(&pkg, "package pkg is\nend package;\n").unwrap();
+        assert!(engine.rescan());
+        assert!(unresolved(&mut engine));
+        assert_eq!(
+            engine.analyzed_text(&pkg),
+            Some("package pkg is\nend package;\n")
+        );
     }
 
     #[test]

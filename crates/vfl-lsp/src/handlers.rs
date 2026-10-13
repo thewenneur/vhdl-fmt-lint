@@ -144,10 +144,10 @@ fn formatting(world: &mut World, params: DocumentFormattingParams) -> Option<Vec
 }
 
 /// What is at a position: a reference's targets, or a declaration's name.
-struct Hit {
-    range: TextRange,
-    targets: Vec<DeclId>,
-    library: Option<String>,
+pub(crate) struct Hit {
+    pub range: TextRange,
+    pub targets: Vec<DeclId>,
+    pub library: Option<String>,
 }
 
 fn hit(world: &World, position: &TextDocumentPositionParams) -> Option<(FileId, Hit)> {
@@ -156,7 +156,7 @@ fn hit(world: &World, position: &TextDocumentPositionParams) -> Option<(FileId, 
     Some((file, hit_at(world, file, offset)?))
 }
 
-fn hit_at(world: &World, file: FileId, offset: TextSize) -> Option<Hit> {
+pub(crate) fn hit_at(world: &World, file: FileId, offset: TextSize) -> Option<Hit> {
     let contains = |r: TextRange| r.start() <= offset && offset <= r.end();
     for (f, reference) in world.analysis.references() {
         if f == file && contains(reference.range) {
@@ -190,16 +190,22 @@ fn hit_at(world: &World, file: FileId, offset: TextSize) -> Option<Hit> {
 /// Where a declaration is, writing bundled library sources to a cache
 /// directory so editors can open them.
 fn location(world: &World, decl: &Decl) -> Option<Location> {
-    let file = &world.analysis.files()[decl.file as usize];
-    let path = if file.builtin {
-        bundled_path(&file.path, &file.text)?
-    } else {
-        file.path.clone()
-    };
+    let path = openable_path(world, decl.file)?;
     Some(Location {
         uri: uri(&path)?,
         range: world.doc(decl.file).range(decl.range),
     })
+}
+
+/// A path an editor can open for `file`: bundled library sources are
+/// written to a cache directory first.
+pub(crate) fn openable_path(world: &World, file: FileId) -> Option<PathBuf> {
+    let file = &world.analysis.files()[file as usize];
+    if file.builtin {
+        bundled_path(&file.path, &file.text)
+    } else {
+        Some(file.path.clone())
+    }
 }
 
 fn bundled_path(path: &Path, text: &str) -> Option<PathBuf> {
@@ -227,7 +233,7 @@ fn definition(world: &mut World, params: GotoDefinitionParams) -> Option<GotoDef
 
 /// Every place that names one of `targets`: declarations and references,
 /// once each.
-fn occurrences(
+pub(crate) fn occurrences(
     world: &World,
     targets: &[DeclId],
     declarations: bool,
@@ -447,35 +453,7 @@ fn document_symbols(
 ) -> Option<DocumentSymbolResponse> {
     let file = file_of(world, &params.text_document.uri)?;
     let doc = world.doc(file);
-    let decls = file_decls(world, file);
-    let ids: HashMap<DeclId, usize> = decls
-        .iter()
-        .enumerate()
-        .map(|(i, (id, _))| (*id, i))
-        .collect();
-    let mut children: Vec<Vec<usize>> = vec![Vec::new(); decls.len()];
-    let mut roots = Vec::new();
-    for (i, (_, decl)) in decls.iter().enumerate() {
-        if symbol_kind(decl.kind).is_none() {
-            continue;
-        }
-        // Attach to the nearest listed ancestor.
-        let mut parent = decl.parent;
-        let mut attached = false;
-        while let Some(p) = parent {
-            if let Some(&j) = ids.get(&p)
-                && symbol_kind(decls[j].1.kind).is_some()
-            {
-                children[j].push(i);
-                attached = true;
-                break;
-            }
-            parent = world.analysis.decl(p).and_then(|d| d.parent);
-        }
-        if !attached {
-            roots.push(i);
-        }
-    }
+    let (decls, roots, children) = outline(world, file);
     fn build(
         i: usize,
         decls: &[(DeclId, &Decl)],
@@ -511,12 +489,76 @@ fn document_symbols(
     ))
 }
 
+/// A file's outline: its listed declarations, the indexes of the top-level
+/// ones, and the children of each.
+#[allow(clippy::type_complexity)]
+pub(crate) fn outline(
+    world: &World,
+    file: FileId,
+) -> (Vec<(DeclId, &Decl)>, Vec<usize>, Vec<Vec<usize>>) {
+    let decls = file_decls(world, file);
+    let ids: HashMap<DeclId, usize> = decls
+        .iter()
+        .enumerate()
+        .map(|(i, (id, _))| (*id, i))
+        .collect();
+    let mut children: Vec<Vec<usize>> = vec![Vec::new(); decls.len()];
+    let mut roots = Vec::new();
+    for (i, (_, decl)) in decls.iter().enumerate() {
+        if symbol_kind(decl.kind).is_none() {
+            continue;
+        }
+        // Attach to the nearest listed ancestor.
+        let mut parent = decl.parent;
+        let mut attached = false;
+        while let Some(p) = parent {
+            if let Some(&j) = ids.get(&p)
+                && symbol_kind(decls[j].1.kind).is_some()
+            {
+                children[j].push(i);
+                attached = true;
+                break;
+            }
+            parent = world.analysis.decl(p).and_then(|d| d.parent);
+        }
+        if !attached {
+            roots.push(i);
+        }
+    }
+    (decls, roots, children)
+}
+
 #[allow(deprecated)]
 fn workspace_symbols(
     world: &mut World,
     params: WorkspaceSymbolParams,
 ) -> Option<WorkspaceSymbolResponse> {
-    let query = params.query.to_ascii_lowercase();
+    let mut out = Vec::new();
+    for id in workspace_decls(world, &params.query) {
+        let Some(decl) = world.analysis.decl(id) else {
+            continue;
+        };
+        let Some(location) = location(world, decl) else {
+            continue;
+        };
+        let container =
+            (id.index != 0).then(|| world.analysis.unit_decls(id.unit)[0].spelling.clone());
+        out.push(SymbolInformation {
+            name: decl.spelling.clone(),
+            kind: symbol_kind(decl.kind).unwrap_or(SymbolKind::NULL),
+            tags: None,
+            deprecated: None,
+            location,
+            container_name: container,
+        });
+    }
+    Some(WorkspaceSymbolResponse::Flat(out))
+}
+
+/// The project's design units, types, subprograms and package objects
+/// whose name contains `query`, ignoring case; 1000 at most.
+pub(crate) fn workspace_decls(world: &World, query: &str) -> Vec<DeclId> {
+    let query = query.to_ascii_lowercase();
     let mut out = Vec::new();
     let user_files = world.analysis.user_files().len() as FileId;
     for file in 0..user_files {
@@ -542,25 +584,13 @@ fn workspace_symbols(
             if !listed || !decl.name.contains(&query) {
                 continue;
             }
-            let Some(location) = location(world, decl) else {
-                continue;
-            };
-            let container =
-                (id.index != 0).then(|| world.analysis.unit_decls(id.unit)[0].spelling.clone());
-            out.push(SymbolInformation {
-                name: decl.spelling.clone(),
-                kind: symbol_kind(decl.kind).unwrap_or(SymbolKind::NULL),
-                tags: None,
-                deprecated: None,
-                location,
-                container_name: container,
-            });
+            out.push(id);
             if out.len() >= 1000 {
-                return Some(WorkspaceSymbolResponse::Flat(out));
+                return out;
             }
         }
     }
-    Some(WorkspaceSymbolResponse::Flat(out))
+    out
 }
 
 /// The declarations a rename at `position` would change, if it may.
@@ -568,7 +598,18 @@ fn rename_targets(
     world: &World,
     position: &TextDocumentPositionParams,
 ) -> Result<(FileId, Hit), String> {
-    let Some((file, hit)) = hit(world, position) else {
+    let file = file_of(world, &position.text_document.uri).ok_or("nothing to rename here")?;
+    let offset = world.doc(file).offset(position.position);
+    Ok((file, rename_targets_at(world, file, offset)?))
+}
+
+/// The name a rename at `offset` would change, if it may.
+pub(crate) fn rename_targets_at(
+    world: &World,
+    file: FileId,
+    offset: TextSize,
+) -> Result<Hit, String> {
+    let Some(hit) = hit_at(world, file, offset) else {
         return Err("nothing to rename here".into());
     };
     if hit.targets.is_empty() {
@@ -586,7 +627,12 @@ fn rename_targets(
             return Err("operators and character literals cannot be renamed".into());
         }
     }
-    Ok((file, hit))
+    // Selected names (`work.pkg.x`) cover more than the identifier.
+    let doc = world.doc(file);
+    if doc.text[std::ops::Range::<usize>::from(hit.range)].contains('.') {
+        return Err("rename the name where it is declared or used alone".into());
+    }
+    Ok(hit)
 }
 
 fn prepare_rename(
@@ -594,20 +640,34 @@ fn prepare_rename(
     params: TextDocumentPositionParams,
 ) -> Option<PrepareRenameResponse> {
     let (file, hit) = rename_targets(world, &params).ok()?;
-    let doc = world.doc(file);
-    // Selected names (`work.pkg.x`) cover more than the identifier.
-    let range = if hit.range.len() > TextSize::from(0)
-        && doc.text[std::ops::Range::<usize>::from(hit.range)].contains('.')
-    {
-        return None;
-    } else {
-        hit.range
-    };
-    Some(PrepareRenameResponse::Range(doc.range(range)))
+    Some(PrepareRenameResponse::Range(
+        world.doc(file).range(hit.range),
+    ))
 }
 
 fn rename(world: &mut World, params: RenameParams) -> Result<Option<WorkspaceEdit>, Error> {
     let new_name = params.new_name.trim();
+    check_identifier(new_name).map_err(Error::Failed)?;
+    let (_, hit) = rename_targets(world, &params.text_document_position).map_err(Error::Failed)?;
+    let mut changes: HashMap<Url, Vec<TextEdit>> = HashMap::new();
+    for (file, range) in rename_ranges(world, &hit.targets) {
+        let Some(uri) = uri(&world.analysis.files()[file as usize].path) else {
+            continue;
+        };
+        changes.entry(uri).or_default().push(TextEdit {
+            range: world.doc(file).range(range),
+            new_text: new_name.to_owned(),
+        });
+    }
+    Ok(Some(WorkspaceEdit {
+        changes: Some(changes),
+        ..Default::default()
+    }))
+}
+
+/// Whether `name` is a VHDL identifier, basic or extended.
+pub(crate) fn check_identifier(name: &str) -> Result<(), String> {
+    let new_name = name;
     let valid = if new_name.starts_with('\\') {
         new_name.len() > 2 && new_name.ends_with('\\')
     } else {
@@ -621,32 +681,25 @@ fn rename(world: &mut World, params: RenameParams) -> Result<Option<WorkspaceEdi
             && !new_name.contains("__")
             && !new_name.ends_with('_')
     };
-    if !valid {
-        return Err(Error::Failed(format!(
-            "`{new_name}` is not a VHDL identifier"
-        )));
+    if valid {
+        Ok(())
+    } else {
+        Err(format!("`{new_name}` is not a VHDL identifier"))
     }
-    let (_, hit) = rename_targets(world, &params.text_document_position).map_err(Error::Failed)?;
-    let mut changes: HashMap<Url, Vec<TextEdit>> = HashMap::new();
-    for (file, range, _) in occurrences(world, &hit.targets, true) {
-        let analyzed = &world.analysis.files()[file as usize];
-        let doc = world.doc(file);
-        let text = &doc.text[std::ops::Range::<usize>::from(range)];
-        // A reference may be a selected name: replace its last part.
-        let start = text.rfind('.').map_or(0, |i| i + 1);
-        let range = TextRange::new(range.start() + TextSize::from(start as u32), range.end());
-        let Some(uri) = uri(&analyzed.path) else {
-            continue;
-        };
-        changes.entry(uri).or_default().push(TextEdit {
-            range: doc.range(range),
-            new_text: new_name.to_owned(),
-        });
-    }
-    Ok(Some(WorkspaceEdit {
-        changes: Some(changes),
-        ..Default::default()
-    }))
+}
+
+/// What renaming `targets` replaces: each name, or the last part of a
+/// selected name.
+pub(crate) fn rename_ranges(world: &World, targets: &[DeclId]) -> Vec<(FileId, TextRange)> {
+    occurrences(world, targets, true)
+        .into_iter()
+        .map(|(file, range, _)| {
+            let text = &world.doc(file).text[std::ops::Range::<usize>::from(range)];
+            let start = text.rfind('.').map_or(0, |i| i + 1);
+            let range = TextRange::new(range.start() + TextSize::from(start as u32), range.end());
+            (file, range)
+        })
+        .collect()
 }
 
 const KEYWORDS: &[&str] = &[
@@ -1057,15 +1110,7 @@ fn code_actions(world: &mut World, params: CodeActionParams) -> Option<Vec<CodeA
             .filter(|f| f.safe)
             .collect();
         if !fixes.is_empty() {
-            // Edits must not overlap: keep the ones `apply_fixes` keeps.
-            let mut kept: Vec<&vfl_lint::Fix> = Vec::new();
-            for fix in fixes {
-                let mut trial = kept.clone();
-                trial.push(fix);
-                if vfl_lint::apply_fixes(doc.text, trial.iter().copied()).1 == trial.len() {
-                    kept.push(fix);
-                }
-            }
+            let kept = compatible_fixes(doc.text, fixes);
             out.push(CodeActionOrCommand::CodeAction(CodeAction {
                 title: "Fix all safe vfl problems".into(),
                 kind: Some(fix_all),
@@ -1075,4 +1120,21 @@ fn code_actions(world: &mut World, params: CodeActionParams) -> Option<Vec<CodeA
         }
     }
     Some(out)
+}
+
+/// The fixes that can be applied together, in order: edits must not
+/// overlap, so keep the ones `apply_fixes` keeps.
+pub(crate) fn compatible_fixes<'a>(
+    text: &str,
+    fixes: impl IntoIterator<Item = &'a vfl_lint::Fix>,
+) -> Vec<&'a vfl_lint::Fix> {
+    let mut kept: Vec<&vfl_lint::Fix> = Vec::new();
+    for fix in fixes {
+        let mut trial = kept.clone();
+        trial.push(fix);
+        if vfl_lint::apply_fixes(text, trial.iter().copied()).1 == trial.len() {
+            kept.push(fix);
+        }
+    }
+    kept
 }
