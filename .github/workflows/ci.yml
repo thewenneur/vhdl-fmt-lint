@@ -44,6 +44,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
 
+  notepadpp:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy -p vfl-npp --all-targets
+      - run: cargo build --release -p vfl-npp
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vfl_npp
+          path: target/release/vfl_npp.dll
+
   msrv:
     runs-on: ubuntu-latest
     steps:

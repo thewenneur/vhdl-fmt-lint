@@ -1,0 +1,31 @@
+[package]
+name = "vfl-npp"
+description = "Notepad++ plugin that formats and lints VHDL with vfl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+# Notepad++ loads `plugins\vfl_npp\vfl_npp.dll`.
+name = "vfl_npp"
+crate-type = ["cdylib"]
+
+# The workspace forbids unsafe code; the Win32 glue needs it, so it is
+# denied here and allowed only in the modules that call Windows.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[dependencies]
+vfl-config.workspace = true
+vfl-fmt.workspace = true
+vfl-lint.workspace = true
+vfl-project.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

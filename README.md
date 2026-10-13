@@ -37,6 +37,12 @@ vfl rules              # list lint rules and their levels
 vfl lsp                # language server over stdio
 ```
 
+## Editors
+
+- **Notepad++**: a native plugin that lints as you type and formats; see
+  [editors/notepadpp](editors/notepadpp/README.md).
+- Any editor with LSP support: run `vfl lsp`.
+
 ## Configuration
 
 Optional. Put a `vfl.toml` at the project root; nested `vfl.toml` files override only the
@@ -81,6 +87,7 @@ statement with `-- vfl: skip`.
 | `vfl-lint`    | Linter |
 | `vfl-lsp`     | Language server |
 | `vfl-cli`     | The `vfl` binary |
+| `vfl-npp`     | [Notepad++ plugin](editors/notepadpp/README.md) (`editors/notepadpp`) |
 
 ## AI usage disclosure
 
