@@ -13,6 +13,10 @@ each file like `vfl lint` does, so names resolve across files, and it reads the 
 
 ## Features
 
+Everything that needs the project runs in the background: opening the first file of a large
+project, linting, hovering or completing never freezes Notepad++. Results appear when they
+are ready, and are dropped if the file changed in the meantime.
+
 - **Lint as you type**: problems are underlined and their messages shown under the line,
   a moment after you stop typing, and when a VHDL file is opened, switched to or saved.
   Unsaved edits in the file count; other files are read from disk, and files changed
@@ -128,17 +132,27 @@ third-party LSP client this is a native plugin. It is written in Rust and links 
 crates directly:
 
 - `src/engine.rs` formats, lints and answers the editor queries for a buffer: hover,
-  parameters, completion, definitions, references, rename, symbols and fixes. It keeps each project it has seen loaded, as the language server does, with the
+  parameters, completion, definitions, references, rename, symbols and fixes. It keeps
+  each project it has seen loaded, as the language server does, with the
   buffer's unsaved text in place of the file on disk, and re-analyzes only the design units
   an edit can affect. The answers come from the language server's own code, through
   `vfl_lsp::editor`, so they match what VS Code shows. It is portable and unit-tested on
   every platform.
+- `src/worker.rs` runs the engine on a thread of its own, so Notepad++ never waits for a
+  project to load or a file to be analyzed. Each request carries a copy of the buffer;
+  a newer lint, hover or completion request replaces one still waiting, and an answer
+  computed for text that changed since is dropped. Only formatting runs on Notepad++'s
+  thread, because saving waits for it.
 - `src/plugin.rs` is the Notepad++ side: the exported plugin functions, the menu, showing
   problems with Scintilla indicators, annotations and call tips, and showing types,
   parameter hints and completion lists.
 - `src/tools.rs` is the navigation and refactoring side: lists of locations, symbols and
   fixes, jumps and the way back, rename across open files, and highlighting uses.
 - `src/win.rs` declares the few Win32, Scintilla and Notepad++ definitions it uses.
+
+To find what slows Notepad++ down, set the environment variable `VFL_NPP_TRACE` to a file
+path before starting it: each call into the plugin that keeps Notepad++ busy for more than
+0.2 ms is appended to that file with its duration in microseconds.
 
 Messages under lines use Scintilla annotations, which other plugins may also use; the plugin
 replaces the annotations of a VHDL file each time it lints it. Turn **Show messages under

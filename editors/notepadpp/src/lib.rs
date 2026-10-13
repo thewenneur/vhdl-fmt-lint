@@ -6,6 +6,7 @@
 
 pub mod engine;
 pub mod trace;
+pub mod worker;
 
 #[cfg(windows)]
 mod plugin;

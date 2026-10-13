@@ -3,17 +3,23 @@
 //! [`crate::tools`].
 //!
 //! Notepad++ calls the plugin on its UI thread only, so the state lives in
-//! a thread local.
+//! a thread local. Everything that analyzes a project runs on the
+//! [`Worker`]'s thread instead, so that Notepad++ never waits for it: the UI
+//! thread sends a copy of the buffer with each request, and the result comes
+//! back through a hidden window, to a continuation that first checks the
+//! buffer is still the one it was computed for.
 
 #![allow(unsafe_code)]
 
+use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::ptr;
+use std::sync::Arc;
 
 use vfl_lsp::editor::CompletionKind;
 use vfl_lsp::generate::Kind;
@@ -24,6 +30,7 @@ use crate::engine::{
 };
 use crate::tools;
 use crate::win::*;
+use crate::worker::{Key, Worker, panic_message};
 
 /// Menu entries, in order. `None` is a separator.
 const MENU: &[(&str, Option<extern "C" fn()>)] = &[
@@ -204,9 +211,29 @@ struct Problem {
     unused: bool,
 }
 
+type Continuation = Box<dyn FnOnce(Box<dyn Any + Send>)>;
+
 pub(crate) struct State {
     npp: Cell<NppData>,
-    pub(crate) engine: RefCell<Engine>,
+    /// Formats buffers on this thread, since saving waits for it. It only
+    /// reads configurations, never projects.
+    formatter: RefCell<Engine>,
+    /// Loads and analyzes projects, started on the first request.
+    worker: RefCell<Option<Worker>>,
+    /// What to do with the results still wanted, by job.
+    pending: RefCell<HashMap<u64, Continuation>>,
+    /// The latest job with each key, whose result replaces older ones'.
+    keyed: RefCell<HashMap<Key, u64>>,
+    /// The hidden window the worker wakes this thread through.
+    window: Cell<Hwnd>,
+    /// Counts edits to any buffer, to tell results computed for older text.
+    edits: Cell<u64>,
+    /// The buffer and position the mouse rests over.
+    dwell: Cell<Option<(usize, usize)>>,
+    /// Parameter hints were asked for and have not come back yet.
+    parameters_pending: Cell<bool>,
+    /// The name colors of the buffer in front.
+    names: RefCell<Option<Names>>,
     /// The problems of each linted buffer, by buffer id, sorted.
     problems: RefCell<HashMap<usize, Vec<Problem>>>,
     /// Buffers showing our messages under lines.
@@ -239,7 +266,15 @@ thread_local! {
             scintilla_main: ptr::null_mut(),
             scintilla_second: ptr::null_mut(),
         }),
-        engine: RefCell::default(),
+        formatter: RefCell::default(),
+        worker: RefCell::new(None),
+        pending: RefCell::default(),
+        keyed: RefCell::default(),
+        window: Cell::new(ptr::null_mut()),
+        edits: Cell::new(0),
+        dwell: Cell::new(None),
+        parameters_pending: Cell::new(false),
+        names: RefCell::new(None),
         problems: RefCell::default(),
         annotated: RefCell::default(),
         settings: Cell::default(),
@@ -282,18 +317,163 @@ pub(crate) fn guard_as<T: Default>(label: std::fmt::Arguments, f: impl FnOnce() 
     match result {
         Ok(value) => value,
         Err(payload) => {
-            let message = payload
-                .downcast_ref::<&str>()
-                .map(|s| s.to_string())
-                .or_else(|| payload.downcast_ref::<String>().cloned())
-                .unwrap_or_default();
-            message_box(
-                npp(),
-                &format!("vfl hit an internal error and skipped this action.\n\n{message}"),
-                MB_ICONWARNING,
-            );
+            internal_error(&panic_message(&*payload));
             T::default()
         }
+    }
+}
+
+fn internal_error(message: &str) {
+    message_box(
+        npp(),
+        &format!("vfl hit an internal error and skipped this action.\n\n{message}"),
+        MB_ICONWARNING,
+    );
+}
+
+// Work on the worker's thread.
+
+/// The message the worker posts when a result is ready.
+const WM_RESULT: u32 = WM_APP + 0x7F1;
+
+/// Runs `work` on the worker's thread, then `then` with its result on this
+/// one. A request with a key replaces the one with the same key still
+/// waiting or running: only the latest one's `then` runs.
+pub(crate) fn request<T: Send + 'static>(
+    key: Option<Key>,
+    work: impl FnOnce(&mut Engine) -> T + Send + 'static,
+    then: impl FnOnce(T) + 'static,
+) {
+    with(|s| {
+        let mut worker = s.worker.borrow_mut();
+        let worker = worker.get_or_insert_with(|| {
+            let window = s.window.get() as usize;
+            Worker::start(move || {
+                // SAFETY: posting to a window that lives as long as
+                // Notepad++; a failed post only loses a wake-up.
+                unsafe { PostMessageW(window as Hwnd, WM_RESULT, 0, 0) };
+            })
+        });
+        let seq = worker.submit(key, work);
+        let then: Continuation = Box::new(move |value| {
+            if let Ok(value) = value.downcast::<T>() {
+                then(*value);
+            }
+        });
+        let mut pending = s.pending.borrow_mut();
+        pending.insert(seq, then);
+        if let Some(key) = key
+            && let Some(old) = s.keyed.borrow_mut().insert(key, seq)
+        {
+            pending.remove(&old);
+        }
+    })
+}
+
+/// Runs `work` on the worker's thread, in order with the requests, for its
+/// effect alone.
+pub(crate) fn post(work: impl FnOnce(&mut Engine) + Send + 'static) {
+    request(None, work, |()| {});
+}
+
+unsafe extern "system" fn on_window_message(
+    hwnd: Hwnd,
+    msg: u32,
+    wparam: usize,
+    lparam: isize,
+) -> isize {
+    if msg == WM_RESULT {
+        guard_as(format_args!("results"), deliver_results);
+        return 0;
+    }
+    // SAFETY: the default handling of a message to our window.
+    unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+}
+
+/// Hands the finished jobs' results to their continuations.
+fn deliver_results() {
+    // A continuation can show a dialog, whose message loop delivers the
+    // next results: take one at a time, holding no borrow.
+    while let Some(done) = with(|s| s.worker.borrow().as_ref().and_then(Worker::result)) {
+        let Some(then) = with(|s| s.pending.borrow_mut().remove(&done.seq)) else {
+            continue;
+        };
+        match done.value {
+            Ok(value) => guard(move || then(value)),
+            Err(message) => {
+                // Typing must not ask again for hints that cannot come.
+                with(|s| s.parameters_pending.set(false));
+                internal_error(&message);
+            }
+        }
+    }
+}
+
+/// How many edits were made so far, to any buffer.
+pub(crate) fn edits() -> u64 {
+    with(|s| s.edits.get())
+}
+
+/// The current buffer, read for a request.
+pub(crate) struct Here {
+    pub(crate) sci: Hwnd,
+    pub(crate) id: usize,
+    pub(crate) path: Option<PathBuf>,
+    pub(crate) buffer: Arc<BufferText>,
+    /// The caret, as a Scintilla position.
+    pub(crate) position: usize,
+    /// [`edits`] when the buffer was read.
+    pub(crate) edits: u64,
+}
+
+pub(crate) fn here() -> Here {
+    let (sci, _) = current_scintilla();
+    let id = current_buffer();
+    Here {
+        sci,
+        id,
+        path: buffer_path(id),
+        buffer: Arc::new(read_buffer(sci)),
+        position: caret(sci),
+        edits: edits(),
+    }
+}
+
+impl Here {
+    /// The path to give the engine: `None` for unsaved buffers.
+    pub(crate) fn path(&self) -> Option<&Path> {
+        self.path.as_deref().filter(|p| p.is_absolute())
+    }
+
+    /// The caret, as a byte offset into the text.
+    pub(crate) fn offset(&self) -> usize {
+        self.buffer.offset(self.position)
+    }
+
+    /// Whether the buffer is still in front, unchanged.
+    pub(crate) fn is_current(&self) -> bool {
+        edits() == self.edits && current_buffer() == self.id
+    }
+
+    /// Asks the engine about this buffer at the caret on the worker's
+    /// thread, then runs `then` with this and the answer here.
+    pub(crate) fn ask<T: Send + 'static>(
+        self,
+        key: Key,
+        work: impl FnOnce(&mut Engine, Option<&Path>, &BufferText, usize) -> T + Send + 'static,
+        then: impl FnOnce(Here, T) + 'static,
+    ) {
+        let path = self.path().map(Path::to_owned);
+        let buffer = self.buffer.clone();
+        let position = self.position;
+        request(
+            Some(key),
+            move |engine| {
+                let offset = buffer.offset(position);
+                work(engine, path.as_deref(), &buffer, offset)
+            },
+            move |answer| then(self, answer),
+        );
     }
 }
 
@@ -309,6 +489,9 @@ pub extern "C" fn setInfo(data: NppData) {
     guard(|| {
         with(|s| s.npp.set(data));
         load_settings();
+        pin_module();
+        let window = message_window("vfl_npp_results", on_window_message);
+        with(|s| s.window.set(window));
     })
 }
 
@@ -395,20 +578,16 @@ fn on_notification(n: &ScNotification) {
                     send(sci, SCI_SETMOUSEDWELLTIME, DWELL_MS as usize, 0);
                 }
             }
-            rescan();
+            rescan(false);
             lint_current(Trigger::Auto);
         }
         NPPN_BUFFERACTIVATED | NPPN_LANGCHANGED if from_npp => {
-            rescan();
+            rescan(false);
             lint_current(Trigger::Auto);
             tools::schedule_highlight();
         }
         // Coming back to Notepad++, maybe after changing files elsewhere.
-        SCN_FOCUSIN if n.nmhdr.hwnd_from == current_scintilla().0 => {
-            if rescan() {
-                lint_current(Trigger::Auto);
-            }
-        }
+        SCN_FOCUSIN if n.nmhdr.hwnd_from == current_scintilla().0 => rescan(true),
         NPPN_FILEBEFORESAVE if from_npp => {
             let id = n.nmhdr.id_from;
             if with(|s| s.settings.get().format_on_save) && id == current_buffer() && is_vhdl(id) {
@@ -418,11 +597,7 @@ fn on_notification(n: &ScNotification) {
         NPPN_FILESAVED if from_npp => {
             let id = n.nmhdr.id_from;
             if buffer_path(id).is_some_and(|p| is_project_file(&p)) {
-                with(|s| {
-                    if let Ok(mut engine) = s.engine.try_borrow_mut() {
-                        engine.reload();
-                    }
-                });
+                reload();
             }
             if id == current_buffer() {
                 lint_current(Trigger::Auto);
@@ -431,11 +606,7 @@ fn on_notification(n: &ScNotification) {
         NPPN_FILEBEFORECLOSE if from_npp => {
             let id = n.nmhdr.id_from;
             if let Some(path) = buffer_path(id) {
-                with(|s| {
-                    if let Ok(mut engine) = s.engine.try_borrow_mut() {
-                        engine.forget(&path);
-                    }
-                });
+                post(move |engine| engine.forget(&path));
             }
             with(|s| {
                 s.problems.borrow_mut().remove(&id);
@@ -446,15 +617,15 @@ fn on_notification(n: &ScNotification) {
             cancel_timer();
             tools::cancel_highlight();
         }
-        SCN_MODIFIED if n.nmhdr.hwnd_from == current_scintilla().0 => {
-            if n.modification_type & (SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT) != 0
-                && with(|s| s.settings.get().auto_lint)
-            {
+        SCN_MODIFIED if n.modification_type & (SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT) != 0 => {
+            with(|s| s.edits.set(s.edits.get() + 1));
+            if n.nmhdr.hwnd_from == current_scintilla().0 && with(|s| s.settings.get().auto_lint) {
                 schedule_lint();
             }
         }
         SCN_CHARADDED if n.nmhdr.hwnd_from == current_scintilla().0 => on_char(n.ch),
         SCN_UPDATEUI if n.nmhdr.hwnd_from == current_scintilla().0 => {
+            paint_visible_names(n.nmhdr.hwnd_from);
             tools::caret_moved(n.nmhdr.hwnd_from);
             if with(|s| s.tip.get()) == Tip::Parameters {
                 let sci = n.nmhdr.hwnd_from;
@@ -478,12 +649,16 @@ fn on_notification(n: &ScNotification) {
         }
         SCN_DWELLSTART if n.nmhdr.hwnd_from == current_scintilla().0 => {
             if let Ok(position) = usize::try_from(n.position) {
-                show_info_at(n.nmhdr.hwnd_from, position);
+                with(|s| s.dwell.set(Some((current_buffer(), position))));
+                show_info_at(n.nmhdr.hwnd_from, position, Trigger::Auto);
             }
         }
-        SCN_DWELLEND if with(|s| s.tip.get()) == Tip::Info => {
-            with(|s| s.tip.set(Tip::None));
-            send(n.nmhdr.hwnd_from, SCI_CALLTIPCANCEL, 0, 0);
+        SCN_DWELLEND => {
+            with(|s| s.dwell.set(None));
+            if with(|s| s.tip.get()) == Tip::Info {
+                with(|s| s.tip.set(Tip::None));
+                send(n.nmhdr.hwnd_from, SCI_CALLTIPCANCEL, 0, 0);
+            }
         }
         _ => {}
     }
@@ -501,7 +676,7 @@ extern "C" fn cmd_format_selection() {
 
 extern "C" fn cmd_lint() {
     guard(|| {
-        rescan();
+        rescan(false);
         lint_current(Trigger::Command);
     });
 }
@@ -593,10 +768,7 @@ extern "C" fn cmd_toggle_name_colors() {
 extern "C" fn cmd_show_type() {
     guard(|| {
         let (sci, _) = current_scintilla();
-        let position = caret(sci);
-        if !show_info_at(sci, position) {
-            message_box(npp(), "Nothing to show here.", MB_ICONINFORMATION);
-        }
+        show_info_at(sci, caret(sci), Trigger::Command);
     });
 }
 
@@ -639,11 +811,7 @@ extern "C" fn cmd_toggle_assist() {
 
 extern "C" fn cmd_reload() {
     guard(|| {
-        with(|s| {
-            if let Ok(mut engine) = s.engine.try_borrow_mut() {
-                engine.reload();
-            }
-        });
+        reload();
         lint_current(Trigger::Refresh);
     });
 }
@@ -771,7 +939,7 @@ fn format_current(trigger: Trigger) {
     let id = current_buffer();
     let path = buffer_path(id);
     let buffer = read_buffer(sci);
-    let result = with(|s| match s.engine.try_borrow_mut() {
+    let result = with(|s| match s.formatter.try_borrow_mut() {
         Ok(mut engine) => Some(engine.format(path.as_deref(), &buffer.text)),
         Err(_) => None,
     });
@@ -786,7 +954,7 @@ fn format_selection() {
     let buffer = read_buffer(sci);
     let start = buffer.offset(send(sci, SCI_GETSELECTIONSTART, 0, 0).max(0) as usize);
     let end = buffer.offset(send(sci, SCI_GETSELECTIONEND, 0, 0).max(0) as usize);
-    let result = with(|s| match s.engine.try_borrow_mut() {
+    let result = with(|s| match s.formatter.try_borrow_mut() {
         Ok(mut engine) => Some(engine.format_range(path.as_deref(), &buffer.text, start..end)),
         Err(_) => None,
     });
@@ -804,7 +972,7 @@ fn format_typed(ch: char) {
     let buffer = read_buffer(sci);
     let cursor = buffer.offset(caret(sci));
     let result = with(|s| {
-        s.engine
+        s.formatter
             .try_borrow_mut()
             .ok()
             .and_then(|mut engine| engine.format_typed(path.as_deref(), &buffer.text, cursor, ch))
@@ -866,7 +1034,6 @@ pub(crate) fn replace_text(sci: Hwnd, buffer: &BufferText, new: &str) {
 // Linting.
 
 pub(crate) fn lint_current(trigger: Trigger) {
-    let (sci, view) = current_scintilla();
     let id = current_buffer();
     let auto = with(|s| s.settings.get().auto_lint);
     let path = buffer_path(id);
@@ -882,15 +1049,27 @@ pub(crate) fn lint_current(trigger: Trigger) {
     if !wanted {
         return;
     }
-    let buffer = read_buffer(sci);
-    let Some(output) = with(|s| {
-        s.engine
-            .try_borrow_mut()
-            .ok()
-            .map(|mut engine| engine.lint(path.as_deref(), &buffer.text))
-    }) else {
-        return;
-    };
+    let colors = with(|s| s.settings.get().name_colors);
+    let here = here();
+    let (path, buffer) = (path.filter(|p| p.is_absolute()), here.buffer.clone());
+    request(
+        Some(Key::Lint),
+        move |engine| lint(engine, path.as_deref(), &buffer, colors),
+        move |linted| show_lint(here, trigger, linted),
+    );
+}
+
+/// A buffer's problems and name colors, at Scintilla positions.
+struct Linted {
+    problems: Vec<Problem>,
+    /// Ranges to color, with the index of their color in [`NameColor::ALL`].
+    names: Vec<(usize, usize, usize)>,
+    config_errors: Vec<String>,
+}
+
+/// Lints a buffer, on the worker's thread.
+fn lint(engine: &mut Engine, path: Option<&Path>, buffer: &BufferText, colors: bool) -> Linted {
+    let output = engine.lint(path, &buffer.text);
     let mut problems: Vec<Problem> = output
         .findings
         .iter()
@@ -908,8 +1087,49 @@ pub(crate) fn lint_current(trigger: Trigger) {
         })
         .collect();
     problems.sort_by_key(|p| (p.start, p.end));
-    show_problems(sci, view, id, &problems);
-    show_name_colors(sci, path.as_deref(), &buffer, &problems);
+    let mut names = Vec::new();
+    if colors {
+        // Unused names stay greyed out.
+        let unused: Vec<(usize, usize)> = problems
+            .iter()
+            .filter(|p| p.unused)
+            .map(|p| (p.start, p.end))
+            .collect();
+        for (range, color) in engine.name_colors(path, &buffer.text) {
+            let start = buffer.position(range.start);
+            let end = buffer.position(range.end);
+            if start >= end || unused.iter().any(|&(s, e)| start < e && s < end) {
+                continue;
+            }
+            let index = NameColor::ALL.iter().position(|c| *c == color).unwrap_or(0);
+            names.push((start, end, index));
+        }
+    }
+    Linted {
+        problems,
+        names,
+        config_errors: output.config_errors,
+    }
+}
+
+/// Shows the problems found in `here`'s buffer, if it did not change since.
+fn show_lint(here: Here, trigger: Trigger, linted: Linted) {
+    if !here.is_current() {
+        // Typing schedules the next lint; other triggers ask again.
+        if trigger != Trigger::Auto && current_buffer() == here.id {
+            lint_current(trigger);
+        }
+        return;
+    }
+    let (sci, view) = current_scintilla();
+    let id = here.id;
+    let Linted {
+        problems,
+        names,
+        config_errors,
+    } = linted;
+    quietly(sci, || show_problems(sci, view, id, &problems));
+    show_name_colors(sci, id, here.edits, names);
     let count = problems.len();
     with(|s| s.problems.borrow_mut().insert(id, problems));
 
@@ -917,8 +1137,7 @@ pub(crate) fn lint_current(trigger: Trigger) {
         // Show each configuration error once, like the language server.
         let new: Vec<String> = with(|s| {
             let mut shown = s.shown_errors.borrow_mut();
-            output
-                .config_errors
+            config_errors
                 .iter()
                 .filter(|e| shown.insert((*e).clone()))
                 .cloned()
@@ -933,12 +1152,12 @@ pub(crate) fn lint_current(trigger: Trigger) {
         }
     }
     if trigger == Trigger::Command {
-        if !output.config_errors.is_empty() {
+        if !config_errors.is_empty() {
             message_box(
                 npp(),
                 &format!(
                     "Problems in the configuration:\n\n{}",
-                    output.config_errors.join("\n")
+                    config_errors.join("\n")
                 ),
                 MB_ICONWARNING,
             );
@@ -1010,31 +1229,23 @@ fn name_indicators() -> [usize; NameColor::ALL.len()] {
     indicators
 }
 
-/// Colors the names of the buffer by what they resolve to, leaving the
-/// greyed-out unused ones alone.
-fn show_name_colors(
-    sci: Hwnd,
-    path: Option<&std::path::Path>,
-    buffer: &BufferText,
-    problems: &[Problem],
-) {
-    let len = send(sci, SCI_GETLENGTH, 0, 0).max(0) as usize;
+/// Colors the names of the buffer by what they resolve to: `names` are
+/// ranges with the index of their color in [`NameColor::ALL`], in order.
+/// Only the lines on screen are colored, then the others as they scroll
+/// into view: filling thousands of ranges at once takes seconds.
+fn show_name_colors(sci: Hwnd, id: usize, edits: u64, names: Vec<(usize, usize, usize)>) {
+    let len = send(sci, SCI_GETLENGTH, 0, 0);
     let indicators = name_indicators();
-    for indicator in indicators {
-        send(sci, SCI_SETINDICATORCURRENT, indicator, 0);
-        send(sci, SCI_INDICATORCLEARRANGE, 0, len as isize);
-    }
-    if !with(|s| s.settings.get().name_colors) {
+    quietly(sci, || {
+        for indicator in indicators {
+            send(sci, SCI_SETINDICATORCURRENT, indicator, 0);
+            send(sci, SCI_INDICATORCLEARRANGE, 0, len);
+        }
+    });
+    if names.is_empty() {
+        with(|s| *s.names.borrow_mut() = None);
         return;
     }
-    let Some(names) = with(|s| {
-        s.engine
-            .try_borrow_mut()
-            .ok()
-            .map(|mut engine| engine.name_colors(path, &buffer.text))
-    }) else {
-        return;
-    };
     // The theme's background tells which palette reads well.
     let back = send(sci, SCI_STYLEGETBACK, STYLE_DEFAULT, 0);
     let (r, g, b) = (back & 0xFF, (back >> 8) & 0xFF, (back >> 16) & 0xFF);
@@ -1043,21 +1254,107 @@ fn show_name_colors(
         send(sci, SCI_INDICSETSTYLE, indicator, INDIC_TEXTFORE);
         send(sci, SCI_INDICSETFORE, indicator, name_color(*color, dark));
     }
-    let unused: Vec<(usize, usize)> = problems
-        .iter()
-        .filter(|p| p.unused)
-        .map(|p| (p.start, p.end))
-        .collect();
-    for (range, color) in names {
-        let start = buffer.position(range.start);
-        let end = buffer.position(range.end).min(len);
-        if start >= end || unused.iter().any(|&(s, e)| start < e && s < end) {
-            continue;
+    with(|s| {
+        *s.names.borrow_mut() = Some(Names {
+            id,
+            edits,
+            ranges: names,
+            painted: HashSet::new(),
+        })
+    });
+    paint_visible_names(sci);
+}
+
+/// The name colors of the buffer in front, to paint as it scrolls.
+struct Names {
+    id: usize,
+    /// [`edits`] when they were found; after more edits they are stale.
+    edits: u64,
+    ranges: Vec<(usize, usize, usize)>,
+    /// The blocks of [`NAME_BLOCK`] lines already colored.
+    painted: HashSet<usize>,
+}
+
+/// How many lines are colored at a time.
+const NAME_BLOCK: usize = 16;
+
+/// Colors the names on screen that are not colored yet.
+fn paint_visible_names(sci: Hwnd) {
+    let Some(blocks) = with(|s| {
+        let names = s.names.borrow();
+        let names = names.as_ref()?;
+        if names.edits != s.edits.get() || names.id != current_buffer() {
+            return None;
         }
-        let index = NameColor::ALL.iter().position(|c| *c == color).unwrap_or(0);
-        send(sci, SCI_SETINDICATORCURRENT, indicators[index], 0);
-        send(sci, SCI_INDICATORFILLRANGE, start, (end - start) as isize);
-    }
+        let first = send(sci, SCI_GETFIRSTVISIBLELINE, 0, 0).max(0) as usize;
+        let screen = send(sci, SCI_LINESONSCREEN, 0, 0).max(1) as usize;
+        let doc_line =
+            |visible: usize| send(sci, SCI_DOCLINEFROMVISIBLE, visible, 0).max(0) as usize;
+        let top = doc_line(first);
+        let bottom = doc_line(first + screen);
+        let blocks: Vec<usize> = (top / NAME_BLOCK..=bottom / NAME_BLOCK)
+            .filter(|b| !names.painted.contains(b))
+            .collect();
+        (!blocks.is_empty()).then_some(blocks)
+    }) else {
+        return;
+    };
+    let indicators = name_indicators();
+    let lines = send(sci, SCI_GETLINECOUNT, 0, 0).max(0) as usize;
+    let len = send(sci, SCI_GETLENGTH, 0, 0).max(0) as usize;
+    let position = |line: usize| {
+        if line >= lines {
+            len
+        } else {
+            send(sci, SCI_POSITIONFROMLINE, line, 0).max(0) as usize
+        }
+    };
+    // Fill outside the borrow: Scintilla may call back.
+    let fills: Vec<(usize, usize, usize)> = with(|s| {
+        let mut names = s.names.borrow_mut();
+        let Some(names) = names.as_mut() else {
+            return Vec::new();
+        };
+        let mut fills = Vec::new();
+        for block in blocks {
+            names.painted.insert(block);
+            let (from, to) = (
+                position(block * NAME_BLOCK),
+                position((block + 1) * NAME_BLOCK),
+            );
+            let first = names.ranges.partition_point(|r| r.0 < from);
+            fills.extend(
+                names.ranges[first..]
+                    .iter()
+                    .take_while(|r| r.0 < to)
+                    .map(|&(start, end, index)| (start, end.min(len), index))
+                    .filter(|(start, end, _)| start < end),
+            );
+        }
+        fills
+    });
+    quietly(sci, || {
+        for (start, end, index) in fills {
+            send(sci, SCI_SETINDICATORCURRENT, indicators[index], 0);
+            send(sci, SCI_INDICATORFILLRANGE, start, (end - start) as isize);
+        }
+    });
+}
+
+/// Runs `f`, which sets indicators, without Scintilla telling Notepad++ and
+/// every plugin about each range it fills: thousands of notifications take
+/// seconds.
+pub(crate) fn quietly<T>(sci: Hwnd, f: impl FnOnce() -> T) -> T {
+    let mask = send(sci, SCI_GETMODEVENTMASK, 0, 0);
+    send(
+        sci,
+        SCI_SETMODEVENTMASK,
+        (mask & !SC_MOD_CHANGEINDICATOR) as usize,
+        0,
+    );
+    let result = f();
+    send(sci, SCI_SETMODEVENTMASK, mask as usize, 0);
+    result
 }
 
 /// Removes the problem underlines and greyed-out names.
@@ -1131,8 +1428,13 @@ fn show_problems(sci: Hwnd, view: usize, id: usize, problems: &[Problem]) {
         return;
     }
     let base = annotation_styles(sci, view);
-    send(sci, SCI_ANNOTATIONSETSTYLEOFFSET, base as usize, 0);
-    send(sci, SCI_ANNOTATIONSETVISIBLE, ANNOTATION_STANDARD, 0);
+    // Both re-lay out the whole view, even when nothing changes.
+    if send(sci, SCI_ANNOTATIONGETSTYLEOFFSET, 0, 0) != base {
+        send(sci, SCI_ANNOTATIONSETSTYLEOFFSET, base as usize, 0);
+    }
+    if send(sci, SCI_ANNOTATIONGETVISIBLE, 0, 0) != ANNOTATION_STANDARD as isize {
+        send(sci, SCI_ANNOTATIONSETVISIBLE, ANNOTATION_STANDARD, 0);
+    }
     let mut lines: BTreeMap<usize, (Severity, Vec<u8>)> = BTreeMap::new();
     for problem in problems {
         let line = send(sci, SCI_LINEFROMPOSITION, problem.start, 0).max(0) as usize;
@@ -1173,15 +1475,24 @@ fn annotation_styles(sci: Hwnd, view: usize) -> isize {
     );
     let size = send(sci, SCI_STYLEGETSIZE, STYLE_DEFAULT, 0);
     let back = send(sci, SCI_STYLEGETBACK, STYLE_DEFAULT, 0);
+    // Each change re-lays out the whole view: change only what differs.
     for severity in [Severity::Info, Severity::Warning, Severity::Error] {
         let style = (base + severity_index(severity) as isize) as usize;
-        if font[0] != 0 {
+        let mut current = [0u8; 128];
+        send(sci, SCI_STYLEGETFONT, style, current.as_mut_ptr() as isize);
+        if font[0] != 0 && current != font {
             send(sci, SCI_STYLESETFONT, style, font.as_ptr() as isize);
         }
-        send(sci, SCI_STYLESETSIZE, style, size);
-        send(sci, SCI_STYLESETFORE, style, color(severity));
-        send(sci, SCI_STYLESETBACK, style, back);
-        send(sci, SCI_STYLESETITALIC, style, 1);
+        for (get, set, value) in [
+            (SCI_STYLEGETSIZE, SCI_STYLESETSIZE, size),
+            (SCI_STYLEGETFORE, SCI_STYLESETFORE, color(severity)),
+            (SCI_STYLEGETBACK, SCI_STYLESETBACK, back),
+            (SCI_STYLEGETITALIC, SCI_STYLESETITALIC, 1),
+        ] {
+            if send(sci, get, style, 0) != value {
+                send(sci, set, style, value);
+            }
+        }
     }
     base
 }
@@ -1219,11 +1530,11 @@ pub(crate) fn go_to(sci: Hwnd, position: usize) {
 }
 
 /// Shows the messages of the problems at `position` and, with code
-/// assistance on, the type of what is named there. Returns whether there
-/// was anything to show.
-fn show_info_at(sci: Hwnd, position: usize) -> bool {
+/// assistance on, the type of what is named there, once the worker has
+/// found it. A command says when there is nothing to show.
+fn show_info_at(sci: Hwnd, position: usize, trigger: Trigger) {
     let id = current_buffer();
-    let mut parts: Vec<Vec<u8>> = with(|s| {
+    let parts: Vec<Vec<u8>> = with(|s| {
         let problems = s.problems.borrow();
         problems
             .get(&id)
@@ -1236,20 +1547,42 @@ fn show_info_at(sci: Hwnd, position: usize) -> bool {
             .map(|p| p.text.clone())
             .collect()
     });
-    if with(|s| s.settings.get().assist) && is_vhdl(id) {
-        let path = buffer_path(id);
-        let buffer = read_buffer(sci);
-        let offset = buffer.offset(position);
-        let hover = with(|s| {
-            s.engine
-                .try_borrow_mut()
-                .ok()
-                .and_then(|mut engine| engine.hover(path.as_deref(), &buffer.text, offset))
-        });
-        if let Some(hover) = hover {
-            parts.push(buffer.encode(&plain_text(&hover.markdown)));
+    show_tip(sci, position, &parts);
+    if !(with(|s| s.settings.get().assist) && is_vhdl(id)) {
+        if parts.is_empty() && trigger == Trigger::Command {
+            message_box(npp(), "Nothing to show here.", MB_ICONINFORMATION);
         }
+        return;
     }
+    let mut here = here();
+    here.position = position;
+    here.ask(
+        Key::Info,
+        |engine, path, buffer, offset| {
+            engine
+                .hover(path, &buffer.text, offset)
+                .map(|hover| buffer.encode(&plain_text(&hover.markdown)))
+        },
+        move |here, hover| {
+            // Only while the mouse rests there, or the caret for a command.
+            let wanted = match trigger {
+                Trigger::Command => caret(here.sci) == position,
+                _ => with(|s| s.dwell.get()) == Some((here.id, position)),
+            };
+            if !here.is_current() || !wanted {
+                return;
+            }
+            let mut parts = parts;
+            parts.extend(hover);
+            if !show_tip(here.sci, position, &parts) && trigger == Trigger::Command {
+                message_box(npp(), "Nothing to show here.", MB_ICONINFORMATION);
+            }
+        },
+    );
+}
+
+/// Shows `parts` in a call tip at `position`. Whether there were any.
+fn show_tip(sci: Hwnd, position: usize, parts: &[Vec<u8>]) -> bool {
     if parts.is_empty() {
         return false;
     }
@@ -1276,7 +1609,9 @@ fn on_char(ch: i32) {
         '(' | ',' => show_parameters(Trigger::Auto),
         // Typing in a call moves between parameters (`name =>`) and out
         // of it (`)`).
-        _ if with(|s| s.tip.get()) == Tip::Parameters => show_parameters(Trigger::Auto),
+        _ if with(|s| s.tip.get() == Tip::Parameters || s.parameters_pending.get()) => {
+            show_parameters(Trigger::Auto)
+        }
         _ => {}
     }
 }
@@ -1284,77 +1619,124 @@ fn on_char(ch: i32) {
 /// Shows the parameters of the call or port map around the caret, the
 /// one being typed highlighted. Closes the hints when there is none.
 fn show_parameters(trigger: Trigger) {
-    let (sci, _) = current_scintilla();
     let id = current_buffer();
     if trigger == Trigger::Auto && !is_vhdl(id) {
         return;
     }
-    let path = buffer_path(id);
-    let buffer = read_buffer(sci);
-    let position = caret(sci);
-    let offset = buffer.offset(position);
-    let help = with(|s| {
-        s.engine
-            .try_borrow_mut()
-            .ok()
-            .and_then(|mut engine| engine.signature_help(path.as_deref(), &buffer.text, offset))
-    });
-    let Some(help) = help else {
-        if with(|s| s.tip.get()) == Tip::Parameters {
-            send(sci, SCI_CALLTIPCANCEL, 0, 0);
-            with(|s| s.tip.set(Tip::None));
-        }
-        if trigger == Trigger::Command {
-            message_box(npp(), "The caret is not in a call.", MB_ICONINFORMATION);
-        }
-        return;
-    };
-    let (tip, highlight) = signature_tip(&help);
-    let text = c_string(buffer.encode(&tip));
-    send(sci, SCI_CALLTIPSHOW, position, text.as_ptr() as isize);
-    let (start, end) = match highlight {
-        Some(range) => (
-            buffer.encoded_len(&tip[..range.start]),
-            buffer.encoded_len(&tip[..range.end]),
-        ),
-        None => (0, 0),
-    };
-    send(sci, SCI_CALLTIPSETHLT, start, end as isize);
-    with(|s| {
-        s.tip.set(Tip::Parameters);
-        s.tip_caret.set(position);
-    });
+    with(|s| s.parameters_pending.set(true));
+    here().ask(
+        Key::Parameters,
+        |engine, path, buffer, offset| {
+            let help = engine.signature_help(path, &buffer.text, offset)?;
+            let (tip, highlight) = signature_tip(&help);
+            let highlight = match highlight {
+                Some(range) => (
+                    buffer.encoded_len(&tip[..range.start]),
+                    buffer.encoded_len(&tip[..range.end]),
+                ),
+                None => (0, 0),
+            };
+            Some((c_string(buffer.encode(&tip)), highlight))
+        },
+        move |here, help| {
+            with(|s| s.parameters_pending.set(false));
+            let sci = here.sci;
+            // Typing on asked again already.
+            if !here.is_current() || caret(sci) != here.position {
+                return;
+            }
+            let Some((text, (start, end))) = help else {
+                if with(|s| s.tip.get()) == Tip::Parameters {
+                    send(sci, SCI_CALLTIPCANCEL, 0, 0);
+                    with(|s| s.tip.set(Tip::None));
+                }
+                if trigger == Trigger::Command {
+                    message_box(npp(), "The caret is not in a call.", MB_ICONINFORMATION);
+                }
+                return;
+            };
+            send(sci, SCI_CALLTIPSHOW, here.position, text.as_ptr() as isize);
+            send(sci, SCI_CALLTIPSETHLT, start, end as isize);
+            with(|s| {
+                s.tip.set(Tip::Parameters);
+                s.tip_caret.set(here.position);
+            });
+        },
+    );
+}
+
+/// A completion list for Scintilla.
+struct CompletionList {
+    /// Where the word being completed starts, as a Scintilla position.
+    start: usize,
+    /// `label\x1eimage` items separated by `\n`, NUL-terminated.
+    list: Vec<u8>,
+    /// The details of the items, by label.
+    details: HashMap<String, String>,
 }
 
 /// Lists what can be typed at the caret: after `name.`, what `name`
 /// contains; elsewhere, what is visible and keywords.
 fn complete(trigger: Trigger) {
-    let (sci, _) = current_scintilla();
     let id = current_buffer();
     if trigger == Trigger::Auto && !is_vhdl(id) {
         return;
     }
-    let path = buffer_path(id);
-    let buffer = read_buffer(sci);
+    let here = here();
+    if trigger == Trigger::Auto && !completes_after_dot(&here.buffer.text, here.offset()) {
+        return;
+    }
+    here.ask(
+        Key::Completion,
+        |engine, path, buffer, offset| {
+            let completions = engine.completion(path, &buffer.text, offset)?;
+            let items = completion_list(&completions);
+            if items.is_empty() {
+                return None;
+            }
+            let list: Vec<String> = items
+                .iter()
+                .map(|c| format!("{}\x1e{}", c.label, image_id(c.kind)))
+                .collect();
+            Some(CompletionList {
+                start: buffer.position(completions.start),
+                list: c_string(buffer.encode(&list.join("\n"))),
+                details: items
+                    .iter()
+                    .filter(|c| !c.detail.is_empty())
+                    .map(|c| (c.label.clone(), c.detail.clone()))
+                    .collect(),
+            })
+        },
+        |here, list| {
+            if let Some(list) = list {
+                show_completions(here, list);
+            }
+        },
+    );
+}
+
+fn show_completions(here: Here, completions: CompletionList) {
+    let sci = here.sci;
+    if current_buffer() != here.id {
+        return;
+    }
     let position = caret(sci);
-    let offset = buffer.offset(position);
-    if trigger == Trigger::Auto && !completes_after_dot(&buffer.text, offset) {
-        return;
+    if !here.is_current() {
+        // Keep the list if the caret only went on typing the word.
+        let now = read_buffer(sci);
+        let typed = now
+            .text
+            .get(now.offset(here.position)..now.offset(position))
+            .unwrap_or("");
+        if position < here.position
+            || !typed.chars().all(|c| c.is_alphanumeric() || c == '_')
+            || now.text.get(..now.offset(here.position)) != here.buffer.text.get(..here.offset())
+        {
+            return;
+        }
     }
-    let completions = with(|s| {
-        s.engine
-            .try_borrow_mut()
-            .ok()
-            .and_then(|mut engine| engine.completion(path.as_deref(), &buffer.text, offset))
-    });
-    let Some(completions) = completions else {
-        return;
-    };
-    let items = completion_list(&completions);
-    if items.is_empty() {
-        return;
-    }
-    let entered = position.saturating_sub(buffer.position(completions.start));
+    let entered = position.saturating_sub(completions.start);
     for (kind, image) in IMAGES {
         let xpm = c_string(xpm(*image).into_bytes());
         send(
@@ -1364,24 +1746,19 @@ fn complete(trigger: Trigger) {
             xpm.as_ptr() as isize,
         );
     }
-    let list: Vec<String> = items
-        .iter()
-        .map(|c| format!("{}\x1e{}", c.label, image_id(c.kind)))
-        .collect();
-    let list = c_string(buffer.encode(&list.join("\n")));
-    let details: HashMap<String, String> = items
-        .iter()
-        .filter(|c| !c.detail.is_empty())
-        .map(|c| (c.label.clone(), c.detail.clone()))
-        .collect();
-    with(|s| *s.details.borrow_mut() = Some(details));
+    with(|s| *s.details.borrow_mut() = Some(completions.details));
     // Notepad++ uses its own separators for its lists: put them back.
     let separator = send(sci, SCI_AUTOCGETSEPARATOR, 0, 0);
     let type_separator = send(sci, SCI_AUTOCGETTYPESEPARATOR, 0, 0);
     send(sci, SCI_AUTOCSETSEPARATOR, b'\n' as usize, 0);
     send(sci, SCI_AUTOCSETTYPESEPARATOR, 0x1E, 0);
     send(sci, SCI_AUTOCSETIGNORECASE, 1, 0);
-    send(sci, SCI_AUTOCSHOW, entered, list.as_ptr() as isize);
+    send(
+        sci,
+        SCI_AUTOCSHOW,
+        entered,
+        completions.list.as_ptr() as isize,
+    );
     send(sci, SCI_AUTOCSETSEPARATOR, separator.max(0) as usize, 0);
     send(
         sci,
@@ -1392,18 +1769,28 @@ fn complete(trigger: Trigger) {
 }
 
 /// Re-reads what changed on disk outside Notepad++, at most every
-/// [`RESCAN_INTERVAL`]. Whether anything changed.
-fn rescan() -> bool {
+/// [`RESCAN_INTERVAL`], and lints the buffer again if anything did and
+/// `lint` is set.
+fn rescan(lint: bool) {
     let now = std::time::Instant::now();
     if with(|s| s.last_rescan.get()).is_some_and(|last| now - last < RESCAN_INTERVAL) {
-        return false;
+        return;
     }
-    with(|s| {
-        s.last_rescan.set(Some(now));
-        s.engine
-            .try_borrow_mut()
-            .is_ok_and(|mut engine| engine.rescan())
-    })
+    with(|s| s.last_rescan.set(Some(now)));
+    request(Some(Key::Rescan), Engine::rescan, move |changed| {
+        if changed {
+            with(|s| s.formatter.borrow_mut().reload());
+            if lint {
+                lint_current(Trigger::Auto);
+            }
+        }
+    });
+}
+
+/// Drops the loaded projects and configurations.
+fn reload() {
+    with(|s| s.formatter.borrow_mut().reload());
+    post(Engine::reload);
 }
 
 /// Shows what the selected completion is in the status bar. Not in a call
