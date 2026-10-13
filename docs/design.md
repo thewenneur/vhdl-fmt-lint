@@ -328,8 +328,9 @@ use them. Implemented, all read without running the tool:
 
 - rust_hdl `vhdl_ls.toml` in the root (with `$VAR` expansion).
 - VUnit `run.py`, best effort: `add_library`/`library` and `add_source_files` calls,
-  with string variables, `Path(__file__).parent` joins and f-strings. Libraries VUnit
-  bundles (`vunit_lib`, `osvvm`) are left to the bundled copies.
+  with string variables, `Path(__file__).parent` joins and f-strings. With VUnit's
+  builtins added, files added to `osvvm` are ignored, so that a few local files do not
+  pass for the whole library.
 - FuseSoC `.core`: `filesets` entries of a `vhdlSource*` type, in `logical_name` or `work`.
 - Vivado `.xpr` (`Library` attribute, default `xil_defaultlib`) and Tcl `read_vhdl
   -library` scripts.

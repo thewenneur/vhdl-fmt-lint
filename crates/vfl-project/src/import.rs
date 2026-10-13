@@ -288,8 +288,9 @@ fn vunit(text: &str) -> Libraries {
         }
         i += 1;
     }
-    // Libraries VUnit brings itself are only partly in the tree: adding to
-    // them must not make them look complete.
+    // OSVVM comes with VUnit: adding a file to it must not make the few
+    // files in the tree look like the whole library. (`vunit_lib` is kept:
+    // only VUnit's own tests add to it, next to its sources.)
     let builtins = tokens.iter().any(|t| {
         matches!(t, Py::Name(n) if matches!(
             n.as_str(),
@@ -298,9 +299,7 @@ fn vunit(text: &str) -> Libraries {
         ))
     });
     if builtins {
-        libraries.retain(|name, _| {
-            !name.eq_ignore_ascii_case("vunit_lib") && !name.eq_ignore_ascii_case("osvvm")
-        });
+        libraries.retain(|name, _| !name.eq_ignore_ascii_case("osvvm"));
     }
     libraries
 }
