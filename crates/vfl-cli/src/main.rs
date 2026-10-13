@@ -148,7 +148,7 @@ fn run(cli: Cli) -> Result<bool> {
             show_rules();
             Ok(true)
         }
-        Command::Lsp => bail!("`vfl lsp` is not implemented yet"),
+        Command::Lsp => vfl_lsp::run_stdio().map(|()| true),
         Command::Check { paths, tree } => check(&paths, tree).map(|()| true),
         Command::Project { path } => show_project(&path).map(|()| true),
         Command::Config {

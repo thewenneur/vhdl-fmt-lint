@@ -22,6 +22,8 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 globset = "0.4"
 ignore = "0.4"
+lsp-server = "0.7"
+lsp-types = "0.95"
 rayon = "1"
 regex = "1"
 rowan = "0.16"

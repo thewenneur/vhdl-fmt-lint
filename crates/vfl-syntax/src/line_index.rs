@@ -36,6 +36,16 @@ impl LineIndex {
             col: col as u32,
         }
     }
+
+    /// The offset where zero-based `line` starts.
+    pub fn line_start(&self, line: u32) -> Option<TextSize> {
+        self.starts.get(line as usize).copied()
+    }
+
+    /// The number of lines (one more than the number of line breaks).
+    pub fn line_count(&self) -> u32 {
+        self.starts.len() as u32
+    }
 }
 
 #[cfg(test)]

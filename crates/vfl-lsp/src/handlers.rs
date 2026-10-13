@@ -1,0 +1,1029 @@
+//! Request handlers.
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+use lsp_types::{
+    CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CompletionItem,
+    CompletionItemKind, CompletionParams, CompletionResponse, DocumentFormattingParams,
+    DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams, DocumentSymbol,
+    DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse,
+    Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind, NumberOrString,
+    PrepareRenameResponse, ReferenceParams, RenameParams, SymbolInformation, SymbolKind,
+    TextDocumentPositionParams, TextEdit, Url, WorkspaceEdit, WorkspaceSymbolParams,
+    WorkspaceSymbolResponse,
+};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use serde_json::Value;
+use vfl_config::Level;
+use vfl_sema::{Access, Decl, DeclId, DeclKind, FileId, Target};
+use vfl_syntax::{TextRange, TextSize};
+
+use crate::world::{Doc, World};
+
+pub enum Error {
+    Unknown,
+    Invalid(String),
+    Failed(String),
+}
+
+fn parse<P: DeserializeOwned>(value: Value) -> Result<P, Error> {
+    serde_json::from_value(value).map_err(|e| Error::Invalid(e.to_string()))
+}
+
+fn json<T: Serialize>(value: T) -> Result<Value, Error> {
+    serde_json::to_value(value).map_err(|e| Error::Failed(e.to_string()))
+}
+
+pub fn request(world: &mut World, method: &str, params: Value) -> Result<Value, Error> {
+    match method {
+        "textDocument/formatting" => json(formatting(world, parse(params)?)),
+        "textDocument/definition" => json(definition(world, parse(params)?)),
+        "textDocument/references" => json(references(world, parse(params)?)),
+        "textDocument/documentHighlight" => json(highlight(world, parse(params)?)),
+        "textDocument/hover" => json(hover(world, parse(params)?)),
+        "textDocument/documentSymbol" => json(document_symbols(world, parse(params)?)),
+        "workspace/symbol" => json(workspace_symbols(world, parse(params)?)),
+        "textDocument/prepareRename" => json(prepare_rename(world, parse(params)?)),
+        "textDocument/rename" => json(rename(world, parse(params)?)?),
+        "textDocument/completion" => json(completion(world, parse(params)?)),
+        "textDocument/codeAction" => json(code_actions(world, parse(params)?)),
+        _ => Err(Error::Unknown),
+    }
+}
+
+fn file_of(world: &World, uri: &Url) -> Option<FileId> {
+    world.file_id(&uri.to_file_path().ok()?)
+}
+
+fn uri(path: &Path) -> Option<Url> {
+    Url::from_file_path(path).ok()
+}
+
+/// The diagnostics of every user file that has some.
+pub fn diagnostics(world: &World) -> Vec<(Url, Vec<lsp_types::Diagnostic>)> {
+    let mut by_file: HashMap<FileId, Vec<lsp_types::Diagnostic>> = HashMap::new();
+    for d in &world.lint {
+        let doc = world.doc(d.file);
+        let tags = d
+            .rule
+            .starts_with("sema/unused-")
+            .then(|| vec![lsp_types::DiagnosticTag::UNNECESSARY]);
+        by_file
+            .entry(d.file)
+            .or_default()
+            .push(lsp_types::Diagnostic {
+                range: doc.range(d.range),
+                severity: Some(match d.level {
+                    Level::Error => lsp_types::DiagnosticSeverity::ERROR,
+                    Level::Warn => lsp_types::DiagnosticSeverity::WARNING,
+                    _ => lsp_types::DiagnosticSeverity::INFORMATION,
+                }),
+                code: Some(NumberOrString::String(d.rule.into())),
+                source: Some("vfl".into()),
+                message: d.message.clone(),
+                tags,
+                ..Default::default()
+            });
+    }
+    let mut out: Vec<(Url, Vec<lsp_types::Diagnostic>)> = by_file
+        .into_iter()
+        .filter_map(|(file, diagnostics)| {
+            Some((
+                uri(&world.analysis.files()[file as usize].path)?,
+                diagnostics,
+            ))
+        })
+        .collect();
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+fn formatting(world: &mut World, params: DocumentFormattingParams) -> Option<Vec<TextEdit>> {
+    let path = params.text_document.uri.to_file_path().ok()?;
+    let file = world.file_id(&path)?;
+    let config = world.config(&path).clone();
+    let doc = world.doc(file);
+    let formatted = vfl_fmt::format(doc.text, &config.format, config.standard()).ok()?;
+    if formatted == doc.text {
+        return Some(Vec::new());
+    }
+    // One edit covering what changed, so the cursor keeps its place.
+    let old = doc.text;
+    let mut prefix = old
+        .bytes()
+        .zip(formatted.bytes())
+        .take_while(|(a, b)| a == b)
+        .count();
+    while !old.is_char_boundary(prefix) {
+        prefix -= 1;
+    }
+    let max_suffix = old.len().min(formatted.len()) - prefix;
+    let mut suffix = old
+        .bytes()
+        .rev()
+        .zip(formatted.bytes().rev())
+        .take(max_suffix)
+        .take_while(|(a, b)| a == b)
+        .count();
+    while !old.is_char_boundary(old.len() - suffix)
+        || !formatted.is_char_boundary(formatted.len() - suffix)
+    {
+        suffix -= 1;
+    }
+    let range = TextRange::new(
+        TextSize::from(prefix as u32),
+        TextSize::from((old.len() - suffix) as u32),
+    );
+    Some(vec![TextEdit {
+        range: doc.range(range),
+        new_text: formatted[prefix..formatted.len() - suffix].to_owned(),
+    }])
+}
+
+/// What is at a position: a reference's targets, or a declaration's name.
+struct Hit {
+    range: TextRange,
+    targets: Vec<DeclId>,
+    library: Option<String>,
+}
+
+fn hit(world: &World, position: &TextDocumentPositionParams) -> Option<(FileId, Hit)> {
+    let file = file_of(world, &position.text_document.uri)?;
+    let offset = world.doc(file).offset(position.position);
+    let contains = |r: TextRange| r.start() <= offset && offset <= r.end();
+    for (f, reference) in world.analysis.references() {
+        if f == file && contains(reference.range) {
+            let mut targets = Vec::new();
+            let mut library = None;
+            for t in &reference.targets {
+                match t {
+                    Target::Decl(id) => targets.push(*id),
+                    Target::Library(name) => library = Some(name.clone()),
+                }
+            }
+            return Some((
+                file,
+                Hit {
+                    range: reference.range,
+                    targets,
+                    library,
+                },
+            ));
+        }
+    }
+    for (id, decl) in world.analysis.decls() {
+        if decl.file == file && contains(decl.range) && !decl.spelling.is_empty() {
+            return Some((
+                file,
+                Hit {
+                    range: decl.range,
+                    targets: vec![id],
+                    library: None,
+                },
+            ));
+        }
+    }
+    None
+}
+
+/// Where a declaration is, writing bundled library sources to a cache
+/// directory so editors can open them.
+fn location(world: &World, decl: &Decl) -> Option<Location> {
+    let file = &world.analysis.files()[decl.file as usize];
+    let path = if file.builtin {
+        bundled_path(&file.path, &file.text)?
+    } else {
+        file.path.clone()
+    };
+    Some(Location {
+        uri: uri(&path)?,
+        range: world.doc(decl.file).range(decl.range),
+    })
+}
+
+fn bundled_path(path: &Path, text: &str) -> Option<PathBuf> {
+    let relative = path.strip_prefix("<bundled>").ok()?;
+    let target = std::env::temp_dir()
+        .join(format!("vfl-{}", env!("CARGO_PKG_VERSION")))
+        .join(relative)
+        .with_extension("vhd");
+    if std::fs::read_to_string(&target).ok().as_deref() != Some(text) {
+        std::fs::create_dir_all(target.parent()?).ok()?;
+        std::fs::write(&target, text).ok()?;
+    }
+    Some(target)
+}
+
+fn definition(world: &mut World, params: GotoDefinitionParams) -> Option<GotoDefinitionResponse> {
+    let (_, hit) = hit(world, &params.text_document_position_params)?;
+    let locations: Vec<Location> = hit
+        .targets
+        .iter()
+        .filter_map(|id| location(world, world.analysis.decl(*id)?))
+        .collect();
+    (!locations.is_empty()).then_some(GotoDefinitionResponse::Array(locations))
+}
+
+/// Every place that names one of `targets`: declarations and references,
+/// once each.
+fn occurrences(
+    world: &World,
+    targets: &[DeclId],
+    declarations: bool,
+) -> Vec<(FileId, TextRange, Access)> {
+    let mut out = Vec::new();
+    if declarations {
+        for id in targets {
+            if let Some(decl) = world.analysis.decl(*id) {
+                out.push((decl.file, decl.range, Access::Other));
+            }
+        }
+    }
+    for (file, reference) in world.analysis.references() {
+        if reference
+            .targets
+            .iter()
+            .any(|t| matches!(t, Target::Decl(id) if targets.contains(id)))
+        {
+            out.push((file, reference.range, reference.access));
+        }
+    }
+    out.sort_by_key(|(f, r, _)| (*f, r.start(), r.end()));
+    out.dedup_by_key(|(f, r, _)| (*f, *r));
+    out
+}
+
+fn references(world: &mut World, params: ReferenceParams) -> Option<Vec<Location>> {
+    let (_, hit) = hit(world, &params.text_document_position)?;
+    let found = occurrences(world, &hit.targets, params.context.include_declaration);
+    Some(
+        found
+            .into_iter()
+            .filter(|(file, _, _)| !world.analysis.files()[*file as usize].builtin)
+            .filter_map(|(file, range, _)| {
+                Some(Location {
+                    uri: uri(&world.analysis.files()[file as usize].path)?,
+                    range: world.doc(file).range(range),
+                })
+            })
+            .collect(),
+    )
+}
+
+fn highlight(world: &mut World, params: DocumentHighlightParams) -> Option<Vec<DocumentHighlight>> {
+    let (file, hit) = hit(world, &params.text_document_position_params)?;
+    let doc = world.doc(file);
+    Some(
+        occurrences(world, &hit.targets, true)
+            .into_iter()
+            .filter(|(f, _, _)| *f == file)
+            .map(|(_, range, access)| DocumentHighlight {
+                range: doc.range(range),
+                kind: Some(if access.writes() {
+                    DocumentHighlightKind::WRITE
+                } else if access.reads() {
+                    DocumentHighlightKind::READ
+                } else {
+                    DocumentHighlightKind::TEXT
+                }),
+            })
+            .collect(),
+    )
+}
+
+/// The source of a declaration, shortened for hovers.
+fn declaration_text(world: &World, decl: &Decl) -> String {
+    let doc = world.doc(decl.file);
+    let text = &doc.text[std::ops::Range::<usize>::from(decl.full_range)];
+    let mut lines: Vec<&str> = Vec::new();
+    for line in text.lines() {
+        lines.push(line);
+        let lower = line.trim().to_ascii_lowercase();
+        let body_starts = matches!(
+            decl.kind,
+            DeclKind::Function | DeclKind::Procedure | DeclKind::Architecture | DeclKind::Label
+        ) && (lower == "is" || lower.ends_with(" is") || lower == "begin");
+        if body_starts || lines.len() >= 15 {
+            if lines.len() < text.lines().count() {
+                lines.push("  ...");
+            }
+            break;
+        }
+    }
+    // Re-indent relative to the first line's column.
+    let column = doc.index.line_col(doc.text, decl.full_range.start()).col as usize;
+    lines
+        .iter()
+        .enumerate()
+        .map(|(i, line)| {
+            if i == 0 {
+                line.to_string()
+            } else {
+                let strip = line.len() - line.trim_start().len();
+                line[strip.min(column)..].to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn hover(world: &mut World, params: HoverParams) -> Option<Hover> {
+    let (file, hit) = hit(world, &params.text_document_position_params)?;
+    let doc = world.doc(file);
+    let mut sections = Vec::new();
+    for id in &hit.targets {
+        let Some(decl) = world.analysis.decl(*id) else {
+            continue;
+        };
+        let unit = &world.analysis.units()[id.unit as usize];
+        let place = if id.index == 0 {
+            format!("in library `{}`", unit.library)
+        } else {
+            format!(
+                "in `{}.{}`",
+                unit.library,
+                world.analysis.unit_decls(id.unit)[0].spelling
+            )
+        };
+        sections.push(format!(
+            "{} `{}` {place}\n\n```vhdl\n{}\n```",
+            decl.kind.describe(),
+            decl.spelling,
+            declaration_text(world, decl)
+        ));
+    }
+    if sections.is_empty()
+        && let Some(library) = &hit.library
+    {
+        sections.push(format!("library `{library}`"));
+    }
+    if sections.is_empty() {
+        return None;
+    }
+    Some(Hover {
+        contents: HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: sections.join("\n\n---\n\n"),
+        }),
+        range: Some(doc.range(hit.range)),
+    })
+}
+
+fn symbol_kind(kind: DeclKind) -> Option<SymbolKind> {
+    Some(match kind {
+        DeclKind::Entity => SymbolKind::INTERFACE,
+        DeclKind::Architecture => SymbolKind::CLASS,
+        DeclKind::Package | DeclKind::PackageInstance | DeclKind::PackageBody => {
+            SymbolKind::PACKAGE
+        }
+        DeclKind::Context | DeclKind::Configuration => SymbolKind::MODULE,
+        DeclKind::Component => SymbolKind::INTERFACE,
+        DeclKind::Signal | DeclKind::Variable | DeclKind::File => SymbolKind::VARIABLE,
+        DeclKind::Constant | DeclKind::Generic { .. } => SymbolKind::CONSTANT,
+        DeclKind::Port { .. } => SymbolKind::FIELD,
+        DeclKind::Type | DeclKind::Subtype | DeclKind::ProtectedBody | DeclKind::GenericType => {
+            SymbolKind::STRUCT
+        }
+        DeclKind::EnumLiteral => SymbolKind::ENUM_MEMBER,
+        DeclKind::Function | DeclKind::GenericSubprogram => SymbolKind::FUNCTION,
+        DeclKind::Procedure => SymbolKind::METHOD,
+        DeclKind::Alias | DeclKind::Attribute => SymbolKind::PROPERTY,
+        DeclKind::Label => SymbolKind::EVENT,
+        DeclKind::View | DeclKind::Group => SymbolKind::OBJECT,
+        DeclKind::GenericPackage => SymbolKind::PACKAGE,
+        DeclKind::IncompleteType
+        | DeclKind::Parameter { .. }
+        | DeclKind::PhysicalUnit
+        | DeclKind::LoopParameter
+        | DeclKind::GenerateParameter => return None,
+    })
+}
+
+/// The declarations of a file worth listing, once each (a file in two
+/// libraries is analyzed twice), with their ids.
+fn file_decls(world: &World, file: FileId) -> Vec<(DeclId, &Decl)> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for unit in world.analysis.file_units(file) {
+        for (index, decl) in world.analysis.unit_decls(unit).iter().enumerate() {
+            if decl.file != file || decl.spelling.is_empty() || !seen.insert(decl.range) {
+                continue;
+            }
+            out.push((
+                DeclId {
+                    unit,
+                    index: index as u32,
+                },
+                decl,
+            ));
+        }
+    }
+    out
+}
+
+#[allow(deprecated)]
+fn document_symbols(
+    world: &mut World,
+    params: DocumentSymbolParams,
+) -> Option<DocumentSymbolResponse> {
+    let file = file_of(world, &params.text_document.uri)?;
+    let doc = world.doc(file);
+    let decls = file_decls(world, file);
+    let ids: HashMap<DeclId, usize> = decls
+        .iter()
+        .enumerate()
+        .map(|(i, (id, _))| (*id, i))
+        .collect();
+    let mut children: Vec<Vec<usize>> = vec![Vec::new(); decls.len()];
+    let mut roots = Vec::new();
+    for (i, (_, decl)) in decls.iter().enumerate() {
+        if symbol_kind(decl.kind).is_none() {
+            continue;
+        }
+        // Attach to the nearest listed ancestor.
+        let mut parent = decl.parent;
+        let mut attached = false;
+        while let Some(p) = parent {
+            if let Some(&j) = ids.get(&p)
+                && symbol_kind(decls[j].1.kind).is_some()
+            {
+                children[j].push(i);
+                attached = true;
+                break;
+            }
+            parent = world.analysis.decl(p).and_then(|d| d.parent);
+        }
+        if !attached {
+            roots.push(i);
+        }
+    }
+    fn build(
+        i: usize,
+        decls: &[(DeclId, &Decl)],
+        children: &[Vec<usize>],
+        doc: Doc,
+    ) -> DocumentSymbol {
+        let decl = decls[i].1;
+        let mut range = decl.full_range;
+        if !range.contains_range(decl.range) {
+            range = decl.range;
+        }
+        DocumentSymbol {
+            name: decl.spelling.clone(),
+            detail: Some(decl.kind.describe().into()),
+            kind: symbol_kind(decl.kind).unwrap_or(SymbolKind::NULL),
+            tags: None,
+            deprecated: None,
+            range: doc.range(range),
+            selection_range: doc.range(decl.range),
+            children: Some(
+                children[i]
+                    .iter()
+                    .map(|&c| build(c, decls, children, doc))
+                    .collect(),
+            ),
+        }
+    }
+    Some(DocumentSymbolResponse::Nested(
+        roots
+            .into_iter()
+            .map(|i| build(i, &decls, &children, doc))
+            .collect(),
+    ))
+}
+
+#[allow(deprecated)]
+fn workspace_symbols(
+    world: &mut World,
+    params: WorkspaceSymbolParams,
+) -> Option<WorkspaceSymbolResponse> {
+    let query = params.query.to_ascii_lowercase();
+    let mut out = Vec::new();
+    let user_files = world.analysis.user_files().len() as FileId;
+    for file in 0..user_files {
+        for (id, decl) in file_decls(world, file) {
+            let listed = matches!(
+                decl.kind,
+                DeclKind::Entity
+                    | DeclKind::Architecture
+                    | DeclKind::Package
+                    | DeclKind::PackageInstance
+                    | DeclKind::Context
+                    | DeclKind::Configuration
+                    | DeclKind::Component
+                    | DeclKind::Type
+                    | DeclKind::Subtype
+                    | DeclKind::Function
+                    | DeclKind::Procedure
+            ) || (matches!(decl.kind, DeclKind::Constant | DeclKind::Signal)
+                && decl.parent.is_some_and(|p| {
+                    p.index == 0
+                        && world.analysis.units()[p.unit as usize].kind == DeclKind::Package
+                }));
+            if !listed || !decl.name.contains(&query) {
+                continue;
+            }
+            let Some(location) = location(world, decl) else {
+                continue;
+            };
+            let container =
+                (id.index != 0).then(|| world.analysis.unit_decls(id.unit)[0].spelling.clone());
+            out.push(SymbolInformation {
+                name: decl.spelling.clone(),
+                kind: symbol_kind(decl.kind).unwrap_or(SymbolKind::NULL),
+                tags: None,
+                deprecated: None,
+                location,
+                container_name: container,
+            });
+            if out.len() >= 1000 {
+                return Some(WorkspaceSymbolResponse::Flat(out));
+            }
+        }
+    }
+    Some(WorkspaceSymbolResponse::Flat(out))
+}
+
+/// The declarations a rename at `position` would change, if it may.
+fn rename_targets(
+    world: &World,
+    position: &TextDocumentPositionParams,
+) -> Result<(FileId, Hit), String> {
+    let Some((file, hit)) = hit(world, position) else {
+        return Err("nothing to rename here".into());
+    };
+    if hit.targets.is_empty() {
+        return Err("this name is not declared in the project".into());
+    }
+    for id in &hit.targets {
+        let decl = world.analysis.decl(*id).ok_or("unknown declaration")?;
+        if world.analysis.files()[decl.file as usize].builtin {
+            return Err(format!(
+                "`{}` is declared in a bundled library",
+                decl.spelling
+            ));
+        }
+        if decl.spelling.starts_with('"') || decl.spelling.starts_with('\'') {
+            return Err("operators and character literals cannot be renamed".into());
+        }
+    }
+    Ok((file, hit))
+}
+
+fn prepare_rename(
+    world: &mut World,
+    params: TextDocumentPositionParams,
+) -> Option<PrepareRenameResponse> {
+    let (file, hit) = rename_targets(world, &params).ok()?;
+    let doc = world.doc(file);
+    // Selected names (`work.pkg.x`) cover more than the identifier.
+    let range = if hit.range.len() > TextSize::from(0)
+        && doc.text[std::ops::Range::<usize>::from(hit.range)].contains('.')
+    {
+        return None;
+    } else {
+        hit.range
+    };
+    Some(PrepareRenameResponse::Range(doc.range(range)))
+}
+
+fn rename(world: &mut World, params: RenameParams) -> Result<Option<WorkspaceEdit>, Error> {
+    let new_name = params.new_name.trim();
+    let valid = if new_name.starts_with('\\') {
+        new_name.len() > 2 && new_name.ends_with('\\')
+    } else {
+        new_name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic())
+            && new_name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            && !new_name.contains("__")
+            && !new_name.ends_with('_')
+    };
+    if !valid {
+        return Err(Error::Failed(format!(
+            "`{new_name}` is not a VHDL identifier"
+        )));
+    }
+    let (_, hit) = rename_targets(world, &params.text_document_position).map_err(Error::Failed)?;
+    let mut changes: HashMap<Url, Vec<TextEdit>> = HashMap::new();
+    for (file, range, _) in occurrences(world, &hit.targets, true) {
+        let analyzed = &world.analysis.files()[file as usize];
+        let doc = world.doc(file);
+        let text = &doc.text[std::ops::Range::<usize>::from(range)];
+        // A reference may be a selected name: replace its last part.
+        let start = text.rfind('.').map_or(0, |i| i + 1);
+        let range = TextRange::new(range.start() + TextSize::from(start as u32), range.end());
+        let Some(uri) = uri(&analyzed.path) else {
+            continue;
+        };
+        changes.entry(uri).or_default().push(TextEdit {
+            range: doc.range(range),
+            new_text: new_name.to_owned(),
+        });
+    }
+    Ok(Some(WorkspaceEdit {
+        changes: Some(changes),
+        ..Default::default()
+    }))
+}
+
+const KEYWORDS: &[&str] = &[
+    "abs",
+    "access",
+    "after",
+    "alias",
+    "all",
+    "and",
+    "architecture",
+    "array",
+    "assert",
+    "attribute",
+    "begin",
+    "block",
+    "body",
+    "buffer",
+    "bus",
+    "case",
+    "component",
+    "configuration",
+    "constant",
+    "context",
+    "downto",
+    "else",
+    "elsif",
+    "end",
+    "entity",
+    "exit",
+    "file",
+    "for",
+    "function",
+    "generate",
+    "generic",
+    "group",
+    "guarded",
+    "if",
+    "impure",
+    "in",
+    "inertial",
+    "inout",
+    "is",
+    "label",
+    "library",
+    "linkage",
+    "literal",
+    "loop",
+    "map",
+    "mod",
+    "nand",
+    "new",
+    "next",
+    "nor",
+    "not",
+    "null",
+    "of",
+    "on",
+    "open",
+    "or",
+    "others",
+    "out",
+    "package",
+    "port",
+    "postponed",
+    "procedure",
+    "process",
+    "protected",
+    "pure",
+    "range",
+    "record",
+    "register",
+    "reject",
+    "rem",
+    "report",
+    "return",
+    "rol",
+    "ror",
+    "select",
+    "severity",
+    "shared",
+    "signal",
+    "sla",
+    "sll",
+    "sra",
+    "srl",
+    "subtype",
+    "then",
+    "to",
+    "transport",
+    "type",
+    "unaffected",
+    "units",
+    "until",
+    "use",
+    "variable",
+    "view",
+    "wait",
+    "when",
+    "while",
+    "with",
+    "xnor",
+    "xor",
+];
+
+fn completion_kind(kind: DeclKind) -> CompletionItemKind {
+    match kind {
+        DeclKind::Entity | DeclKind::Component => CompletionItemKind::INTERFACE,
+        DeclKind::Architecture => CompletionItemKind::CLASS,
+        DeclKind::Package
+        | DeclKind::PackageInstance
+        | DeclKind::PackageBody
+        | DeclKind::Context
+        | DeclKind::Configuration
+        | DeclKind::GenericPackage => CompletionItemKind::MODULE,
+        DeclKind::Signal | DeclKind::Variable | DeclKind::File | DeclKind::LoopParameter => {
+            CompletionItemKind::VARIABLE
+        }
+        DeclKind::Constant | DeclKind::Generic { .. } | DeclKind::GenerateParameter => {
+            CompletionItemKind::CONSTANT
+        }
+        DeclKind::Port { .. } | DeclKind::Parameter { .. } => CompletionItemKind::FIELD,
+        DeclKind::Type
+        | DeclKind::Subtype
+        | DeclKind::IncompleteType
+        | DeclKind::ProtectedBody
+        | DeclKind::GenericType => CompletionItemKind::STRUCT,
+        DeclKind::EnumLiteral => CompletionItemKind::ENUM_MEMBER,
+        DeclKind::PhysicalUnit => CompletionItemKind::UNIT,
+        DeclKind::Function | DeclKind::GenericSubprogram => CompletionItemKind::FUNCTION,
+        DeclKind::Procedure => CompletionItemKind::METHOD,
+        _ => CompletionItemKind::REFERENCE,
+    }
+}
+
+#[derive(Default)]
+struct Items {
+    items: Vec<CompletionItem>,
+    seen: std::collections::HashSet<(String, String)>,
+}
+
+impl Items {
+    fn push(&mut self, label: &str, kind: CompletionItemKind, detail: &str) {
+        if label.is_empty() || label.starts_with('"') {
+            return;
+        }
+        if self
+            .seen
+            .insert((label.to_ascii_lowercase(), format!("{kind:?}")))
+        {
+            self.items.push(CompletionItem {
+                label: label.to_owned(),
+                kind: Some(kind),
+                detail: (!detail.is_empty()).then(|| detail.to_owned()),
+                ..Default::default()
+            });
+        }
+    }
+
+    fn decl(&mut self, decl: &Decl) {
+        self.push(
+            &decl.spelling,
+            completion_kind(decl.kind),
+            decl.kind.describe(),
+        );
+    }
+}
+
+fn completion(world: &mut World, params: CompletionParams) -> Option<CompletionResponse> {
+    let position = &params.text_document_position;
+    let file = file_of(world, &position.text_document.uri)?;
+    let doc = world.doc(file);
+    let offset = doc.offset(position.position);
+    let before = &doc.text[..usize::from(offset)];
+    let word_start = before
+        .rfind(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .map_or(0, |i| i + 1);
+    let analysis = &world.analysis;
+    let mut items = Items::default();
+
+    // After `prefix.`: what the prefix contains.
+    if before[..word_start].ends_with('.') {
+        let dot = TextSize::from((word_start - 1) as u32);
+        let mut found = false;
+        for (f, reference) in analysis.references() {
+            if f != file || reference.range.end() != dot {
+                continue;
+            }
+            for target in &reference.targets {
+                match target {
+                    Target::Library(library) => {
+                        for unit in analysis.units() {
+                            if unit.library == *library
+                                && unit.primary.is_none()
+                                && !matches!(
+                                    unit.kind,
+                                    DeclKind::Architecture | DeclKind::PackageBody
+                                )
+                            {
+                                items.push(
+                                    &analysis.files()[unit.file as usize].text
+                                        [std::ops::Range::<usize>::from(unit.name_range)],
+                                    completion_kind(unit.kind),
+                                    unit.kind.describe(),
+                                );
+                            }
+                        }
+                        found = true;
+                    }
+                    Target::Decl(id) => {
+                        if let Some(members) = analysis.decl(*id).and_then(|d| d.members.clone()) {
+                            for member in members.iter() {
+                                if let Some(decl) = analysis.decl(member) {
+                                    items.decl(decl);
+                                }
+                            }
+                            items.push("all", CompletionItemKind::KEYWORD, "");
+                            found = true;
+                        }
+                    }
+                }
+            }
+        }
+        if found {
+            return Some(CompletionResponse::Array(items.items));
+        }
+    }
+
+    // Declarations in scope in this file's units and their primary units.
+    let units: Vec<_> = analysis.file_units(file).collect();
+    let mut scope_units = units.clone();
+    for &unit in &units {
+        let info = &analysis.units()[unit as usize];
+        if let Some(primary) = &info.primary
+            && let Some(p) = analysis.units().iter().position(|u| {
+                u.library == info.library && u.name == *primary && u.primary.is_none()
+            })
+        {
+            scope_units.push(p as vfl_sema::UnitId);
+        }
+    }
+    for &unit in &scope_units {
+        for decl in analysis.unit_decls(unit) {
+            let visible = match decl.parent {
+                None => true,
+                Some(p) if p.index == 0 => true,
+                Some(p) => analysis.decl(p).is_some_and(|parent| {
+                    parent.file == file && parent.full_range.contains_inclusive(offset)
+                }),
+            };
+            if visible {
+                items.decl(decl);
+            }
+        }
+    }
+    // Packages this file refers to, and std.standard.
+    let mut packages: Vec<DeclId> = Vec::new();
+    for (f, reference) in analysis.references() {
+        if f != file {
+            continue;
+        }
+        for target in &reference.targets {
+            if let Target::Decl(id) = target
+                && id.index == 0
+                && matches!(
+                    analysis.units()[id.unit as usize].kind,
+                    DeclKind::Package | DeclKind::PackageInstance
+                )
+                && !packages.contains(id)
+            {
+                packages.push(*id);
+            }
+        }
+    }
+    if let Some(standard) = analysis.units().iter().position(|u| {
+        u.library == "std" && u.name == "standard" && analysis.files()[u.file as usize].builtin
+    }) {
+        packages.push(DeclId {
+            unit: standard as vfl_sema::UnitId,
+            index: 0,
+        });
+    }
+    for id in packages {
+        if let Some(members) = analysis.decl(id).and_then(|d| d.members.clone()) {
+            for member in members.iter() {
+                if let Some(decl) = analysis.decl(member) {
+                    items.decl(decl);
+                }
+            }
+        }
+    }
+    // Libraries and their units.
+    let mut libraries: Vec<&str> = vec!["work"];
+    for unit in analysis.units() {
+        if !analysis.files()[unit.file as usize].builtin && unit.primary.is_none() {
+            items.push(
+                &analysis.files()[unit.file as usize].text
+                    [std::ops::Range::<usize>::from(unit.name_range)],
+                completion_kind(unit.kind),
+                unit.kind.describe(),
+            );
+        }
+        if !libraries.contains(&unit.library.as_str()) {
+            libraries.push(&unit.library);
+        }
+    }
+    for library in libraries {
+        items.push(library, CompletionItemKind::MODULE, "library");
+    }
+    for keyword in KEYWORDS {
+        items.push(keyword, CompletionItemKind::KEYWORD, "");
+    }
+    Some(CompletionResponse::Array(items.items))
+}
+
+fn code_actions(world: &mut World, params: CodeActionParams) -> Option<Vec<CodeActionOrCommand>> {
+    let file = file_of(world, &params.text_document.uri)?;
+    let doc = world.doc(file);
+    let start = doc.offset(params.range.start);
+    let end = doc.offset(params.range.end);
+    let uri = params.text_document.uri.clone();
+    let edit = |fixes: &[&vfl_lint::Fix]| {
+        let edits: Vec<TextEdit> = fixes
+            .iter()
+            .flat_map(|f| &f.edits)
+            .map(|e| TextEdit {
+                range: doc.range(e.range),
+                new_text: e.text.clone(),
+            })
+            .collect();
+        WorkspaceEdit {
+            changes: Some(HashMap::from([(uri.clone(), edits)])),
+            ..Default::default()
+        }
+    };
+    let only = params.context.only.as_ref();
+    let wants = |kind: &CodeActionKind| {
+        only.is_none_or(|only| only.iter().any(|k| kind.as_str().starts_with(k.as_str())))
+    };
+    let mut out = Vec::new();
+    let in_file: Vec<&vfl_lint::Diagnostic> =
+        world.lint.iter().filter(|d| d.file == file).collect();
+    if wants(&CodeActionKind::QUICKFIX) {
+        for d in &in_file {
+            let Some(fix) = &d.fix else { continue };
+            if d.range.end() < start || d.range.start() > end {
+                continue;
+            }
+            let diagnostic = diagnostics(world)
+                .into_iter()
+                .find(|(u, _)| *u == uri)
+                .and_then(|(_, list)| {
+                    list.into_iter().find(|x| {
+                        x.range == doc.range(d.range)
+                            && x.code == Some(NumberOrString::String(d.rule.into()))
+                    })
+                });
+            out.push(CodeActionOrCommand::CodeAction(CodeAction {
+                title: if fix.safe {
+                    fix.title.clone()
+                } else {
+                    format!("{} (may change behavior)", fix.title)
+                },
+                kind: Some(CodeActionKind::QUICKFIX),
+                diagnostics: diagnostic.map(|d| vec![d]),
+                edit: Some(edit(&[fix])),
+                is_preferred: Some(fix.safe),
+                ..Default::default()
+            }));
+        }
+    }
+    let fix_all = CodeActionKind::new("source.fixAll.vfl");
+    if wants(&fix_all) {
+        let fixes: Vec<&vfl_lint::Fix> = in_file
+            .iter()
+            .filter_map(|d| d.fix.as_ref())
+            .filter(|f| f.safe)
+            .collect();
+        if !fixes.is_empty() {
+            // Edits must not overlap: keep the ones `apply_fixes` keeps.
+            let mut kept: Vec<&vfl_lint::Fix> = Vec::new();
+            for fix in fixes {
+                let mut trial = kept.clone();
+                trial.push(fix);
+                if vfl_lint::apply_fixes(doc.text, trial.iter().copied()).1 == trial.len() {
+                    kept.push(fix);
+                }
+            }
+            out.push(CodeActionOrCommand::CodeAction(CodeAction {
+                title: "Fix all safe vfl problems".into(),
+                kind: Some(fix_all),
+                edit: Some(edit(&kept)),
+                ..Default::default()
+            }));
+        }
+    }
+    Some(out)
+}

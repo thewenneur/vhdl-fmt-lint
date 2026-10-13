@@ -18,6 +18,7 @@ workspace = true
 vfl-config.workspace = true
 vfl-fmt.workspace = true
 vfl-lint.workspace = true
+vfl-lsp.workspace = true
 vfl-project.workspace = true
 vfl-syntax.workspace = true
 anyhow.workspace = true
