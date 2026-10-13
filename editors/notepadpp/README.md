@@ -113,10 +113,13 @@ or `.vht`.
 
 Tested with Notepad++ 8.8.6, 64-bit.
 
-1. Get `vfl_npp.dll`: from the `vfl_npp` artifact of a CI run, or build it (below).
-2. Close Notepad++ and create the folder `plugins\vfl_npp` in its install directory
-   (usually `C:\Program Files\Notepad++\plugins\vfl_npp`).
-3. Put `vfl_npp.dll` in it and start Notepad++. **Plugins > vfl** appears.
+1. Download `vfl_npp-v<version>-x64.zip` from the
+   [latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest), or build
+   `vfl_npp.dll` yourself (below).
+2. Close Notepad++ and unzip it into the `plugins` folder of its install directory (usually
+   `C:\Program Files\Notepad++\plugins`), so the DLL ends up in `plugins\vfl_npp\vfl_npp.dll`.
+   A DLL you built goes in a new `plugins\vfl_npp` folder.
+3. Start Notepad++. **Plugins > vfl** appears.
 
 ## Build
 
