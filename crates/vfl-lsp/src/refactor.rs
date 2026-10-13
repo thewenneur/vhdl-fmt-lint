@@ -21,8 +21,26 @@ pub(crate) enum Symbol {
     Element { record: DeclId, name: String },
 }
 
-/// The name at `offset` and what it stands for.
+/// The name at `offset` and what it stands for; with `within`, only what
+/// is in that file is linked.
 pub(crate) fn symbol_at(
+    world: &World,
+    file: FileId,
+    offset: TextSize,
+    within: Option<FileId>,
+) -> Option<(TextRange, Symbol)> {
+    if let Some(found) = element_at(world, file, offset) {
+        return Some(found);
+    }
+    let Hit { range, targets, .. } = hit_at(world, file, offset)?;
+    if targets.is_empty() {
+        return None;
+    }
+    Some((range, Symbol::Decls(linked(world, &targets, within))))
+}
+
+/// The record element named at `offset`, if any.
+pub(crate) fn element_at(
     world: &World,
     file: FileId,
     offset: TextSize,
@@ -43,14 +61,7 @@ pub(crate) fn symbol_at(
             ));
         }
     }
-    if let Some(found) = element_decl_at(world, file, offset) {
-        return Some(found);
-    }
-    let Hit { range, targets, .. } = hit_at(world, file, offset)?;
-    if targets.is_empty() {
-        return None;
-    }
-    Some((range, Symbol::Decls(linked(world, &targets))))
+    element_decl_at(world, file, offset)
 }
 
 /// A record element named where it is declared.
@@ -112,7 +123,7 @@ fn element_decl_at(world: &World, file: FileId, offset: TextSize) -> Option<(Tex
 /// full declaration, a subprogram and its body (each body's name refers to
 /// what it completes), and an entity and the components named after it,
 /// with their generics and ports of the same names.
-pub(crate) fn linked(world: &World, targets: &[DeclId]) -> Vec<DeclId> {
+pub(crate) fn linked(world: &World, targets: &[DeclId], within: Option<FileId>) -> Vec<DeclId> {
     let analysis = &world.analysis;
     // Everything linked shares a name with a target.
     let names: HashSet<&str> = targets
@@ -120,7 +131,7 @@ pub(crate) fn linked(world: &World, targets: &[DeclId]) -> Vec<DeclId> {
         .filter_map(|&id| analysis.decl(id))
         .map(|d| d.name.as_str())
         .collect();
-    let candidates: Vec<(DeclId, &Decl)> = user_decls(world)
+    let candidates: Vec<(DeclId, &Decl)> = user_decls(world, within)
         .filter(|(_, d)| names.contains(d.name.as_str()))
         .collect();
     // A body's name refers to what it completes.
@@ -177,10 +188,13 @@ pub(crate) fn linked(world: &World, targets: &[DeclId]) -> Vec<DeclId> {
 }
 
 /// The declarations of the project's own files.
-fn user_decls(world: &World) -> impl Iterator<Item = (DeclId, &Decl)> {
+fn user_decls(world: &World, within: Option<FileId>) -> impl Iterator<Item = (DeclId, &Decl)> {
     let analysis = &world.analysis;
     (0..analysis.units().len() as vfl_sema::UnitId)
-        .filter(|&u| !analysis.files()[analysis.units()[u as usize].file as usize].builtin)
+        .filter(move |&u| {
+            let file = analysis.units()[u as usize].file;
+            !analysis.files()[file as usize].builtin && within.is_none_or(|f| f == file)
+        })
         .flat_map(move |unit| {
             analysis
                 .unit_decls(unit)
@@ -204,20 +218,22 @@ pub(crate) fn occurrences(
     world: &World,
     symbol: &Symbol,
     declarations: bool,
+    within: Option<FileId>,
 ) -> Vec<(FileId, TextRange, Access)> {
     match symbol {
-        Symbol::Decls(ids) => crate::handlers::occurrences(world, ids, declarations),
+        Symbol::Decls(ids) => crate::handlers::occurrences(world, ids, declarations, within),
         Symbol::Element { record, name } => {
             let mut out: Vec<(FileId, TextRange, Access)> = Vec::new();
             if declarations {
                 out.extend(
                     element_decls(world, *record, name)
                         .into_iter()
+                        .filter(|(f, _)| within.is_none_or(|w| w == *f))
                         .map(|(f, r)| (f, r, Access::Other)),
                 );
             }
             for (file, e) in world.analysis.element_references() {
-                if e.record == *record && e.name == *name {
+                if e.record == *record && e.name == *name && within.is_none_or(|f| f == file) {
                     out.push((file, e.range, Access::Other));
                 }
             }
@@ -294,7 +310,7 @@ pub(crate) fn rename_conflict(world: &World, symbol: &Symbol, new_name: &str) ->
         .iter()
         .filter_map(|&id| analysis.decl(id))
         .all(|d| d.kind.is_overloadable());
-    let places = occurrences(world, symbol, true);
+    let places = occurrences(world, symbol, true, None);
     let mut target_scopes: Vec<(FileId, TextRange)> = Vec::new();
     for &id in ids {
         if let Some(parent) = analysis.decl(id).and_then(|d| d.parent) {
@@ -306,7 +322,7 @@ pub(crate) fn rename_conflict(world: &World, symbol: &Symbol, new_name: &str) ->
             .iter()
             .any(|(f, scope)| *f == file && scope.contains_range(range))
     };
-    for (id, other) in user_decls(world) {
+    for (id, other) in user_decls(world, None) {
         if other.name != key || ids.contains(&id) || analysis.files()[other.file as usize].builtin {
             continue;
         }
@@ -403,7 +419,7 @@ fn scopes(world: &World, id: DeclId) -> Vec<(FileId, TextRange)> {
         }
     }
     if matches!(decl.type_def.as_deref(), Some(TypeDef::Protected)) {
-        for (_, body) in user_decls(world) {
+        for (_, body) in user_decls(world, None) {
             if body.kind == DeclKind::ProtectedBody
                 && body.name == decl.name
                 && crate::types::reference_at(analysis, body.file, body.range)

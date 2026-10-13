@@ -55,11 +55,8 @@ pub(crate) fn actions(world: &World, file: FileId, start: TextSize, end: TextSiz
                     .collect(),
             });
         }
-        if let Some(new_name) = &d.rename
-            && let Ok((_, symbol)) =
-                crate::handlers::rename_targets_at(world, file, d.range.start())
-            && let Ok(edits) = crate::handlers::rename_edits(world, &symbol, new_name)
-        {
+        // Its edits, across the project, are worked out when it is chosen.
+        if let Some(new_name) = &d.rename {
             let old = &world.doc(file).text[std::ops::Range::<usize>::from(d.range)];
             fixes.push(Action {
                 title: format!("Rename `{old}` to `{new_name}` everywhere"),
@@ -68,7 +65,7 @@ pub(crate) fn actions(world: &World, file: FileId, start: TextSize, end: TextSiz
                 preferred: true,
                 rename: Some(new_name.clone()),
                 silences: false,
-                edits,
+                edits: Vec::new(),
             });
         }
         if d.rule == vfl_sema::codes::UNRESOLVED_NAME {

@@ -52,7 +52,15 @@ pub fn request(world: &mut World, method: &str, params: Value) -> Result<Value, 
         "textDocument/codeAction" => json(code_actions(world, parse(params)?)),
         "textDocument/signatureHelp" => json(crate::types::signature_help(world, parse(params)?)),
         "codeAction/resolve" => {
-            json(crate::generate::resolve(world, parse(params)?).map_err(Error::Failed)?)
+            let action: CodeAction = parse(params)?;
+            match action
+                .data
+                .clone()
+                .and_then(|d| serde_json::from_value(d).ok())
+            {
+                Some(data) => json(resolve_rename(world, action, data).map_err(Error::Failed)?),
+                None => json(crate::generate::resolve(world, action).map_err(Error::Failed)?),
+            }
         }
         "vfl/entities" => json(crate::generate::entities(world)),
         "vfl/generate" => {
@@ -70,31 +78,35 @@ fn uri(path: &Path) -> Option<Url> {
     Url::from_file_path(path).ok()
 }
 
+/// A problem as an LSP diagnostic.
+fn lsp_diagnostic(world: &World, d: &vfl_lint::Diagnostic) -> lsp_types::Diagnostic {
+    let tags = d
+        .rule
+        .starts_with("sema/unused-")
+        .then(|| vec![lsp_types::DiagnosticTag::UNNECESSARY]);
+    lsp_types::Diagnostic {
+        range: world.doc(d.file).range(d.range),
+        severity: Some(match d.level {
+            Level::Error => lsp_types::DiagnosticSeverity::ERROR,
+            Level::Warn => lsp_types::DiagnosticSeverity::WARNING,
+            _ => lsp_types::DiagnosticSeverity::INFORMATION,
+        }),
+        code: Some(NumberOrString::String(d.rule.into())),
+        source: Some("vfl".into()),
+        message: d.message.clone(),
+        tags,
+        ..Default::default()
+    }
+}
+
 /// The diagnostics of every user file that has some.
 pub fn diagnostics(world: &World) -> Vec<(Url, Vec<lsp_types::Diagnostic>)> {
     let mut by_file: HashMap<FileId, Vec<lsp_types::Diagnostic>> = HashMap::new();
     for d in &world.lint {
-        let doc = world.doc(d.file);
-        let tags = d
-            .rule
-            .starts_with("sema/unused-")
-            .then(|| vec![lsp_types::DiagnosticTag::UNNECESSARY]);
         by_file
             .entry(d.file)
             .or_default()
-            .push(lsp_types::Diagnostic {
-                range: doc.range(d.range),
-                severity: Some(match d.level {
-                    Level::Error => lsp_types::DiagnosticSeverity::ERROR,
-                    Level::Warn => lsp_types::DiagnosticSeverity::WARNING,
-                    _ => lsp_types::DiagnosticSeverity::INFORMATION,
-                }),
-                code: Some(NumberOrString::String(d.rule.into())),
-                source: Some("vfl".into()),
-                message: d.message.clone(),
-                tags,
-                ..Default::default()
-            });
+            .push(lsp_diagnostic(world, d));
     }
     let mut out: Vec<(Url, Vec<lsp_types::Diagnostic>)> = by_file
         .into_iter()
@@ -158,10 +170,21 @@ pub(crate) struct Hit {
     pub library: Option<String>,
 }
 
+/// The references in a file, unit by unit.
+pub(crate) fn file_references(
+    world: &World,
+    file: FileId,
+) -> impl Iterator<Item = &vfl_sema::Reference> {
+    world
+        .analysis
+        .file_units(file)
+        .flat_map(|unit| world.analysis.unit_references(unit))
+}
+
 pub(crate) fn hit_at(world: &World, file: FileId, offset: TextSize) -> Option<Hit> {
     let contains = |r: TextRange| r.start() <= offset && offset <= r.end();
-    for (f, reference) in world.analysis.references() {
-        if f == file && contains(reference.range) {
+    for reference in file_references(world, file) {
+        if contains(reference.range) {
             let mut targets = Vec::new();
             let mut library = None;
             for t in &reference.targets {
@@ -177,7 +200,18 @@ pub(crate) fn hit_at(world: &World, file: FileId, offset: TextSize) -> Option<Hi
             });
         }
     }
-    for (id, decl) in world.analysis.decls() {
+    let decls = world.analysis.file_units(file).flat_map(|unit| {
+        world
+            .analysis
+            .unit_decls(unit)
+            .iter()
+            .enumerate()
+            .map(move |(index, decl)| {
+                let index = index as u32;
+                (DeclId { unit, index }, decl)
+            })
+    });
+    for (id, decl) in decls {
         if decl.file == file && contains(decl.range) && !decl.spelling.is_empty() {
             return Some(Hit {
                 range: decl.range,
@@ -245,7 +279,7 @@ pub(crate) fn definitions(
     file: FileId,
     offset: TextSize,
 ) -> Vec<(FileId, TextRange)> {
-    if let Some((_, Symbol::Element { record, name })) = refactor::symbol_at(world, file, offset) {
+    if let Some((_, Symbol::Element { record, name })) = refactor::element_at(world, file, offset) {
         return refactor::element_decls(world, record, &name);
     }
     let Some(hit) = hit_at(world, file, offset) else {
@@ -258,22 +292,35 @@ pub(crate) fn definitions(
         .collect()
 }
 
-/// Every place that names one of `targets`: declarations and references,
-/// once each.
+/// Every place that names one of `targets`, in file `within` or in all:
+/// declarations and references, once each.
 pub(crate) fn occurrences(
     world: &World,
     targets: &[DeclId],
     declarations: bool,
+    within: Option<FileId>,
 ) -> Vec<(FileId, TextRange, Access)> {
     let mut out = Vec::new();
     if declarations {
         for id in targets {
-            if let Some(decl) = world.analysis.decl(*id) {
+            if let Some(decl) = world.analysis.decl(*id)
+                && within.is_none_or(|f| f == decl.file)
+            {
                 out.push((decl.file, decl.range, Access::Other));
             }
         }
     }
-    for (file, reference) in world.analysis.references() {
+    let references: Box<dyn Iterator<Item = (FileId, &vfl_sema::Reference)>> = match within {
+        Some(file) => Box::new(world.analysis.file_units(file).flat_map(move |u| {
+            world
+                .analysis
+                .unit_references(u)
+                .iter()
+                .map(move |r| (file, r))
+        })),
+        None => Box::new(world.analysis.references()),
+    };
+    for (file, reference) in references {
         if reference
             .targets
             .iter()
@@ -291,8 +338,8 @@ fn references(world: &mut World, params: ReferenceParams) -> Option<Vec<Location
     let position = &params.text_document_position;
     let file = file_of(world, &position.text_document.uri)?;
     let offset = world.doc(file).offset(position.position);
-    let (_, symbol) = refactor::symbol_at(world, file, offset)?;
-    let found = refactor::occurrences(world, &symbol, params.context.include_declaration);
+    let (_, symbol) = refactor::symbol_at(world, file, offset, None)?;
+    let found = refactor::occurrences(world, &symbol, params.context.include_declaration, None);
     Some(
         found
             .into_iter()
@@ -311,9 +358,9 @@ fn highlight(world: &mut World, params: DocumentHighlightParams) -> Option<Vec<D
     let position = &params.text_document_position_params;
     let file = file_of(world, &position.text_document.uri)?;
     let doc = world.doc(file);
-    let (_, symbol) = refactor::symbol_at(world, file, doc.offset(position.position))?;
+    let (_, symbol) = refactor::symbol_at(world, file, doc.offset(position.position), Some(file))?;
     Some(
-        refactor::occurrences(world, &symbol, true)
+        refactor::occurrences(world, &symbol, true, Some(file))
             .into_iter()
             .filter(|(f, _, _)| *f == file)
             .map(|(_, range, access)| DocumentHighlight {
@@ -643,7 +690,7 @@ pub(crate) fn rename_targets_at(
     file: FileId,
     offset: TextSize,
 ) -> Result<(TextRange, Symbol), String> {
-    let Some((range, symbol)) = refactor::symbol_at(world, file, offset) else {
+    let Some((range, symbol)) = refactor::symbol_at(world, file, offset, None) else {
         return Err(match hit_at(world, file, offset) {
             Some(_) => "this name is not declared in the project".into(),
             None => "nothing to rename here".into(),
@@ -758,7 +805,7 @@ pub(crate) fn check_identifier(name: &str) -> Result<(), String> {
 /// What renaming `symbol` replaces: each name, or the last part of a
 /// selected name, in the project's own files, once each.
 pub(crate) fn rename_ranges(world: &World, symbol: &Symbol) -> Vec<(FileId, TextRange)> {
-    let mut out: Vec<(FileId, TextRange)> = refactor::occurrences(world, symbol, true)
+    let mut out: Vec<(FileId, TextRange)> = refactor::occurrences(world, symbol, true, None)
         .into_iter()
         .filter(|(file, _, _)| !world.analysis.files()[*file as usize].builtin)
         .map(|(file, range, _)| {
@@ -981,10 +1028,7 @@ pub(crate) fn visible_decls(
     }
     // Packages this file refers to, and std.standard.
     let mut packages: Vec<DeclId> = Vec::new();
-    for (in_file, reference) in analysis.references() {
-        if in_file != file {
-            continue;
-        }
+    for reference in file_references(world, file) {
         for target in &reference.targets {
             if let Target::Decl(id) = target
                 && id.index == 0
@@ -1041,8 +1085,8 @@ pub(crate) fn completion_at(world: &World, file: FileId, offset: TextSize) -> Ve
     if before[..word_start].ends_with('.') {
         let dot = TextSize::from((word_start - 1) as u32);
         let mut found = false;
-        for (f, reference) in analysis.references() {
-            if f != file || reference.range.end() != dot {
+        for reference in file_references(world, file) {
+            if reference.range.end() != dot {
                 continue;
             }
             for target in &reference.targets {
@@ -1129,22 +1173,27 @@ fn code_actions(world: &mut World, params: CodeActionParams) -> Option<Vec<CodeA
     };
     let mut out = Vec::new();
     if wants(&CodeActionKind::QUICKFIX) {
-        let published = diagnostics(world)
-            .into_iter()
-            .find(|(u, _)| *u == uri)
-            .map(|(_, list)| list)
-            .unwrap_or_default();
         for action in crate::actions::actions(world, file, start, end) {
             let problem = &world.lint[action.problem];
-            let diagnostic = published.iter().find(|x| {
-                x.range == doc.range(problem.range)
-                    && x.code == Some(NumberOrString::String(problem.rule.into()))
-            });
+            // A rename's edits are worked out when it is chosen.
+            let (edit, data) = match &action.rename {
+                Some(new_name) => (
+                    None,
+                    serde_json::to_value(RenameData {
+                        rename: new_name.clone(),
+                        uri: uri.clone(),
+                        offset: problem.range.start().into(),
+                    })
+                    .ok(),
+                ),
+                None => (Some(workspace_edit(world, action.edits)), None),
+            };
             out.push(CodeActionOrCommand::CodeAction(CodeAction {
                 title: action.title,
                 kind: Some(CodeActionKind::QUICKFIX),
-                diagnostics: diagnostic.map(|d| vec![d.clone()]),
-                edit: Some(workspace_edit(world, action.edits)),
+                diagnostics: Some(vec![lsp_diagnostic(world, problem)]),
+                edit,
+                data,
                 is_preferred: action.preferred.then_some(true),
                 ..Default::default()
             }));
@@ -1175,6 +1224,28 @@ fn code_actions(world: &mut World, params: CodeActionParams) -> Option<Vec<CodeA
         out.extend(crate::generate::code_actions(world, file, start, end));
     }
     Some(out)
+}
+
+/// What a rename quick fix needs to work out its edits.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct RenameData {
+    rename: String,
+    uri: Url,
+    offset: u32,
+}
+
+/// The edits of a rename quick fix.
+fn resolve_rename(
+    world: &mut World,
+    mut action: CodeAction,
+    data: RenameData,
+) -> Result<CodeAction, String> {
+    world.refresh();
+    let file = file_of(world, &data.uri).ok_or("the file is not analyzed")?;
+    let (_, symbol) = rename_targets_at(world, file, TextSize::from(data.offset))?;
+    let edits = rename_edits(world, &symbol, &data.rename)?;
+    action.edit = Some(workspace_edit(world, edits));
+    Ok(action)
 }
 
 /// The fixes that can be applied together, in order: edits must not

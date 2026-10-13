@@ -236,10 +236,10 @@ pub fn references(world: &mut World, path: &Path, offset: usize) -> Vec<Location
     let Some((file, offset)) = locate(world, path, offset) else {
         return Vec::new();
     };
-    let Some((_, symbol)) = crate::refactor::symbol_at(world, file, offset) else {
+    let Some((_, symbol)) = crate::refactor::symbol_at(world, file, offset, None) else {
         return Vec::new();
     };
-    crate::refactor::occurrences(world, &symbol, true)
+    crate::refactor::occurrences(world, &symbol, true, None)
         .into_iter()
         .filter(|(f, _, _)| !world.analysis.files()[*f as usize].builtin)
         .filter_map(|(f, range, _)| location(world, f, range))
@@ -261,10 +261,10 @@ pub fn highlights(world: &mut World, path: &Path, offset: usize) -> Vec<(Range<u
     let Some((file, offset)) = locate(world, path, offset) else {
         return Vec::new();
     };
-    let Some((_, symbol)) = crate::refactor::symbol_at(world, file, offset) else {
+    let Some((_, symbol)) = crate::refactor::symbol_at(world, file, offset, Some(file)) else {
         return Vec::new();
     };
-    crate::refactor::occurrences(world, &symbol, true)
+    crate::refactor::occurrences(world, &symbol, true, Some(file))
         .into_iter()
         .filter(|(f, _, _)| *f == file)
         .map(|(_, range, access)| {

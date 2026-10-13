@@ -837,6 +837,9 @@ fn quick_fixes_for_rules() {
     assert!(apply(FIXES_TOP, &tabs["edit"], &top).contains("\n  signal sDone"));
     let rename = fix(&fixes, "Rename `sDone` to `s_s_done` everywhere");
     assert_eq!(rename["isPreferred"], true);
+    // Worked out when chosen.
+    assert!(rename.get("edit").is_none(), "{rename}");
+    let rename = client.request("codeAction/resolve", rename.clone());
     assert!(apply(FIXES_TOP, &rename["edit"], &top).contains("signal s_s_done : std_logic;"));
 
     // Unused signals declared together.
