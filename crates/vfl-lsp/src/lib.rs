@@ -12,16 +12,18 @@ mod handlers;
 mod types;
 mod world;
 
+use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
+use std::sync::mpsc;
 
 use anyhow::Result;
-use lsp_server::{Connection, ErrorCode, Message, Notification, Request, Response};
+use lsp_server::{Connection, ErrorCode, Message, Notification, Request, RequestId, Response};
 use lsp_types::notification::Notification as _;
 use lsp_types::{
     CodeActionKind, CodeActionOptions, CodeActionProviderCapability, CompletionOptions,
     DidChangeWatchedFilesRegistrationOptions, FileSystemWatcher, GlobPattern, InitializeParams,
     OneOf, Registration, RegistrationParams, RenameOptions, ServerCapabilities, ServerInfo,
-    TextDocumentSyncCapability, TextDocumentSyncKind, Url, notification as n,
+    TextDocumentSyncCapability, TextDocumentSyncKind, Url, notification as n, request::Shutdown,
 };
 use serde::de::DeserializeOwned;
 
@@ -114,8 +116,24 @@ pub fn run(connection: &Connection) -> Result<()> {
         .and_then(|d| d.dynamic_registration)
         .unwrap_or(false);
 
+    // `lsp_server` hands messages over a rendezvous channel, which always
+    // looks empty: read them into a queue of our own so the loop can see
+    // the edits that are already waiting and analyze once after them.
+    let (sender, inbox) = mpsc::channel();
+    let receiver = connection.receiver.clone();
+    std::thread::spawn(move || {
+        for message in receiver {
+            if sender.send(message).is_err() {
+                break;
+            }
+        }
+    });
+
     let mut server = Server {
         connection,
+        inbox,
+        queue: VecDeque::new(),
+        cancelled: HashSet::new(),
         world: World::new(&root),
         published: Vec::new(),
         shown_errors: Vec::new(),
@@ -130,6 +148,12 @@ pub fn run(connection: &Connection) -> Result<()> {
 
 struct Server<'a> {
     connection: &'a Connection,
+    /// Messages from the client, as they arrive.
+    inbox: mpsc::Receiver<Message>,
+    /// Messages received but not handled yet.
+    queue: VecDeque<Message>,
+    /// Queued requests the client cancelled.
+    cancelled: HashSet<RequestId>,
     world: World,
     /// Files with diagnostics shown in the client.
     published: Vec<Url>,
@@ -140,19 +164,19 @@ struct Server<'a> {
 
 impl Server<'_> {
     fn main_loop(&mut self) -> Result<()> {
-        while let Ok(message) = self.connection.receiver.recv() {
+        loop {
+            self.receive_waiting();
+            while self.queue.is_empty() {
+                let Ok(message) = self.inbox.recv() else {
+                    return Ok(());
+                };
+                self.accept(message);
+            }
+            let Some(message) = self.queue.pop_front() else {
+                unreachable!("the queue is not empty");
+            };
             match message {
-                Message::Request(request) => {
-                    if self.connection.handle_shutdown(&request)? {
-                        return Ok(());
-                    }
-                    if self.world.dirty {
-                        self.world.refresh();
-                        self.publish()?;
-                    }
-                    let response = self.handle_request(request);
-                    self.connection.sender.send(Message::Response(response))?;
-                }
+                Message::Request(request) => self.answer(request)?,
                 Message::Notification(notification) => {
                     if notification.method == n::Exit::METHOD {
                         return Ok(());
@@ -161,13 +185,67 @@ impl Server<'_> {
                 }
                 Message::Response(_) => {}
             }
-            // Analyze once the burst of edits is over.
-            if self.world.dirty && self.connection.receiver.is_empty() {
+            // Analyze once the burst of edits is over: typing faster than
+            // the project analyzes must not queue one analysis per key.
+            self.receive_waiting();
+            if self.world.dirty && self.queue.is_empty() {
                 self.world.refresh();
                 self.publish()?;
             }
         }
+    }
+
+    /// Answers a request, after analyzing the latest edits.
+    fn answer(&mut self, request: Request) -> Result<()> {
+        let response = if self.cancelled.remove(&request.id) {
+            Response::new_err(
+                request.id,
+                ErrorCode::RequestCanceled as i32,
+                "canceled".into(),
+            )
+        } else if request.method == <Shutdown as lsp_types::request::Request>::METHOD {
+            Response::new_ok(request.id, ())
+        } else {
+            if self.world.dirty {
+                self.world.refresh();
+                self.publish()?;
+            }
+            self.handle_request(request)
+        };
+        self.connection.sender.send(Message::Response(response))?;
         Ok(())
+    }
+
+    /// Queues the messages that already arrived.
+    fn receive_waiting(&mut self) {
+        while let Ok(message) = self.inbox.try_recv() {
+            self.accept(message);
+        }
+    }
+
+    /// Queues a message, or notes which queued request it cancels: the
+    /// editor cancels the requests it no longer needs, such as the
+    /// completion of each previous key.
+    fn accept(&mut self, message: Message) {
+        if let Message::Notification(notification) = &message
+            && notification.method == n::Cancel::METHOD
+        {
+            if let Some(p) = params::<lsp_types::CancelParams>(notification.params.clone()) {
+                let id = match p.id {
+                    lsp_types::NumberOrString::Number(id) => RequestId::from(id),
+                    lsp_types::NumberOrString::String(id) => RequestId::from(id),
+                };
+                let queued = self
+                    .queue
+                    .iter()
+                    .any(|m| matches!(m, Message::Request(r) if r.id == id));
+                if queued {
+                    self.cancelled.insert(id);
+                }
+            }
+            return;
+        }
+        self.queue.push_back(message);
     }
 
     fn register_watchers(&mut self) -> Result<()> {
@@ -333,4 +411,94 @@ impl Server<'_> {
 
 fn params<P: DeserializeOwned>(value: serde_json::Value) -> Option<P> {
     serde_json::from_value(value).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// Edits that wait in the queue are analyzed once, and cancelled
+    /// requests are not answered.
+    #[test]
+    fn waiting_edits_are_analyzed_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.vhd");
+        let text = "entity a is\nend entity;\narchitecture rtl of a is\n  signal s : bit;\nbegin\nend architecture;\n";
+        std::fs::write(&path, text).unwrap();
+        let uri = Url::from_file_path(&path).unwrap();
+
+        let (server, client) = Connection::memory();
+        let (sender, inbox) = mpsc::channel();
+        let notify = |method: &str, params: serde_json::Value| {
+            sender
+                .send(Message::Notification(Notification::new(
+                    method.into(),
+                    params,
+                )))
+                .unwrap();
+        };
+        notify(
+            "textDocument/didOpen",
+            json!({ "textDocument": { "uri": uri, "languageId": "vhdl", "version": 0, "text": text } }),
+        );
+        for version in 1..20 {
+            notify(
+                "textDocument/didChange",
+                json!({
+                    "textDocument": { "uri": uri, "version": version },
+                    "contentChanges": [{ "text": format!("{text}-- {version}\n") }],
+                }),
+            );
+        }
+        let at =
+            json!({ "textDocument": { "uri": uri }, "position": { "line": 3, "character": 9 } });
+        let request = |id: i32, method: &str| {
+            sender
+                .send(Message::Request(Request::new(
+                    id.into(),
+                    method.into(),
+                    at.clone(),
+                )))
+                .unwrap();
+        };
+        request(1, "textDocument/hover");
+        notify("$/cancelRequest", json!({ "id": 1 }));
+        request(2, "textDocument/hover");
+        drop(sender);
+
+        let mut server = Server {
+            connection: &server,
+            inbox,
+            queue: VecDeque::new(),
+            cancelled: HashSet::new(),
+            world: World::new(dir.path()),
+            published: Vec::new(),
+            shown_errors: Vec::new(),
+            next_request: 0,
+        };
+        server.main_loop().unwrap();
+
+        let messages: Vec<Message> = client.receiver.try_iter().collect();
+        let published = messages
+            .iter()
+            .filter(|m| matches!(m, Message::Notification(n) if n.method == "textDocument/publishDiagnostics"))
+            .count();
+        assert_eq!(published, 1, "{messages:?}");
+        let responses: Vec<&Response> = messages
+            .iter()
+            .filter_map(|m| match m {
+                Message::Response(r) => Some(r),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(responses.len(), 2);
+        assert_eq!(responses[0].id, 1.into());
+        assert_eq!(
+            responses[0].error.as_ref().map(|e| e.code),
+            Some(ErrorCode::RequestCanceled as i32)
+        );
+        assert_eq!(responses[1].id, 2.into());
+        assert!(responses[1].result.as_ref().is_some_and(|r| !r.is_null()));
+    }
 }
