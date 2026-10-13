@@ -14,15 +14,68 @@ Status: early development. See [docs/design.md](docs/design.md) for the design.
 
 ## Installation
 
+### Command line
+
+With Rust 1.88 or later ([rustup.rs](https://rustup.rs)):
+
 ```sh
 cargo install --git https://github.com/thewenneur/vhdl-fmt-lint vfl-cli
+vfl --version
 ```
 
-This installs the `vfl` binary. For editors:
+This puts the `vfl` binary in `~/.cargo/bin`, which rustup adds to the `PATH`. To update, run
+the same command with `--force`. From a clone, `cargo install --path crates/vfl-cli` does the
+same.
 
-- **VS Code**: the extension in [editors/vscode](editors/vscode). Each CI run builds it as a
-  `.vsix` (the `vfl-vscode` artifact); install it with `code --install-extension vfl-0.1.0.vsix`.
-- **Any other LSP editor**: run `vfl lsp` as the language server for VHDL files.
+### VS Code
+
+The extension ([editors/vscode](editors/vscode/README.md)) runs `vfl lsp`, so install `vfl`
+first (above). Then:
+
+1. Download the `vfl-vscode` artifact from the latest successful
+   [CI run on main](https://github.com/thewenneur/vhdl-fmt-lint/actions/workflows/ci.yml?query=branch%3Amain)
+   and unzip it to get `vfl-0.1.0.vsix`.
+2. Install it with `code --install-extension vfl-0.1.0.vsix`, or in VS Code with
+   **Extensions > ... > Install from VSIX...**.
+3. Open a folder with VHDL files. If `vfl` is not on the `PATH` or in `~/.cargo/bin`, set
+   `vfl.server.path` to it.
+
+To build the `.vsix` yourself: `cd editors/vscode && npm ci && npm run package`.
+
+### Notepad++
+
+The plugin ([editors/notepadpp](editors/notepadpp/README.md)) has the formatter and linter
+built in, so it does not need `vfl` installed. Download and unzip the `vfl_npp` artifact from
+the same CI runs, close Notepad++, put `vfl_npp.dll` in a new `plugins\vfl_npp` folder of its
+install directory (usually `C:\Program Files\Notepad++\plugins\vfl_npp`) and start it again.
+The plugin's README covers building it and its commands.
+
+### Other editors
+
+Any editor with LSP support can use `vfl lsp` (over stdio) as the VHDL language server.
+
+Neovim 0.11+:
+
+```lua
+vim.lsp.config("vfl", {
+  cmd = { "vfl", "lsp" },
+  filetypes = { "vhdl" },
+  root_markers = { "vfl.toml", ".git" },
+})
+vim.lsp.enable("vfl")
+```
+
+Helix (`languages.toml`):
+
+```toml
+[language-server.vfl]
+command = "vfl"
+args = ["lsp"]
+
+[[language]]
+name = "vhdl"
+language-servers = ["vfl"]
+```
 
 ## Usage
 
@@ -31,17 +84,11 @@ vfl project            # show the root, the sources and why each is in its libra
 vfl config show        # show the effective configuration and where it came from
 vfl check [paths]      # report syntax errors
 vfl fmt [--check] ...  # format in place, or list the files that would change
-vfl fmt -               # format standard input to standard output
+vfl fmt -              # format standard input to standard output
 vfl lint [--fix] ...   # lint, resolving names across the whole project
 vfl rules              # list lint rules and their levels
 vfl lsp                # language server over stdio
 ```
-
-## Editors
-
-- **Notepad++**: a native plugin that lints as you type and formats; see
-  [editors/notepadpp](editors/notepadpp/README.md).
-- Any editor with LSP support: run `vfl lsp`.
 
 ## Configuration
 
