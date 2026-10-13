@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare the `vfl lsp` and rust_hdl's `vhdl_ls` language servers on VHDL projects.
+"""Compare the `vhone lsp` and rust_hdl's `vhdl_ls` language servers on VHDL projects.
 
 Both servers run over stdio, driven by the same LSP client, on the same
 project. For each project and each server, a fresh server is started
@@ -20,12 +20,12 @@ project. For each project and each server, a fresh server is started
 - the errors and warnings published for files of the project once it is
   open.
 
-vfl runs with no configuration. vhdl_ls cannot infer libraries: it uses
+vhone runs with no configuration. vhdl_ls cannot infer libraries: it uses
 the project's own `vhdl_ls.toml` when there is one, and otherwise one
-generated from vfl's inference (`vfl project --vhdl-ls`), given through
+generated from vhone's inference (`vhone project --vhdl-ls`), given through
 `VHDL_LS_CONFIG`. Its standard libraries come from `--libraries`.
 
-    scripts/bench_vhdl_ls.py --vfl target/release/vfl \\
+    scripts/bench_vhdl_ls.py --vhone target/release/vhone \\
         --vhdl-ls path/to/vhdl_ls --libraries path/to/vhdl_libraries \\
         [--runs 3] PROJECT...
 """
@@ -183,9 +183,9 @@ def project_files(config):
     return sorted(files)
 
 
-def vhdl_ls_config(vfl, project, path):
+def vhdl_ls_config(vhone, project, path):
     out = subprocess.run(
-        [vfl, "project", "--vhdl-ls", project], check=True, capture_output=True, text=True
+        [vhone, "project", "--vhdl-ls", project], check=True, capture_output=True, text=True
     ).stdout
     root = os.path.abspath(project)
     # Make the file lists absolute so the config can live anywhere.
@@ -311,7 +311,7 @@ def median_max(times):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--vfl", required=True)
+    parser.add_argument("--vhone", required=True)
     parser.add_argument("--vhdl-ls", required=True)
     parser.add_argument("--libraries", required=True, help="directory with rust_hdl's vhdl_ls.toml")
     parser.add_argument("--runs", type=int, default=3)
@@ -328,11 +328,11 @@ def main():
             config = os.path.join(root, "vhdl_ls.toml")
             if not os.path.exists(config):
                 config = os.path.join(tmp, f"{name}.toml")
-                vhdl_ls_config(args.vfl, root, config)
+                vhdl_ls_config(args.vhone, root, config)
                 env["VHDL_LS_CONFIG"] = config
             files = project_files(config)
-            vfl = bench([os.path.abspath(args.vfl), "lsp"], None, root, files, args.runs)
-            print(f"{name}: vfl done", file=sys.stderr)
+            vhone = bench([os.path.abspath(args.vhone), "lsp"], None, root, files, args.runs)
+            print(f"{name}: vhone done", file=sys.stderr)
             ls = bench(
                 [os.path.abspath(args.vhdl_ls), "--silent", "-l", os.path.abspath(args.libraries)],
                 env,
@@ -341,13 +341,13 @@ def main():
                 args.runs,
             )
             print(f"{name}: vhdl_ls done", file=sys.stderr)
-            rows.append((name, len(files), vfl, ls))
+            rows.append((name, len(files), vhone, ls))
 
     if args.json:
         with open(args.json, "w") as f:
-            json.dump([{"project": n, "files": c, "vfl": v, "vhdl_ls": s} for n, c, v, s in rows], f)
+            json.dump([{"project": n, "files": c, "vhone": v, "vhdl_ls": s} for n, c, v, s in rows], f)
 
-    print("| Project | Files | Open (vfl / vhdl_ls) | Peak memory (vfl / vhdl_ls) | Errors (vfl / vhdl_ls) | Warnings (vfl / vhdl_ls) |")
+    print("| Project | Files | Open (vhone / vhdl_ls) | Peak memory (vhone / vhdl_ls) | Errors (vhone / vhdl_ls) | Warnings (vhone / vhdl_ls) |")
     print("|---|---:|---:|---:|---:|---:|")
     for name, files, v, s in rows:
         print(
@@ -359,7 +359,7 @@ def main():
     print("| Project | Server | Edit: comment (median / max) | Edit: type change (median / max) |")
     print("|---|---|---:|---:|")
     for name, _, v, s in rows:
-        for server, r in (("vfl", v), ("vhdl_ls", s)):
+        for server, r in (("vhone", v), ("vhdl_ls", s)):
             print(
                 f"| {name} | {server} | {median_max(r['edits']['comment'])} "
                 f"| {median_max(r['edits']['type'])} |"
@@ -368,7 +368,7 @@ def main():
     print("| Project | Server | Hover (median / max, answered) | Completion | Definition |")
     print("|---|---|---:|---:|---:|")
     for name, _, v, s in rows:
-        for server, r in (("vfl", v), ("vhdl_ls", s)):
+        for server, r in (("vhone", v), ("vhdl_ls", s)):
             cells = [
                 f"{median_max(r['requests'][m])}, {r['answered'][m]}/{r['asked']}" for m in REQUESTS
             ]

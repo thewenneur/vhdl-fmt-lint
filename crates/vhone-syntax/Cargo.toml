@@ -1,0 +1,17 @@
+[package]
+name = "vhone-syntax"
+description = "Lossless, error-tolerant VHDL lexer and parser"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+rowan = "0.16"
+
+[dev-dependencies]
+insta = { version = "1", features = ["glob"] }

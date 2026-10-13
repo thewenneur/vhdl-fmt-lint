@@ -52,12 +52,12 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy -p vfl-npp --all-targets
-      - run: cargo build --release -p vfl-npp
+      - run: cargo clippy -p vhone-npp --all-targets
+      - run: cargo build --release -p vhone-npp
       - uses: actions/upload-artifact@v4
         with:
-          name: vfl_npp
-          path: target/release/vfl_npp.dll
+          name: vhone_npp
+          path: target/release/vhone_npp.dll
 
   msrv:
     runs-on: ubuntu-latest
@@ -93,7 +93,7 @@ jobs:
           cache-dependency-path: editors/vscode/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build -p vfl-cli
+      - run: cargo build -p vhone-cli
         working-directory: .
       - run: npm ci
       - run: npm run check
@@ -102,5 +102,5 @@ jobs:
       - run: npm run package
       - uses: actions/upload-artifact@v4
         with:
-          name: vfl-vscode
+          name: vhone-vscode
           path: editors/vscode/*.vsix

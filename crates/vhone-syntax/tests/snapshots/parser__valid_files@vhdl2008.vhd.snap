@@ -1,0 +1,988 @@
+---
+source: crates/vhone-syntax/tests/parser.rs
+expression: render(&parsed)
+input_file: crates/vhone-syntax/tests/data/ok/vhdl2008.vhd
+---
+SOURCE_FILE@0..1875
+  DESIGN_UNIT@0..94
+    CONTEXT_DECL@0..94
+      CONTEXT_KW@0..7 "context"
+      WHITESPACE@7..8 " "
+      IDENT@8..19 "project_ctx"
+      WHITESPACE@19..20 " "
+      IS_KW@20..22 "is"
+      WHITESPACE@22..25 "\n  "
+      LIBRARY_CLAUSE@25..38
+        LIBRARY_KW@25..32 "library"
+        WHITESPACE@32..33 " "
+        IDENT_LIST@33..37
+          IDENT@33..37 "ieee"
+        SEMI@37..38 ";"
+      WHITESPACE@38..41 "\n  "
+      USE_CLAUSE@41..69
+        USE_KW@41..44 "use"
+        WHITESPACE@44..45 " "
+        SELECTED_NAME@45..68
+          SELECTED_NAME@45..64
+            NAME@45..49
+              IDENT@45..49 "ieee"
+            DOT@49..50 "."
+            IDENT@50..64 "std_logic_1164"
+          DOT@64..65 "."
+          ALL_KW@65..68 "all"
+        SEMI@68..69 ";"
+      WHITESPACE@69..70 "\n"
+      END_KW@70..73 "end"
+      WHITESPACE@73..74 " "
+      CONTEXT_KW@74..81 "context"
+      WHITESPACE@81..82 " "
+      IDENT@82..93 "project_ctx"
+      SEMI@93..94 ";"
+  WHITESPACE@94..96 "\n\n"
+  DESIGN_UNIT@96..461
+    CONTEXT_CLAUSE@96..164
+      CONTEXT_REFERENCE@96..121
+        CONTEXT_KW@96..103 "context"
+        WHITESPACE@103..104 " "
+        SELECTED_NAME@104..120
+          NAME@104..108
+            IDENT@104..108 "work"
+          DOT@108..109 "."
+          IDENT@109..120 "project_ctx"
+        SEMI@120..121 ";"
+      WHITESPACE@121..122 "\n"
+      LIBRARY_CLAUSE@122..136
+        LIBRARY_KW@122..129 "library"
+        WHITESPACE@129..130 " "
+        IDENT_LIST@130..135
+          IDENT@130..135 "osvvm"
+        SEMI@135..136 ";"
+      WHITESPACE@136..137 "\n"
+      CONTEXT_REFERENCE@137..164
+        CONTEXT_KW@137..144 "context"
+        WHITESPACE@144..145 " "
+        SELECTED_NAME@145..163
+          NAME@145..150
+            IDENT@145..150 "osvvm"
+          DOT@150..151 "."
+          IDENT@151..163 "OsvvmContext"
+        SEMI@163..164 ";"
+    WHITESPACE@164..166 "\n\n"
+    PACKAGE_DECL@166..461
+      PACKAGE_KW@166..173 "package"
+      WHITESPACE@173..174 " "
+      IDENT@174..186 "generic_fifo"
+      WHITESPACE@186..187 " "
+      IS_KW@187..189 "is"
+      WHITESPACE@189..192 "\n  "
+      GENERIC_CLAUSE@192..363
+        GENERIC_KW@192..199 "generic"
+        WHITESPACE@199..200 " "
+        INTERFACE_LIST@200..362
+          LPAREN@200..201 "("
+          WHITESPACE@201..206 "\n    "
+          INTERFACE_TYPE_DECL@206..220
+            TYPE_KW@206..210 "type"
+            WHITESPACE@210..211 " "
+            IDENT@211..220 "element_t"
+          SEMI@220..221 ";"
+          WHITESPACE@221..226 "\n    "
+          INTERFACE_OBJECT_DECL@226..242
+            IDENT_LIST@226..231
+              IDENT@226..231 "DEPTH"
+            WHITESPACE@231..232 " "
+            COLON@232..233 ":"
+            WHITESPACE@233..234 " "
+            SUBTYPE_INDICATION@234..242
+              NAME@234..242
+                IDENT@234..242 "positive"
+          SEMI@242..243 ";"
+          WHITESPACE@243..248 "\n    "
+          INTERFACE_SUBPROGRAM_DECL@248..302
+            FUNCTION_SPEC@248..296
+              FUNCTION_KW@248..256 "function"
+              WHITESPACE@256..257 " "
+              IDENT@257..266 "to_string"
+              WHITESPACE@266..267 " "
+              INTERFACE_LIST@267..282
+                LPAREN@267..268 "("
+                INTERFACE_OBJECT_DECL@268..281
+                  IDENT_LIST@268..269
+                    IDENT@268..269 "e"
+                  WHITESPACE@269..270 " "
+                  COLON@270..271 ":"
+                  WHITESPACE@271..272 " "
+                  SUBTYPE_INDICATION@272..281
+                    NAME@272..281
+                      IDENT@272..281 "element_t"
+                RPAREN@281..282 ")"
+              WHITESPACE@282..283 " "
+              RETURN_KW@283..289 "return"
+              WHITESPACE@289..290 " "
+              NAME@290..296
+                IDENT@290..296 "string"
+            WHITESPACE@296..297 " "
+            IS_KW@297..299 "is"
+            WHITESPACE@299..300 " "
+            BOX@300..302 "<>"
+          SEMI@302..303 ";"
+          WHITESPACE@303..308 "\n    "
+          INTERFACE_PACKAGE_DECL@308..358
+            PACKAGE_KW@308..315 "package"
+            WHITESPACE@315..316 " "
+            IDENT@316..320 "math"
+            WHITESPACE@320..321 " "
+            IS_KW@321..323 "is"
+            WHITESPACE@323..324 " "
+            NEW_KW@324..327 "new"
+            WHITESPACE@327..328 " "
+            SELECTED_NAME@328..341
+              NAME@328..332
+                IDENT@328..332 "work"
+              DOT@332..333 "."
+              IDENT@333..341 "math_pkg"
+            WHITESPACE@341..342 " "
+            GENERIC_MAP_ASPECT@342..358
+              GENERIC_KW@342..349 "generic"
+              WHITESPACE@349..350 " "
+              MAP_KW@350..353 "map"
+              WHITESPACE@353..354 " "
+              ASSOCIATION_LIST@354..358
+                LPAREN@354..355 "("
+                ASSOCIATION_ELEMENT@355..357
+                  BOX@355..357 "<>"
+                RPAREN@357..358 ")"
+          WHITESPACE@358..361 "\n  "
+          RPAREN@361..362 ")"
+        SEMI@362..363 ";"
+      WHITESPACE@363..366 "\n  "
+      BLOCK_COMMENT@366..393 "/* A block\n     comment. */"
+      WHITESPACE@393..396 "\n  "
+      TYPE_DECL@396..448
+        TYPE_KW@396..400 "type"
+        WHITESPACE@400..401 " "
+        IDENT@401..408 "store_t"
+        WHITESPACE@408..409 " "
+        IS_KW@409..411 "is"
+        WHITESPACE@411..412 " "
+        ARRAY_TYPE_DEF@412..447
+          ARRAY_KW@412..417 "array"
+          WHITESPACE@417..418 " "
+          LPAREN@418..419 "("
+          RANGE_EXPR@419..433
+            LITERAL@419..420
+              DECIMAL_LITERAL@419..420 "0"
+            WHITESPACE@420..421 " "
+            TO_KW@421..423 "to"
+            WHITESPACE@423..424 " "
+            BINARY_EXPR@424..433
+              NAME@424..429
+                IDENT@424..429 "DEPTH"
+              WHITESPACE@429..430 " "
+              MINUS@430..431 "-"
+              WHITESPACE@431..432 " "
+              LITERAL@432..433
+                DECIMAL_LITERAL@432..433 "1"
+          RPAREN@433..434 ")"
+          WHITESPACE@434..435 " "
+          OF_KW@435..437 "of"
+          WHITESPACE@437..438 " "
+          SUBTYPE_INDICATION@438..447
+            NAME@438..447
+              IDENT@438..447 "element_t"
+        SEMI@447..448 ";"
+      WHITESPACE@448..449 "\n"
+      END_KW@449..452 "end"
+      WHITESPACE@452..453 " "
+      PACKAGE_KW@453..460 "package"
+      SEMI@460..461 ";"
+  WHITESPACE@461..463 "\n\n"
+  DESIGN_UNIT@463..555
+    PACKAGE_INSTANTIATION_DECL@463..555
+      PACKAGE_KW@463..470 "package"
+      WHITESPACE@470..471 " "
+      IDENT@471..479 "int_fifo"
+      WHITESPACE@479..480 " "
+      IS_KW@480..482 "is"
+      WHITESPACE@482..483 " "
+      NEW_KW@483..486 "new"
+      WHITESPACE@486..487 " "
+      SELECTED_NAME@487..504
+        NAME@487..491
+          IDENT@487..491 "work"
+        DOT@491..492 "."
+        IDENT@492..504 "generic_fifo"
+      WHITESPACE@504..507 "\n  "
+      GENERIC_MAP_ASPECT@507..554
+        GENERIC_KW@507..514 "generic"
+        WHITESPACE@514..515 " "
+        MAP_KW@515..518 "map"
+        WHITESPACE@518..519 " "
+        ASSOCIATION_LIST@519..554
+          LPAREN@519..520 "("
+          ASSOCIATION_ELEMENT@520..540
+            NAME@520..529
+              IDENT@520..529 "element_t"
+            WHITESPACE@529..530 " "
+            ARROW@530..532 "=>"
+            WHITESPACE@532..533 " "
+            NAME@533..540
+              IDENT@533..540 "integer"
+          COMMA@540..541 ","
+          WHITESPACE@541..542 " "
+          ASSOCIATION_ELEMENT@542..553
+            NAME@542..547
+              IDENT@542..547 "DEPTH"
+            WHITESPACE@547..548 " "
+            ARROW@548..550 "=>"
+            WHITESPACE@550..551 " "
+            LITERAL@551..553
+              DECIMAL_LITERAL@551..553 "16"
+          RPAREN@553..554 ")"
+      SEMI@554..555 ";"
+  WHITESPACE@555..557 "\n\n"
+  DESIGN_UNIT@557..707
+    ENTITY_DECL@557..707
+      ENTITY_KW@557..563 "entity"
+      WHITESPACE@563..564 " "
+      IDENT@564..569 "e2008"
+      WHITESPACE@569..570 " "
+      IS_KW@570..572 "is"
+      WHITESPACE@572..575 "\n  "
+      GENERIC_CLAUSE@575..610
+        GENERIC_KW@575..582 "generic"
+        WHITESPACE@582..583 " "
+        INTERFACE_LIST@583..609
+          LPAREN@583..584 "("
+          INTERFACE_TYPE_DECL@584..590
+            TYPE_KW@584..588 "type"
+            WHITESPACE@588..589 " "
+            IDENT@589..590 "T"
+          SEMI@590..591 ";"
+          WHITESPACE@591..592 " "
+          INTERFACE_OBJECT_DECL@592..608
+            IDENT_LIST@592..593
+              IDENT@592..593 "G"
+            WHITESPACE@593..594 " "
+            COLON@594..595 ":"
+            WHITESPACE@595..596 " "
+            SUBTYPE_INDICATION@596..603
+              NAME@596..603
+                IDENT@596..603 "integer"
+            WHITESPACE@603..604 " "
+            COLON_EQ@604..606 ":="
+            WHITESPACE@606..607 " "
+            LITERAL@607..608
+              DECIMAL_LITERAL@607..608 "0"
+          RPAREN@608..609 ")"
+        SEMI@609..610 ";"
+      WHITESPACE@610..613 "\n  "
+      PORT_CLAUSE@613..695
+        PORT_KW@613..617 "port"
+        WHITESPACE@617..618 " "
+        INTERFACE_LIST@618..694
+          LPAREN@618..619 "("
+          INTERFACE_OBJECT_DECL@619..643
+            IDENT_LIST@619..620
+              IDENT@619..620 "x"
+            WHITESPACE@620..621 " "
+            COLON@621..622 ":"
+            WHITESPACE@622..623 " "
+            IN_KW@623..625 "in"
+            WHITESPACE@625..626 " "
+            SUBTYPE_INDICATION@626..643
+              NAME@626..643
+                IDENT@626..643 "std_ulogic_vector"
+          SEMI@643..644 ";"
+          WHITESPACE@644..645 " "
+          INTERFACE_OBJECT_DECL@645..693
+            IDENT_LIST@645..646
+              IDENT@645..646 "y"
+            WHITESPACE@646..647 " "
+            COLON@647..648 ":"
+            WHITESPACE@648..649 " "
+            OUT_KW@649..652 "out"
+            WHITESPACE@652..653 " "
+            SUBTYPE_INDICATION@653..693
+              RESOLUTION_INDICATION@653..663
+                LPAREN@653..654 "("
+                IDENT@654..662 "resolved"
+                RPAREN@662..663 ")"
+              WHITESPACE@663..664 " "
+              CALL_EXPR@664..693
+                NAME@664..681
+                  IDENT@664..681 "std_ulogic_vector"
+                ASSOCIATION_LIST@681..693
+                  LPAREN@681..682 "("
+                  ASSOCIATION_ELEMENT@682..692
+                    RANGE_EXPR@682..692
+                      LITERAL@682..683
+                        DECIMAL_LITERAL@682..683 "3"
+                      WHITESPACE@683..684 " "
+                      DOWNTO_KW@684..690 "downto"
+                      WHITESPACE@690..691 " "
+                      LITERAL@691..692
+                        DECIMAL_LITERAL@691..692 "0"
+                  RPAREN@692..693 ")"
+          RPAREN@693..694 ")"
+        SEMI@694..695 ";"
+      WHITESPACE@695..696 "\n"
+      END_KW@696..699 "end"
+      WHITESPACE@699..700 " "
+      ENTITY_KW@700..706 "entity"
+      SEMI@706..707 ";"
+  WHITESPACE@707..709 "\n\n"
+  DESIGN_UNIT@709..1874
+    ARCHITECTURE_BODY@709..1874
+      ARCHITECTURE_KW@709..721 "architecture"
+      WHITESPACE@721..722 " "
+      IDENT@722..725 "rtl"
+      WHITESPACE@725..726 " "
+      OF_KW@726..728 "of"
+      WHITESPACE@728..729 " "
+      NAME@729..734
+        IDENT@729..734 "e2008"
+      WHITESPACE@734..735 " "
+      IS_KW@735..737 "is"
+      WHITESPACE@737..740 "\n  "
+      SUBPROGRAM_BODY@740..836
+        FUNCTION_SPEC@740..795
+          FUNCTION_KW@740..748 "function"
+          WHITESPACE@748..749 " "
+          IDENT@749..751 "id"
+          WHITESPACE@751..752 " "
+          GENERIC_CLAUSE@752..768
+            GENERIC_KW@752..759 "generic"
+            WHITESPACE@759..760 " "
+            INTERFACE_LIST@760..768
+              LPAREN@760..761 "("
+              INTERFACE_TYPE_DECL@761..767
+                TYPE_KW@761..765 "type"
+                WHITESPACE@765..766 " "
+                IDENT@766..767 "U"
+              RPAREN@767..768 ")"
+          WHITESPACE@768..769 " "
+          PARAMETER_KW@769..778 "parameter"
+          WHITESPACE@778..779 " "
+          INTERFACE_LIST@779..786
+            LPAREN@779..780 "("
+            INTERFACE_OBJECT_DECL@780..785
+              IDENT_LIST@780..781
+                IDENT@780..781 "u"
+              WHITESPACE@781..782 " "
+              COLON@782..783 ":"
+              WHITESPACE@783..784 " "
+              SUBTYPE_INDICATION@784..785
+                NAME@784..785
+                  IDENT@784..785 "U"
+            RPAREN@785..786 ")"
+          WHITESPACE@786..787 " "
+          RETURN_KW@787..793 "return"
+          WHITESPACE@793..794 " "
+          NAME@794..795
+            IDENT@794..795 "U"
+        WHITESPACE@795..796 " "
+        IS_KW@796..798 "is"
+        WHITESPACE@798..801 "\n  "
+        BEGIN_KW@801..806 "begin"
+        WHITESPACE@806..811 "\n    "
+        RETURN_STMT@811..820
+          RETURN_KW@811..817 "return"
+          WHITESPACE@817..818 " "
+          NAME@818..819
+            IDENT@818..819 "u"
+          SEMI@819..820 ";"
+        WHITESPACE@820..823 "\n  "
+        END_KW@823..826 "end"
+        WHITESPACE@826..827 " "
+        FUNCTION_KW@827..835 "function"
+        SEMI@835..836 ";"
+      WHITESPACE@836..839 "\n  "
+      SUBPROGRAM_INSTANTIATION_DECL@839..892
+        FUNCTION_KW@839..847 "function"
+        WHITESPACE@847..848 " "
+        IDENT@848..854 "id_int"
+        WHITESPACE@854..855 " "
+        IS_KW@855..857 "is"
+        WHITESPACE@857..858 " "
+        NEW_KW@858..861 "new"
+        WHITESPACE@861..862 " "
+        NAME@862..864
+          IDENT@862..864 "id"
+        WHITESPACE@864..865 " "
+        GENERIC_MAP_ASPECT@865..891
+          GENERIC_KW@865..872 "generic"
+          WHITESPACE@872..873 " "
+          MAP_KW@873..876 "map"
+          WHITESPACE@876..877 " "
+          ASSOCIATION_LIST@877..891
+            LPAREN@877..878 "("
+            ASSOCIATION_ELEMENT@878..890
+              NAME@878..879
+                IDENT@878..879 "U"
+              WHITESPACE@879..880 " "
+              ARROW@880..882 "=>"
+              WHITESPACE@882..883 " "
+              NAME@883..890
+                IDENT@883..890 "integer"
+            RPAREN@890..891 ")"
+        SEMI@891..892 ";"
+      WHITESPACE@892..895 "\n  "
+      ALIAS_DECL@895..946
+        ALIAS_KW@895..900 "alias"
+        WHITESPACE@900..901 " "
+        IDENT@901..906 "probe"
+        WHITESPACE@906..907 " "
+        IS_KW@907..909 "is"
+        WHITESPACE@909..910 " "
+        EXTERNAL_NAME@910..945
+          LTLT@910..912 "<<"
+          WHITESPACE@912..913 " "
+          SIGNAL_KW@913..919 "signal"
+          WHITESPACE@919..920 " "
+          EXTERNAL_PATH@920..929
+            DOT@920..921 "."
+            IDENT@921..923 "tb"
+            DOT@923..924 "."
+            IDENT@924..927 "dut"
+            DOT@927..928 "."
+            IDENT@928..929 "s"
+          WHITESPACE@929..930 " "
+          COLON@930..931 ":"
+          WHITESPACE@931..932 " "
+          SUBTYPE_INDICATION@932..942
+            NAME@932..942
+              IDENT@932..942 "std_ulogic"
+          WHITESPACE@942..943 " "
+          GTGT@943..945 ">>"
+        SEMI@945..946 ";"
+      WHITESPACE@946..949 "\n  "
+      CONSTANT_DECL@949..1005
+        CONSTANT_KW@949..957 "constant"
+        WHITESPACE@957..958 " "
+        IDENT_LIST@958..960
+          IDENT@958..960 "up"
+        WHITESPACE@960..961 " "
+        COLON@961..962 ":"
+        WHITESPACE@962..963 " "
+        SUBTYPE_INDICATION@963..970
+          NAME@963..970
+            IDENT@963..970 "integer"
+        WHITESPACE@970..971 " "
+        COLON_EQ@971..973 ":="
+        WHITESPACE@973..974 " "
+        EXTERNAL_NAME@974..1004
+          LTLT@974..976 "<<"
+          WHITESPACE@976..977 " "
+          CONSTANT_KW@977..985 "constant"
+          WHITESPACE@985..986 " "
+          EXTERNAL_PATH@986..991
+            CARET@986..987 "^"
+            DOT@987..988 "."
+            CARET@988..989 "^"
+            DOT@989..990 "."
+            IDENT@990..991 "c"
+          WHITESPACE@991..992 " "
+          COLON@992..993 ":"
+          WHITESPACE@993..994 " "
+          SUBTYPE_INDICATION@994..1001
+            NAME@994..1001
+              IDENT@994..1001 "integer"
+          WHITESPACE@1001..1002 " "
+          GTGT@1002..1004 ">>"
+        SEMI@1004..1005 ";"
+      WHITESPACE@1005..1008 "\n  "
+      SIGNAL_DECL@1008..1050
+        SIGNAL_KW@1008..1014 "signal"
+        WHITESPACE@1014..1015 " "
+        IDENT_LIST@1015..1016
+          IDENT@1015..1016 "v"
+        WHITESPACE@1016..1017 " "
+        COLON@1017..1018 ":"
+        WHITESPACE@1018..1019 " "
+        SUBTYPE_INDICATION@1019..1039
+          CALL_EXPR@1019..1039
+            NAME@1019..1027
+              IDENT@1019..1027 "unsigned"
+            ASSOCIATION_LIST@1027..1039
+              LPAREN@1027..1028 "("
+              ASSOCIATION_ELEMENT@1028..1038
+                RANGE_EXPR@1028..1038
+                  LITERAL@1028..1029
+                    DECIMAL_LITERAL@1028..1029 "7"
+                  WHITESPACE@1029..1030 " "
+                  DOWNTO_KW@1030..1036 "downto"
+                  WHITESPACE@1036..1037 " "
+                  LITERAL@1037..1038
+                    DECIMAL_LITERAL@1037..1038 "0"
+              RPAREN@1038..1039 ")"
+        WHITESPACE@1039..1040 " "
+        COLON_EQ@1040..1042 ":="
+        WHITESPACE@1042..1043 " "
+        LITERAL@1043..1049
+          BIT_STRING_LITERAL@1043..1049 "8UX\"F\""
+        SEMI@1049..1050 ";"
+      WHITESPACE@1050..1053 "\n  "
+      PSL_DIRECTIVE@1053..1087
+        IDENT@1053..1060 "default"
+        WHITESPACE@1060..1061 " "
+        IDENT@1061..1066 "clock"
+        WHITESPACE@1066..1067 " "
+        IS_KW@1067..1069 "is"
+        WHITESPACE@1069..1070 " "
+        IDENT@1070..1081 "rising_edge"
+        LPAREN@1081..1082 "("
+        IDENT@1082..1085 "clk"
+        RPAREN@1085..1086 ")"
+        SEMI@1086..1087 ";"
+      WHITESPACE@1087..1088 "\n"
+      BEGIN_KW@1088..1093 "begin"
+      WHITESPACE@1093..1096 "\n  "
+      PROCESS_STMT@1096..1472
+        PROCESS_KW@1096..1103 "process"
+        WHITESPACE@1103..1104 " "
+        SENSITIVITY_LIST@1104..1109
+          LPAREN@1104..1105 "("
+          ALL_KW@1105..1108 "all"
+          RPAREN@1108..1109 ")"
+        WHITESPACE@1109..1114 "\n    "
+        VARIABLE_DECL@1114..1135
+          VARIABLE_KW@1114..1122 "variable"
+          WHITESPACE@1122..1123 " "
+          IDENT_LIST@1123..1124
+            IDENT@1123..1124 "n"
+          WHITESPACE@1124..1125 " "
+          COLON@1125..1126 ":"
+          WHITESPACE@1126..1127 " "
+          SUBTYPE_INDICATION@1127..1134
+            NAME@1127..1134
+              IDENT@1127..1134 "integer"
+          SEMI@1134..1135 ";"
+        WHITESPACE@1135..1138 "\n  "
+        BEGIN_KW@1138..1143 "begin"
+        WHITESPACE@1143..1148 "\n    "
+        VARIABLE_ASSIGN_STMT@1148..1176
+          NAME@1148..1149
+            IDENT@1148..1149 "n"
+          WHITESPACE@1149..1150 " "
+          COLON_EQ@1150..1152 ":="
+          WHITESPACE@1152..1153 " "
+          CONDITIONAL_EXPR@1153..1175
+            LITERAL@1153..1154
+              DECIMAL_LITERAL@1153..1154 "1"
+            WHITESPACE@1154..1155 " "
+            WHEN_KW@1155..1159 "when"
+            WHITESPACE@1159..1160 " "
+            BINARY_EXPR@1160..1168
+              NAME@1160..1161
+                IDENT@1160..1161 "x"
+              WHITESPACE@1161..1162 " "
+              EQ@1162..1163 "="
+              WHITESPACE@1163..1164 " "
+              LITERAL@1164..1168
+                STRING_LITERAL@1164..1168 "\"00\""
+            WHITESPACE@1168..1169 " "
+            ELSE_KW@1169..1173 "else"
+            WHITESPACE@1173..1174 " "
+            LITERAL@1174..1175
+              DECIMAL_LITERAL@1174..1175 "2"
+          SEMI@1175..1176 ";"
+        WHITESPACE@1176..1181 "\n    "
+        SIGNAL_ASSIGN_STMT@1181..1220
+          NAME@1181..1182
+            IDENT@1181..1182 "y"
+          WHITESPACE@1182..1183 " "
+          LTE@1183..1185 "<="
+          WHITESPACE@1185..1186 " "
+          CONDITIONAL_WAVEFORMS@1186..1219
+            WAVEFORM@1186..1192
+              WAVEFORM_ELEMENT@1186..1192
+                LITERAL@1186..1192
+                  STRING_LITERAL@1186..1192 "\"0000\""
+            WHITESPACE@1192..1193 " "
+            WHEN_KW@1193..1197 "when"
+            WHITESPACE@1197..1198 " "
+            BINARY_EXPR@1198..1207
+              NAME@1198..1199
+                IDENT@1198..1199 "x"
+              WHITESPACE@1199..1200 " "
+              QEQ@1200..1202 "?="
+              WHITESPACE@1202..1203 " "
+              LITERAL@1203..1207
+                STRING_LITERAL@1203..1207 "\"--\""
+            WHITESPACE@1207..1208 " "
+            ELSE_KW@1208..1212 "else"
+            WHITESPACE@1212..1213 " "
+            WAVEFORM@1213..1219
+              WAVEFORM_ELEMENT@1213..1219
+                LITERAL@1213..1219
+                  STRING_LITERAL@1213..1219 "\"1111\""
+          SEMI@1219..1220 ";"
+        WHITESPACE@1220..1225 "\n    "
+        CASE_STMT@1225..1302
+          CASE_KW@1225..1229 "case"
+          QUESTION@1229..1230 "?"
+          WHITESPACE@1230..1231 " "
+          NAME@1231..1232
+            IDENT@1231..1232 "x"
+          WHITESPACE@1232..1233 " "
+          IS_KW@1233..1235 "is"
+          WHITESPACE@1235..1242 "\n      "
+          CASE_ALTERNATIVE@1242..1260
+            WHEN_KW@1242..1246 "when"
+            WHITESPACE@1246..1247 " "
+            CHOICES@1247..1251
+              LITERAL@1247..1251
+                STRING_LITERAL@1247..1251 "\"1-\""
+            WHITESPACE@1251..1252 " "
+            ARROW@1252..1254 "=>"
+            WHITESPACE@1254..1255 " "
+            NULL_STMT@1255..1260
+              NULL_KW@1255..1259 "null"
+              SEMI@1259..1260 ";"
+          WHITESPACE@1260..1267 "\n      "
+          CASE_ALTERNATIVE@1267..1287
+            WHEN_KW@1267..1271 "when"
+            WHITESPACE@1271..1272 " "
+            CHOICES@1272..1278
+              OTHERS_KW@1272..1278 "others"
+            WHITESPACE@1278..1279 " "
+            ARROW@1279..1281 "=>"
+            WHITESPACE@1281..1282 " "
+            NULL_STMT@1282..1287
+              NULL_KW@1282..1286 "null"
+              SEMI@1286..1287 ";"
+          WHITESPACE@1287..1292 "\n    "
+          END_KW@1292..1295 "end"
+          WHITESPACE@1295..1296 " "
+          CASE_KW@1296..1300 "case"
+          QUESTION@1300..1301 "?"
+          SEMI@1301..1302 ";"
+        WHITESPACE@1302..1307 "\n    "
+        IF_STMT@1307..1336
+          IF_KW@1307..1309 "if"
+          WHITESPACE@1309..1310 " "
+          UNARY_EXPR@1310..1317
+            QQ@1310..1312 "??"
+            WHITESPACE@1312..1313 " "
+            CALL_EXPR@1313..1317
+              NAME@1313..1314
+                IDENT@1313..1314 "x"
+              ASSOCIATION_LIST@1314..1317
+                LPAREN@1314..1315 "("
+                ASSOCIATION_ELEMENT@1315..1316
+                  LITERAL@1315..1316
+                    DECIMAL_LITERAL@1315..1316 "0"
+                RPAREN@1316..1317 ")"
+          WHITESPACE@1317..1318 " "
+          THEN_KW@1318..1322 "then"
+          WHITESPACE@1322..1323 " "
+          NULL_STMT@1323..1328
+            NULL_KW@1323..1327 "null"
+            SEMI@1327..1328 ";"
+          WHITESPACE@1328..1329 " "
+          END_KW@1329..1332 "end"
+          WHITESPACE@1332..1333 " "
+          IF_KW@1333..1335 "if"
+          SEMI@1335..1336 ";"
+        WHITESPACE@1336..1341 "\n    "
+        SELECTED_ASSIGN_STMT@1341..1387
+          WITH_KW@1341..1345 "with"
+          WHITESPACE@1345..1346 " "
+          NAME@1346..1347
+            IDENT@1346..1347 "x"
+          WHITESPACE@1347..1348 " "
+          SELECT_KW@1348..1354 "select"
+          WHITESPACE@1354..1355 " "
+          NAME@1355..1356
+            IDENT@1355..1356 "n"
+          WHITESPACE@1356..1357 " "
+          COLON_EQ@1357..1359 ":="
+          WHITESPACE@1359..1360 " "
+          SELECTED_WAVEFORMS@1360..1386
+            LITERAL@1360..1361
+              DECIMAL_LITERAL@1360..1361 "0"
+            WHITESPACE@1361..1362 " "
+            WHEN_KW@1362..1366 "when"
+            WHITESPACE@1366..1367 " "
+            CHOICES@1367..1371
+              LITERAL@1367..1371
+                STRING_LITERAL@1367..1371 "\"00\""
+            COMMA@1371..1372 ","
+            WHITESPACE@1372..1373 " "
+            LITERAL@1373..1374
+              DECIMAL_LITERAL@1373..1374 "1"
+            WHITESPACE@1374..1375 " "
+            WHEN_KW@1375..1379 "when"
+            WHITESPACE@1379..1380 " "
+            CHOICES@1380..1386
+              OTHERS_KW@1380..1386 "others"
+          SEMI@1386..1387 ";"
+        WHITESPACE@1387..1392 "\n    "
+        SIGNAL_ASSIGN_STMT@1392..1407
+          NAME@1392..1393
+            IDENT@1392..1393 "s"
+          WHITESPACE@1393..1394 " "
+          LTE@1394..1396 "<="
+          WHITESPACE@1396..1397 " "
+          FORCE_KW@1397..1402 "force"
+          WHITESPACE@1402..1403 " "
+          LITERAL@1403..1406
+            CHAR_LITERAL@1403..1406 "'1'"
+          SEMI@1406..1407 ";"
+        WHITESPACE@1407..1412 "\n    "
+        SIGNAL_ASSIGN_STMT@1412..1425
+          NAME@1412..1413
+            IDENT@1412..1413 "s"
+          WHITESPACE@1413..1414 " "
+          LTE@1414..1416 "<="
+          WHITESPACE@1416..1417 " "
+          RELEASE_KW@1417..1424 "release"
+          SEMI@1424..1425 ";"
+        WHITESPACE@1425..1430 "\n    "
+        IF_STMT@1430..1457
+          IF_KW@1430..1432 "if"
+          WHITESPACE@1432..1433 " "
+          UNARY_EXPR@1433..1438
+            AND_KW@1433..1436 "and"
+            WHITESPACE@1436..1437 " "
+            NAME@1437..1438
+              IDENT@1437..1438 "x"
+          WHITESPACE@1438..1439 " "
+          THEN_KW@1439..1443 "then"
+          WHITESPACE@1443..1444 " "
+          NULL_STMT@1444..1449
+            NULL_KW@1444..1448 "null"
+            SEMI@1448..1449 ";"
+          WHITESPACE@1449..1450 " "
+          END_KW@1450..1453 "end"
+          WHITESPACE@1453..1454 " "
+          IF_KW@1454..1456 "if"
+          SEMI@1456..1457 ";"
+        WHITESPACE@1457..1460 "\n  "
+        END_KW@1460..1463 "end"
+        WHITESPACE@1463..1464 " "
+        PROCESS_KW@1464..1471 "process"
+        SEMI@1471..1472 ";"
+      WHITESPACE@1472..1476 "\n\n  "
+      IF_GENERATE_STMT@1476..1604
+        LABEL@1476..1481
+          IDENT@1476..1479 "gen"
+          WHITESPACE@1479..1480 " "
+          COLON@1480..1481 ":"
+        WHITESPACE@1481..1482 " "
+        IF_KW@1482..1484 "if"
+        WHITESPACE@1484..1485 " "
+        LABEL@1485..1487
+          IDENT@1485..1486 "a"
+          COLON@1486..1487 ":"
+        WHITESPACE@1487..1488 " "
+        BINARY_EXPR@1488..1493
+          NAME@1488..1489
+            IDENT@1488..1489 "G"
+          WHITESPACE@1489..1490 " "
+          EQ@1490..1491 "="
+          WHITESPACE@1491..1492 " "
+          LITERAL@1492..1493
+            DECIMAL_LITERAL@1492..1493 "0"
+        WHITESPACE@1493..1494 " "
+        GENERATE_KW@1494..1502 "generate"
+        WHITESPACE@1502..1507 "\n    "
+        GENERATE_BODY@1507..1539
+          SIGNAL_DECL@1507..1522
+            SIGNAL_KW@1507..1513 "signal"
+            WHITESPACE@1513..1514 " "
+            IDENT_LIST@1514..1515
+              IDENT@1514..1515 "t"
+            WHITESPACE@1515..1516 " "
+            COLON@1516..1517 ":"
+            WHITESPACE@1517..1518 " "
+            SUBTYPE_INDICATION@1518..1521
+              NAME@1518..1521
+                IDENT@1518..1521 "bit"
+            SEMI@1521..1522 ";"
+          WHITESPACE@1522..1525 "\n  "
+          BEGIN_KW@1525..1530 "begin"
+          WHITESPACE@1530..1533 "\n  "
+          END_KW@1533..1536 "end"
+          WHITESPACE@1536..1537 " "
+          IDENT@1537..1538 "a"
+          SEMI@1538..1539 ";"
+        WHITESPACE@1539..1542 "\n  "
+        ELSIF_KW@1542..1547 "elsif"
+        WHITESPACE@1547..1548 " "
+        LABEL@1548..1550
+          IDENT@1548..1549 "b"
+          COLON@1549..1550 ":"
+        WHITESPACE@1550..1551 " "
+        BINARY_EXPR@1551..1556
+          NAME@1551..1552
+            IDENT@1551..1552 "G"
+          WHITESPACE@1552..1553 " "
+          EQ@1553..1554 "="
+          WHITESPACE@1554..1555 " "
+          LITERAL@1555..1556
+            DECIMAL_LITERAL@1555..1556 "1"
+        WHITESPACE@1556..1557 " "
+        GENERATE_KW@1557..1565 "generate"
+        WHITESPACE@1565..1568 "\n  "
+        GENERATE_BODY@1568..1568
+        ELSE_KW@1568..1572 "else"
+        WHITESPACE@1572..1573 " "
+        LABEL@1573..1575
+          IDENT@1573..1574 "c"
+          COLON@1574..1575 ":"
+        WHITESPACE@1575..1576 " "
+        GENERATE_KW@1576..1584 "generate"
+        WHITESPACE@1584..1587 "\n  "
+        GENERATE_BODY@1587..1587
+        END_KW@1587..1590 "end"
+        WHITESPACE@1590..1591 " "
+        GENERATE_KW@1591..1599 "generate"
+        WHITESPACE@1599..1600 " "
+        IDENT@1600..1603 "gen"
+        SEMI@1603..1604 ";"
+      WHITESPACE@1604..1608 "\n\n  "
+      CASE_GENERATE_STMT@1608..1723
+        LABEL@1608..1618
+          IDENT@1608..1616 "gen_case"
+          WHITESPACE@1616..1617 " "
+          COLON@1617..1618 ":"
+        WHITESPACE@1618..1619 " "
+        CASE_KW@1619..1623 "case"
+        WHITESPACE@1623..1624 " "
+        NAME@1624..1625
+          IDENT@1624..1625 "G"
+        WHITESPACE@1625..1626 " "
+        GENERATE_KW@1626..1634 "generate"
+        WHITESPACE@1634..1639 "\n    "
+        CASE_ALTERNATIVE@1639..1679
+          WHEN_KW@1639..1643 "when"
+          WHITESPACE@1643..1644 " "
+          LABEL@1644..1649
+            IDENT@1644..1648 "zero"
+            COLON@1648..1649 ":"
+          WHITESPACE@1649..1650 " "
+          CHOICES@1650..1651
+            LITERAL@1650..1651
+              DECIMAL_LITERAL@1650..1651 "0"
+          WHITESPACE@1651..1652 " "
+          ARROW@1652..1654 "=>"
+          WHITESPACE@1654..1661 "\n      "
+          GENERATE_BODY@1661..1679
+            COMPONENT_INSTANTIATION_STMT@1661..1679
+              LABEL@1661..1664
+                IDENT@1661..1662 "u"
+                WHITESPACE@1662..1663 " "
+                COLON@1663..1664 ":"
+              WHITESPACE@1664..1665 " "
+              ENTITY_KW@1665..1671 "entity"
+              WHITESPACE@1671..1672 " "
+              SELECTED_NAME@1672..1678
+                NAME@1672..1676
+                  IDENT@1672..1676 "work"
+                DOT@1676..1677 "."
+                IDENT@1677..1678 "x"
+              SEMI@1678..1679 ";"
+        WHITESPACE@1679..1684 "\n    "
+        CASE_ALTERNATIVE@1684..1701
+          WHEN_KW@1684..1688 "when"
+          WHITESPACE@1688..1689 " "
+          CHOICES@1689..1695
+            OTHERS_KW@1689..1695 "others"
+          WHITESPACE@1695..1696 " "
+          ARROW@1696..1698 "=>"
+          WHITESPACE@1698..1701 "\n  "
+          GENERATE_BODY@1701..1701
+        END_KW@1701..1704 "end"
+        WHITESPACE@1704..1705 " "
+        GENERATE_KW@1705..1713 "generate"
+        WHITESPACE@1713..1714 " "
+        IDENT@1714..1722 "gen_case"
+        SEMI@1722..1723 ";"
+      WHITESPACE@1723..1727 "\n\n  "
+      COMPONENT_INSTANTIATION_STMT@1727..1788
+        LABEL@1727..1735
+          IDENT@1727..1733 "u_inst"
+          WHITESPACE@1733..1734 " "
+          COLON@1734..1735 ":"
+        WHITESPACE@1735..1736 " "
+        ENTITY_KW@1736..1742 "entity"
+        WHITESPACE@1742..1743 " "
+        SELECTED_NAME@1743..1749
+          NAME@1743..1747
+            IDENT@1743..1747 "work"
+          DOT@1747..1748 "."
+          IDENT@1748..1749 "y"
+        WHITESPACE@1749..1750 " "
+        PORT_MAP_ASPECT@1750..1787
+          PORT_KW@1750..1754 "port"
+          WHITESPACE@1754..1755 " "
+          MAP_KW@1755..1758 "map"
+          WHITESPACE@1758..1759 " "
+          ASSOCIATION_LIST@1759..1787
+            LPAREN@1759..1760 "("
+            ASSOCIATION_ELEMENT@1760..1775
+              NAME@1760..1761
+                IDENT@1760..1761 "a"
+              WHITESPACE@1761..1762 " "
+              ARROW@1762..1764 "=>"
+              WHITESPACE@1764..1765 " "
+              INERTIAL_KW@1765..1773 "inertial"
+              WHITESPACE@1773..1774 " "
+              NAME@1774..1775
+                IDENT@1774..1775 "x"
+            COMMA@1775..1776 ","
+            WHITESPACE@1776..1777 " "
+            ASSOCIATION_ELEMENT@1777..1786
+              NAME@1777..1778
+                IDENT@1777..1778 "b"
+              WHITESPACE@1778..1779 " "
+              ARROW@1779..1781 "=>"
+              WHITESPACE@1781..1782 " "
+              OPEN_KW@1782..1786 "open"
+            RPAREN@1786..1787 ")"
+        SEMI@1787..1788 ";"
+      WHITESPACE@1788..1792 "\n\n  "
+      PSL_DIRECTIVE@1792..1832
+        LABEL@1792..1799
+          IDENT@1792..1797 "check"
+          WHITESPACE@1797..1798 " "
+          COLON@1798..1799 ":"
+        WHITESPACE@1799..1800 " "
+        PSL_DIRECTIVE@1800..1832
+          ASSERT_KW@1800..1806 "assert"
+          WHITESPACE@1806..1807 " "
+          IDENT@1807..1813 "always"
+          WHITESPACE@1813..1814 " "
+          LPAREN@1814..1815 "("
+          IDENT@1815..1818 "req"
+          WHITESPACE@1818..1819 " "
+          MINUS@1819..1820 "-"
+          GT@1820..1821 ">"
+          WHITESPACE@1821..1822 " "
+          NEXT_KW@1822..1826 "next"
+          WHITESPACE@1826..1827 " "
+          IDENT@1827..1830 "ack"
+          RPAREN@1830..1831 ")"
+          SEMI@1831..1832 ";"
+      WHITESPACE@1832..1835 "\n  "
+      PSL_DIRECTIVE@1835..1852
+        PSL_DIRECTIVE@1835..1852
+          IDENT@1835..1840 "cover"
+          WHITESPACE@1840..1841 " "
+          LBRACE@1841..1842 "{"
+          IDENT@1842..1845 "req"
+          SEMI@1845..1846 ";"
+          WHITESPACE@1846..1847 " "
+          IDENT@1847..1850 "ack"
+          RBRACE@1850..1851 "}"
+          SEMI@1851..1852 ";"
+      WHITESPACE@1852..1853 "\n"
+      END_KW@1853..1856 "end"
+      WHITESPACE@1856..1857 " "
+      ARCHITECTURE_KW@1857..1869 "architecture"
+      WHITESPACE@1869..1870 " "
+      IDENT@1870..1873 "rtl"
+      SEMI@1873..1874 ";"
+  WHITESPACE@1874..1875 "\n"

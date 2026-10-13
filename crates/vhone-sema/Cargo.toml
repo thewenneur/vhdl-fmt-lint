@@ -1,0 +1,22 @@
+[package]
+name = "vhone-sema"
+description = "Incremental semantic analysis of VHDL designs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+vhone-syntax.workspace = true
+rayon.workspace = true
+rowan.workspace = true
+
+[dev-dependencies]
+vhone-config.workspace = true
+vhone-project.workspace = true
+toml.workspace = true
+insta = { version = "1", features = ["glob"] }

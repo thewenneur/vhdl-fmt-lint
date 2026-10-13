@@ -1,0 +1,31 @@
+[package]
+name = "vhone-cli"
+description = "The vhone command-line tool: VHDL formatter and linter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "vhone"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+vhone-config.workspace = true
+vhone-doc.workspace = true
+vhone-fmt.workspace = true
+vhone-gen.workspace = true
+vhone-lint.workspace = true
+vhone-lsp.workspace = true
+vhone-project.workspace = true
+vhone-syntax.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

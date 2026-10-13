@@ -30,10 +30,10 @@ for entry in "${repos[@]}"; do
   fi
 done
 
-cargo build --release -q -p vfl-syntax --example parse_corpus
-cargo build --release -q -p vfl-fmt --example fmt_corpus
-cargo build --release -q -p vfl-cli
-cargo build --release -q -p vfl-sema --example sema_corpus
+cargo build --release -q -p vhone-syntax --example parse_corpus
+cargo build --release -q -p vhone-fmt --example fmt_corpus
+cargo build --release -q -p vhone-cli
+cargo build --release -q -p vhone-sema --example sema_corpus
 target=${CARGO_TARGET_DIR:-target}
 run=$target/release/examples/parse_corpus
 fmt=$target/release/examples/fmt_corpus
@@ -92,9 +92,9 @@ done
 # UVVM's testbenches name DUTs that are not in the repository and one of its
 # templates names what each VVC provides, and VUnit's OSVVM submodule is
 # not checked out.
-vfl=$(cd "$target/release" && pwd)/vfl
+vhone=$(cd "$target/release" && pwd)/vhone
 lint_errors() {
-  (cd "$1" && "$vfl" lint --output-format concise 2>/dev/null || true) |
+  (cd "$1" && "$vhone" lint --output-format concise 2>/dev/null || true) |
     grep -c ': error\[sema/' || true
 }
 for expected in "OSVVM 9" "UVVM 5" "vunit 37" "neorv32 0"; do
@@ -102,13 +102,13 @@ for expected in "OSVVM 9" "UVVM 5" "vunit 37" "neorv32 0"; do
   found=$(lint_errors "$cache/$name")
   if [ "$found" -gt "$known" ]; then
     echo "$name: $found semantic errors, expected at most $known" >&2
-    (cd "$cache/$name" && "$vfl" lint --output-format concise 2>/dev/null | grep ': error\[sema/' >&2) || true
+    (cd "$cache/$name" && "$vhone" lint --output-format concise 2>/dev/null | grep ': error\[sema/' >&2) || true
     status=1
   fi
 done
 # Incremental analysis: after edits to a spread of files, reusing the
 # previous analysis must give exactly what a full analysis gives.
-cargo build --release -q -p vfl-sema --example incremental_corpus
+cargo build --release -q -p vhone-sema --example incremental_corpus
 inc=$target/release/examples/incremental_corpus
 $inc --files 4 "$cache/neorv32" "$cache/vunit" "$cache/UVVM" || status=1
 $inc --files 4 --std 2019 "$cache/OSVVM" || status=1
@@ -122,8 +122,8 @@ $target/release/examples/sema_corpus "$cache/ghdl/testsuite" >/dev/null || statu
 doc_out=$(mktemp -d)
 for project in OSVVM UVVM vunit neorv32 ghdl/testsuite; do
   for format in html markdown; do
-    "$vfl" doc "$cache/$project" --format "$format" -o "$doc_out/$format" >/dev/null 2>&1 || {
-      echo "$project: vfl doc --format $format failed" >&2
+    "$vhone" doc "$cache/$project" --format "$format" -o "$doc_out/$format" >/dev/null 2>&1 || {
+      echo "$project: vhone doc --format $format failed" >&2
       status=1
     }
     rm -rf "${doc_out:?}/$format"

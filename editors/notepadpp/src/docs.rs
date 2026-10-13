@@ -1,10 +1,10 @@
 //! Documentation and diagrams of the project around a file, written as
-//! `vfl doc` writes them. Only run by the menu commands, never as you type.
+//! `vhone doc` writes them. Only run by the menu commands, never as you type.
 
 use std::path::{Path, PathBuf};
 
-use vfl_config::DocFormat;
-use vfl_project::{Project, find_root};
+use vhone_config::DocFormat;
+use vhone_project::{Project, find_root};
 
 /// Where the documentation went.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,7 +18,7 @@ pub struct Written {
 }
 
 /// Writes the documentation of the project around `file`, which is read
-/// from disk with its `vfl.toml` like `vfl doc` does. With `out`, as HTML
+/// from disk with its `vhone.toml` like `vhone doc` does. With `out`, as HTML
 /// into `out`; else as `[doc]` says.
 pub fn write(file: &Path, out: Option<&Path>) -> Result<Written, String> {
     let file = std::path::absolute(file).map_err(|e| format!("{}: {e}", file.display()))?;
@@ -27,13 +27,13 @@ pub fn write(file: &Path, out: Option<&Path>) -> Result<Written, String> {
     if out.is_some() {
         config.format = DocFormat::Html;
     }
-    let design = vfl_doc::load(&project, &config)
+    let design = vhone_doc::load(&project, &config)
         .map_err(|e| format!("invalid pattern in doc.exclude: {e}"))?;
     let dir = match out {
         Some(out) => out.to_owned(),
         None => project.root.dir.join(&config.out_dir),
     };
-    let files = vfl_doc::write(&design, &config, &dir)
+    let files = vhone_doc::write(&design, &config, &dir)
         .map_err(|e| format!("could not write {}: {e}", dir.display()))?;
     let extension = match config.format {
         DocFormat::Html => "html",
@@ -41,7 +41,7 @@ pub fn write(file: &Path, out: Option<&Path>) -> Result<Written, String> {
         DocFormat::Asciidoc => "adoc",
     };
     let index = dir.join(format!("index.{extension}"));
-    let page = vfl_doc::page_for(&design, &project.root.dir, &file)
+    let page = vhone_doc::page_for(&design, &project.root.dir, &file)
         .map(|id| format!("{id}.{extension}"))
         .filter(|name| files.iter().any(|f| f.path == *name))
         .map_or_else(|| index.clone(), |name| dir.join(name));
@@ -54,7 +54,7 @@ pub fn write(file: &Path, out: Option<&Path>) -> Result<Written, String> {
 
 /// Where Show diagrams writes its pages.
 pub fn diagrams_dir() -> PathBuf {
-    std::env::temp_dir().join("vfl_npp").join("diagrams")
+    std::env::temp_dir().join("vhone_npp").join("diagrams")
 }
 
 #[cfg(test)]
@@ -73,7 +73,7 @@ mod tests {
 
     const FILES: &[(&str, &str)] = &[
         (
-            "vfl.toml",
+            "vhone.toml",
             "[doc]\nformat = \"markdown\"\nout_dir = \"site\"\n",
         ),
         (

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Changed
+
+- **Renamed to vhone** (was vfl / vhdl-fmt-lint): the binary is `vhone`, the config file
+  `vhone.toml` (or `.vhone.toml`), the crates `vhone-*`, the VS Code extension
+  `thewenneur.vhone` and the Notepad++ plugin `vhone_npp.dll`. Existing projects keep
+  working: `vfl.toml` / `.vfl.toml` are still read when no `vhone.toml` is present, and
+  `-- vfl-ignore`, `-- vfl-ignore-file` and `-- vfl: off/on/skip` comments are still
+  honoured. Uninstall the old `vfl` VS Code extension and remove `vfl_npp.dll` from the
+  Notepad++ plugins folder; VS Code settings move from `vfl.*` to `vhone.*`.
+
 ### Added
 
 - **Semantic highlighting**: the language server colors names by what they resolve to

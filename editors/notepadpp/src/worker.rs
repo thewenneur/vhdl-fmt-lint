@@ -70,7 +70,7 @@ impl Worker {
         let latest: Arc<[AtomicU64; KEYS]> = Arc::new(std::array::from_fn(|_| AtomicU64::new(0)));
         let superseded = latest.clone();
         std::thread::Builder::new()
-            .name("vfl".into())
+            .name("vhone".into())
             .spawn(move || {
                 let mut engine = Engine::default();
                 for job in inbox {
@@ -94,7 +94,7 @@ impl Worker {
                     notify();
                 }
             })
-            .expect("the vfl thread starts");
+            .expect("the vhone thread starts");
         Worker {
             jobs,
             results,

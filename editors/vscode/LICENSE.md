@@ -7,7 +7,7 @@ This extension is licensed under either of the Apache License, Version 2.0 or th
 ```text
 MIT License
 
-Copyright (c) 2026 vhdl-fmt-lint contributors
+Copyright (c) 2026 vhone contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -1,18 +1,21 @@
-# vhdl-fmt-lint
+# vhone
 
 A fast, fully configurable VHDL formatter, linter and language server, in pure Rust.
+
+> Formerly **vfl** (vhdl-fmt-lint). Existing `vfl.toml` files and `vfl-ignore` / `vfl: off`
+> comments are still recognised.
 
 - **Formatter**: every rule configurable, including column alignment of ports, generics,
   assignments, associations, declarations and comments. Idempotent and token-preserving.
 - **Linter**: syntactic and cross-file semantic rules, with autofixes.
-- **Documentation**: `vfl doc` generates HTML, Markdown or AsciiDoc documentation of the design
+- **Documentation**: `vhone doc` generates HTML, Markdown or AsciiDoc documentation of the design
   from its doc comments, with entity symbols, the instantiation tree, the top level and every
   architecture as block diagrams wired by signal, port maps, data flow, clock domains and their
   crossings, reset trees, package dependencies, record and register bit fields, state machines
-  and WaveDrom timing diagrams written in doc comments; `vfl schema` draws one diagram as SVG,
+  and WaveDrom timing diagrams written in doc comments; `vhone schema` draws one diagram as SVG,
   Mermaid or DOT.
   See [examples/uart/doc](examples/uart/doc/index.md) for an example.
-  In VS Code, **vfl: Generate Documentation** and **vfl: Show Diagrams** (a button in the
+  In VS Code, **vhone: Generate Documentation** and **vhone: Show Diagrams** (a button in the
   editor title bar, showing the current file's entity in a view beside it); in Notepad++,
   **Generate documentation** and **Show diagrams** in the plugin's menu.
 - **Language server**: diagnostics, formatting, navigation and refactoring in any LSP editor.
@@ -26,7 +29,7 @@ Status: early development (first release: 0.1.0, see the [changelog](CHANGELOG.m
 
 Documentation:
 
-- [Configuration reference](docs/configuration.md): every `vfl.toml` key, config lookup and
+- [Configuration reference](docs/configuration.md): every `vhone.toml` key, config lookup and
   layering, suppression comments.
 - [Lint rules](docs/lints.md): what each rule reports, its level in each preset, its fix and
   its options.
@@ -36,31 +39,31 @@ Documentation:
 ### Command line
 
 Download the archive for your platform from the
-[latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest), unzip it and
-put `vfl` (`vfl.exe` on Windows) somewhere on the `PATH`.
+[latest release](https://github.com/thewenneur/vhone/releases/latest), unzip it and
+put `vhone` (`vhone.exe` on Windows) somewhere on the `PATH`.
 
 Or build it with Rust 1.88 or later ([rustup.rs](https://rustup.rs)):
 
 ```sh
-cargo install --git https://github.com/thewenneur/vhdl-fmt-lint vfl-cli
-vfl --version
+cargo install --git https://github.com/thewenneur/vhone vhone-cli
+vhone --version
 ```
 
-This puts the `vfl` binary in `~/.cargo/bin`, which rustup adds to the `PATH`. To update, run
-the same command with `--force`. From a clone, `cargo install --path crates/vfl-cli` does the
+This puts the `vhone` binary in `~/.cargo/bin`, which rustup adds to the `PATH`. To update, run
+the same command with `--force`. From a clone, `cargo install --path crates/vhone-cli` does the
 same.
 
 ### VS Code
 
-The extension ([editors/vscode](editors/vscode/README.md)) runs `vfl lsp`, so install `vfl`
+The extension ([editors/vscode](editors/vscode/README.md)) runs `vhone lsp`, so install `vhone`
 first (above). Then:
 
-1. Download `vfl-0.1.1.vsix` from the
-   [latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest).
-2. Install it with `code --install-extension vfl-0.1.1.vsix`, or in VS Code with
+1. Download `vhone-0.1.1.vsix` from the
+   [latest release](https://github.com/thewenneur/vhone/releases/latest).
+2. Install it with `code --install-extension vhone-0.1.1.vsix`, or in VS Code with
    **Extensions > ... > Install from VSIX...**.
-3. Open a folder with VHDL files. If `vfl` is not on the `PATH` or in `~/.cargo/bin`, set
-   `vfl.server.path` to it.
+3. Open a folder with VHDL files. If `vhone` is not on the `PATH` or in `~/.cargo/bin`, set
+   `vhone.server.path` to it.
 
 To build the `.vsix` yourself: `cd editors/vscode && npm ci && npm run package`.
 
@@ -69,60 +72,60 @@ To build the `.vsix` yourself: `cd editors/vscode && npm ci && npm run package`.
 The plugin ([editors/notepadpp](editors/notepadpp/README.md)) has the formatter, the linter
 and the editor features of the language server (types on hover, parameter hints, completion,
 quick fixes, go to definition, references, rename, symbols) built in, so it does not need
-`vfl` installed. Download `vfl_npp-v0.1.1-x64.zip` from the
-[latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest), close Notepad++,
+`vhone` installed. Download `vhone_npp-v0.1.1-x64.zip` from the
+[latest release](https://github.com/thewenneur/vhone/releases/latest), close Notepad++,
 unzip it into the `plugins` folder of its install directory (usually
-`C:\Program Files\Notepad++\plugins`, giving `plugins\vfl_npp\vfl_npp.dll`) and start it again.
+`C:\Program Files\Notepad++\plugins`, giving `plugins\vhone_npp\vhone_npp.dll`) and start it again.
 The plugin's README covers building it and its commands.
 
 ### Other editors
 
-Any editor with LSP support can use `vfl lsp` (over stdio) as the VHDL language server.
+Any editor with LSP support can use `vhone lsp` (over stdio) as the VHDL language server.
 
 Neovim 0.11+:
 
 ```lua
-vim.lsp.config("vfl", {
-  cmd = { "vfl", "lsp" },
+vim.lsp.config("vhone", {
+  cmd = { "vhone", "lsp" },
   filetypes = { "vhdl" },
-  root_markers = { "vfl.toml", ".git" },
+  root_markers = { "vhone.toml", ".git" },
 })
-vim.lsp.enable("vfl")
+vim.lsp.enable("vhone")
 ```
 
 Helix (`languages.toml`):
 
 ```toml
-[language-server.vfl]
-command = "vfl"
+[language-server.vhone]
+command = "vhone"
 args = ["lsp"]
 
 [[language]]
 name = "vhdl"
-language-servers = ["vfl"]
+language-servers = ["vhone"]
 ```
 
 ## Usage
 
 ```sh
-vfl project            # show the root, the sources and why each is in its library
-vfl config show        # show the effective configuration and where it came from
-vfl check [paths]      # report syntax errors
-vfl fmt [--check] ...  # format in place, or list the files that would change
-vfl fmt -              # format standard input to standard output
-vfl fmt --lines 10:20 f.vhd  # format only those lines (and the statements around them)
-vfl lint [--fix] ...   # lint, resolving names across the whole project
-vfl rules              # list lint rules and their levels
-vfl doc [-o dir]       # write HTML (or --format markdown|asciidoc) documentation with diagrams
-vfl schema block top   # draw one diagram: block, fsm, dataflow, clocks, resets, ...
-vfl new tb counter     # write counter_tb.vhd, a testbench for entity counter
-vfl new instance counter     # print an instantiation (also: component, component-instance)
-vfl lsp                # language server over stdio
+vhone project            # show the root, the sources and why each is in its library
+vhone config show        # show the effective configuration and where it came from
+vhone check [paths]      # report syntax errors
+vhone fmt [--check] ...  # format in place, or list the files that would change
+vhone fmt -              # format standard input to standard output
+vhone fmt --lines 10:20 f.vhd  # format only those lines (and the statements around them)
+vhone lint [--fix] ...   # lint, resolving names across the whole project
+vhone rules              # list lint rules and their levels
+vhone doc [-o dir]       # write HTML (or --format markdown|asciidoc) documentation with diagrams
+vhone schema block top   # draw one diagram: block, fsm, dataflow, clocks, resets, ...
+vhone new tb counter     # write counter_tb.vhd, a testbench for entity counter
+vhone new instance counter     # print an instantiation (also: component, component-instance)
+vhone lsp                # language server over stdio
 ```
 
 ## Configuration
 
-Optional. Put a `vfl.toml` at the project root; nested `vfl.toml` files override only the
+Optional. Put a `vhone.toml` at the project root; nested `vhone.toml` files override only the
 keys they set, `extends = "path.toml"` pulls in a shared file, and `root = true` stops the
 search for parent configs. Every key is described in the
 [configuration reference](docs/configuration.md), and every rule in [lints.md](docs/lints.md).
@@ -147,26 +150,26 @@ preset = "strict"            # "none" | "recommended" (default) | "strict"
 "naming/signal" = { prefix = "s_", case = "snake" }
 ```
 
-A lint finding can be silenced with `-- vfl-ignore rule-id` at the end of its line (or on
-the line above), or for a whole file with `-- vfl-ignore-file rule-id`.
+A lint finding can be silenced with `-- vhone-ignore rule-id` at the end of its line (or on
+the line above), or for a whole file with `-- vhone-ignore-file rule-id`.
 
-Formatting can be switched off for a region with `-- vfl: off` / `-- vfl: on`, or for the next
-statement with `-- vfl: skip`.
+Formatting can be switched off for a region with `-- vhone: off` / `-- vhone: on`, or for the next
+statement with `-- vhone: skip`.
 
 ## Workspace
 
 | Crate | Role |
 |-------|------|
-| `vfl-syntax`  | Lossless, error-tolerant lexer and parser |
-| `vfl-config`  | Config schema and layered loading |
-| `vfl-project` | Root discovery, sources, library inference |
-| `vfl-sema`    | Semantic analysis |
-| `vfl-fmt`     | Formatter |
-| `vfl-lint`    | Linter |
-| `vfl-gen`     | Code generation: instantiations, components, testbenches |
-| `vfl-lsp`     | Language server |
-| `vfl-cli`     | The `vfl` binary |
-| `vfl-npp`     | [Notepad++ plugin](editors/notepadpp/README.md) (`editors/notepadpp`) |
+| `vhone-syntax`  | Lossless, error-tolerant lexer and parser |
+| `vhone-config`  | Config schema and layered loading |
+| `vhone-project` | Root discovery, sources, library inference |
+| `vhone-sema`    | Semantic analysis |
+| `vhone-fmt`     | Formatter |
+| `vhone-lint`    | Linter |
+| `vhone-gen`     | Code generation: instantiations, components, testbenches |
+| `vhone-lsp`     | Language server |
+| `vhone-cli`     | The `vhone` binary |
+| `vhone-npp`     | [Notepad++ plugin](editors/notepadpp/README.md) (`editors/notepadpp`) |
 
 ## AI usage disclosure
 

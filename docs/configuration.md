@@ -1,10 +1,10 @@
 # Configuration reference
 
-vfl reads its settings from `vfl.toml` (or `.vfl.toml`). Every key has a default, so the file
+vhone reads its settings from `vhone.toml` (or `.vhone.toml`). Every key has a default, so the file
 is optional, and an empty file is the same as no file. This page lists every key. The lint
 rules that `[lint.rules]` configures are described in [lints.md](lints.md).
 
-`vfl config show [path]` prints the effective configuration for a file or directory, with
+`vhone config show [path]` prints the effective configuration for a file or directory, with
 the config files it was built from.
 
 - [Config files](#config-files): where they are looked up and how they combine
@@ -12,8 +12,8 @@ the config files it was built from.
 - [`[format]`](#format): the formatter
 - [`[format.align]`](#formatalign): column alignment
 - [`[lint]`](#lint): presets and per-rule settings
-- [`[doc]`](#doc): documentation generation (`vfl doc`)
-- [`[doc.diagrams]`](#docdiagrams): the diagrams in the documentation (`vfl schema`)
+- [`[doc]`](#doc): documentation generation (`vhone doc`)
+- [`[doc.diagrams]`](#docdiagrams): the diagrams in the documentation (`vhone schema`)
 - [In-source comments](#in-source-comments): suppressing findings, switching the formatter off
 - [Default configuration](#default-configuration): every key with its default value
 
@@ -21,18 +21,18 @@ the config files it was built from.
 
 ### Lookup
 
-For a file, vfl walks up from the file's directory and applies every `vfl.toml` (or
-`.vfl.toml`) it finds on the way to the filesystem root. If a directory holds both,
-`vfl.toml` is used.
+For a file, vhone walks up from the file's directory and applies every `vhone.toml` (or
+`.vhone.toml`) it finds on the way to the filesystem root. If a directory holds both,
+`vhone.toml` is used.
 
 The files are merged from the outermost to the nearest, so a nested config only needs the
 keys it changes:
 
 ```text
 repo/
-  vfl.toml           # [lint] preset = "strict"
+  vhone.toml           # [lint] preset = "strict"
   tb/
-    vfl.toml         # [lint.rules] "sema/unused-signal" = "off"
+    vhone.toml         # [lint.rules] "sema/unused-signal" = "off"
 ```
 
 Files under `tb/` are linted with the strict preset, without `sema/unused-signal`.
@@ -48,9 +48,9 @@ outer file: an inner `exclude = ["a/**"]` replaces an outer `exclude`, it does n
 | `extends` | string | A path to another config file, relative to this file's directory. That file is loaded first and this file is merged on top of it. It may itself use `extends`; a cycle is an error. A `root` key in the extended file is ignored. |
 
 ```toml
-# hw/vfl.toml
+# hw/vhone.toml
 root = true
-extends = "../shared/team-vfl.toml"
+extends = "../shared/team-vhone.toml"
 
 [format]
 indent = 4   # overrides the team file
@@ -68,16 +68,16 @@ indent = 4   # overrides the team file
 A key that does not exist, or a value of the wrong type, is an error that names the key and
 lists the valid ones, and the command stops. An unknown rule id in `[lint.rules]`, or an
 invalid rule option, is reported as a warning and ignored, so that a config written for a
-newer vfl still works.
+newer vhone still works.
 
 ## `[project]`
 
 What the project is made of: the files analyzed together, so that names resolve across
 them.
 
-The project root is found by walking up from the file or directory vfl was started on:
+The project root is found by walking up from the file or directory vhone was started on:
 
-- The outermost directory holding a `vfl.toml` or `.vfl.toml` is the root, so nested configs
+- The outermost directory holding a `vhone.toml` or `.vhone.toml` is the root, so nested configs
   that only override a few settings do not split the project. The walk stops at a config
   with `root = true`, and does not go above the nearest version-control root (`.git`, `.hg`,
   `.jj`): a config in your home directory is still layered underneath, but does not make
@@ -85,12 +85,12 @@ The project root is found by walking up from the file or directory vfl was start
 - Without a config, the nearest version-control root is the root; failing that, the starting
   directory itself. The language server starts from its first workspace folder.
 
-To keep two VHDL projects in one repository apart, give each its own `vfl.toml` with
+To keep two VHDL projects in one repository apart, give each its own `vhone.toml` with
 `root = true`.
 
 `[project]` is read from the configs that apply to the root. In a nested config, only
-`standard` has an effect: `vfl fmt` and `vfl check` parse the files under it with that
-standard (the semantic analysis of `vfl lint` uses the root's).
+`standard` has an effect: `vhone fmt` and `vhone check` parse the files under it with that
+standard (the semantic analysis of `vhone lint` uses the root's).
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
@@ -101,9 +101,9 @@ standard (the semantic analysis of `vfl lint` uses the root's).
 
 ### `[project.libraries]`
 
-Normally not needed: vfl puts each file in a library by itself. In order of priority:
+Normally not needed: vhone puts each file in a library by itself. In order of priority:
 
-1. `[project.libraries]` in `vfl.toml`.
+1. `[project.libraries]` in `vhone.toml`.
 2. rust_hdl's `vhdl_ls.toml` (or `.vhdl_ls.toml`) in the project root, with `$VAR`
    expansion.
 3. Library lists of other tools found in the tree, read without running them: VUnit
@@ -113,7 +113,7 @@ Normally not needed: vfl puts each file in a library by itself. In order of prio
    in `lib`, `work.unit` references keep files together, and files nothing names stay in
    `work`.
 
-`vfl project` shows the library of each file and why it was chosen. Add an entry here only
+`vhone project` shows the library of each file and why it was chosen. Add an entry here only
 when that guess is wrong. Each key is a library name and its value a list of globs,
 relative to the project root, of the files in it:
 
@@ -127,12 +127,12 @@ In these globs `*` also matches `/`, so `src/*.vhd` matches files in subdirector
 A file can be listed in several libraries; it is then analyzed once per library. A file no
 entry matches is still placed by the lower-priority sources.
 
-`vfl project --vhdl-ls` prints the libraries vfl found as a `vhdl_ls.toml`, for use with
+`vhone project --vhdl-ls` prints the libraries vhone found as a `vhdl_ls.toml`, for use with
 rust_hdl.
 
 ## `[format]`
 
-Settings of `vfl fmt` and of formatting in the language server.
+Settings of `vhone fmt` and of formatting in the language server.
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
@@ -152,7 +152,7 @@ Settings of `vfl fmt` and of formatting in the language server.
 | `close_paren` | string | `"own-line"` | Where `)` goes in a list laid out one element per line: `"own-line"` (on its own line, at the indentation of the line that opened the list) or `"attached"` (right after the last element). |
 | `case_alternative` | string | `"preserve"` | `"preserve"` keeps a first statement written on the `when ... =>` line there; `"break"` starts every statement of a case alternative on its own line. |
 | `line_ending` | string | `"auto"` | `"auto"` keeps the line endings the file uses (LF for new files), `"lf"` or `"crlf"` converts. |
-| `on_type` | boolean | `true` | Lets editors format the line you just finished as you type: the line of a `;`, or the line above a new line. Editors have their own switch as well (`vfl.format.onType` in VS Code, **Format on type** in Notepad++), off by default; `false` here turns it off for everyone working on the project. |
+| `on_type` | boolean | `true` | Lets editors format the line you just finished as you type: the line of a `;`, or the line above a new line. Editors have their own switch as well (`vhone.format.onType` in VS Code, **Format on type** in Notepad++), off by default; `false` here turns it off for everyone working on the project. |
 
 `end_label` and `end_keyword` apply to entities, architectures, packages, package bodies,
 contexts, configurations, components, subprogram bodies, processes, blocks, `if`, `case`,
@@ -266,12 +266,12 @@ Each entry is either a level, or a table with an optional `level` and rule optio
 - Rules with options: `style/line-length` (`max`) and every `naming/<kind>` rule (`prefix`,
   `suffix`, `case`, `pattern`). See [lints.md](lints.md) for what they do.
 
-`info` findings are shown as notes. `vfl lint` exits with a failure status when there are
+`info` findings are shown as notes. `vhone lint` exits with a failure status when there are
 `error` findings, or `warn` findings too with `--deny-warnings`.
 
 ## `[doc]`
 
-`vfl doc [path]` writes the documentation of the project: an index with the design
+`vhone doc [path]` writes the documentation of the project: an index with the design
 hierarchy, the block diagram of the top level and the list of entities and packages, a page per entity (description, block
 symbol, generics, ports, who instantiates it, and per architecture its instances, processes,
 state machines, signals, constants, types and subprograms) and a page per package. Options
@@ -280,7 +280,7 @@ from the configs that apply to the project root.
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
-| `out_dir` | string | `"doc"` | Where `vfl doc` writes, relative to the project root. Existing files there are overwritten, others are kept. |
+| `out_dir` | string | `"doc"` | Where `vhone doc` writes, relative to the project root. Existing files there are overwritten, others are kept. |
 | `format` | string | `"html"` | `"html"`: self-contained pages with the diagrams inline, light and dark. `"markdown"`: `.md` pages, with the diagrams as `.svg` files next to them (or Mermaid blocks, see `[doc.diagrams]`). `"asciidoc"`: `.adoc` pages for Asciidoctor (or Antora), with the diagrams as `.svg` files next to them. |
 | `title` | string | unset | The title of the index page. Unset: the name of the project directory. |
 | `comments` | string | `"auto"` | Which comments document a declaration: `"marked"` (only comments starting with `--` and `comment_marker`, as in TerosHDL and Doxygen), `"all"` (every comment), `"auto"` (marked comments in files that have any, all comments in the others) or `"none"`. |
@@ -297,8 +297,8 @@ from the configs that apply to the project root.
 
 A comment documents the declaration, port, generic, process or instance directly below it
 (no blank line between), or the one it ends the line of. Comment lines are joined, and a
-blank comment line starts a new paragraph. Separator lines (`-----`) and `vfl-ignore` and
-`vfl:` directives are skipped.
+blank comment line starts a new paragraph. Separator lines (`-----`) and `vhone-ignore` and
+`vhone:` directives are skipped.
 
 ```vhdl
 --! A FIFO with a configurable depth.
@@ -329,13 +329,13 @@ is the literal the reset branch assigns, else the declaration's default.
 
 ### `[doc.diagrams]`
 
-`vfl schema <kind> [entity]` draws one of these diagrams alone, as SVG (the default), or for
+`vhone schema <kind> [entity]` draws one of these diagrams alone, as SVG (the default), or for
 `hierarchy` and `fsm` as Mermaid (`-f mermaid`) or Graphviz DOT (`-f dot`). The kinds are
 `symbol`, `hierarchy`, `block`, `port-map` (with `--instance label`), `fsm`, `dataflow`,
 `clocks`, `resets`, `dependencies` (no entity) and `wave` (the argument is a WaveJSON file).
 
 A doc comment can hold a timing diagram as a fenced block in the
-[WaveDrom](https://wavedrom.com/tutorial.html) WaveJSON syntax, drawn by vfl itself:
+[WaveDrom](https://wavedrom.com/tutorial.html) WaveJSON syntax, drawn by vhone itself:
 
 ````vhdl
 --! ```wavedrom
@@ -370,7 +370,7 @@ characters are `0 1 l h L H u d` (levels), `p n P N` (clocks), `x` (unknown), `z
 
 ## `[generate]`
 
-Code generated from an entity: `vfl new`, and the commands of the editor integrations. The
+Code generated from an entity: `vhone new`, and the commands of the editor integrations. The
 text is laid out by the formatter, so `[format]` applies to it too.
 
 | Key | Type | Default | Meaning |
@@ -410,28 +410,28 @@ Lint suppression:
 
 | Comment | Effect |
 |---------|--------|
-| `-- vfl-ignore rule-a, rule-b` at the end of a line | Silences those rules on that line. |
-| `-- vfl-ignore rule-a` on a line of its own | Silences them on the next line of code. |
-| `-- vfl-ignore-file rule-a` anywhere | Silences them in the whole file. |
+| `-- vhone-ignore rule-a, rule-b` at the end of a line | Silences those rules on that line. |
+| `-- vhone-ignore rule-a` on a line of its own | Silences them on the next line of code. |
+| `-- vhone-ignore-file rule-a` anywhere | Silences them in the whole file. |
 
 Without rule ids, every rule is silenced. A category (`naming`, `style`, `sema`) silences all
 its rules. Ids may be separated by commas or spaces, and the list may be followed by another
 `--` comment explaining why.
 
 ```vhdl
-signal spare : std_logic;  -- vfl-ignore sema/unused-signal -- kept for the next board rev
+signal spare : std_logic;  -- vhone-ignore sema/unused-signal -- kept for the next board rev
 ```
 
 Formatter regions:
 
 | Comment | Effect |
 |---------|--------|
-| `-- vfl: off` ... `-- vfl: on` | The lines between are kept exactly as written. |
-| `-- vfl: skip` | The next statement or declaration is kept exactly as written. |
+| `-- vhone: off` ... `-- vhone: on` | The lines between are kept exactly as written. |
+| `-- vhone: skip` | The next statement or declaration is kept exactly as written. |
 
 ## Default configuration
 
-`vfl config show` in a directory without config files prints the equivalent of:
+`vhone config show` in a directory without config files prints the equivalent of:
 
 ```toml
 [project]
@@ -522,6 +522,6 @@ reset_cycles = 5
 # clock_pattern, reset_pattern, active_low_pattern: see above
 ```
 
-Editor settings (the path to `vfl`, tracing) belong to the editor integration, not to
-`vfl.toml`; see the [VS Code extension](../editors/vscode/README.md) and the
+Editor settings (the path to `vhone`, tracing) belong to the editor integration, not to
+`vhone.toml`; see the [VS Code extension](../editors/vscode/README.md) and the
 [Notepad++ plugin](../editors/notepadpp/README.md).

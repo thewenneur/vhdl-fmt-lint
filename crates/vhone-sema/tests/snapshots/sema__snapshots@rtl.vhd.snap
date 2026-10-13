@@ -1,0 +1,27 @@
+---
+source: crates/vhone-sema/tests/sema.rs
+expression: analyze(&text)
+input_file: crates/vhone-sema/tests/data/rtl.vhd
+---
+rtl_pkg.vhd: work
+child.vhd: work
+top.vhd: work
+top.vhd:13:10: sema/unused-signal: signal `bad_init` is never used [fix: Remove the unused signal `bad_init`]
+top.vhd:13:53: sema/width-mismatch: `bad_init` has 4 elements but the value has 5
+top.vhd:14:10: sema/unread-signal: signal `n` is assigned but never read
+top.vhd:15:10: sema/undriven-signal: signal `u` is read but never assigned
+top.vhd:17:10: sema/unread-signal: signal `latch_q` is assigned but never read
+top.vhd:17:19: sema/unread-signal: signal `full_q` is assigned but never read
+top.vhd:17:27: sema/unread-signal: signal `case_q` is assigned but never read
+top.vhd:17:35: sema/unread-signal: signal `cond_q` is assigned but never read
+top.vhd:18:34: sema/unread-signal: signal `used_b` is assigned but never read
+top.vhd:23:8: sema/width-mismatch: `w` has 8 elements but the value has 4
+top.vhd:26:8: sema/width-mismatch: `w` has 8 elements but the value has 9
+top.vhd:29:8: sema/width-mismatch: `w` has 8 elements but the value has 4
+top.vhd:32:8: sema/width-mismatch: `n` has 4 elements but the value has 5
+top.vhd:33:30: sema/width-mismatch: `q` has 8 elements but the value has 7
+top.vhd:34:41: sema/width-mismatch: `a` has 4 elements but the value has 8
+top.vhd:35:50: sema/width-mismatch: `y` has 8 elements but the value has 4
+top.vhd:41:7: sema/inferred-latch: `latch_q` is not assigned on every path through this combinational process, which infers a latch
+top.vhd:61:19: sema/inferred-latch: `case_q` is not assigned on every path through this combinational process, which infers a latch
+top.vhd:80:10: sema/clock-domain-crossing: `data_a` is registered on `clk_a` but used here on `clk_b` without a synchronizer

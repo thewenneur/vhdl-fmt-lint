@@ -1,9 +1,0 @@
----
-source: crates/vfl-sema/tests/sema.rs
-expression: analyze(&text)
-input_file: crates/vfl-sema/tests/data/libraries.vhd
----
-lib/util.vhd: mylib
-lib/helper.vhd: mylib
-app/top.vhd: work
-app/top.vhd:3:9: sema/unknown-library: library `unisim` is not part of the project; names from it are not checked

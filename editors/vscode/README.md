@@ -1,14 +1,14 @@
-# vfl for VS Code
+# vhone for VS Code
 
-VHDL support for VS Code, powered by the [vfl](https://github.com/thewenneur/vhdl-fmt-lint)
+VHDL support for VS Code, powered by the [vhone](https://github.com/thewenneur/vhone)
 language server:
 
 - **Diagnostics** as you type: syntax errors, cross-file semantic checks and lint rules.
-- **Quick fixes**, and **Fix All** (`vfl: Fix All Lint Findings in File`, or on save, below).
+- **Quick fixes**, and **Fix All** (`vhone: Fix All Lint Findings in File`, or on save, below).
   Besides each rule's own fix: rename a declaration to follow a naming convention
   everywhere, add the `use` clause for a name declared in a package, or silence the rule
-  on the line or in the file with a `-- vfl-ignore` comment.
-- **Formatting** with every rule from your `vfl.toml`.
+  on the line or in the file with a `-- vhone-ignore` comment.
+- **Formatting** with every rule from your `vhone.toml`.
 - **Go to definition**, **find references**, **highlights**, **hover** (with types),
   **signature help**, **rename**, **completion** (including record elements and protected
   type methods), **document and workspace symbols**, across the whole project and into
@@ -33,62 +33,62 @@ language server:
   `"rules": { "signal": "#c586c0", "port.out": { "bold": true } }`.
 
 The project root, sources and libraries are discovered from the code, so there is nothing to
-set up. Configuration lives in `vfl.toml`, shared with the `vfl` command line; see the
-[main README](https://github.com/thewenneur/vhdl-fmt-lint#configuration).
+set up. Configuration lives in `vhone.toml`, shared with the `vhone` command line; see the
+[main README](https://github.com/thewenneur/vhone#configuration).
 
 ## Requirements
 
-The extension runs `vfl lsp`, so `vfl` must be installed:
+The extension runs `vhone lsp`, so `vhone` must be installed:
 
 ```sh
-cargo install --git https://github.com/thewenneur/vhdl-fmt-lint vfl-cli
+cargo install --git https://github.com/thewenneur/vhone vhone-cli
 ```
 
-It is looked up in `vfl.server.path`, then on `PATH`, then in `~/.cargo/bin`.
+It is looked up in `vhone.server.path`, then on `PATH`, then in `~/.cargo/bin`.
 
 ## Settings
 
 | Setting | Default | |
 |---------|---------|---|
-| `vfl.server.path` | `""` | Path to `vfl`. `~` and `${workspaceFolder}` are expanded. |
-| `vfl.server.extraEnv` | `{}` | Extra environment variables for the server. |
-| `vfl.format.onType` | `false` | Format the line you just finished as you type (`;` or Enter). |
-| `vfl.trace.server` | `"off"` | Log LSP traffic (`messages` or `verbose`). |
+| `vhone.server.path` | `""` | Path to `vhone`. `~` and `${workspaceFolder}` are expanded. |
+| `vhone.server.extraEnv` | `{}` | Extra environment variables for the server. |
+| `vhone.format.onType` | `false` | Format the line you just finished as you type (`;` or Enter). |
+| `vhone.trace.server` | `"off"` | Log LSP traffic (`messages` or `verbose`). |
 
 The extension makes itself the default formatter for VHDL. To format and fix on save:
 
 ```json
 "[vhdl]": {
   "editor.formatOnSave": true,
-  "editor.codeActionsOnSave": { "source.fixAll.vfl": "explicit" }
+  "editor.codeActionsOnSave": { "source.fixAll.vhone": "explicit" }
 }
 ```
 
 **Format Selection** formats the selected lines, and the whole statements and aligned lines
-they touch. With `"vfl.format.onType": true`, typing `;` formats its line and Enter formats
-the line above; `on_type = false` under `[format]` in `vfl.toml` turns it off for a project.
+they touch. With `"vhone.format.onType": true`, typing `;` formats its line and Enter formats
+the line above; `on_type = false` under `[format]` in `vhone.toml` turns it off for a project.
 
 ## Commands
 
-- `vfl: Restart Language Server`, after rebuilding `vfl` for instance.
-- `vfl: Fix All Lint Findings in File` applies every safe fix.
-- `vfl: Show Language Server Output`.
-- `vfl: Insert Entity Instantiation...`, `vfl: Insert Component Instantiation...` and
-  `vfl: Insert Component Declaration...` ask for an entity of the project and insert the code
+- `vhone: Restart Language Server`, after rebuilding `vhone` for instance.
+- `vhone: Fix All Lint Findings in File` applies every safe fix.
+- `vhone: Show Language Server Output`.
+- `vhone: Insert Entity Instantiation...`, `vhone: Insert Component Instantiation...` and
+  `vhone: Insert Component Declaration...` ask for an entity of the project and insert the code
   at the cursor.
-- `vfl: Generate Testbench...` writes `<entity>_tb.vhd` next to the entity and opens it.
+- `vhone: Generate Testbench...` writes `<entity>_tb.vhd` next to the entity and opens it.
 
-- `vfl: Generate Documentation` (also in the explorer context menu of a folder) runs
-  `vfl doc` on the project and offers to open the index: an HTML one in the browser, a
+- `vhone: Generate Documentation` (also in the explorer context menu of a folder) runs
+  `vhone doc` on the project and offers to open the index: an HTML one in the browser, a
   Markdown or AsciiDoc one in the editor. Where and how it is written comes from `[doc]`
-  in `vfl.toml`.
-- `vfl: Show Diagrams`, the diagram button in the title bar of a VHDL editor, shows the
+  in `vhone.toml`.
+- `vhone: Show Diagrams`, the diagram button in the title bar of a VHDL editor, shows the
   documentation page of the first entity (else package) of the file, with its diagrams, in
   a view beside the editor. Links to other entities open their pages in the view. The page
   is drawn again when a VHDL file is saved, and follows the light or dark color theme. Its
   HTML is written to the extension's storage, not to the project.
 
-The generated code follows `[format]` and `[generate]` in `vfl.toml`. Documentation is
+The generated code follows `[format]` and `[generate]` in `vhone.toml`. Documentation is
 only generated by these commands, never while you type.
 
 ## Notes
@@ -103,8 +103,8 @@ around it are not loaded, so names it takes from them are not resolved.
 npm ci
 npm run check        # type-check
 npm test             # grammar and diagrams view tests
-npm run test:e2e     # runs VS Code against target/debug/vfl (build it first)
-npm run package      # builds vfl-<version>.vsix
+npm run test:e2e     # runs VS Code against target/debug/vhone (build it first)
+npm run package      # builds vhone-<version>.vsix
 ```
 
-Install the package with `code --install-extension vfl-0.1.1.vsix`.
+Install the package with `code --install-extension vhone-0.1.1.vsix`.

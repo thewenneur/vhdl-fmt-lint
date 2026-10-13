@@ -1,12 +1,12 @@
-# vhdl-fmt-lint: design
+# vhone: design
 
-Status: draft, 2026-10-13. Implemented so far: config schema and layering (`vfl-config`), root
-discovery and source collection (`vfl-project`), the lossless parser (`vfl-syntax`), the
-formatter (`vfl-fmt`), and the `vfl` CLI with `vfl check` (syntax errors) and `vfl fmt`.
+Status: draft, 2026-10-13. Implemented so far: config schema and layering (`vhone-config`), root
+discovery and source collection (`vhone-project`), the lossless parser (`vhone-syntax`), the
+formatter (`vhone-fmt`), and the `vhone` CLI with `vhone check` (syntax errors) and `vhone fmt`.
 
 ## Goals
 
-- One pure-Rust toolchain for VHDL: a **library**, a **CLI** (`vfl`) and a **language server**.
+- One pure-Rust toolchain for VHDL: a **library**, a **CLI** (`vhone`) and a **language server**.
 - A **formatter** where every rule is configurable, including column alignment of
   keywords, assignments, ports, generics, declarations and trailing comments.
 - A **linter** with syntactic and cross-file semantic rules, each configurable, many with autofixes.
@@ -22,37 +22,37 @@ Verilog/SystemVerilog, mixed-language projects (designed for, not built).
 
 ```
             ┌──────────┐   ┌──────────┐   ┌──────────┐
-            │ vfl-cli  │   │ vfl-lsp  │   │ embedders│
+            │ vhone-cli  │   │ vhone-lsp  │   │ embedders│
             └────┬─────┘   └────┬─────┘   └────┬─────┘
                  └──────────────┼──────────────┘
                      ┌──────────┴──────────┐
                 ┌────┴────┐           ┌────┴────┐
-                │ vfl-fmt │           │vfl-lint │
+                │ vhone-fmt │           │vhone-lint │
                 └────┬────┘           └────┬────┘
                      │                ┌────┴────┐
-                     │                │vfl-sema │  name resolution, types, xrefs
+                     │                │vhone-sema │  name resolution, types, xrefs
                      │                └────┬────┘
                 ┌────┴─────────────────────┴────┐
-                │          vfl-project          │  root, files, libraries, config
+                │          vhone-project          │  root, files, libraries, config
                 └────┬─────────────────────┬────┘
                 ┌────┴─────┐          ┌────┴─────┐
-                │vfl-syntax│          │vfl-config│
+                │vhone-syntax│          │vhone-config│
                 └──────────┘          └──────────┘
 ```
 
 | Crate        | Role |
 |--------------|------|
-| `vfl-syntax` | Lexer and lossless, error-tolerant parser producing a concrete syntax tree (CST). |
-| `vfl-config` | Config schema, defaults, loading, layering (`extends`, nested configs). |
-| `vfl-project`| Project root discovery, source collection, library inference. |
-| `vfl-sema`   | Incremental semantic model: design units, scopes, name resolution, overloads, types. |
-| `vfl-fmt`    | Formatter: CST to layout IR to text, with an alignment pass. |
-| `vfl-lint`   | Rule framework and built-in rules (syntactic and semantic), fixes. |
-| `vfl-gen`    | Code generated from an entity: instantiations, component declarations, testbench skeletons. |
-| `vfl-lsp`    | Language server: diagnostics, formatting, go-to, hover, signature help, completion, rename. |
-| `vfl-cli`    | The `vfl` binary: `vfl fmt`, `vfl lint`, `vfl check`, `vfl lsp`, `vfl project`. |
+| `vhone-syntax` | Lexer and lossless, error-tolerant parser producing a concrete syntax tree (CST). |
+| `vhone-config` | Config schema, defaults, loading, layering (`extends`, nested configs). |
+| `vhone-project`| Project root discovery, source collection, library inference. |
+| `vhone-sema`   | Incremental semantic model: design units, scopes, name resolution, overloads, types. |
+| `vhone-fmt`    | Formatter: CST to layout IR to text, with an alignment pass. |
+| `vhone-lint`   | Rule framework and built-in rules (syntactic and semantic), fixes. |
+| `vhone-gen`    | Code generated from an entity: instantiations, component declarations, testbench skeletons. |
+| `vhone-lsp`    | Language server: diagnostics, formatting, go-to, hover, signature help, completion, rename. |
+| `vhone-cli`    | The `vhone` binary: `vhone fmt`, `vhone lint`, `vhone check`, `vhone lsp`, `vhone project`. |
 
-Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
+Each crate is usable as a library; only `vhone-cli` and `vhone-lsp` do I/O policy.
 
 ### Syntax tree
 
@@ -112,7 +112,7 @@ Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
   units of the same name in one library.
 - Each resolved reference records its access (read, write, both), which feeds the
   unused / unread / undriven / sensitivity checks.
-- Hardware checks (`crates/vfl-sema/src/rtl.rs`) run with type checking, per unit:
+- Hardware checks (`crates/vhone-sema/src/rtl.rs`) run with type checking, per unit:
   - `sema/width-mismatch`: an assignment, initial value or port / generic association
     where a vector of scalars gets a value with a different static number of elements.
     Declarations record a width when their one-dimensional constraint has static bounds
@@ -167,13 +167,13 @@ Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
   that an update after edits gives exactly what a full analysis gives.
 - Only an analysis built by `Analysis::update` (the language server's) keeps the hashes and
   dependencies reuse needs; a one-off `Analysis::new` (the CLI's) skips that bookkeeping.
-- Edit to fresh diagnostics in the language server (`crates/vfl-lsp/examples/edit_latency.rs`):
+- Edit to fresh diagnostics in the language server (`crates/vhone-lsp/examples/edit_latency.rs`):
   a median of 6 ms (neorv32) to 45 ms (UVVM), and up to a full re-analysis (about 0.8 s on
   UVVM) for a change to a package that every unit uses.
 
 ### Formatter
 
-`vfl-fmt`, run with `vfl fmt`. Only files that parse without errors are formatted.
+`vhone-fmt`, run with `vhone fmt`. Only files that parse without errors are formatted.
 
 1. **Tokens**: the tree is flattened into tokens and comments (PSL directives stay verbatim).
    Keyword and identifier case are applied, and the optional words after `end` (`end entity
@@ -216,19 +216,19 @@ Guarantees, enforced in tests, in the corpus job and at runtime:
   with two very different configs.
 - **Semantics-preserving**: after formatting, the output is parsed again; it must have no
   errors, the same non-trivia tokens (ignoring case where VHDL does, and the optional words
-  after `end`) and the same comments. Otherwise `vfl fmt` reports a bug and leaves the file
+  after `end`) and the same comments. Otherwise `vhone fmt` reports a bug and leaves the file
   untouched.
-- Escape hatches: `-- vfl: off` / `-- vfl: on` regions and `-- vfl: skip` for the next
+- Escape hatches: `-- vhone: off` / `-- vhone: on` regions and `-- vhone: skip` for the next
   statement or declaration are kept exactly as written.
 - Line endings (LF or CRLF), a UTF-8 byte-order mark and Latin-1 encoding are preserved.
-- Range formatting (`vfl fmt --lines`, LSP range and on-type formatting): the whole file is
+- Range formatting (`vhone fmt --lines`, LSP range and on-type formatting): the whole file is
   formatted and only the output lines of the selected source lines are copied back, widened
   to the statements or declarations they touch (not past the construct around them), to
   every line of an alignment run they are part of, and to lines that start and end on the
   same tokens in the source and the output. Protected regions are never touched.
   Only the block around the selection is laid out: whole lines between blank lines (which end
   alignment runs), cut between the items of a construct, and not after a comment line, whose
-  indentation follows the code below it. Files with `-- vfl:` directives, `max_blank_lines = 0`
+  indentation follows the code below it. Files with `-- vhone:` directives, `max_blank_lines = 0`
   or `block_boundary = "never"` are laid out whole. The corpus job checks that both give the
   same edits.
 
@@ -236,7 +236,7 @@ Guarantees, enforced in tests, in the corpus job and at runtime:
 
 - Rules have an id `category/name` (`sema/unused-signal`, `style/clock-edge`,
   `naming/signal`), a level in each preset, and optionally a fix marked safe or unsafe.
-  `vfl rules` lists them.
+  `vhone rules` lists them.
 - Categories: `syntax/*` (parse errors), `sema/*` (cross-file semantic checks: unresolved
   names and units, duplicates, unassociated ports, unused signals / variables / constants /
   ports / generics / use clauses, unread and undriven signals, incomplete or unneeded
@@ -248,19 +248,19 @@ Guarantees, enforced in tests, in the corpus job and at runtime:
 - Presets: `none` (only syntax errors), `recommended` (default: likely bugs), `strict`
   (everything but naming). Per-rule overrides set a level, options, or both; options alone
   turn a rule on at `warn`.
-- Suppression: `-- vfl-ignore [rules]` at the end of a line silences that line, on a line
-  of its own the next line of code; `-- vfl-ignore-file [rules]` the whole file. Without
+- Suppression: `-- vhone-ignore [rules]` at the end of a line silences that line, on a line
+  of its own the next line of code; `-- vhone-ignore-file [rules]` the whole file. Without
   rules, everything; a category (`naming`) silences all its rules.
-- `vfl lint` analyzes the whole project around the given paths but reports only the given
+- `vhone lint` analyzes the whole project around the given paths but reports only the given
   files. `--fix` applies safe fixes (`--unsafe-fixes` also the others) and re-lints.
   Output formats: human (with source excerpts), concise, JSON, SARIF, GitHub annotations.
   The exit code is non-zero on errors, or on warnings with `--deny-warnings`.
 
 ### Language server
 
-`vfl lsp` (stdio) analyzes the project around the first workspace folder. Open buffers
+`vhone lsp` (stdio) analyzes the project around the first workspace folder. Open buffers
 overlay the files on disk; edits are applied incrementally and analysis runs once a burst of
-changes is over. It provides diagnostics with quick fixes and a `source.fixAll.vfl` action,
+changes is over. It provides diagnostics with quick fixes and a `source.fixAll.vhone` action,
 whole-document formatting (returned as a single minimal edit), range formatting, format on
 type (`;` formats its line, a new line formats the line above it), go to definition (bundled
 `std` / `ieee` sources are written to a cache directory so editors can open them),
@@ -277,7 +277,7 @@ type methods after `value.`, libraries, keywords).
 
 ## Configuration
 
-One TOML file, `vfl.toml` (or `.vfl.toml`). Everything has a default, so an empty file
+One TOML file, `vhone.toml` (or `.vhone.toml`). Everything has a default, so an empty file
 or no file at all is valid. Example:
 
 ```toml
@@ -332,11 +332,11 @@ preset = "recommended"       # "none" | "recommended" | "strict"
 
 Lookup and layering:
 
-- For a file, the nearest `vfl.toml` walking up from its directory applies.
+- For a file, the nearest `vhone.toml` walking up from its directory applies.
 - A nested config inherits from the ones above it and overrides only the keys it sets, so a
   subtree can relax rules without copying everything. `root = true` stops the upward search.
   `extends = "path.toml"` layers a shared team config underneath the file.
-- `vfl config show <file>` prints the effective config and the files it came from.
+- `vhone config show <file>` prints the effective config and the files it came from.
 - Every key is described in [configuration.md](configuration.md), every rule in
   [lints.md](lints.md).
 
@@ -344,7 +344,7 @@ Lookup and layering:
 
 The aim: open any VHDL file and get correct cross-file analysis, without a library list.
 
-**1. Find the root.** Walk up from the file: the outermost directory with a `vfl.toml`
+**1. Find the root.** Walk up from the file: the outermost directory with a `vhone.toml`
 wins, so nested override configs do not split the project, stopping at a config with
 `root = true` and never going above the nearest VCS root (`.git`, `.hg`, `.jj`). Without a
 config, the VCS root; failing that, the file's own directory. In the LSP, workspace folders
@@ -372,7 +372,7 @@ use them. Implemented, all read without running the tool:
   Quartus's `$::quartus(qip_path)`. A word using anything else is skipped.
 
 These files are found by the same walk as sources (so `.gitignore` applies). Their globs
-use the tools' semantics: `*` stays within a directory. `vfl.toml` wins over
+use the tools' semantics: `*` stays within a directory. `vhone.toml` wins over
 `vhdl_ls.toml`, which wins over tool files; a file a tool lists in no library is still
 inferred. HDLmake `Manifest.py` is not read yet. This makes migration a no-op.
 
@@ -389,7 +389,7 @@ parallel) and indexed by the primary units it declares and the references it mak
   constraints) are resolved by directory proximity, and surfaced as a diagnostic that
   suggests a one-line `[project.libraries]` entry.
 
-**5. Explain it.** `vfl project` prints the root, the files, the inferred libraries and why
+**5. Explain it.** `vhone project` prints the root, the files, the inferred libraries and why
 each file landed where it did. The LSP exposes the same through a command.
 
 Explicit entries in `[project.libraries]` always win over inference, so the escape hatch
@@ -408,7 +408,7 @@ and far fewer false errors, with zero configuration.
 | Peak memory | lower | 2.8-4.1x lower |
 | LSP keystroke-to-diagnostics latency | under 50 ms on the largest corpus project | 6-45 ms median per edit; a change to a package everything uses re-analyzes its dependents |
 | False errors on valid corpus code | fewer (tracked per release) | fewer on every project |
-| Setup | zero config vs. required `vhdl_ls.toml` | done; `vfl project --vhdl-ls` exports one |
+| Setup | zero config vs. required `vhdl_ls.toml` | done; `vhone project --vhdl-ls` exports one |
 | Features | formatter, autofixes, lossless refactorings, VHDL-2019, type checking | done |
 
 ## Repository and CI
@@ -437,8 +437,8 @@ and far fewer false errors, with zero configuration.
    hints (a signal sampled by two clocks without synchronization) (done).
 9. More import formats for library lists: VUnit `run.py`, FuseSoC `.core`, Vivado and
    Quartus project files, alongside today's `vhdl_ls.toml` (done).
-10. Documentation and diagrams: `vfl doc` writes HTML, Markdown or AsciiDoc pages from the
+10. Documentation and diagrams: `vhone doc` writes HTML, Markdown or AsciiDoc pages from the
     project and its doc comments, with entity symbols, the instantiation tree, block diagrams
     of the top level and of each architecture, port maps and state diagrams as SVG;
-    `vfl schema` draws one diagram as SVG, Mermaid or DOT. It reads the syntax trees only
+    `vhone schema` draws one diagram as SVG, Mermaid or DOT. It reads the syntax trees only
     and is not part of the language server (done).

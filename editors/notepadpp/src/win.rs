@@ -404,14 +404,14 @@ pub fn set_status_text(npp: Hwnd, text: &str) {
 
 pub fn message_box(owner: Hwnd, text: &str, kind: u32) {
     let text = wide(text);
-    let caption = wide("vfl");
+    let caption = wide("vhone");
     // SAFETY: both strings are NUL-terminated and live across the call.
     unsafe { MessageBoxW(owner, text.as_ptr(), caption.as_ptr(), kind) };
 }
 
 pub fn confirm(owner: Hwnd, text: &str) -> bool {
     let text = wide(text);
-    let caption = wide("vfl");
+    let caption = wide("vhone");
     // SAFETY: both strings are NUL-terminated and live across the call.
     let answer = unsafe {
         MessageBoxW(

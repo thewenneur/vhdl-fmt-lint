@@ -15,10 +15,10 @@ use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::Arc;
 
-use vfl_lsp::editor::{FileEdits, Location, QuickFix, Use};
-use vfl_lsp::generate::Kind;
+use vhone_lsp::editor::{FileEdits, Location, QuickFix, Use};
+use vhone_lsp::generate::Kind;
 
-use vfl_config::Level;
+use vhone_config::Level;
 
 use crate::engine::{BufferText, Severity};
 use crate::plugin::{
@@ -437,7 +437,7 @@ fn apply_fix(here: Here, fix: QuickFix) {
 
 /// Tells that the buffer changed while an answer was computed.
 fn changed() {
-    tell("The file changed while vfl was working on it. Try again.");
+    tell("The file changed while vhone was working on it. Try again.");
 }
 
 pub(crate) fn quick_fix() {
@@ -815,7 +815,7 @@ fn write_docs(
         tell("The documentation is still being written.");
         return;
     }
-    const WRITING: &str = "vfl: writing the documentation...";
+    const WRITING: &str = "vhone: writing the documentation...";
     let before = status_text(npp());
     set_status_text(npp(), WRITING);
     // No key: it must not be dropped for a later request, and runs in
@@ -825,7 +825,7 @@ fn write_docs(
         move |_engine| {
             // A panic here must still reach `then`, which clears the flag.
             std::panic::catch_unwind(|| crate::docs::write(&file, out.as_deref()))
-                .unwrap_or_else(|_| Err("vfl hit an internal error".into()))
+                .unwrap_or_else(|_| Err("vhone hit an internal error".into()))
         },
         move |result| {
             with(|s| s.tools.writing_docs.set(false));

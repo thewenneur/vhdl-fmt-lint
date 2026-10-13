@@ -7,18 +7,18 @@ version = "0.1.1"
 edition = "2024"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/thewenneur/vhdl-fmt-lint"
+repository = "https://github.com/thewenneur/vhone"
 
 [workspace.dependencies]
-vfl-syntax = { path = "crates/vfl-syntax" }
-vfl-config = { path = "crates/vfl-config" }
-vfl-project = { path = "crates/vfl-project" }
-vfl-sema = { path = "crates/vfl-sema" }
-vfl-fmt = { path = "crates/vfl-fmt" }
-vfl-lint = { path = "crates/vfl-lint" }
-vfl-lsp = { path = "crates/vfl-lsp" }
-vfl-doc = { path = "crates/vfl-doc" }
-vfl-gen = { path = "crates/vfl-gen" }
+vhone-syntax = { path = "crates/vhone-syntax" }
+vhone-config = { path = "crates/vhone-config" }
+vhone-project = { path = "crates/vhone-project" }
+vhone-sema = { path = "crates/vhone-sema" }
+vhone-fmt = { path = "crates/vhone-fmt" }
+vhone-lint = { path = "crates/vhone-lint" }
+vhone-lsp = { path = "crates/vhone-lsp" }
+vhone-doc = { path = "crates/vhone-doc" }
+vhone-gen = { path = "crates/vhone-gen" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

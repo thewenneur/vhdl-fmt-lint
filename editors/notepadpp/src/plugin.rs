@@ -21,8 +21,8 @@ use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::Arc;
 
-use vfl_lsp::editor::CompletionKind;
-use vfl_lsp::generate::Kind;
+use vhone_lsp::editor::CompletionKind;
+use vhone_lsp::generate::Kind;
 
 use crate::engine::{
     BufferText, Engine, FormatFailure, NameColor, Severity, completes_after_dot, completion_list,
@@ -330,7 +330,7 @@ pub(crate) fn guard_as<T: Default>(label: std::fmt::Arguments, f: impl FnOnce() 
 fn internal_error(message: &str) {
     message_box(
         npp(),
-        &format!("vfl hit an internal error and skipped this action.\n\n{message}"),
+        &format!("vhone hit an internal error and skipped this action.\n\n{message}"),
         MB_ICONWARNING,
     );
 }
@@ -494,7 +494,7 @@ pub extern "C" fn setInfo(data: NppData) {
         with(|s| s.npp.set(data));
         load_settings();
         pin_module();
-        let window = message_window("vfl_npp_results", on_window_message);
+        let window = message_window("vhone_npp_results", on_window_message);
         with(|s| s.window.set(window));
     })
 }
@@ -837,10 +837,10 @@ extern "C" fn cmd_about() {
         message_box(
             npp(),
             &format!(
-                "vfl {} for Notepad++\n\
+                "vhone {} for Notepad++\n\
                  VHDL formatter, linter, navigation and code assistance.\n\n\
-                 Settings come from vfl.toml, found like the vfl command does.\n\n\
-                 https://github.com/thewenneur/vhdl-fmt-lint",
+                 Settings come from vhone.toml, found like the vhone command does.\n\n\
+                 https://github.com/thewenneur/vhone",
                 env!("CARGO_PKG_VERSION")
             ),
             MB_ICONINFORMATION,
@@ -1896,7 +1896,7 @@ fn xpm((shape, color): (Shape, &str)) -> String {
     text
 }
 
-// Settings, kept in `plugins\Config\vfl_npp.ini`.
+// Settings, kept in `plugins\Config\vhone_npp.ini`.
 
 fn settings_path() -> Option<PathBuf> {
     let mut buf = vec![0u16; 1024];
@@ -1910,7 +1910,7 @@ fn settings_path() -> Option<PathBuf> {
     if ok == 0 || len == 0 {
         return None;
     }
-    Some(PathBuf::from(OsString::from_wide(&buf[..len])).join("vfl_npp.ini"))
+    Some(PathBuf::from(OsString::from_wide(&buf[..len])).join("vhone_npp.ini"))
 }
 
 fn load_settings() {
