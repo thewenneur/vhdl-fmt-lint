@@ -39,8 +39,8 @@ pub fn import(path: &Path) -> Option<Libraries> {
         Some("py") => vunit(&text),
         Some("core") => fusesoc(&text),
         Some("xpr") => vivado_project(&text, path),
-        Some("tcl") => vivado_tcl(&text),
-        Some("qsf" | "qip") => quartus(&text),
+        Some("tcl") => vivado_tcl(&text, path),
+        Some("qsf" | "qip") => quartus(&text, path),
         _ => return None,
     };
     (!libraries.is_empty()).then_some(libraries)
@@ -495,53 +495,248 @@ fn tcl_lines(text: &str) -> Vec<String> {
     lines
 }
 
-/// A Tcl path word as a pattern: `$var/` prefixes are dropped (taken as
-/// the script's directory), `[file join a b]` is joined, `[glob x]` becomes
-/// the pattern `x`.
-fn tcl_path(word: &str) -> Option<String> {
-    let word = word.trim();
-    if let Some(inner) = word.strip_prefix('[').and_then(|w| w.strip_suffix(']')) {
-        let parts = tcl_words(inner);
-        return match parts.first().map(String::as_str) {
-            Some("file") if parts.get(1).map(String::as_str) == Some("join") => {
-                let joined: Vec<String> = parts[2..]
-                    .iter()
-                    .filter(|p| !p.starts_with('$') && !p.starts_with('['))
-                    .map(|p| p.trim_matches('/').to_owned())
-                    .collect();
-                (!joined.is_empty()).then(|| literal(&joined.join("/")))
-            }
-            Some("glob") => parts
-                .iter()
-                .skip(1)
-                .find(|p| !p.starts_with('-'))
-                .map(|p| strip_tcl_variables(p).replace('\\', "/")),
-            _ => None,
-        };
-    }
-    let path = strip_tcl_variables(word);
-    (!path.is_empty()).then(|| literal(&path))
+/// Tcl evaluation as far as file lists need it: `set` variables, `$var`,
+/// `${var}` and `$::quartus(qip_path)`, and the commands that build paths
+/// (`info script`, `file dirname|join|normalize|tail`, `pwd`, `glob`).
+/// Anything else makes a word unknown, and it is skipped.
+struct Tcl {
+    /// The script's own directory, `/`-separated.
+    dir: String,
+    script: String,
+    vars: HashMap<String, String>,
 }
 
-/// Drops leading `$var/` or `${var}/` parts.
-fn strip_tcl_variables(path: &str) -> String {
-    let mut path = path;
-    while path.starts_with('$') {
-        match path.find('/') {
-            Some(slash) => path = &path[slash + 1..],
-            None => return String::new(),
+impl Tcl {
+    fn new(script: &Path) -> Tcl {
+        let script = script.to_string_lossy().replace('\\', "/");
+        let dir = match script.rfind('/') {
+            Some(slash) => script[..slash].to_owned(),
+            None => ".".to_owned(),
+        };
+        let mut vars = HashMap::new();
+        // Quartus sets this to the directory of the `.qip` being read.
+        vars.insert("quartus(qip_path)".to_owned(), dir.clone());
+        Tcl { dir, script, vars }
+    }
+
+    /// Runs the commands that matter between file lists: `set name value`.
+    fn run(&mut self, words: &[String]) {
+        if words.len() == 3
+            && words[0] == "set"
+            && let Some(value) = self.subst(&words[2])
+        {
+            self.vars
+                .insert(words[1].trim_start_matches("::").to_owned(), value);
         }
     }
-    path.to_owned()
+
+    /// A word with its variables and commands substituted.
+    fn subst(&self, word: &str) -> Option<String> {
+        let chars: Vec<char> = word.chars().collect();
+        let mut out = String::new();
+        let mut i = 0;
+        while i < chars.len() {
+            match chars[i] {
+                '$' => {
+                    let at_start = i == 0;
+                    i += 1;
+                    let mut name = String::new();
+                    if chars.get(i) == Some(&'{') {
+                        i += 1;
+                        while i < chars.len() && chars[i] != '}' {
+                            name.push(chars[i]);
+                            i += 1;
+                        }
+                        i += 1;
+                    } else {
+                        while i < chars.len()
+                            && (chars[i].is_ascii_alphanumeric() || matches!(chars[i], '_' | ':'))
+                        {
+                            name.push(chars[i]);
+                            i += 1;
+                        }
+                        if chars.get(i) == Some(&'(') {
+                            while i < chars.len() && chars[i] != ')' {
+                                name.push(chars[i]);
+                                i += 1;
+                            }
+                            name.push(')');
+                            i += 1;
+                        }
+                    }
+                    let name = name.trim_start_matches("::");
+                    match self.var(name) {
+                        Some(value) => out.push_str(&value),
+                        // An unknown leading variable is most often the
+                        // script's directory.
+                        None if at_start && chars.get(i) == Some(&'/') => out.push_str(&self.dir),
+                        None => return None,
+                    }
+                }
+                '[' => {
+                    let mut depth = 1;
+                    let mut inner = String::new();
+                    i += 1;
+                    while i < chars.len() {
+                        match chars[i] {
+                            '[' => depth += 1,
+                            ']' => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                        inner.push(chars[i]);
+                        i += 1;
+                    }
+                    i += 1;
+                    out.push_str(&self.command(&inner)?);
+                }
+                '\\' => {
+                    out.push('/');
+                    i += 1;
+                }
+                c => {
+                    out.push(c);
+                    i += 1;
+                }
+            }
+        }
+        Some(out)
+    }
+
+    fn var(&self, name: &str) -> Option<String> {
+        if let Some(env) = name.strip_prefix("env(").and_then(|n| n.strip_suffix(')')) {
+            return std::env::var(env).ok();
+        }
+        self.vars.get(name).cloned()
+    }
+
+    /// The result of `[inner]`.
+    fn command(&self, inner: &str) -> Option<String> {
+        let words = tcl_words(inner);
+        let arg = |i: usize| words.get(i).and_then(|w| self.subst(w));
+        match (words.first()?.as_str(), words.get(1).map(String::as_str)) {
+            ("info", Some("script")) => Some(self.script.clone()),
+            ("pwd", _) => Some(self.dir.clone()),
+            ("file", Some("dirname")) => {
+                let path = arg(2)?;
+                let path = path.trim_end_matches('/');
+                Some(match path.rfind('/') {
+                    Some(0) => "/".to_owned(),
+                    Some(slash) => path[..slash].to_owned(),
+                    None => ".".to_owned(),
+                })
+            }
+            ("file", Some("tail")) => {
+                let path = arg(2)?;
+                Some(path.rsplit('/').next().unwrap_or_default().to_owned())
+            }
+            ("file", Some("join")) => {
+                let mut joined = String::new();
+                for word in &words[2..] {
+                    // An unknown variable here is most often the script's
+                    // directory.
+                    let part = match self.subst(word) {
+                        Some(part) => part,
+                        None if word.starts_with('$') => self.dir.clone(),
+                        None => return None,
+                    };
+                    if part.starts_with('/') || joined.is_empty() {
+                        joined = part;
+                    } else {
+                        joined = format!("{}/{part}", joined.trim_end_matches('/'));
+                    }
+                }
+                Some(joined)
+            }
+            ("file", Some("normalize")) => {
+                let path = arg(2)?;
+                Some(if path.starts_with('/') {
+                    path
+                } else {
+                    format!("{}/{path}", self.dir)
+                })
+            }
+            ("glob", _) => {
+                let mut directory = None;
+                let mut i = 1;
+                while i < words.len() {
+                    match words[i].as_str() {
+                        "-directory" | "-dir" | "-path" | "-types" | "-type" => {
+                            if words[i].starts_with("-dir") {
+                                directory = Some(arg(i + 1)?);
+                            }
+                            i += 2;
+                        }
+                        "--" => i += 1,
+                        w if w.starts_with('-') => i += 1,
+                        _ => {
+                            let pattern = arg(i)?;
+                            return Some(match directory {
+                                Some(dir) => format!("{}/{pattern}", dir.trim_end_matches('/')),
+                                None => pattern,
+                            });
+                        }
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    /// A file word as a pattern relative to the script's directory (or
+    /// absolute): a whole `[glob ...]` stays a pattern, anything else is a
+    /// literal path.
+    fn path(&self, word: &str) -> Option<String> {
+        let word = word.trim();
+        let is_glob = word.starts_with("[glob ") && word.ends_with(']');
+        let path = normalize_path(&self.subst(word)?);
+        let path = match path.strip_prefix(&format!("{}/", self.dir)) {
+            Some(rest) => rest.to_owned(),
+            None => path,
+        };
+        if path.is_empty() || path == "." {
+            return None;
+        }
+        Some(if is_glob { path } else { literal(&path) })
+    }
+}
+
+/// Resolves `.` and `..` segments where possible.
+fn normalize_path(path: &str) -> String {
+    let absolute = path.starts_with('/');
+    let mut segments: Vec<&str> = Vec::new();
+    for segment in path.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." if segments.last().is_some_and(|s| *s != "..") => {
+                segments.pop();
+            }
+            ".." if absolute => {}
+            _ => segments.push(segment),
+        }
+    }
+    let joined = segments.join("/");
+    if absolute {
+        format!("/{joined}")
+    } else {
+        joined
+    }
 }
 
 /// `read_vhdl [-library lib] [-vhdl2008] files`; files without a library
 /// go to `xil_defaultlib`.
-fn vivado_tcl(text: &str) -> Libraries {
+fn vivado_tcl(text: &str, script: &Path) -> Libraries {
+    let mut tcl = Tcl::new(script);
     let mut libraries = Libraries::new();
     for line in tcl_lines(text) {
         let words = tcl_words(&line);
         if words.first().map(String::as_str) != Some("read_vhdl") {
+            tcl.run(&words);
             continue;
         }
         let mut library = "xil_defaultlib".to_owned();
@@ -550,8 +745,8 @@ fn vivado_tcl(text: &str) -> Libraries {
         while i < words.len() {
             match words[i].as_str() {
                 "-library" | "-lib" => {
-                    if let Some(name) = words.get(i + 1) {
-                        library = name.clone();
+                    if let Some(name) = words.get(i + 1).and_then(|w| tcl.subst(w)) {
+                        library = name;
                     }
                     i += 1;
                 }
@@ -563,7 +758,7 @@ fn vivado_tcl(text: &str) -> Libraries {
             i += 1;
         }
         for file in files {
-            if let Some(pattern) = tcl_path(&file) {
+            if let Some(pattern) = tcl.path(&file) {
                 add(&mut libraries, &library, pattern);
             }
         }
@@ -575,11 +770,13 @@ fn vivado_tcl(text: &str) -> Libraries {
 
 /// `set_global_assignment -name VHDL_FILE path [-library lib]`; files
 /// without a library are left to inference.
-fn quartus(text: &str) -> Libraries {
+fn quartus(text: &str, script: &Path) -> Libraries {
+    let mut tcl = Tcl::new(script);
     let mut libraries = Libraries::new();
     for line in tcl_lines(text) {
         let words = tcl_words(&line);
         if words.first().map(String::as_str) != Some("set_global_assignment") {
+            tcl.run(&words);
             continue;
         }
         let mut name = None;
@@ -593,7 +790,7 @@ fn quartus(text: &str) -> Libraries {
                     i += 1;
                 }
                 "-library" => {
-                    library = words.get(i + 1).cloned();
+                    library = words.get(i + 1).and_then(|w| tcl.subst(w));
                     i += 1;
                 }
                 w if w.starts_with('-') => i += 1,
@@ -603,7 +800,7 @@ fn quartus(text: &str) -> Libraries {
         }
         if name.is_some_and(|n| n.eq_ignore_ascii_case("VHDL_FILE"))
             && let (Some(library), Some(value)) = (library, value)
-            && let Some(pattern) = tcl_path(&value)
+            && let Some(pattern) = tcl.path(&value)
         {
             add(&mut libraries, &library, pattern);
         }
@@ -733,7 +930,7 @@ read_vhdl -library tb \\
 read_verilog rtl/c.v
 ";
         assert_eq!(
-            vivado_tcl(text),
+            vivado_tcl(text, Path::new("/p/build.tcl")),
             libs(&[
                 ("common", &["rtl/pkg.vhd"]),
                 ("tb", &["tb/*.vhd"]),
@@ -751,12 +948,42 @@ set_global_assignment -name VHDL_FILE "my dir/x.vhd" -library "lib_x" -hdl_versi
 set_global_assignment -library ip -name VHDL_FILE [file join $::quartus(qip_path) "pll.vhd"]
 "#;
         assert_eq!(
-            quartus(text),
+            quartus(text, Path::new("/p/top.qsf")),
             libs(&[
                 ("common", &["../common/pkg.vhd"]),
                 ("ip", &["pll.vhd"]),
                 ("lib_x", &["my dir/x.vhd"]),
             ])
+        );
+    }
+
+    #[test]
+    fn tcl_variables() {
+        let text = r#"set path [file dirname [info script]]
+set rtl "$path/rtl"
+set common [file join [file dirname $path] common]
+set lib my_lib
+set_global_assignment -name VHDL_FILE $path/top.vhd -library $lib
+set_global_assignment -name VHDL_FILE ${rtl}/core.vhd -library $lib
+set_global_assignment -name VHDL_FILE [file join $rtl sub fifo.vhd] -library $lib
+set_global_assignment -name VHDL_FILE $common/pkg.vhd -library common
+set_global_assignment -name VHDL_FILE [file normalize $path/../ip/pll.vhd] -library ip
+set_global_assignment -name VHDL_FILE $missing_var -library lost
+"#;
+        assert_eq!(
+            quartus(text, Path::new("/p/fpga/sub.qip")),
+            libs(&[
+                ("common", &["/p/common/pkg.vhd"]),
+                ("ip", &["/p/ip/pll.vhd"]),
+                ("my_lib", &["top.vhd", "rtl/core.vhd", "rtl/sub/fifo.vhd"]),
+            ])
+        );
+        let text = "set src [file dirname [info script]]/src
+read_vhdl -library work_lib [glob -directory $src *.vhd]
+";
+        assert_eq!(
+            vivado_tcl(text, Path::new("/p/build.tcl")),
+            libs(&[("work_lib", &["src/*.vhd"])])
         );
     }
 

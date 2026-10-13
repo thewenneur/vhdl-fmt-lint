@@ -339,6 +339,11 @@ use them. Implemented, all read without running the tool:
   -library` scripts.
 - Quartus `.qsf`/`.qip`: `set_global_assignment -name VHDL_FILE ... -library`.
 
+  In both Tcl formats, `set` variables are followed (`set path [file dirname [info
+  script]]`, then `$path/rtl/x.vhd` or `${path}`), along with `[file join|dirname|
+  normalize|tail]`, `[info script]`, `[pwd]`, `[glob [-directory d] pattern]` and
+  Quartus's `$::quartus(qip_path)`. A word using anything else is skipped.
+
 These files are found by the same walk as sources (so `.gitignore` applies). Their globs
 use the tools' semantics: `*` stays within a directory. `vfl.toml` wins over
 `vhdl_ls.toml`, which wins over tool files; a file a tool lists in no library is still
