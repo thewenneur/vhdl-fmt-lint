@@ -977,7 +977,7 @@ dependencies = [
  "tempfile",
  "vfl-config",
  "vfl-fmt",
- "vfl-lint",
+ "vfl-lsp",
  "vfl-project",
 ]
 

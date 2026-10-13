@@ -1,6 +1,7 @@
 # vfl for Notepad++
 
-A Notepad++ plugin that formats and lints VHDL with vfl, as you type.
+A Notepad++ plugin that formats and lints VHDL with vfl, as you type, and shows types,
+parameters and completions while you write.
 
 ![Problems shown under each line in Notepad++](screenshot.png)
 
@@ -14,7 +15,16 @@ each file like `vfl lint` does, so names resolve across files, and it reads the 
 - **Lint as you type**: problems are underlined and their messages shown under the line,
   a moment after you stop typing, and when a VHDL file is opened, switched to or saved.
   Unsaved edits in the file count; other files are read from disk.
-- **Hover** over an underline to see its message.
+- **Hover** over a name to see what it is, its type and its declaration, and over an
+  underline to see the problem.
+- **Parameter hints**: typing `(` or `,` in a subprogram call, port map or generic map
+  shows the signature, with the parameter being typed highlighted. Overloads are listed
+  one per line. The hint follows the caret and closes when it leaves the call.
+- **Completion** after a dot: the elements of a record, the methods of a protected type,
+  the units of a library, the declarations of a package. Elsewhere, **Complete word** lists
+  what is visible at the caret and the VHDL keywords.
+
+![Parameter hints for a call in Notepad++](assist.png)
 - **Format document**, as one undo step that keeps the caret and scroll position.
   Optionally on every save.
 - **Next problem** / **Previous problem** jump between problems.
@@ -30,12 +40,16 @@ Mapper > Plugin commands**.
 | Lint document | Lints the current file, whatever its language, and goes to the first problem. |
 | Next problem, Previous problem | Moves to the next or previous problem and shows its message. |
 | Clear problems | Removes the underlines and messages from the current file. |
+| Show type | Shows what the name at the caret is, as hovering it does. |
+| Show parameters | Shows the parameter hints of the call around the caret. |
+| Complete word | Lists the completions at the caret. Notepad++ keeps **Ctrl+Space** for its own completion, so map this to another key if you use it often. |
 | Format on save | Formats VHDL files when they are saved (off by default). With **Save All**, only the file in front is formatted. |
 | Lint automatically | Lints VHDL files as described above (on by default). |
 | Show messages under lines | Shows each message under its line (on by default); with it off, hover or use Next problem. |
+| Code assistance | Types on hover, parameter hints and completion after a dot (on by default). The three commands above work either way. |
 | Reload project | Re-reads the project from disk, after files changed outside Notepad++. Saving a `vfl.toml` or `vhdl_ls.toml` in Notepad++ does this by itself. |
 
-The three settings are kept in `plugins\Config\vfl_npp.ini`.
+The four settings are kept in `plugins\Config\vfl_npp.ini`.
 
 A file is VHDL when Notepad++ shows it as VHDL, or its extension is `.vhd`, `.vhdl`, `.vho`
 or `.vht`.
@@ -73,11 +87,15 @@ Notepad++ has no built-in language-server support, so rather than going through 
 third-party LSP client this is a native plugin. It is written in Rust and links the vfl
 crates directly:
 
-- `src/engine.rs` formats and lints a buffer. It keeps each project it has seen loaded and
-  swaps in the buffer's unsaved text before analyzing. It is portable and unit-tested on
+- `src/engine.rs` formats, lints and answers hover, parameter and completion queries for a
+  buffer. It keeps each project it has seen loaded, as the language server does, with the
+  buffer's unsaved text in place of the file on disk, and re-analyzes only the design units
+  an edit can affect. The answers come from the language server's own code, through
+  `vfl_lsp::editor`, so they match what VS Code shows. It is portable and unit-tested on
   every platform.
-- `src/plugin.rs` is the Notepad++ side: the exported plugin functions, the menu, and
-  showing problems with Scintilla indicators, annotations and call tips.
+- `src/plugin.rs` is the Notepad++ side: the exported plugin functions, the menu, showing
+  problems with Scintilla indicators, annotations and call tips, and showing types,
+  parameter hints and completion lists.
 - `src/win.rs` declares the few Win32, Scintilla and Notepad++ definitions it uses.
 
 Messages under lines use Scintilla annotations, which other plugins may also use; the plugin

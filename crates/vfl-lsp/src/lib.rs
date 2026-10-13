@@ -4,8 +4,10 @@
 //! around the workspace folder, as `vfl lint` does, and offers
 //! diagnostics with quick fixes, formatting, go to definition, find
 //! references, hover with types, signature help, document and workspace
-//! symbols, rename and completion.
+//! symbols, rename and completion. [`editor`] answers hover, signature
+//! help and completion directly, for editors that link it.
 
+pub mod editor;
 mod handlers;
 mod types;
 mod world;
