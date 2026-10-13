@@ -3,12 +3,13 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use rayon::prelude::*;
 use vfl_config::Config;
 use vfl_syntax::{Parse, Standard};
 
-use crate::explicit::{LibraryGlobs, path_to_slash, vhdl_ls_libraries};
+use crate::explicit::{LibraryGlobs, VHDL_LS_FILES, path_to_slash, vhdl_ls_libraries};
 use crate::infer::{Inference, Reason, infer_libraries};
 use crate::summary::{FileSummary, summarize};
 use crate::{ProjectRoot, collect};
@@ -92,6 +93,28 @@ pub struct Project {
     pub tool_files: Vec<PathBuf>,
 }
 
+/// The library lists of a project, as [`Project::library_sources`] read
+/// them, with when each file they come from was last modified.
+pub struct LibrarySources {
+    globs: Vec<LibraryGlobs>,
+    stamps: Vec<(PathBuf, Option<SystemTime>)>,
+}
+
+impl LibrarySources {
+    /// Whether a file they come from was created, changed or deleted since
+    /// they were read. The config's lists are not checked: a changed
+    /// config means loading the project again.
+    pub fn is_stale(&self) -> bool {
+        self.stamps
+            .iter()
+            .any(|(path, time)| modified(path) != *time)
+    }
+}
+
+fn modified(path: &Path) -> Option<SystemTime> {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok()
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum LoadError {
     #[error(transparent)]
@@ -170,13 +193,21 @@ impl Project {
 
     /// (Re)computes every file's libraries.
     pub fn infer(&mut self) -> Result<(), LoadError> {
+        let sources = self.library_sources()?;
+        self.infer_with(&sources);
+        Ok(())
+    }
+
+    /// Reads the library lists that assign files to libraries: the
+    /// config's, `vhdl_ls.toml` and those of tool files.
+    pub fn library_sources(&self) -> Result<LibrarySources, LoadError> {
         let root = self.root.dir.clone();
-        let mut sources = Vec::new();
+        let mut globs = Vec::new();
         if !self.config.project.libraries.is_empty() {
             let source = vfl_config::find_config(&root)
                 .map(|p| p.display().to_string())
                 .unwrap_or_else(|| "vfl.toml".into());
-            sources.push(
+            globs.push(
                 LibraryGlobs::new(source.clone(), &root, &root, &self.config.project.libraries)
                     .map_err(|error| LoadError::Glob {
                         source_file: source,
@@ -188,27 +219,43 @@ impl Project {
             let source = path.display().to_string();
             let base = path.parent().unwrap_or(&root).to_owned();
             // A broken vhdl_ls.toml is not ours to reject; skip it.
-            if let Ok(globs) = LibraryGlobs::new(source, &base, &root, &libraries) {
-                sources.push(globs);
+            if let Ok(g) = LibraryGlobs::new(source, &base, &root, &libraries) {
+                globs.push(g);
             }
         }
         for (path, libraries) in crate::import::import_all(&self.tool_files) {
             let source = path.display().to_string();
             let base = path.parent().unwrap_or(&root).to_owned();
-            if let Ok(globs) = LibraryGlobs::new_strict(source, &base, &root, &libraries) {
-                sources.push(globs);
+            if let Ok(g) = LibraryGlobs::new_strict(source, &base, &root, &libraries) {
+                globs.push(g);
             }
         }
+        let stamps = VHDL_LS_FILES
+            .iter()
+            .map(|name| root.join(name))
+            .chain(self.tool_files.iter().cloned())
+            .map(|path| {
+                let time = modified(&path);
+                (path, time)
+            })
+            .collect();
+        Ok(LibrarySources { globs, stamps })
+    }
+
+    /// Computes every file's libraries from `sources` and what the files
+    /// declare and refer to.
+    pub fn infer_with(&mut self, sources: &LibrarySources) {
+        let root = &self.root.dir;
         let explicit: Vec<Option<Vec<(String, Reason)>>> = self
             .files
             .iter()
             .map(|file| {
                 let relative = file
                     .path
-                    .strip_prefix(&root)
+                    .strip_prefix(root)
                     .map(path_to_slash)
                     .unwrap_or_else(|_| path_to_slash(&file.path));
-                sources.iter().find_map(|s| s.assign(&relative))
+                sources.globs.iter().find_map(|s| s.assign(&relative))
             })
             .collect();
         let paths: Vec<PathBuf> = self.files.iter().map(|f| f.path.clone()).collect();
@@ -216,7 +263,6 @@ impl Project {
         let Inference { libraries, notes } = infer_libraries(&paths, &summaries, &explicit);
         self.libraries = libraries;
         self.notes = notes;
-        Ok(())
     }
 
     /// The index of the file at `path`.

@@ -141,46 +141,49 @@ slowest over all runs).
 
 | Project | Files | Open (vfl / vhdl_ls) | Peak memory (vfl / vhdl_ls) | Errors (vfl / vhdl_ls) | Warnings (vfl / vhdl_ls) |
 |---|---:|---:|---:|---:|---:|
-| neorv32 | 68 | 103 / 229 ms | 35 / 130 MiB | 0 / 0 | 10 / 18 |
-| OSVVM | 76 | 207 / 385 ms | 79 / 224 MiB | 164 / 357 | 60 / 130 |
-| UVVM | 286 | 581 / 1101 ms | 142 / 386 MiB | 5 / 41 | 98 / 555 |
-| VUnit | 331 | 279 / 439 ms | 73 / 200 MiB | 37 / 1024 | 76 / 226 |
+| neorv32 | 68 | 98 / 227 ms | 35 / 130 MiB | 0 / 0 | 10 / 18 |
+| OSVVM | 76 | 197 / 346 ms | 81 / 227 MiB | 164 / 357 | 60 / 130 |
+| UVVM | 286 | 604 / 1068 ms | 143 / 381 MiB | 5 / 41 | 98 / 555 |
+| VUnit | 331 | 252 / 381 ms | 73 / 200 MiB | 37 / 1024 | 76 / 226 |
 
 | Project | Server | Edit: comment (median / max) | Edit: type change (median / max) |
 |---|---|---:|---:|
-| neorv32 | vfl | 8.1 / 15 ms | 7.3 / 15 ms |
-| neorv32 | vhdl_ls | 4.3 / 8.9 ms | 4.3 / 7.8 ms |
-| OSVVM | vfl | 12 / 104 ms | 19 / 102 ms |
-| OSVVM | vhdl_ls | 3.7 / 254 ms | 3.4 / 251 ms |
-| UVVM | vfl | 25 / 37 ms | 26 / 61 ms |
-| UVVM | vhdl_ls | 23 / 1025 ms | 26 / 946 ms |
-| VUnit | vfl | 24 / 40 ms | 22 / 39 ms |
-| VUnit | vhdl_ls | 6.2 / 64 ms | 6.3 / 63 ms |
+| neorv32 | vfl | 7.1 / 13 ms | 5.8 / 13 ms |
+| neorv32 | vhdl_ls | 4.7 / 8.7 ms | 4.9 / 15 ms |
+| OSVVM | vfl | 6.1 / 83 ms | 14 / 88 ms |
+| OSVVM | vhdl_ls | 3.6 / 237 ms | 3.1 / 239 ms |
+| UVVM | vfl | 13 / 28 ms | 13 / 130 ms |
+| UVVM | vhdl_ls | 25 / 818 ms | 25 / 923 ms |
+| VUnit | vfl | 7.3 / 20 ms | 7.1 / 16 ms |
+| VUnit | vhdl_ls | 6.3 / 52 ms | 5.6 / 50 ms |
 
 | Project | Server | Hover (median / max, answered) | Completion | Definition |
 |---|---|---:|---:|---:|
-| neorv32 | vfl | 0.30 / 7.8 ms, 296/303 | 2.6 / 19 ms, 303/303 | 0.40 / 5.7 ms, 278/303 |
-| neorv32 | vhdl_ls | 15 / 27 ms, 302/303 | 3.6 / 11 ms, 230/303 | 0.47 / 19 ms, 285/303 |
-| OSVVM | vfl | 0.40 / 7.8 ms, 1483/1532 | 2.7 / 14 ms, 1532/1532 | 0.50 / 11 ms, 1457/1532 |
-| OSVVM | vhdl_ls | 19 / 42 ms, 1263/1532 | 7.2 / 42 ms, 1177/1532 | 0.96 / 39 ms, 1243/1532 |
-| UVVM | vfl | 0.61 / 16 ms, 422/470 | 2.5 / 9.1 ms, 470/470 | 0.71 / 5.0 ms, 407/470 |
-| UVVM | vhdl_ls | 23 / 65 ms, 469/470 | 6.6 / 17 ms, 419/470 | 0.74 / 71 ms, 454/470 |
-| VUnit | vfl | 0.49 / 4.9 ms, 502/508 | 2.4 / 8.3 ms, 508/508 | 0.59 / 6.3 ms, 490/508 |
-| VUnit | vhdl_ls | 8.9 / 39 ms, 505/508 | 5.5 / 14 ms, 489/508 | 0.75 / 44 ms, 493/508 |
+| neorv32 | vfl | 0.31 / 4.2 ms, 296/303 | 2.8 / 8.7 ms, 303/303 | 0.44 / 4.9 ms, 278/303 |
+| neorv32 | vhdl_ls | 15 / 44 ms, 302/303 | 3.6 / 49 ms, 230/303 | 0.48 / 21 ms, 285/303 |
+| OSVVM | vfl | 0.42 / 5.5 ms, 1483/1532 | 2.7 / 32 ms, 1532/1532 | 0.50 / 16 ms, 1457/1532 |
+| OSVVM | vhdl_ls | 18 / 44 ms, 1263/1532 | 6.8 / 73 ms, 1177/1532 | 0.84 / 36 ms, 1243/1532 |
+| UVVM | vfl | 0.65 / 6.9 ms, 422/470 | 2.7 / 9.9 ms, 470/470 | 0.75 / 9.7 ms, 407/470 |
+| UVVM | vhdl_ls | 22 / 66 ms, 469/470 | 6.3 / 18 ms, 419/470 | 0.68 / 67 ms, 454/470 |
+| VUnit | vfl | 0.42 / 2.3 ms, 502/508 | 2.1 / 5.3 ms, 508/508 | 0.50 / 2.8 ms, 490/508 |
+| VUnit | vhdl_ls | 8.3 / 36 ms, 505/508 | 5.0 / 20 ms, 489/508 | 0.64 / 34 ms, 493/508 |
 
 What it shows:
 
-- **Opening a project**: vfl is 1.6 to 2.2 times faster and uses 2.7 to 3.7 times less
+- **Opening a project**: vfl is 1.5 to 2.3 times faster and uses 2.7 to 3.7 times less
   memory.
-- **Edits**: vhdl_ls is faster on a typical edit in the smaller projects (4 to 6 ms
-  against 7 to 24 ms): it re-analyzes only the units the edit invalidates, and so does
-  vfl, but vfl also re-runs inference and the lint pass on each refresh. vfl's slowest
-  edits are much faster: 37 to 104 ms against 250 ms to 1 s for vhdl_ls, whose worst case
-  is an edit to a package most of the project depends on. Both stay under 30 ms at the
-  median on every project; this is where vfl has the most to gain.
-- **Requests**: vfl's hover is 20 to 50 times faster at the median (vhdl_ls takes 9 to
-  23 ms per hover), completion 1.4 to 2.7 times, definition about the same at the median
-  and 4 to 14 times at the slowest. vfl answers completion everywhere; hover and
+- **Edits**: a typical edit takes 6 to 14 ms in vfl and 3 to 25 ms in vhdl_ls. vhdl_ls is
+  a few milliseconds faster on neorv32 and OSVVM, about the same on VUnit, and vfl is
+  twice as fast on UVVM. vfl's slowest edits are much faster: 13 to 130 ms against
+  50 ms to 0.9 s for vhdl_ls, whose worst case is an edit to a package most of the project
+  depends on. A refresh in vfl infers libraries again only when the set of files, the
+  units a file declares or the library names it refers to, or a library list
+  (`vhdl_ls.toml`, tool files) changed; it re-lints only the files the analysis touched,
+  and sends the editor only the diagnostics that changed. Before, it did all three on
+  every edit, and took 7 to 26 ms at the median.
+- **Requests**: vfl's hover is 20 to 50 times faster at the median (vhdl_ls takes 8 to
+  22 ms per hover), completion 1.3 to 2.5 times, definition about the same at the median
+  and 2 to 12 times at the slowest. vfl answers completion everywhere; hover and
   definition answer rates are close, vhdl_ls answering slightly more on UVVM and
   neorv32, vfl more on OSVVM (where vhdl_ls does not resolve names in the files it
   cannot parse or that refer to duplicate units).

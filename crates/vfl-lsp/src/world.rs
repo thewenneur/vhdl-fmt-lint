@@ -1,9 +1,11 @@
 //! The server's view of the project: files on disk overlaid with open
 //! editor buffers, their analysis and lint results.
 //!
-//! An edit re-parses only the edited file; library inference runs again
-//! over the parsed project, then the analysis reuses the results of every
-//! design unit the edit cannot have affected.
+//! An edit re-parses only the edited file. Library inference runs again
+//! only when the set of files, what a file declares or the library names
+//! it refers to, or a library list (`vhdl_ls.toml`, tool files) changed.
+//! The analysis then reuses the results of every design unit the edit
+//! cannot have affected.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -11,7 +13,8 @@ use std::path::{Path, PathBuf};
 use vfl_config::Config;
 use vfl_lint::FileSettings;
 use vfl_project::{
-    Encoding, Project, ProjectRoot, RootKind, SourceFile, collect_sources, decode, find_root,
+    Encoding, FileSummary, LibrarySources, Project, ProjectRoot, RootKind, SourceFile,
+    collect_sources, decode, find_root,
 };
 use vfl_sema::{Analysis, FileId};
 use vfl_syntax::{LineIndex, TextSize};
@@ -30,6 +33,11 @@ pub struct World {
     load_error: Option<String>,
     configs: HashMap<PathBuf, Config>,
     lint_cache: vfl_lint::LintCache,
+    /// The library lists the libraries were last inferred from.
+    sources: Option<LibrarySources>,
+    /// The path and summary of each file when libraries were last
+    /// inferred.
+    inferred_from: Vec<(PathBuf, FileSummary)>,
     /// Files whose text changed since the last analysis.
     pub dirty: bool,
 }
@@ -49,6 +57,8 @@ impl World {
             config_errors: Vec::new(),
             configs: HashMap::new(),
             lint_cache: vfl_lint::LintCache::default(),
+            sources: None,
+            inferred_from: Vec::new(),
             dirty: true,
         };
         world.refresh();
@@ -73,6 +83,8 @@ impl World {
             config_errors: Vec::new(),
             configs: HashMap::new(),
             lint_cache: vfl_lint::LintCache::default(),
+            sources: None,
+            inferred_from: Vec::new(),
             dirty: true,
         }
     }
@@ -83,6 +95,8 @@ impl World {
         self.root = find_root(&self.root.dir);
         (self.project, self.load_error) = load(&self.root);
         self.outside.clear();
+        self.sources = None;
+        self.inferred_from.clear();
         let overlays: Vec<(PathBuf, String)> = self.overlays.drain().collect();
         for (path, text) in overlays {
             self.set_text(path, text);
@@ -94,10 +108,7 @@ impl World {
     /// The config for a file. A relative path names a document that is not
     /// saved anywhere, which gets the defaults.
     pub fn config(&mut self, path: &Path) -> &Config {
-        let dir = match path.parent() {
-            Some(dir) if path.is_absolute() => dir.to_owned(),
-            _ => PathBuf::new(),
-        };
+        let dir = config_dir(path);
         self.configs.entry(dir.clone()).or_insert_with(|| {
             if dir.as_os_str().is_empty() {
                 Config::default()
@@ -181,15 +192,16 @@ impl World {
             return;
         }
         self.dirty = false;
-        if self.project.infer().is_err() {
-            // An invalid library pattern: analyze with what inference had.
-            self.project
-                .libraries
-                .resize(self.project.files.len(), Vec::new());
-        }
+        self.infer();
         self.analysis = vfl_lint::reanalyze(&self.project, &self.analysis);
         let paths: Vec<PathBuf> = self.project.files.iter().map(|f| f.path.clone()).collect();
-        let configs: Vec<Config> = paths.iter().map(|p| self.config(p).clone()).collect();
+        for path in &paths {
+            self.config(path);
+        }
+        let configs: Vec<&Config> = paths
+            .iter()
+            .map(|p| &self.configs[&config_dir(p)])
+            .collect();
         let settings: Vec<FileSettings> = self
             .project
             .files
@@ -210,6 +222,45 @@ impl World {
         }
     }
 
+    /// Infers libraries again if what they depend on changed.
+    fn infer(&mut self) {
+        if self.sources.as_ref().is_none_or(LibrarySources::is_stale) {
+            self.inferred_from.clear();
+            match self.project.library_sources() {
+                Ok(sources) => self.sources = Some(sources),
+                Err(_) => {
+                    // An invalid library pattern: analyze with what
+                    // inference had.
+                    self.sources = None;
+                    self.project
+                        .libraries
+                        .resize(self.project.files.len(), Vec::new());
+                    return;
+                }
+            }
+        }
+        let files = &self.project.files;
+        let unchanged = self.inferred_from.len() == files.len()
+            && self.project.libraries.len() == files.len()
+            && files
+                .iter()
+                .zip(&self.inferred_from)
+                .all(|(file, (path, summary))| file.path == *path && file.summary == *summary);
+        if unchanged {
+            return;
+        }
+        let Some(sources) = &self.sources else {
+            return;
+        };
+        self.project.infer_with(sources);
+        self.inferred_from = self
+            .project
+            .files
+            .iter()
+            .map(|f| (f.path.clone(), f.summary.clone()))
+            .collect();
+    }
+
     pub fn file_id(&self, path: &Path) -> Option<FileId> {
         self.analysis.file_id(path)
     }
@@ -221,6 +272,15 @@ impl World {
             text: &f.text,
             index: &f.line_index,
         }
+    }
+}
+
+/// The directory whose config applies to `path`; empty for a document
+/// that is not saved anywhere.
+fn config_dir(path: &Path) -> PathBuf {
+    match path.parent() {
+        Some(dir) if path.is_absolute() => dir.to_owned(),
+        _ => PathBuf::new(),
     }
 }
 
@@ -341,5 +401,77 @@ mod tests {
         world.refresh();
         world.close(&outside);
         assert_eq!(world.project.files.len(), 1);
+    }
+
+    fn libraries(world: &World, name: &str) -> Vec<String> {
+        let i = world
+            .project
+            .files
+            .iter()
+            .position(|f| f.path.ends_with(name))
+            .unwrap();
+        world.project.libraries[i]
+            .iter()
+            .map(|(l, _)| l.clone())
+            .collect()
+    }
+
+    const PKG: &str = "package p is\nend package;\n";
+    const TOP: &str = "entity top is\nend entity;\n";
+
+    #[test]
+    fn edits_that_name_a_library_infer_it() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("p.vhd"), PKG).unwrap();
+        std::fs::write(dir.path().join("top.vhd"), TOP).unwrap();
+        let mut world = World::new(dir.path());
+        assert!(!libraries(&world, "p.vhd").contains(&"mylib".into()));
+        let top = std::fs::canonicalize(dir.path().join("top.vhd")).unwrap();
+        world.set_text(
+            top.clone(),
+            format!("library mylib;\nuse mylib.p.all;\n{TOP}"),
+        );
+        world.refresh();
+        assert!(libraries(&world, "p.vhd").contains(&"mylib".into()));
+        // An edit that changes no library name keeps the inference.
+        world.set_text(
+            top,
+            format!("library mylib;\nuse mylib.p.all;\n{TOP}-- x\n"),
+        );
+        world.refresh();
+        assert!(libraries(&world, "p.vhd").contains(&"mylib".into()));
+    }
+
+    #[test]
+    fn new_files_join_inference() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("p.vhd"), PKG).unwrap();
+        let mut world = World::new(dir.path());
+        // Under the root as the world sees it (temp dirs can be symlinks).
+        let top = world.root.dir.join("top.vhd");
+        std::fs::write(&top, format!("library mylib;\nuse mylib.p.all;\n{TOP}")).unwrap();
+        world.reread(&top);
+        world.refresh();
+        assert_eq!(world.project.libraries.len(), 2);
+        assert!(libraries(&world, "p.vhd").contains(&"mylib".into()));
+    }
+
+    #[test]
+    fn library_lists_are_read_again_when_they_change() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("p.vhd"), PKG).unwrap();
+        let mut world = World::new(dir.path());
+        assert!(!libraries(&world, "p.vhd").contains(&"fromtoml".into()));
+        std::fs::write(
+            dir.path().join("vhdl_ls.toml"),
+            "[libraries]\nfromtoml.files = ['p.vhd']\n",
+        )
+        .unwrap();
+        // Any edit refreshes; the new vhdl_ls.toml is noticed without a
+        // file watcher.
+        let p = std::fs::canonicalize(dir.path().join("p.vhd")).unwrap();
+        world.set_text(p, format!("{PKG}-- x\n"));
+        world.refresh();
+        assert_eq!(libraries(&world, "p.vhd"), ["fromtoml"]);
     }
 }

@@ -15,7 +15,7 @@ pub mod rules;
 mod style;
 mod suppress;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use rayon::prelude::*;
@@ -109,22 +109,46 @@ pub fn lint_cached(
     for d in analysis.diagnostics() {
         sema.entry(d.file).or_default().push(d);
     }
-    let mut decls: HashMap<FileId, Vec<&vfl_sema::Decl>> = HashMap::new();
-    for (_, decl) in analysis.decls() {
-        decls.entry(decl.file).or_default().push(decl);
-    }
-    let results: Vec<(Vec<Diagnostic>, Vec<String>, Option<CachedFile>)> = files
+    // Which files can reuse their findings.
+    let reuse: Vec<bool> = files
         .par_iter()
         .map(|settings| {
             let file = &analysis.files()[settings.file as usize];
             let file_sema = sema.get(&settings.file).map(Vec::as_slice).unwrap_or(&[]);
-            if let Some(cached) = cache.files.get(&file.path)
-                && std::ptr::eq(&*cached.green, &*file.green)
-                && cached.config == *settings.config
-                && cached.sema.len() == file_sema.len()
-                && cached.sema.iter().zip(file_sema).all(|(a, b)| a == *b)
-                && !analysis.file_reanalyzed(settings.file)
-            {
+            cache.files.get(&file.path).is_some_and(|cached| {
+                std::ptr::eq(&*cached.green, &*file.green)
+                    && cached.config == *settings.config
+                    && cached.sema.len() == file_sema.len()
+                    && cached.sema.iter().zip(file_sema).all(|(a, b)| a == *b)
+                    && !analysis.file_reanalyzed(settings.file)
+            })
+        })
+        .collect();
+    // The declarations of the files to lint again.
+    let relint: HashSet<FileId> = files
+        .iter()
+        .zip(&reuse)
+        .filter(|(_, reuse)| !**reuse)
+        .map(|(settings, _)| settings.file)
+        .collect();
+    let decls: HashMap<FileId, Vec<&vfl_sema::Decl>> = relint
+        .iter()
+        .map(|&file| {
+            let decls = analysis
+                .file_units(file)
+                .flat_map(|unit| analysis.unit_decls(unit))
+                .collect();
+            (file, decls)
+        })
+        .collect();
+    let results: Vec<(Vec<Diagnostic>, Vec<String>, Option<CachedFile>)> = files
+        .par_iter()
+        .zip(&reuse)
+        .map(|(settings, &reuse)| {
+            let file = &analysis.files()[settings.file as usize];
+            let file_sema = sema.get(&settings.file).map(Vec::as_slice).unwrap_or(&[]);
+            if reuse {
+                let cached = &cache.files[&file.path];
                 let mut diagnostics = cached.diagnostics.clone();
                 for d in &mut diagnostics {
                     d.file = settings.file;

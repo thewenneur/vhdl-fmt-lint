@@ -12,7 +12,7 @@ mod handlers;
 mod types;
 mod world;
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::mpsc;
 
@@ -135,7 +135,7 @@ pub fn run(connection: &Connection) -> Result<()> {
         queue: VecDeque::new(),
         cancelled: HashSet::new(),
         world: World::new(&root),
-        published: Vec::new(),
+        published: HashMap::new(),
         shown_errors: Vec::new(),
         next_request: 0,
     };
@@ -155,8 +155,8 @@ struct Server<'a> {
     /// Queued requests the client cancelled.
     cancelled: HashSet<RequestId>,
     world: World,
-    /// Files with diagnostics shown in the client.
-    published: Vec<Url>,
+    /// The diagnostics shown in the client, by file.
+    published: HashMap<Url, Vec<lsp_types::Diagnostic>>,
     /// Configuration errors already shown.
     shown_errors: Vec<String>,
     next_request: i32,
@@ -358,29 +358,27 @@ impl Server<'_> {
         }
     }
 
-    /// Sends the diagnostics of every file, and clears those of files
-    /// that no longer have any.
+    /// Sends the diagnostics of every file whose diagnostics changed, and
+    /// clears those of files that no longer have any.
     fn publish(&mut self) -> Result<()> {
-        let by_file = handlers::diagnostics(&self.world);
-        let mut published = Vec::new();
-        for (uri, diagnostics) in by_file {
-            published.push(uri.clone());
-            self.notify::<n::PublishDiagnostics>(lsp_types::PublishDiagnosticsParams {
-                uri,
-                diagnostics,
-                version: None,
-            })?;
-        }
-        for uri in std::mem::take(&mut self.published) {
-            if !published.contains(&uri) {
+        let mut previous = std::mem::take(&mut self.published);
+        for (uri, diagnostics) in handlers::diagnostics(&self.world) {
+            if previous.remove(&uri).as_ref() != Some(&diagnostics) {
                 self.notify::<n::PublishDiagnostics>(lsp_types::PublishDiagnosticsParams {
-                    uri,
-                    diagnostics: Vec::new(),
+                    uri: uri.clone(),
+                    diagnostics: diagnostics.clone(),
                     version: None,
                 })?;
             }
+            self.published.insert(uri, diagnostics);
         }
-        self.published = published;
+        for uri in previous.into_keys() {
+            self.notify::<n::PublishDiagnostics>(lsp_types::PublishDiagnosticsParams {
+                uri,
+                diagnostics: Vec::new(),
+                version: None,
+            })?;
+        }
         for error in std::mem::take(&mut self.world.config_errors) {
             if self.shown_errors.contains(&error) {
                 continue;
@@ -469,7 +467,7 @@ mod tests {
             queue: VecDeque::new(),
             cancelled: HashSet::new(),
             world: World::new(dir.path()),
-            published: Vec::new(),
+            published: HashMap::new(),
             shown_errors: Vec::new(),
             next_request: 0,
         };

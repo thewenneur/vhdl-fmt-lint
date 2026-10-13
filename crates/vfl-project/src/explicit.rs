@@ -10,7 +10,7 @@ use globset::{GlobSet, GlobSetBuilder};
 use crate::infer::Reason;
 
 /// File names of rust_hdl's config, looked up in the project root.
-const VHDL_LS_FILES: [&str; 2] = ["vhdl_ls.toml", ".vhdl_ls.toml"];
+pub(crate) const VHDL_LS_FILES: [&str; 2] = ["vhdl_ls.toml", ".vhdl_ls.toml"];
 
 /// One source of explicit assignments: library name to glob set.
 pub struct LibraryGlobs {
