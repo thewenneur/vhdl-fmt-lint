@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Compare `vfl lint` with rust_hdl's `vhdl_lang` on VHDL projects.
+"""Compare `vhone lint` with rust_hdl's `vhdl_lang` on VHDL projects.
 
-For each project directory, vfl analyzes it with zero configuration.
-rust_hdl gets a `vhdl_ls.toml` generated from vfl's inferred libraries
-(`vfl project --vhdl-ls`), since it cannot infer them, and its own
+For each project directory, vhone analyzes it with zero configuration.
+rust_hdl gets a `vhdl_ls.toml` generated from vhone's inferred libraries
+(`vhone project --vhdl-ls`), since it cannot infer them, and its own
 standard libraries. Both run their full analysis plus all lint checks.
 
 Reports the median wall time, peak memory, and the number of errors each
 tool reports inside the project (on valid code, every error is a false
 error).
 
-    scripts/bench_rust_hdl.py --vfl target/release/vfl \\
+    scripts/bench_rust_hdl.py --vhone target/release/vhone \\
         --vhdl-lang path/to/vhdl_lang --libraries path/to/vhdl_libraries \\
         [--runs 5] PROJECT...
 """
@@ -50,9 +50,9 @@ def measure(cmd, runs):
     return statistics.median(times), max(peaks), text
 
 
-def vhdl_ls_config(vfl, project, path):
+def vhdl_ls_config(vhone, project, path):
     out = subprocess.run(
-        [vfl, "project", "--vhdl-ls", project], check=True, capture_output=True, text=True
+        [vhone, "project", "--vhdl-ls", project], check=True, capture_output=True, text=True
     ).stdout
     root = os.path.abspath(project)
     # Make the file lists absolute so the config can live anywhere.
@@ -78,7 +78,7 @@ def rust_hdl_errors(text, root):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--vfl", required=True)
+    parser.add_argument("--vhone", required=True)
     parser.add_argument("--vhdl-lang", required=True)
     parser.add_argument("--libraries", required=True, help="directory with rust_hdl's vhdl_ls.toml")
     parser.add_argument("--runs", type=int, default=5)
@@ -91,7 +91,7 @@ def main():
             root = os.path.abspath(project)
             name = os.path.basename(root.rstrip("/"))
             config = os.path.join(tmp, f"{name}.toml")
-            vhdl_ls_config(args.vfl, project, config)
+            vhdl_ls_config(args.vhone, project, config)
             files = sum(
                 1
                 for d, _, fs in os.walk(root)
@@ -99,7 +99,7 @@ def main():
                 if f.lower().endswith((".vhd", ".vhdl"))
             )
             v_time, v_mem, v_out = measure(
-                [args.vfl, "lint", "--output-format", "json", root], args.runs
+                [args.vhone, "lint", "--output-format", "json", root], args.runs
             )
             v_errors = sum(1 for d in json.loads(v_out) if d["level"] == "error")
             r_time, r_mem, r_out = measure(
@@ -109,7 +109,7 @@ def main():
             rows.append((name, files, v_time, r_time, v_mem, r_mem, v_errors, r_errors))
             print(f"{name}: done", file=sys.stderr)
 
-    print("| Project | Files | vfl time | rust_hdl time | vfl memory | rust_hdl memory | vfl errors | rust_hdl errors |")
+    print("| Project | Files | vhone time | rust_hdl time | vhone memory | rust_hdl memory | vhone errors | rust_hdl errors |")
     print("|---|---:|---:|---:|---:|---:|---:|---:|")
     for name, files, vt, rt, vm, rm, ve, re_ in rows:
         print(

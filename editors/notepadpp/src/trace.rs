@@ -1,6 +1,6 @@
 //! How long the plugin keeps Notepad++ busy, for finding freezes.
 //!
-//! With `VFL_NPP_TRACE` set to a file path, each call from Notepad++ that
+//! With `VHONE_NPP_TRACE` set to a file path, each call from Notepad++ that
 //! takes longer than [`THRESHOLD`] is appended to that file as
 //! `label<TAB>microseconds`.
 
@@ -14,7 +14,7 @@ const THRESHOLD: Duration = Duration::from_micros(200);
 fn file() -> Option<&'static Mutex<File>> {
     static FILE: OnceLock<Option<Mutex<File>>> = OnceLock::new();
     FILE.get_or_init(|| {
-        let path = std::env::var_os("VFL_NPP_TRACE")?;
+        let path = std::env::var_os("VHONE_NPP_TRACE")?;
         let file = File::options().create(true).append(true).open(path).ok()?;
         Some(Mutex::new(file))
     })

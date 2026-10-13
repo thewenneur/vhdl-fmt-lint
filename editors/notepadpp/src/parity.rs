@@ -49,10 +49,10 @@ pub const FEATURES: &[(&str, &[&str])] = &[
         &["Fix problem at caret", "Generate testbench"],
     ),
     ("quickfix", &["Fix problem at caret"]),
-    ("source.fixAll.vfl", &["Fix all problems"]),
-    (vfl_lsp::generate::TESTBENCH_KIND, &["Generate testbench"]),
+    ("source.fixAll.vhone", &["Fix all problems"]),
+    (vhone_lsp::generate::TESTBENCH_KIND, &["Generate testbench"]),
     (
-        "vfl/entities",
+        "vhone/entities",
         &[
             "Insert entity instantiation",
             "Insert component instantiation",
@@ -61,7 +61,7 @@ pub const FEATURES: &[(&str, &[&str])] = &[
         ],
     ),
     (
-        "vfl/generate",
+        "vhone/generate",
         &[
             "Insert entity instantiation",
             "Insert component instantiation",
@@ -92,7 +92,7 @@ mod tests {
 
     /// The methods `handlers::request` answers, from its source.
     fn requests() -> Vec<&'static str> {
-        let source = include_str!("../../../crates/vfl-lsp/src/handlers.rs");
+        let source = include_str!("../../../crates/vhone-lsp/src/handlers.rs");
         // Line by line: a Windows checkout may have CRLF line ends.
         source
             .lines()
@@ -119,7 +119,7 @@ mod tests {
 
     #[test]
     fn every_code_action_kind_has_a_command() {
-        let capabilities = serde_json::to_value(vfl_lsp::capabilities()).unwrap();
+        let capabilities = serde_json::to_value(vhone_lsp::capabilities()).unwrap();
         let kinds = capabilities["codeActionProvider"]["codeActionKinds"]
             .as_array()
             .expect("code action kinds");

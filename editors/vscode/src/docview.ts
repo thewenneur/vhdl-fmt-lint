@@ -1,8 +1,8 @@
-// Prepares a page of the HTML documentation `vfl doc` writes for the
+// Prepares a page of the HTML documentation `vhone doc` writes for the
 // diagrams webview. Kept free of `vscode` so that it can be unit tested.
 
 /** The command the links between pages run in the webview. */
-export const OPEN_PAGE_COMMAND = "vfl.openDocPage";
+export const OPEN_PAGE_COMMAND = "vhone.openDocPage";
 
 /** No scripts, nothing loaded: the pages are self-contained HTML with inline SVG. */
 const CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:;";

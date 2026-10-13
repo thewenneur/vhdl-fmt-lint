@@ -900,84 +900,84 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
-name = "vfl-cli"
+name = "vhone-cli"
 version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
  "tempfile",
  "toml",
- "vfl-config",
- "vfl-doc",
- "vfl-fmt",
- "vfl-gen",
- "vfl-lint",
- "vfl-lsp",
- "vfl-project",
- "vfl-syntax",
+ "vhone-config",
+ "vhone-doc",
+ "vhone-fmt",
+ "vhone-gen",
+ "vhone-lint",
+ "vhone-lsp",
+ "vhone-project",
+ "vhone-syntax",
 ]
 
 [[package]]
-name = "vfl-config"
+name = "vhone-config"
 version = "0.1.1"
 dependencies = [
  "serde",
  "tempfile",
  "thiserror",
  "toml",
- "vfl-syntax",
+ "vhone-syntax",
 ]
 
 [[package]]
-name = "vfl-doc"
+name = "vhone-doc"
 version = "0.1.1"
 dependencies = [
  "globset",
  "tempfile",
- "vfl-config",
- "vfl-project",
- "vfl-syntax",
+ "vhone-config",
+ "vhone-project",
+ "vhone-syntax",
 ]
 
 [[package]]
-name = "vfl-fmt"
+name = "vhone-fmt"
 version = "0.1.1"
 dependencies = [
  "insta",
  "rowan",
  "thiserror",
  "toml",
- "vfl-config",
- "vfl-syntax",
+ "vhone-config",
+ "vhone-syntax",
 ]
 
 [[package]]
-name = "vfl-gen"
+name = "vhone-gen"
 version = "0.1.1"
 dependencies = [
  "regex",
  "rowan",
- "vfl-config",
- "vfl-fmt",
- "vfl-syntax",
+ "vhone-config",
+ "vhone-fmt",
+ "vhone-syntax",
 ]
 
 [[package]]
-name = "vfl-lint"
+name = "vhone-lint"
 version = "0.1.1"
 dependencies = [
  "rayon",
  "regex",
  "serde_json",
  "toml",
- "vfl-config",
- "vfl-project",
- "vfl-sema",
- "vfl-syntax",
+ "vhone-config",
+ "vhone-project",
+ "vhone-sema",
+ "vhone-syntax",
 ]
 
 [[package]]
-name = "vfl-lsp"
+name = "vhone-lsp"
 version = "0.1.1"
 dependencies = [
  "anyhow",
@@ -986,30 +986,30 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "vfl-config",
- "vfl-fmt",
- "vfl-gen",
- "vfl-lint",
- "vfl-project",
- "vfl-sema",
- "vfl-syntax",
+ "vhone-config",
+ "vhone-fmt",
+ "vhone-gen",
+ "vhone-lint",
+ "vhone-project",
+ "vhone-sema",
+ "vhone-syntax",
 ]
 
 [[package]]
-name = "vfl-npp"
+name = "vhone-npp"
 version = "0.1.1"
 dependencies = [
  "serde_json",
  "tempfile",
- "vfl-config",
- "vfl-doc",
- "vfl-fmt",
- "vfl-lsp",
- "vfl-project",
+ "vhone-config",
+ "vhone-doc",
+ "vhone-fmt",
+ "vhone-lsp",
+ "vhone-project",
 ]
 
 [[package]]
-name = "vfl-project"
+name = "vhone-project"
 version = "0.1.1"
 dependencies = [
  "globset",
@@ -1018,26 +1018,26 @@ dependencies = [
  "tempfile",
  "thiserror",
  "toml",
- "vfl-config",
- "vfl-syntax",
+ "vhone-config",
+ "vhone-syntax",
  "yaml-rust2",
 ]
 
 [[package]]
-name = "vfl-sema"
+name = "vhone-sema"
 version = "0.1.1"
 dependencies = [
  "insta",
  "rayon",
  "rowan",
  "toml",
- "vfl-config",
- "vfl-project",
- "vfl-syntax",
+ "vhone-config",
+ "vhone-project",
+ "vhone-syntax",
 ]
 
 [[package]]
-name = "vfl-syntax"
+name = "vhone-syntax"
 version = "0.1.1"
 dependencies = [
  "insta",

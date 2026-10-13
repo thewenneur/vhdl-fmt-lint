@@ -1,8 +1,8 @@
 # Lint rules
 
-`vfl lint` and the language server report findings from the rules below. `vfl rules` prints
+`vhone lint` and the language server report findings from the rules below. `vhone rules` prints
 the same list with each rule's level in each preset. Rules are configured in the `[lint]`
-table of `vfl.toml`; see [configuration.md](configuration.md#lint).
+table of `vhone.toml`; see [configuration.md](configuration.md#lint).
 
 - [Levels, presets and fixes](#levels-presets-and-fixes)
 - [Summary](#summary)
@@ -13,7 +13,7 @@ table of `vfl.toml`; see [configuration.md](configuration.md#lint).
 
 ## Levels, presets and fixes
 
-Every rule has a level: `off`, `info` (shown as a note), `warn` or `error`. `vfl lint` exits
+Every rule has a level: `off`, `info` (shown as a note), `warn` or `error`. `vhone lint` exits
 with a failure status when there is an `error` finding, or a `warn` finding with
 `--deny-warnings`.
 
@@ -34,17 +34,17 @@ preset = "strict"
 ```
 
 Some rules can fix what they report. A fix is either safe (it cannot change behavior) or
-unsafe (it can, so it is worth a look). `vfl lint --fix` applies the safe fixes and lints
-again; `vfl lint --fix --unsafe-fixes` applies both. In an editor, each fix is offered as a
-quick fix, and the `source.fixAll.vfl` code action applies the safe ones.
+unsafe (it can, so it is worth a look). `vhone lint --fix` applies the safe fixes and lints
+again; `vhone lint --fix --unsafe-fixes` applies both. In an editor, each fix is offered as a
+quick fix, and the `source.fixAll.vhone` code action applies the safe ones.
 
 Editors offer more quick fixes than `--fix` applies: renaming a declaration everywhere to
 follow its [naming convention](#naming), adding the `use` clause for an
 [undeclared name](#semaunresolved-name) that a package declares, and, for every rule,
-silencing it on the line or in the file with a `-- vfl-ignore` comment.
+silencing it on the line or in the file with a `-- vhone-ignore` comment.
 
-A finding can be silenced in the source with `-- vfl-ignore rule-id` at the end of its line
-(or on the line above), or for a whole file with `-- vfl-ignore-file rule-id`; see
+A finding can be silenced in the source with `-- vhone-ignore rule-id` at the end of its line
+(or on the line above), or for a whole file with `-- vhone-ignore-file rule-id`; see
 [In-source comments](configuration.md#in-source-comments).
 
 ## Summary
@@ -103,7 +103,7 @@ preset, `none` included, but can still be turned off.
 ## `sema`
 
 These rules use the semantic model of the whole project: every file is parsed, put in its
-library, and names are resolved across files. `vfl lint path` analyzes the project around
+library, and names are resolved across files. `vhone lint path` analyzes the project around
 `path` but reports only the files under `path`.
 
 The analysis is conservative: what it cannot know (a name from a library outside the
@@ -137,7 +137,7 @@ u3 : entity work.nothere;  -- no unit `nothere` in library `work`
 ```
 
 If the unit exists but in another library, check that library's assignment with
-`vfl project`.
+`vhone project`.
 
 ### `sema/unknown-library`
 
@@ -528,11 +528,11 @@ where the formatter starts breaking lists.
 
 ### `style/trailing-whitespace`
 
-A line ends with spaces or tabs. Fix (safe): removes them. `vfl fmt` removes them too.
+A line ends with spaces or tabs. Fix (safe): removes them. `vhone fmt` removes them too.
 
 ### `style/tabs`
 
-A line's indentation contains a tab. `vfl fmt` with `format.use_tabs = false` (the default)
+A line's indentation contains a tab. `vhone fmt` with `format.use_tabs = false` (the default)
 re-indents with spaces.
 
 Fix (safe): replaces the indentation with spaces, a tab reaching the next multiple of

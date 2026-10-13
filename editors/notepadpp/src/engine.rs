@@ -2,7 +2,7 @@
 //!
 //! The engine keeps each project it has seen loaded, like the language
 //! server does, with each buffer's unsaved text in place of the file on
-//! disk. Names resolve across files as with `vfl lint`, and an edit
+//! disk. Names resolve across files as with `vhone lint`, and an edit
 //! re-analyzes only the design units it can affect. Hover, parameter hints
 //! and completion come from the language server's code.
 
@@ -11,15 +11,15 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use vfl_config::{Config, Level};
-use vfl_fmt::FormatError;
-use vfl_lsp::World;
-use vfl_lsp::editor::{
+use vhone_config::{Config, Level};
+use vhone_fmt::FormatError;
+use vhone_lsp::World;
+use vhone_lsp::editor::{
     self, Completion, Completions, FileEdits, HoverInfo, Location, ProjectProblem, ProjectSymbol,
     QuickFix, SignatureHelp, Symbol, TokenKind, Use,
 };
-use vfl_lsp::generate::{self, EntityRef, Generated, Kind};
-use vfl_project::{Encoding, find_root};
+use vhone_lsp::generate::{self, EntityRef, Generated, Kind};
+use vhone_project::{Encoding, find_root};
 
 /// How bad a problem is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -147,7 +147,7 @@ impl Stamps {
     /// The modification times of the files `world`'s project reads.
     fn of(world: &World) -> Option<Stamps> {
         let (sources, tool_files) =
-            vfl_project::collect(&world.root.dir, &world.project.config.project).ok()?;
+            vhone_project::collect(&world.root.dir, &world.project.config.project).ok()?;
         let stamp = |paths: Vec<PathBuf>| -> HashMap<PathBuf, SystemTime> {
             paths
                 .into_iter()
@@ -188,7 +188,7 @@ impl Engine {
     ) -> Result<Option<String>, FormatFailure> {
         let config = self.config(path);
         let out =
-            vfl_fmt::format(text, &config.format, config.standard()).map_err(format_failure)?;
+            vhone_fmt::format(text, &config.format, config.standard()).map_err(format_failure)?;
         Ok((out != text).then_some(out))
     }
 
@@ -202,15 +202,15 @@ impl Engine {
         range: Range<usize>,
     ) -> Result<Option<String>, FormatFailure> {
         let config = self.config(path);
-        let edits = vfl_fmt::format_range(text, range, &config.format, config.standard())
+        let edits = vhone_fmt::format_range(text, range, &config.format, config.standard())
             .map_err(format_failure)?;
-        Ok((!edits.is_empty()).then(|| vfl_fmt::apply_edits(text, &edits)))
+        Ok((!edits.is_empty()).then(|| vhone_fmt::apply_edits(text, &edits)))
     }
 
     /// Formats the line just finished after `ch` was typed at byte `cursor`
     /// of `text`: the line of a `;`, or the line above a new line. Returns
     /// `None` when there is nothing to change, `on_type` is off in
-    /// `vfl.toml`, or the buffer does not parse.
+    /// `vhone.toml`, or the buffer does not parse.
     pub fn format_typed(
         &mut self,
         path: Option<&Path>,
@@ -220,8 +220,8 @@ impl Engine {
     ) -> Option<String> {
         let config = self.config(path);
         let edits =
-            vfl_fmt::format_typed(text, cursor, ch, &config.format, config.standard()).ok()?;
-        (!edits.is_empty()).then(|| vfl_fmt::apply_edits(text, &edits))
+            vhone_fmt::format_typed(text, cursor, ch, &config.format, config.standard()).ok()?;
+        (!edits.is_empty()).then(|| vhone_fmt::apply_edits(text, &edits))
     }
 
     /// Lints `text`, the content of the file at `path` (`None` for an
@@ -522,7 +522,7 @@ impl Engine {
             if dir.as_os_str().is_empty() {
                 Config::default()
             } else {
-                vfl_config::load_for_dir(&dir).unwrap_or_default()
+                vhone_config::load_for_dir(&dir).unwrap_or_default()
             }
         })
     }
@@ -596,7 +596,7 @@ pub fn completion_list(completions: &Completions) -> Vec<&Completion> {
 /// Whether `path` is a copy of a bundled library source (`ieee`, `std`)
 /// that go to definition wrote for the editor to open.
 pub fn is_library_copy(path: &Path) -> bool {
-    path.starts_with(std::env::temp_dir().join(format!("vfl-{}", env!("CARGO_PKG_VERSION"))))
+    path.starts_with(std::env::temp_dir().join(format!("vhone-{}", env!("CARGO_PKG_VERSION"))))
 }
 
 /// Whether typing `.` just before byte `offset` should offer completions:
@@ -658,15 +658,20 @@ pub fn is_project_file(path: &Path) -> bool {
     path.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
         matches!(
             n,
-            "vfl.toml" | ".vfl.toml" | "vhdl_ls.toml" | ".vhdl_ls.toml"
+            "vhone.toml"
+                | ".vhone.toml"
+                | "vfl.toml"
+                | ".vfl.toml"
+                | "vhdl_ls.toml"
+                | ".vhdl_ls.toml"
         )
-    }) || vfl_project::is_tool_file(path)
+    }) || vhone_project::is_tool_file(path)
 }
 
 /// A buffer's bytes as text, and how to map offsets back.
 ///
 /// Notepad++ buffers are UTF-8 or a single-byte code page. Single-byte
-/// buffers are read as Latin-1, byte for byte, like `vfl` reads files.
+/// buffers are read as Latin-1, byte for byte, like `vhone` reads files.
 pub struct BufferText {
     pub text: String,
     pub encoding: Encoding,
@@ -717,7 +722,7 @@ impl BufferText {
 
     /// Text in the buffer's encoding.
     pub fn encode(&self, text: &str) -> Vec<u8> {
-        vfl_project::encode(text, self.encoding)
+        vhone_project::encode(text, self.encoding)
     }
 }
 
@@ -835,7 +840,7 @@ end architecture;
     fn lints_buffers_within_their_project() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        std::fs::write(root.join("vfl.toml"), "").unwrap();
+        std::fs::write(root.join("vhone.toml"), "").unwrap();
         std::fs::write(
             root.join("pkg.vhd"),
             "package pkg is\n  constant c : integer := 1;\nend package;\n",
@@ -882,7 +887,7 @@ end architecture;
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         std::fs::write(
-            root.join("vfl.toml"),
+            root.join("vhone.toml"),
             "[project]\nexclude = [\"scratch.vhd\"]\n",
         )
         .unwrap();
@@ -1016,7 +1021,7 @@ end architecture;
     fn project() -> (tempfile::TempDir, PathBuf, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
         let root = std::fs::canonicalize(dir.path()).unwrap();
-        std::fs::write(root.join("vfl.toml"), "").unwrap();
+        std::fs::write(root.join("vhone.toml"), "").unwrap();
         let pkg = root.join("pkg.vhd");
         std::fs::write(
             &pkg,
@@ -1175,7 +1180,7 @@ end architecture;
         let dir = tempfile::tempdir().unwrap();
         let root = std::fs::canonicalize(dir.path()).unwrap();
         std::fs::write(
-            root.join("vfl.toml"),
+            root.join("vhone.toml"),
             "[lint.rules]\n\"style/trailing-whitespace\" = \"warn\"\n",
         )
         .unwrap();
@@ -1268,7 +1273,7 @@ end architecture;
         assert!(is_vhdl_path(Path::new("a/top.VHD")));
         assert!(is_vhdl_path(Path::new("tb.vhdl")));
         assert!(!is_vhdl_path(Path::new("top.v")));
-        assert!(is_project_file(Path::new("x/vfl.toml")));
+        assert!(is_project_file(Path::new("x/vhone.toml")));
         assert!(is_project_file(Path::new("x/sim/run.py")));
     }
 }

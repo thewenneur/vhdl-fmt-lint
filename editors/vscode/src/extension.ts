@@ -1,11 +1,11 @@
-// VS Code client for the vfl language server (`vfl lsp`).
+// VS Code client for the vhone language server (`vhone lsp`).
 //
 // The server does the work: diagnostics, quick fixes, formatting,
 // navigation, rename, completion and code generation. This file finds the
-// `vfl` binary, starts it over stdio and restarts it when its settings
+// `vhone` binary, starts it over stdio and restarts it when its settings
 // change, asks it for generated code, and drops format on type unless
-// `vfl.format.onType` is set. Documentation and diagrams are generated on
-// demand by running `vfl doc`, never on the server's hot path.
+// `vhone.format.onType` is set. Documentation and diagrams are generated on
+// demand by running `vhone doc`, never on the server's hot path.
 
 import { execFile } from "node:child_process";
 import * as fs from "node:fs";
@@ -19,7 +19,7 @@ import {
 } from "vscode-languageclient/node";
 import { OPEN_PAGE_COMMAND, pageTitle, webviewHtml } from "./docview";
 
-const INSTALL_URL = "https://github.com/thewenneur/vhdl-fmt-lint#installation";
+const INSTALL_URL = "https://github.com/thewenneur/vhone#installation";
 
 let client: LanguageClient | undefined;
 let output: vscode.LogOutputChannel;
@@ -27,31 +27,31 @@ let extensionContext: vscode.ExtensionContext;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   extensionContext = context;
-  output = vscode.window.createOutputChannel("vfl", { log: true });
+  output = vscode.window.createOutputChannel("vhone", { log: true });
   context.subscriptions.push(
     output,
-    vscode.commands.registerCommand("vfl.restartServer", restart),
-    vscode.commands.registerCommand("vfl.showOutput", () =>
+    vscode.commands.registerCommand("vhone.restartServer", restart),
+    vscode.commands.registerCommand("vhone.showOutput", () =>
       (client?.outputChannel ?? output).show(true),
     ),
-    vscode.commands.registerCommand("vfl.fixAll", () =>
+    vscode.commands.registerCommand("vhone.fixAll", () =>
       vscode.commands.executeCommand("editor.action.codeAction", {
-        kind: "source.fixAll.vfl",
+        kind: "source.fixAll.vhone",
         apply: "first",
       }),
     ),
-    vscode.commands.registerCommand("vfl.insertInstance", (entity?: string) =>
+    vscode.commands.registerCommand("vhone.insertInstance", (entity?: string) =>
       insertGenerated("instance", entity),
     ),
-    vscode.commands.registerCommand("vfl.insertComponentInstance", (entity?: string) =>
+    vscode.commands.registerCommand("vhone.insertComponentInstance", (entity?: string) =>
       insertGenerated("component-instance", entity),
     ),
-    vscode.commands.registerCommand("vfl.insertComponent", (entity?: string) =>
+    vscode.commands.registerCommand("vhone.insertComponent", (entity?: string) =>
       insertGenerated("component", entity),
     ),
-    vscode.commands.registerCommand("vfl.generateTestbench", generateTestbench),
-    vscode.commands.registerCommand("vfl.generateDocs", generateDocs),
-    vscode.commands.registerCommand("vfl.showDiagrams", showDiagrams),
+    vscode.commands.registerCommand("vhone.generateTestbench", generateTestbench),
+    vscode.commands.registerCommand("vhone.generateDocs", generateDocs),
+    vscode.commands.registerCommand("vhone.showDiagrams", showDiagrams),
     // The target of the links between pages in the diagrams view.
     vscode.commands.registerCommand(OPEN_PAGE_COMMAND, openDocPage),
     vscode.workspace.onDidSaveTextDocument((doc) => {
@@ -65,7 +65,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("vfl.server")) {
+      if (e.affectsConfiguration("vhone.server")) {
         void restart();
       }
     }),
@@ -84,7 +84,7 @@ async function start(): Promise<void> {
     return;
   }
 
-  // No `transport`: with one, the client appends `--stdio`, which `vfl lsp`
+  // No `transport`: with one, the client appends `--stdio`, which `vhone lsp`
   // rejects. Without, it speaks over stdio all the same.
   const run = {
     command,
@@ -99,39 +99,39 @@ async function start(): Promise<void> {
     middleware: {
       // `editor.formatOnType` is on for VHDL by default; this setting decides.
       provideOnTypeFormattingEdits: (document, position, ch, options, token, next) =>
-        vscode.workspace.getConfiguration("vfl", document).get<boolean>("format.onType", false)
+        vscode.workspace.getConfiguration("vhone", document).get<boolean>("format.onType", false)
           ? next(document, position, ch, options, token)
           : [],
     },
   };
 
   output.info(`Starting ${command} lsp`);
-  client = new LanguageClient("vfl", "vfl Language Server", serverOptions, clientOptions);
+  client = new LanguageClient("vhone", "vhone Language Server", serverOptions, clientOptions);
   try {
     await client.start();
   } catch (err) {
     client = undefined;
-    void vscode.window.showErrorMessage(`vfl: the language server failed to start: ${err}`);
+    void vscode.window.showErrorMessage(`vhone: the language server failed to start: ${err}`);
   }
 }
 
 async function reportMissingServer(): Promise<void> {
   const choice = await vscode.window.showErrorMessage(
-    "vfl: could not find the `vfl` executable. Install it, or set `vfl.server.path`.",
+    "vhone: could not find the `vhone` executable. Install it, or set `vhone.server.path`.",
     "Open Settings",
     "How to Install",
   );
   if (choice === "Open Settings") {
-    void vscode.commands.executeCommand("workbench.action.openSettings", "vfl.server.path");
+    void vscode.commands.executeCommand("workbench.action.openSettings", "vhone.server.path");
   } else if (choice === "How to Install") {
     void vscode.env.openExternal(vscode.Uri.parse(INSTALL_URL));
   }
 }
 
-/** The environment of `vfl`: the extension host's, plus `vfl.server.extraEnv`. */
+/** The environment of `vhone`: the extension host's, plus `vhone.server.extraEnv`. */
 function serverEnv(): NodeJS.ProcessEnv {
   const extraEnv = vscode.workspace
-    .getConfiguration("vfl")
+    .getConfiguration("vhone")
     .get<Record<string, string>>("server.extraEnv", {});
   return { ...process.env, ...extraEnv };
 }
@@ -149,16 +149,16 @@ async function restart(): Promise<void> {
   await start();
 }
 
-/** The `vfl` executable to run: the setting, else `PATH`, else `~/.cargo/bin`. */
+/** The `vhone` executable to run: the setting, else `PATH`, else `~/.cargo/bin`. */
 function findServer(): string | undefined {
-  const exe = process.platform === "win32" ? "vfl.exe" : "vfl";
-  const setting = vscode.workspace.getConfiguration("vfl").get<string>("server.path", "").trim();
+  const exe = process.platform === "win32" ? "vhone.exe" : "vhone";
+  const setting = vscode.workspace.getConfiguration("vhone").get<string>("server.path", "").trim();
   if (setting) {
     const resolved = expand(setting);
     if (isFile(resolved)) {
       return resolved;
     }
-    output.info(`vfl.server.path points to ${resolved}, which is not a file`);
+    output.info(`vhone.server.path points to ${resolved}, which is not a file`);
     return undefined;
   }
   const dirs = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
@@ -206,12 +206,12 @@ interface Generated {
 /** Asks which entity to generate from, those of the active file first. */
 async function pickEntity(placeHolder: string): Promise<string | undefined> {
   if (!client?.isRunning()) {
-    void vscode.window.showErrorMessage("vfl: the language server is not running.");
+    void vscode.window.showErrorMessage("vhone: the language server is not running.");
     return undefined;
   }
-  const entities = await client.sendRequest<EntityRef[]>("vfl/entities", {});
+  const entities = await client.sendRequest<EntityRef[]>("vhone/entities", {});
   if (entities.length === 0) {
-    void vscode.window.showInformationMessage("vfl: no entity in this project.");
+    void vscode.window.showInformationMessage("vhone: no entity in this project.");
     return undefined;
   }
   const active = vscode.window.activeTextEditor?.document.uri.fsPath;
@@ -234,13 +234,13 @@ async function pickEntity(placeHolder: string): Promise<string | undefined> {
 
 async function generate(kind: GenerateKind, entity: string): Promise<Generated | undefined> {
   if (!client?.isRunning()) {
-    void vscode.window.showErrorMessage("vfl: the language server is not running.");
+    void vscode.window.showErrorMessage("vhone: the language server is not running.");
     return undefined;
   }
   try {
-    return await client.sendRequest<Generated>("vfl/generate", { kind, entity });
+    return await client.sendRequest<Generated>("vhone/generate", { kind, entity });
   } catch (err) {
-    void vscode.window.showErrorMessage(`vfl: ${err instanceof Error ? err.message : err}`);
+    void vscode.window.showErrorMessage(`vhone: ${err instanceof Error ? err.message : err}`);
     return undefined;
   }
 }
@@ -289,10 +289,10 @@ async function generateTestbench(entity?: string): Promise<void> {
   await vscode.window.showTextDocument(uri);
 }
 
-// Documentation and diagrams, by running `vfl doc`.
+// Documentation and diagrams, by running `vhone doc`.
 
-/** Runs `vfl` with `args` from `cwd`; resolves with its standard output. */
-async function runVfl(args: string[], cwd: string): Promise<string | undefined> {
+/** Runs `vhone` with `args` from `cwd`; resolves with its standard output. */
+async function runVhone(args: string[], cwd: string): Promise<string | undefined> {
   const command = findServer();
   if (!command) {
     void reportMissingServer();
@@ -310,7 +310,7 @@ async function runVfl(args: string[], cwd: string): Promise<string | undefined> 
         }
         if (err) {
           const message = stderr.trim().split(/\r?\n/).pop() || err.message;
-          void vscode.window.showErrorMessage(`vfl: ${message}`);
+          void vscode.window.showErrorMessage(`vhone: ${message}`);
           resolve(undefined);
         } else {
           resolve(stdout);
@@ -320,7 +320,7 @@ async function runVfl(args: string[], cwd: string): Promise<string | undefined> 
   });
 }
 
-/** The last line `vfl doc` prints: the page to open. */
+/** The last line `vhone doc` prints: the page to open. */
 function printedPath(stdout: string): string | undefined {
   return stdout.trim().split(/\r?\n/).pop()?.trim() || undefined;
 }
@@ -347,25 +347,25 @@ function directoryOf(target: string): string {
 
 /**
  * Writes the documentation of the project around `uri` (or the active file,
- * or the workspace folder) where `[doc]` in `vfl.toml` says, then offers to
+ * or the workspace folder) where `[doc]` in `vhone.toml` says, then offers to
  * open its index. Returns the index.
  */
 async function generateDocs(uri?: vscode.Uri): Promise<string | undefined> {
   const target = docTarget(uri instanceof vscode.Uri ? uri : undefined);
   if (!target) {
-    void vscode.window.showErrorMessage("vfl: open a folder or a VHDL file to document.");
+    void vscode.window.showErrorMessage("vhone: open a folder or a VHDL file to document.");
     return undefined;
   }
   const stdout = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: "vfl: generating documentation" },
-    () => runVfl(["doc", target], directoryOf(target)),
+    { location: vscode.ProgressLocation.Notification, title: "vhone: generating documentation" },
+    () => runVhone(["doc", target], directoryOf(target)),
   );
   const index = stdout && printedPath(stdout);
   if (!index) {
     return undefined;
   }
   void vscode.window
-    .showInformationMessage(`vfl: documentation written to ${path.dirname(index)}`, "Open")
+    .showInformationMessage(`vhone: documentation written to ${path.dirname(index)}`, "Open")
     .then((choice) => (choice === "Open" ? openIndex(index) : undefined));
   return index;
 }
@@ -385,7 +385,7 @@ interface Diagrams {
   panel: vscode.WebviewPanel;
   /** The file whose project is drawn. */
   source: string;
-  /** The output directory of `vfl doc`. */
+  /** The output directory of `vhone doc`. */
   dir: string;
   /** The page shown, as a file name in `dir`. */
   page: string;
@@ -399,8 +399,8 @@ let refreshAgain = false;
 async function drawDiagrams(source: string, dir: string): Promise<string | undefined> {
   const args = ["doc", source, "--format", "html", "-o", dir, "--page-for", source];
   const stdout = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Window, title: "vfl: drawing diagrams" },
-    () => runVfl(args, path.dirname(source)),
+    { location: vscode.ProgressLocation.Window, title: "vhone: drawing diagrams" },
+    () => runVhone(args, path.dirname(source)),
   );
   return stdout ? printedPath(stdout) : undefined;
 }
@@ -413,7 +413,7 @@ async function drawDiagrams(source: string, dir: string): Promise<string | undef
 async function showDiagrams(uri?: vscode.Uri): Promise<string | undefined> {
   const source = uri instanceof vscode.Uri ? uri : vscode.window.activeTextEditor?.document.uri;
   if (source?.scheme !== "file") {
-    void vscode.window.showErrorMessage("vfl: open a VHDL file to show its diagrams.");
+    void vscode.window.showErrorMessage("vhone: open a VHDL file to show its diagrams.");
     return undefined;
   }
   const storage = extensionContext.storageUri ?? extensionContext.globalStorageUri;
@@ -427,7 +427,7 @@ async function showDiagrams(uri?: vscode.Uri): Promise<string | undefined> {
     diagrams.panel.reveal(vscode.ViewColumn.Beside, true);
   } else {
     const panel = vscode.window.createWebviewPanel(
-      "vfl.diagrams",
+      "vhone.diagrams",
       pageTitle(state.page),
       { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
       {

@@ -1,6 +1,6 @@
 [package]
-name = "vfl-npp"
-description = "Notepad++ plugin that formats and lints VHDL with vfl"
+name = "vhone-npp"
+description = "Notepad++ plugin that formats and lints VHDL with vhone"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,8 +9,8 @@ repository.workspace = true
 publish = false
 
 [lib]
-# Notepad++ loads `plugins\vfl_npp\vfl_npp.dll`.
-name = "vfl_npp"
+# Notepad++ loads `plugins\vhone_npp\vhone_npp.dll`.
+name = "vhone_npp"
 crate-type = ["cdylib"]
 
 # The workspace forbids unsafe code; the Win32 glue needs it, so it is
@@ -22,11 +22,11 @@ unsafe_code = "deny"
 all = { level = "warn", priority = -1 }
 
 [dependencies]
-vfl-config.workspace = true
-vfl-doc.workspace = true
-vfl-fmt.workspace = true
-vfl-lsp.workspace = true
-vfl-project.workspace = true
+vhone-config.workspace = true
+vhone-doc.workspace = true
+vhone-fmt.workspace = true
+vhone-lsp.workspace = true
+vhone-project.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

@@ -1,0 +1,14 @@
+---
+source: crates/vhone-syntax/tests/parser.rs
+expression: "errors.join(\"\\n\")"
+input_file: crates/vhone-syntax/tests/data/std93/needs_2008.vhd
+---
+0..0: expected design unit, found `context`
+28..28: expected design unit, found `end`
+105..111: sized bit string literals require VHDL-2008
+130..133: `process (all)` requires VHDL-2008
+154..158: conditional expressions here requires VHDL-2008
+179..180: matching case statements requires VHDL-2008
+223..225: the condition operator `??` requires VHDL-2008
+282..286: `else` in if-generate statements requires VHDL-2008
+312..325: block comments require VHDL-2008

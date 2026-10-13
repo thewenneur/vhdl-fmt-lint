@@ -69,18 +69,18 @@ jobs:
           targets: ${{ matrix.target }}
       - if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - run: cargo build --release --locked -p vfl-cli --target ${{ matrix.target }}
+      - run: cargo build --release --locked -p vhone-cli --target ${{ matrix.target }}
       - name: Package
         shell: bash
         run: |
-          name=vfl-v${{ needs.version.outputs.version }}-${{ matrix.target }}
+          name=vhone-v${{ needs.version.outputs.version }}-${{ matrix.target }}
           mkdir -p "dist/$name"
           cp README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
           if [[ "${{ matrix.target }}" == *windows* ]]; then
-            cp target/${{ matrix.target }}/release/vfl.exe "dist/$name/"
+            cp target/${{ matrix.target }}/release/vhone.exe "dist/$name/"
             (cd dist && 7z a "$name.zip" "$name" > /dev/null)
           else
-            cp target/${{ matrix.target }}/release/vfl "dist/$name/"
+            cp target/${{ matrix.target }}/release/vhone "dist/$name/"
             tar -C dist -czf "dist/$name.tar.gz" "$name"
           fi
       - uses: actions/upload-artifact@v4
@@ -96,15 +96,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release --locked -p vfl-npp
+      - run: cargo build --release --locked -p vhone-npp
       - name: Package
         shell: bash
         run: |
-          name=vfl_npp-v${{ needs.version.outputs.version }}-x64
-          mkdir -p dist/vfl_npp
-          cp target/release/vfl_npp.dll dist/vfl_npp/
-          cp editors/notepadpp/README.md LICENSE-MIT LICENSE-APACHE dist/vfl_npp/
-          (cd dist && 7z a "$name.zip" vfl_npp > /dev/null)
+          name=vhone_npp-v${{ needs.version.outputs.version }}-x64
+          mkdir -p dist/vhone_npp
+          cp target/release/vhone_npp.dll dist/vhone_npp/
+          cp editors/notepadpp/README.md LICENSE-MIT LICENSE-APACHE dist/vhone_npp/
+          (cd dist && 7z a "$name.zip" vhone_npp > /dev/null)
       - uses: actions/upload-artifact@v4
         with:
           name: notepadpp
@@ -165,7 +165,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "vfl $GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+            --title "vhone $GITHUB_REF_NAME" --notes-file notes.md --verify-tag
       - name: Tag and publish the release
         if: github.event_name == 'workflow_dispatch'
         env:
@@ -173,4 +173,4 @@ jobs:
         run: |
           tag=v${{ needs.version.outputs.version }}
           gh release create "$tag" dist/* --target "$GITHUB_SHA" \
-            --title "vfl $tag" --notes-file notes.md
+            --title "vhone $tag" --notes-file notes.md

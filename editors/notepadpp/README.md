@@ -1,16 +1,16 @@
-# vfl for Notepad++
+# vhone for Notepad++
 
-A Notepad++ plugin that formats and lints VHDL with vfl, as you type, and brings the
-features of the vfl language server to Notepad++: types, parameter hints, completion,
+A Notepad++ plugin that formats and lints VHDL with vhone, as you type, and brings the
+features of the vhone language server to Notepad++: types, parameter hints, completion,
 quick fixes, go to definition, find references, rename and symbol search, and the
-documentation and diagrams of `vfl doc`.
+documentation and diagrams of `vhone doc`.
 
 ![Problems shown under each line in Notepad++](screenshot.png)
 
 The formatter and linter are built into the plugin, so there is nothing else to install: no
-`vfl` executable on the `PATH` and no LSP client plugin. The plugin finds the project around
-each file like `vfl lint` does, so names resolve across files, and it reads the same
-`vfl.toml` settings.
+`vhone` executable on the `PATH` and no LSP client plugin. The plugin finds the project around
+each file like `vhone lint` does, so names resolve across files, and it reads the same
+`vhone.toml` settings.
 
 ## Features
 
@@ -44,7 +44,7 @@ are ready, and are dropped if the file changed in the meantime.
 - **Quick fixes**: **Fix problem at caret** lists the fixes for the problem at the caret:
   the rule's own fix, renaming a name everywhere to follow a naming convention, adding the
   `use` clause for a name declared in a package, or silencing the rule on the line or in
-  the file with a `-- vfl-ignore` comment. **Fix all problems** applies every safe fix in
+  the file with a `-- vhone-ignore` comment. **Fix all problems** applies every safe fix in
   the file.
 - **Go to definition**, also into the bundled `ieee` and `std` sources, and **Go back**.
 - **Find references** lists every use of a name across the project; choosing one opens it.
@@ -65,12 +65,12 @@ are ready, and are dropped if the file changed in the meantime.
 
 ## Commands
 
-All under **Plugins > vfl**. To give them keyboard shortcuts, use **Settings > Shortcut
+All under **Plugins > vhone**. To give them keyboard shortcuts, use **Settings > Shortcut
 Mapper > Plugin commands**.
 
 | Command | |
 |---|---|
-| Format document | Formats the current file with its `vfl.toml` settings. Files with syntax errors are not formatted; the caret goes to the first error. |
+| Format document | Formats the current file with its `vhone.toml` settings. Files with syntax errors are not formatted; the caret goes to the first error. |
 | Format selection | Formats the selected lines, or the caret's line, with the whole statements and aligned lines they are part of. |
 | Lint document | Lints the current file, whatever its language, and goes to the first problem. |
 | Next problem, Previous problem | Moves to the next or previous problem and shows its message. |
@@ -85,13 +85,13 @@ Mapper > Plugin commands**.
 | Go to symbol in file | Lists the declarations of the current file. |
 | Go to symbol in project | Searches the declarations of the project by name, starting from the word at the caret. |
 | Insert entity instantiation, Insert component instantiation, Insert component declaration | Lists the entities of the project, those of the current file first, and inserts the code for the one picked at the caret. |
-| Generate testbench | Lists the entities of the project and writes a testbench for the one picked next to it (`<entity>_tb.vhd`, see `[generate]` in `vfl.toml`), then opens it. |
-| Generate documentation | Writes the documentation of the current file's project as `vfl doc` does, where and how `[doc]` in `vfl.toml` says, then opens the index: an HTML one in the default browser, a Markdown or AsciiDoc one in Notepad++. It is written in the background, so Notepad++ stays responsive on large projects. |
-| Show diagrams | Writes the HTML documentation of the current file's project to a temporary folder (`%TEMP%\vfl_npp\diagrams`) and opens the page of the first entity (else package) of the file in the default browser. |
+| Generate testbench | Lists the entities of the project and writes a testbench for the one picked next to it (`<entity>_tb.vhd`, see `[generate]` in `vhone.toml`), then opens it. |
+| Generate documentation | Writes the documentation of the current file's project as `vhone doc` does, where and how `[doc]` in `vhone.toml` says, then opens the index: an HTML one in the default browser, a Markdown or AsciiDoc one in Notepad++. It is written in the background, so Notepad++ stays responsive on large projects. |
+| Show diagrams | Writes the HTML documentation of the current file's project to a temporary folder (`%TEMP%\vhone_npp\diagrams`) and opens the page of the first entity (else package) of the file in the default browser. |
 | Show type | Shows what the name at the caret is, as hovering it does. |
 | Show parameters | Shows the parameter hints of the call around the caret. |
 | Complete word | Lists the completions at the caret. Notepad++ keeps **Ctrl+Space** for its own completion, so map this to another key if you use it often. |
-| Format on type | Formats the line of a `;` just typed, or the line above a new line (off by default). `on_type = false` under `[format]` in `vfl.toml` turns it off for a project. |
+| Format on type | Formats the line of a `;` just typed, or the line above a new line (off by default). `on_type = false` under `[format]` in `vhone.toml` turns it off for a project. |
 | Format on save | Formats VHDL files when they are saved (off by default). With **Save All**, only the file in front is formatted. |
 | Lint automatically | Lints VHDL files as described above (on by default). |
 | Show messages under lines | Shows each message under its line (on by default); with it off, hover or use Next problem. |
@@ -100,7 +100,7 @@ Mapper > Plugin commands**.
 | Color names by meaning | Colors signals, ports, constants, variables, types and subprograms (on by default). |
 | Reload project | Re-reads the whole project from disk. Changed files are normally picked up by themselves, so this is rarely needed. |
 
-The five settings are kept in `plugins\Config\vfl_npp.ini`. Problems in `vfl.toml` are
+The five settings are kept in `plugins\Config\vhone_npp.ini`. Problems in `vhone.toml` are
 shown in a message box, once per problem.
 
 The documentation is made from the files on disk, so save the file first; it is only
@@ -113,39 +113,39 @@ or `.vht`.
 
 Tested with Notepad++ 8.8.6, 64-bit.
 
-1. Get `vfl_npp.dll`: from the `vfl_npp` artifact of a CI run, or build it (below).
-2. Close Notepad++ and create the folder `plugins\vfl_npp` in its install directory
-   (usually `C:\Program Files\Notepad++\plugins\vfl_npp`).
-3. Put `vfl_npp.dll` in it and start Notepad++. **Plugins > vfl** appears.
+1. Get `vhone_npp.dll`: from the `vhone_npp` artifact of a CI run, or build it (below).
+2. Close Notepad++ and create the folder `plugins\vhone_npp` in its install directory
+   (usually `C:\Program Files\Notepad++\plugins\vhone_npp`).
+3. Put `vhone_npp.dll` in it and start Notepad++. **Plugins > vhone** appears.
 
 ## Build
 
 On Windows, with Rust installed:
 
 ```sh
-cargo build --release -p vfl-npp
+cargo build --release -p vhone-npp
 ```
 
-The plugin is `target\release\vfl_npp.dll`. For 32-bit or ARM64 Notepad++, add
+The plugin is `target\release\vhone_npp.dll`. For 32-bit or ARM64 Notepad++, add
 `--target i686-pc-windows-msvc` or `--target aarch64-pc-windows-msvc`.
 
 From Linux, with `mingw-w64` installed:
 
 ```sh
 rustup target add x86_64-pc-windows-gnu
-cargo build --release -p vfl-npp --target x86_64-pc-windows-gnu
+cargo build --release -p vhone-npp --target x86_64-pc-windows-gnu
 ```
 
 ## Parity with the language server
 
-Every request the vfl language server answers has a command here; `src/parity.rs` lists
+Every request the vhone language server answers has a command here; `src/parity.rs` lists
 which, and its tests fail when the server gains a request or a kind of code action that the
 plugin does not offer yet.
 
 ## How it works
 
 Notepad++ has no built-in language-server support, so rather than going through a
-third-party LSP client this is a native plugin. It is written in Rust and links the vfl
+third-party LSP client this is a native plugin. It is written in Rust and links the vhone
 crates directly:
 
 - `src/engine.rs` formats, lints and answers the editor queries for a buffer: hover,
@@ -153,7 +153,7 @@ crates directly:
   each project it has seen loaded, as the language server does, with the
   buffer's unsaved text in place of the file on disk, and re-analyzes only the design units
   an edit can affect. The answers come from the language server's own code, through
-  `vfl_lsp::editor`, so they match what VS Code shows. It is portable and unit-tested on
+  `vhone_lsp::editor`, so they match what VS Code shows. It is portable and unit-tested on
   every platform.
 - `src/worker.rs` runs the engine on a thread of its own, so Notepad++ never waits for a
   project to load or a file to be analyzed. Each request carries a copy of the buffer;
@@ -165,11 +165,11 @@ crates directly:
   parameter hints and completion lists.
 - `src/tools.rs` is the navigation and refactoring side: lists of locations, symbols and
   fixes, jumps and the way back, rename across open files, and highlighting uses.
-- `src/docs.rs` writes the documentation with `vfl_doc`, from the project loaded like
-  `vfl doc` loads it, and finds the page of a file. It is portable and unit-tested too.
+- `src/docs.rs` writes the documentation with `vhone_doc`, from the project loaded like
+  `vhone doc` loads it, and finds the page of a file. It is portable and unit-tested too.
 - `src/win.rs` declares the few Win32, Scintilla and Notepad++ definitions it uses.
 
-To find what slows Notepad++ down, set the environment variable `VFL_NPP_TRACE` to a file
+To find what slows Notepad++ down, set the environment variable `VHONE_NPP_TRACE` to a file
 path before starting it: each call into the plugin that keeps Notepad++ busy for more than
 0.2 ms is appended to that file with its duration in microseconds.
 

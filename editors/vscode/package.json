@@ -1,17 +1,17 @@
 {
-  "name": "vfl",
-  "displayName": "vfl: VHDL formatter and linter",
-  "description": "Formatting, linting, navigation and syntax highlighting for VHDL, powered by the vfl language server.",
+  "name": "vhone",
+  "displayName": "vhone: VHDL formatter, linter and language server",
+  "description": "Formatting, linting, navigation and syntax highlighting for VHDL, powered by the vhone language server.",
   "version": "0.1.1",
   "publisher": "thewenneur",
   "license": "MIT OR Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/thewenneur/vhdl-fmt-lint",
+    "url": "https://github.com/thewenneur/vhone",
     "directory": "editors/vscode"
   },
   "bugs": {
-    "url": "https://github.com/thewenneur/vhdl-fmt-lint/issues"
+    "url": "https://github.com/thewenneur/vhone/issues"
   },
   "categories": [
     "Programming Languages",
@@ -30,7 +30,7 @@
   },
   "main": "./out/extension.js",
   "activationEvents": [
-    "workspaceContains:**/{vfl,.vfl,vhdl_ls}.toml"
+    "workspaceContains:**/{vhone,.vhone,vhdl_ls}.toml"
   ],
   "contributes": {
     "languages": [
@@ -178,15 +178,15 @@
       }
     ],
     "configuration": {
-      "title": "vfl",
+      "title": "vhone",
       "properties": {
-        "vfl.server.path": {
+        "vhone.server.path": {
           "type": "string",
           "default": "",
           "scope": "machine-overridable",
-          "markdownDescription": "Path to the `vfl` executable. Leave empty to use `vfl` from `PATH`, or from `~/.cargo/bin`. `~` and `${workspaceFolder}` are expanded."
+          "markdownDescription": "Path to the `vhone` executable. Leave empty to use `vhone` from `PATH`, or from `~/.cargo/bin`. `~` and `${workspaceFolder}` are expanded."
         },
-        "vfl.server.extraEnv": {
+        "vhone.server.extraEnv": {
           "type": "object",
           "default": {},
           "additionalProperties": {
@@ -195,13 +195,13 @@
           "scope": "machine-overridable",
           "markdownDescription": "Extra environment variables for the language server, such as `{ \"RUST_BACKTRACE\": \"1\" }`."
         },
-        "vfl.format.onType": {
+        "vhone.format.onType": {
           "type": "boolean",
           "default": false,
           "scope": "resource",
-          "markdownDescription": "Format the line you just finished as you type: the line of a `;`, or the line above a new line. A project can turn it off for everyone with `on_type = false` under `[format]` in `vfl.toml`."
+          "markdownDescription": "Format the line you just finished as you type: the line of a `;`, or the line above a new line. A project can turn it off for everyone with `on_type = false` under `[format]` in `vhone.toml`."
         },
-        "vfl.trace.server": {
+        "vhone.trace.server": {
           "type": "string",
           "enum": [
             "off",
@@ -210,124 +210,124 @@
           ],
           "default": "off",
           "scope": "window",
-          "markdownDescription": "Log the messages between VS Code and the language server to the **vfl Language Server Trace** output."
+          "markdownDescription": "Log the messages between VS Code and the language server to the **vhone Language Server Trace** output."
         }
       }
     },
     "configurationDefaults": {
       "[vhdl]": {
-        "editor.defaultFormatter": "thewenneur.vfl",
+        "editor.defaultFormatter": "thewenneur.vhone",
         "editor.formatOnType": true
       }
     },
     "commands": [
       {
-        "command": "vfl.restartServer",
+        "command": "vhone.restartServer",
         "title": "Restart Language Server",
-        "category": "vfl"
+        "category": "vhone"
       },
       {
-        "command": "vfl.fixAll",
+        "command": "vhone.fixAll",
         "title": "Fix All Lint Findings in File",
-        "category": "vfl",
+        "category": "vhone",
         "enablement": "editorLangId == vhdl"
       },
       {
-        "command": "vfl.showOutput",
+        "command": "vhone.showOutput",
         "title": "Show Language Server Output",
-        "category": "vfl"
+        "category": "vhone"
       },
       {
-        "command": "vfl.insertInstance",
+        "command": "vhone.insertInstance",
         "title": "Insert Entity Instantiation...",
-        "category": "vfl",
+        "category": "vhone",
         "enablement": "editorLangId == vhdl"
       },
       {
-        "command": "vfl.insertComponentInstance",
+        "command": "vhone.insertComponentInstance",
         "title": "Insert Component Instantiation...",
-        "category": "vfl",
+        "category": "vhone",
         "enablement": "editorLangId == vhdl"
       },
       {
-        "command": "vfl.insertComponent",
+        "command": "vhone.insertComponent",
         "title": "Insert Component Declaration...",
-        "category": "vfl",
+        "category": "vhone",
         "enablement": "editorLangId == vhdl"
       },
       {
-        "command": "vfl.generateTestbench",
+        "command": "vhone.generateTestbench",
         "title": "Generate Testbench...",
-        "category": "vfl"
+        "category": "vhone"
       },
       {
-        "command": "vfl.generateDocs",
+        "command": "vhone.generateDocs",
         "title": "Generate Documentation",
-        "category": "vfl",
+        "category": "vhone",
         "icon": "$(book)"
       },
       {
-        "command": "vfl.showDiagrams",
+        "command": "vhone.showDiagrams",
         "title": "Show Diagrams",
-        "category": "vfl",
+        "category": "vhone",
         "icon": "$(type-hierarchy)"
       }
     ],
     "menus": {
       "commandPalette": [
         {
-          "command": "vfl.fixAll",
+          "command": "vhone.fixAll",
           "when": "editorLangId == vhdl"
         },
         {
-          "command": "vfl.insertInstance",
+          "command": "vhone.insertInstance",
           "when": "editorLangId == vhdl"
         },
         {
-          "command": "vfl.insertComponentInstance",
+          "command": "vhone.insertComponentInstance",
           "when": "editorLangId == vhdl"
         },
         {
-          "command": "vfl.insertComponent",
+          "command": "vhone.insertComponent",
           "when": "editorLangId == vhdl"
         },
         {
-          "command": "vfl.showDiagrams",
+          "command": "vhone.showDiagrams",
           "when": "editorLangId == vhdl"
         }
       ],
       "editor/context": [
         {
-          "command": "vfl.insertInstance",
+          "command": "vhone.insertInstance",
           "when": "editorLangId == vhdl",
           "group": "1_modification@10"
         },
         {
-          "command": "vfl.generateTestbench",
+          "command": "vhone.generateTestbench",
           "when": "editorLangId == vhdl",
           "group": "1_modification@11"
         },
         {
-          "command": "vfl.showDiagrams",
+          "command": "vhone.showDiagrams",
           "when": "editorLangId == vhdl",
           "group": "1_modification@12"
         }
       ],
       "editor/title": [
         {
-          "command": "vfl.showDiagrams",
+          "command": "vhone.showDiagrams",
           "when": "resourceLangId == vhdl && resourceScheme == file",
           "group": "navigation"
         }
       ],
       "explorer/context": [
         {
-          "command": "vfl.generateDocs",
+          "command": "vhone.generateDocs",
           "when": "explorerResourceIsFolder || resourceLangId == vhdl",
           "group": "7_modification@50"
         },
         {
-          "command": "vfl.showDiagrams",
+          "command": "vhone.showDiagrams",
           "when": "resourceLangId == vhdl",
           "group": "7_modification@51"
         }

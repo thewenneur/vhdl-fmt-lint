@@ -1,4 +1,4 @@
-// Checks how a page of `vfl doc` is prepared for the diagrams webview.
+// Checks how a page of `vhone doc` is prepared for the diagrams webview.
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -56,7 +56,7 @@ test("follows the VS Code theme instead of the OS one", () => {
 test("turns links to other pages into command links", () => {
   const html = webviewHtml(PAGE, "work.fifo.html", false);
   const link = (page) =>
-    `href="command:vfl.openDocPage?${encodeURIComponent(JSON.stringify([page]))}"`;
+    `href="command:vhone.openDocPage?${encodeURIComponent(JSON.stringify([page]))}"`;
   assert.ok(html.includes(`<a ${link("index.html")}>Home</a>`), html);
   assert.ok(html.includes(`<a ${link("work.uart.html")}>uart</a>`), html);
   assert.ok(html.includes(`<a ${link("work.uart_rx.html")}><text>`), html);

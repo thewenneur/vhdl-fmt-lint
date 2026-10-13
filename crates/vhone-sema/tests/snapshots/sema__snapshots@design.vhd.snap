@@ -1,0 +1,19 @@
+---
+source: crates/vhone-sema/tests/sema.rs
+expression: analyze(&text)
+input_file: crates/vhone-sema/tests/data/design.vhd
+---
+leaf.vhd: work
+resets.vhd: work
+fsm.vhd: work
+leaf.vhd:7:5: sema/inout-port: inout port `pad_in` is never driven, so it could be `in`
+leaf.vhd:8:5: sema/inout-port: inout port `pad_out` is never read, so it could be `out`
+resets.vhd:12:10: sema/unread-signal: signal `mem` is assigned but never read
+resets.vhd:16:35: sema/open-input: input port `a` is left open and has no default value
+resets.vhd:18:35: sema/open-input: input port `a` is left open and has no default value
+resets.vhd:27:7: sema/missing-reset: `data` is not reset by `arst_n` in this process, so the reset acts as an enable on it
+resets.vhd:36:10: sema/mixed-reset: `arst_n` resets this process synchronously but the process at line 23 asynchronously
+resets.vhd:56:8: sema/reset-polarity: `rst` resets when low here but when high at line 47
+resets.vhd:67:10: sema/reset-polarity: `rst_n` is named as active low but resets when high here
+fsm.vhd:39:12: sema/fsm-stuck-state: `state` never leaves state `DONE` once there, except by a reset
+fsm.vhd:40:12: sema/fsm-unreachable-state: no transition of `state` reaches state `ORPHAN` of `state_t`

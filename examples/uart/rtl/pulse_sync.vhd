@@ -39,7 +39,7 @@ begin
   begin
     if rising_edge(clk_b) then
       -- `meta` is the first flip-flop of the synchronizer.
-      -- vfl-ignore sema/clock-domain-crossing
+      -- vhone-ignore sema/clock-domain-crossing
       sync <= stable(0) & meta & toggle;
     end if;
   end process destination;

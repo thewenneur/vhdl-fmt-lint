@@ -28,7 +28,7 @@ async function run() {
   await vscode.window.showTextDocument(doc);
   assert.equal(doc.languageId, "vhdl");
 
-  const extension = vscode.extensions.getExtension("thewenneur.vfl");
+  const extension = vscode.extensions.getExtension("thewenneur.vhone");
   await until("the extension to activate", () => extension.isActive);
 
   const diagnostics = await until("diagnostics", () => {
@@ -37,7 +37,7 @@ async function run() {
   });
   const unused = diagnostics.find((d) => d.code === "sema/unused-signal");
   assert.ok(unused, `no sema/unused-signal in ${JSON.stringify(diagnostics)}`);
-  assert.equal(unused.source, "vfl");
+  assert.equal(unused.source, "vhone");
   assert.equal(unused.range.start.line, 8);
 
   const edits = await vscode.commands.executeCommand(
@@ -119,22 +119,22 @@ async function run() {
   // Code generation: an instantiation at the cursor, and a testbench file.
   const scratch = await vscode.workspace.openTextDocument({ language: "vhdl", content: "" });
   await vscode.window.showTextDocument(scratch);
-  await vscode.commands.executeCommand("vfl.insertInstance", "work.e2e_top");
+  await vscode.commands.executeCommand("vhone.insertInstance", "work.e2e_top");
   assert.match(scratch.getText(), /^u_e2e_top : entity work\.e2e_top\n  port map \(/);
   await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor");
 
-  await vscode.commands.executeCommand("vfl.generateTestbench", "e2e_top");
+  await vscode.commands.executeCommand("vhone.generateTestbench", "e2e_top");
   const tb = vscode.window.activeTextEditor?.document;
   assert.equal(tb && path.basename(tb.uri.fsPath), "e2e_top_tb.vhd");
   assert.match(tb.getText(), /dut : entity work\.e2e_top/);
 
   // Documentation: written where `[doc]` says, the index returned.
-  const index = await vscode.commands.executeCommand("vfl.generateDocs");
+  const index = await vscode.commands.executeCommand("vhone.generateDocs");
   assert.equal(index, path.join(folder, "doc", "index.html"));
   assert.ok(fs.existsSync(path.join(folder, "doc", "work.e2e_top.html")));
 
   // Diagrams: the page of the file's entity, in a webview beside the editor.
-  const page = await vscode.commands.executeCommand("vfl.showDiagrams", uri);
+  const page = await vscode.commands.executeCommand("vhone.showDiagrams", uri);
   assert.equal(path.basename(page), "work.e2e_top.html");
   assert.ok(!page.startsWith(folder), `${page} is not in the extension's storage`);
   const webviewTab = (label) =>
@@ -142,7 +142,7 @@ async function run() {
       .flatMap((g) => g.tabs)
       .find((t) => t.input instanceof vscode.TabInputWebview && t.label === label);
   await until("the diagrams view", () => webviewTab("e2e_top"));
-  await vscode.commands.executeCommand("vfl.openDocPage", "index.html");
+  await vscode.commands.executeCommand("vhone.openDocPage", "index.html");
   await until("the index in the diagrams view", () => webviewTab("Documentation"));
 }
 
