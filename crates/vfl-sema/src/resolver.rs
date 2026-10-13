@@ -451,6 +451,8 @@ impl<'a> Resolver<'a> {
             subtype: None,
             type_def: None,
             params: None,
+            width: None,
+            value: None,
         });
         id
     }
@@ -542,8 +544,23 @@ impl<'a> Resolver<'a> {
             .children()
             .find(|n| n.kind() == SyntaxKind::SUBTYPE_INDICATION)
             .and_then(|n| self.subtype_mark(&n));
+        let width = node
+            .children()
+            .find(|n| n.kind() == SyntaxKind::SUBTYPE_INDICATION)
+            .and_then(|n| self.indication_width(&n));
+        let value = if kind == DeclKind::Constant {
+            node.children_with_tokens()
+                .skip_while(|e| e.kind() != SyntaxKind::COLON_EQ)
+                .find_map(|e| e.into_node())
+                .and_then(|e| self.static_value(&e))
+        } else {
+            None
+        };
         for &id in &ids {
-            self.decls[id.index as usize].subtype = subtype;
+            let decl = &mut self.decls[id.index as usize];
+            decl.subtype = subtype;
+            decl.width = width;
+            decl.value = value;
         }
         if kind == DeclKind::Constant {
             // The full declaration of a deferred constant completes the one
@@ -736,6 +753,17 @@ impl<'a> Resolver<'a> {
                     }
                     _ => {
                         self.with_access(Access::Other, |s| s.visit(&def));
+                        if def.kind() == SyntaxKind::ARRAY_TYPE_DEF {
+                            // `array (0 to 7) of bit`: a constrained array.
+                            let mut indexes = def
+                                .children()
+                                .filter(|n| !matches!(n.kind(), SyntaxKind::SUBTYPE_INDICATION));
+                            if let (Some(index), None) = (indexes.next(), indexes.next()) {
+                                let value = |n: &SyntaxNode| self.named_value(n);
+                                self.decls[id.index as usize].width =
+                                    crate::rtl::range_width(&index, &value);
+                            }
+                        }
                         self.type_definition(&def)
                     }
                 };
@@ -1283,6 +1311,35 @@ impl<'a> Resolver<'a> {
             Some(TypeDef::Integer) => TypeDef::Integer,
             Some(TypeDef::Real) => TypeDef::Real,
             _ => TypeDef::Scalar,
+        }
+    }
+
+    /// The value of a constant a resolved name refers to.
+    fn named_value(&self, name: &SyntaxNode) -> Option<i64> {
+        self.decl(self.resolved_decl(name)?)?.value
+    }
+
+    /// The value of a static integer expression, just resolved.
+    fn static_value(&self, expr: &SyntaxNode) -> Option<i64> {
+        crate::rtl::static_int(expr, &|n| self.named_value(n))
+    }
+
+    /// The width of a subtype indication: `std_logic_vector(7 downto 0)`,
+    /// or a subtype mark of known width.
+    fn indication_width(&self, indication: &SyntaxNode) -> Option<u32> {
+        let mark = indication.children().find(|n| {
+            matches!(
+                n.kind(),
+                SyntaxKind::NAME | SyntaxKind::SELECTED_NAME | SyntaxKind::CALL_EXPR
+            )
+        })?;
+        if mark.kind() == SyntaxKind::CALL_EXPR {
+            let list = mark
+                .children()
+                .find(|n| n.kind() == SyntaxKind::ASSOCIATION_LIST)?;
+            crate::rtl::constraint_width(&list, &|n| self.named_value(n))
+        } else {
+            self.decl(self.type_mark(&mark)?)?.width
         }
     }
 
@@ -2486,10 +2543,11 @@ impl<'a> Resolver<'a> {
                 self.with_access(Access::Other, |s| s.visit_children(node));
                 if let Some(name) = designator(node) {
                     let id = self.declare(&name, DeclKind::Subtype, node);
-                    self.decls[id.index as usize].subtype = node
-                        .children()
-                        .find(|n| n.kind() == SUBTYPE_INDICATION)
-                        .and_then(|n| self.subtype_mark(&n));
+                    let indication = node.children().find(|n| n.kind() == SUBTYPE_INDICATION);
+                    self.decls[id.index as usize].subtype =
+                        indication.as_ref().and_then(|n| self.subtype_mark(n));
+                    self.decls[id.index as usize].width =
+                        indication.as_ref().and_then(|n| self.indication_width(n));
                 }
             }
             ALIAS_DECL => {
@@ -2723,7 +2781,7 @@ fn required_ranges(process: &SyntaxNode) -> Option<Vec<TextRange>> {
 }
 
 /// `rising_edge(clk)`, `falling_edge(clk)` or `clk'event`.
-fn is_clock_edge(node: &SyntaxNode) -> bool {
+pub(crate) fn is_clock_edge(node: &SyntaxNode) -> bool {
     match node.kind() {
         SyntaxKind::CALL_EXPR => node
             .children()

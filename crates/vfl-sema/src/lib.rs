@@ -38,6 +38,7 @@ mod checks;
 mod decl;
 mod diagnostic;
 mod resolver;
+mod rtl;
 mod stdlib;
 mod syntax;
 mod typeck;
