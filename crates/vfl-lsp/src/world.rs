@@ -5,13 +5,13 @@
 //! over the parsed project, then the analysis reuses the results of every
 //! design unit the edit cannot have affected.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use vfl_config::Config;
 use vfl_lint::FileSettings;
 use vfl_project::{
-    Encoding, Project, ProjectRoot, RootKind, SourceFile, collect_sources, find_root,
+    Encoding, Project, ProjectRoot, RootKind, SourceFile, collect_sources, decode, find_root,
 };
 use vfl_sema::{Analysis, FileId};
 use vfl_syntax::{LineIndex, TextSize};
@@ -21,6 +21,8 @@ pub struct World {
     pub project: Project,
     /// Open documents, by path.
     pub overlays: HashMap<PathBuf, String>,
+    /// Open documents that are not files of the project.
+    outside: HashSet<PathBuf>,
     pub analysis: Analysis,
     pub lint: Vec<vfl_lint::Diagnostic>,
     pub config_errors: Vec<String>,
@@ -42,6 +44,7 @@ impl World {
             analysis: Analysis::new(Vec::new()),
             project,
             overlays: HashMap::new(),
+            outside: HashSet::new(),
             lint: Vec::new(),
             config_errors: Vec::new(),
             configs: HashMap::new(),
@@ -65,6 +68,7 @@ impl World {
             root,
             analysis: Analysis::new(Vec::new()),
             overlays: HashMap::new(),
+            outside: HashSet::new(),
             lint: Vec::new(),
             config_errors: Vec::new(),
             configs: HashMap::new(),
@@ -78,6 +82,7 @@ impl World {
         self.configs.clear();
         self.root = find_root(&self.root.dir);
         (self.project, self.load_error) = load(&self.root);
+        self.outside.clear();
         let overlays: Vec<(PathBuf, String)> = self.overlays.drain().collect();
         for (path, text) in overlays {
             self.set_text(path, text);
@@ -102,13 +107,25 @@ impl World {
         })
     }
 
-    /// Sets the text of an open document.
+    /// Sets the text of an open document. Opening a document that matches
+    /// the file on disk changes nothing, so it does not analyze again.
     pub fn set_text(&mut self, path: PathBuf, text: String) {
+        if self
+            .project
+            .file_index(&path)
+            .is_some_and(|i| *self.project.files[i].text == *text)
+        {
+            self.overlays.insert(path, text);
+            return;
+        }
         let standard = self.config(&path).standard();
         let file = SourceFile::new(path.clone(), text.clone(), Encoding::Utf8, standard);
         match self.project.file_index(&path) {
             Some(i) => self.project.files[i] = file,
-            None => self.project.files.push(file),
+            None => {
+                self.project.files.push(file);
+                self.outside.insert(path.clone());
+            }
         }
         self.overlays.insert(path, text);
         self.dirty = true;
@@ -120,26 +137,40 @@ impl World {
         self.reread(path);
     }
 
-    /// Re-reads a file from disk (created, changed or deleted).
+    /// Re-reads a file from disk (created, changed or deleted). A file
+    /// whose text did not change is left as it is.
     pub fn reread(&mut self, path: &Path) {
         if self.overlays.contains_key(path) {
             return;
         }
         let index = self.project.file_index(path);
-        let in_project = path.starts_with(&self.root.dir)
-            && collect_sources(&self.root.dir, &self.project.config.project)
-                .is_ok_and(|paths| paths.iter().any(|p| p == path));
+        // A file loaded with the project, rather than a document opened
+        // from elsewhere.
+        let known = index.is_some() && !self.outside.remove(path);
+        let read = std::fs::read(path).ok().map(decode);
+        if let (true, Some(i), Some((text, _))) = (known, index, &read)
+            && *self.project.files[i].text == **text
+        {
+            return;
+        }
+        // Whether the file belongs to the project: a file loaded with it
+        // does; another one, if the project's file patterns take it.
+        let in_project = read.is_some()
+            && (known
+                || path.starts_with(&self.root.dir)
+                    && collect_sources(&self.root.dir, &self.project.config.project)
+                        .is_ok_and(|paths| paths.iter().any(|p| p == path)));
         let standard = self.config(path).standard();
-        match (
-            index,
-            in_project.then(|| SourceFile::read(path.to_owned(), standard)),
-        ) {
-            (Some(i), Some(Ok(file))) => self.project.files[i] = file,
-            (None, Some(Ok(file))) => self.project.files.push(file),
-            (Some(i), _) => {
+        let file = read
+            .filter(|_| in_project)
+            .map(|(text, encoding)| SourceFile::new(path.to_owned(), text, encoding, standard));
+        match (index, file) {
+            (Some(i), Some(file)) => self.project.files[i] = file,
+            (None, Some(file)) => self.project.files.push(file),
+            (Some(i), None) => {
                 self.project.files.remove(i);
             }
-            (None, _) => return,
+            (None, None) => return,
         }
         self.dirty = true;
     }
@@ -275,5 +306,40 @@ mod tests {
         let world = World::new(dir.path());
         assert_eq!(world.project.files.len(), 1);
         assert_eq!(world.config_errors.len(), 1, "{:?}", world.config_errors);
+    }
+
+    #[test]
+    fn unchanged_files_are_not_analyzed_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.vhd");
+        let text = "entity a is\nend entity;\n";
+        std::fs::write(&path, text).unwrap();
+        let mut world = World::new(dir.path());
+        assert!(!world.dirty);
+
+        // Opening and closing a file as it is on disk.
+        world.set_text(path.clone(), text.into());
+        assert!(!world.dirty);
+        world.close(&path);
+        assert!(!world.dirty);
+
+        // An edit, then closing without saving: back to the disk text.
+        world.set_text(path.clone(), format!("{text}-- edit\n"));
+        assert!(world.dirty);
+        world.refresh();
+        world.close(&path);
+        assert!(world.dirty);
+        assert_eq!(&*world.project.files[0].text, text);
+        world.refresh();
+
+        // A document from outside the project leaves it once closed.
+        let other = tempfile::tempdir().unwrap();
+        let outside = other.path().join("b.vhd");
+        std::fs::write(&outside, text).unwrap();
+        world.set_text(outside.clone(), text.into());
+        assert_eq!(world.project.files.len(), 2);
+        world.refresh();
+        world.close(&outside);
+        assert_eq!(world.project.files.len(), 1);
     }
 }
