@@ -435,7 +435,8 @@ mod tests {
 
     #[test]
     fn design_doc_config_example_parses() {
-        let doc = include_str!("../../../docs/design.md");
+        // Git may check the doc out with CRLF line endings on Windows.
+        let doc = include_str!("../../../docs/design.md").replace("\r\n", "\n");
         let section = &doc[doc.find("## Configuration").unwrap()..];
         let start = section.find("```toml\n").unwrap() + "```toml\n".len();
         let end = start + section[start..].find("```").unwrap();
