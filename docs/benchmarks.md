@@ -66,6 +66,25 @@ places. On its valid part, rust_hdl reports 2 false errors that vfl does not:
 `table(3)`, a call without arguments to a function whose array result is indexed
 (LRM 9.3.4; GHDL's VESTS test tc1071 relies on it), and `sll` on a `bit_vector`.
 
+### Editing
+
+`crates/vfl-lsp/examples/edit_latency.rs` opens a project as the language server does,
+then for 8 files spread over it makes 3 edits each and times the refresh, from the new
+text to fresh diagnostics (inference, analysis and lint). "Inside a unit" appends a
+comment; "type change" replaces the first `integer` with `natural` or `positive`.
+
+| Project | Open | Inside a unit (median / max) | Type change (median / max) |
+|---|---:|---:|---:|
+| neorv32 | 110 ms | 7 / 11 ms | 6 / 9 ms |
+| OSVVM | 220 ms | 8 / 68 ms | 15 / 76 ms |
+| UVVM | 727 ms | 32 / 48 ms | 40 / 757 ms |
+| VUnit | 365 ms | 16 / 100 ms | 16 / 25 ms |
+
+Before, every edit re-analyzed and re-linted the whole project: a median of 92 ms on
+neorv32, 181 ms on OSVVM, 778 ms on UVVM and 291 ms on VUnit. The slowest edits now
+change a package that most of the project uses (UVVM's `types_pkg`), which re-analyzes
+everything that depends on it.
+
 ## Running it
 
 ```sh

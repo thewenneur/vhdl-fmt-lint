@@ -4,7 +4,8 @@
 //! syntax errors, the semantic checks of `vfl-sema` (`sema/*`), style rules
 //! that look at one file (`style/*`) and naming conventions (`naming/*`).
 //! Each rule's level comes from the file's `[lint]` config (a preset plus
-//! per-rule overrides), and `-- vfl-ignore` comments silence findings. Some
+//! per-rule overrides), and `-- vfl-ignore` comments silence findings.
+//! [`lint_cached`] reuses the findings of files nothing changed for. Some
 //! findings carry a [`Fix`]; [`apply_fixes`] applies them. [`report`]
 //! prints the result for people, tools and CI.
 
@@ -15,11 +16,12 @@ mod style;
 mod suppress;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use rayon::prelude::*;
 use vfl_config::{Config, Level};
 use vfl_sema::{Analysis, FileId};
-use vfl_syntax::{SyntaxError, TextRange};
+use vfl_syntax::{GreenNode, SyntaxError, TextRange};
 
 pub use rules::{NAMING_KINDS, RULES, Rule};
 pub use suppress::Suppressions;
@@ -78,6 +80,31 @@ pub struct LintResult {
 
 /// Lints `files` of `analysis`.
 pub fn lint(analysis: &Analysis, files: &[FileSettings]) -> LintResult {
+    lint_cached(analysis, files, &mut LintCache::default())
+}
+
+/// The findings of a previous lint run, per file.
+#[derive(Default)]
+pub struct LintCache {
+    files: HashMap<PathBuf, CachedFile>,
+}
+
+struct CachedFile {
+    green: GreenNode,
+    config: Config,
+    sema: Vec<vfl_sema::Diagnostic>,
+    diagnostics: Vec<Diagnostic>,
+    errors: Vec<String>,
+}
+
+/// Like [`lint`], but reuses a file's findings from `cache` when its tree,
+/// its config, its semantic diagnostics and its declarations are the same
+/// as in the run that filled the cache; then updates the cache.
+pub fn lint_cached(
+    analysis: &Analysis,
+    files: &[FileSettings],
+    cache: &mut LintCache,
+) -> LintResult {
     let mut sema: HashMap<FileId, Vec<&vfl_sema::Diagnostic>> = HashMap::new();
     for d in analysis.diagnostics() {
         sema.entry(d.file).or_default().push(d);
@@ -86,19 +113,54 @@ pub fn lint(analysis: &Analysis, files: &[FileSettings]) -> LintResult {
     for (_, decl) in analysis.decls() {
         decls.entry(decl.file).or_default().push(decl);
     }
-    let results: Vec<(Vec<Diagnostic>, Vec<String>)> = files
+    let results: Vec<(Vec<Diagnostic>, Vec<String>, Option<CachedFile>)> = files
         .par_iter()
         .map(|settings| {
-            lint_file(
+            let file = &analysis.files()[settings.file as usize];
+            let file_sema = sema.get(&settings.file).map(Vec::as_slice).unwrap_or(&[]);
+            if let Some(cached) = cache.files.get(&file.path)
+                && std::ptr::eq(&*cached.green, &*file.green)
+                && cached.config == *settings.config
+                && cached.sema.len() == file_sema.len()
+                && cached.sema.iter().zip(file_sema).all(|(a, b)| a == *b)
+                && !analysis.file_reanalyzed(settings.file)
+            {
+                let mut diagnostics = cached.diagnostics.clone();
+                for d in &mut diagnostics {
+                    d.file = settings.file;
+                }
+                return (diagnostics, cached.errors.clone(), None);
+            }
+            let (diagnostics, errors) = lint_file(
                 analysis,
                 settings,
-                sema.get(&settings.file).map(Vec::as_slice).unwrap_or(&[]),
+                file_sema,
                 decls.get(&settings.file).map(Vec::as_slice).unwrap_or(&[]),
-            )
+            );
+            let cached = CachedFile {
+                green: file.green.clone(),
+                config: settings.config.clone(),
+                sema: file_sema.iter().map(|d| (*d).clone()).collect(),
+                diagnostics: diagnostics.clone(),
+                errors: errors.clone(),
+            };
+            (diagnostics, errors, Some(cached))
         })
         .collect();
     let mut out = LintResult::default();
-    for (diagnostics, errors) in results {
+    let mut kept: HashMap<PathBuf, CachedFile> = HashMap::new();
+    for ((diagnostics, errors, cached), settings) in results.into_iter().zip(files) {
+        let path = &analysis.files()[settings.file as usize].path;
+        match cached {
+            Some(cached) => {
+                kept.insert(path.clone(), cached);
+            }
+            None => {
+                if let Some(cached) = cache.files.remove(path) {
+                    kept.insert(path.clone(), cached);
+                }
+            }
+        }
         out.diagnostics.extend(diagnostics);
         for e in errors {
             if !out.config_errors.contains(&e) {
@@ -106,6 +168,7 @@ pub fn lint(analysis: &Analysis, files: &[FileSettings]) -> LintResult {
             }
         }
     }
+    cache.files = kept;
     out.diagnostics
         .sort_by_key(|d| (d.file, d.range.start(), d.range.end(), d.rule));
     out
@@ -203,7 +266,17 @@ fn lint_file(
 /// Analyzes a loaded project: every readable file with its inferred
 /// libraries.
 pub fn analyze(project: &vfl_project::Project) -> Analysis {
-    let inputs = project
+    Analysis::new(analysis_inputs(project))
+}
+
+/// Analyzes a new version of a project, reusing what `previous` found for
+/// the units the changes cannot affect.
+pub fn reanalyze(project: &vfl_project::Project, previous: &Analysis) -> Analysis {
+    previous.update(analysis_inputs(project))
+}
+
+fn analysis_inputs(project: &vfl_project::Project) -> Vec<vfl_sema::FileInput> {
+    project
         .files
         .iter()
         .zip(&project.libraries)
@@ -213,8 +286,7 @@ pub fn analyze(project: &vfl_project::Project) -> Analysis {
             green: file.parse.green().clone(),
             libraries: libraries.iter().map(|(l, _)| l.clone()).collect(),
         })
-        .collect();
-    Analysis::new(inputs)
+        .collect()
 }
 
 /// Applies the fixes' edits to `text`, skipping any that overlap an edit

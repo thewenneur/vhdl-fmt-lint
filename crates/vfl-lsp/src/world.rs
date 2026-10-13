@@ -1,9 +1,9 @@
 //! The server's view of the project: files on disk overlaid with open
 //! editor buffers, their analysis and lint results.
 //!
-//! An edit re-parses only the edited file; library inference and name
-//! resolution then run again over the parsed project, which takes tens
-//! of milliseconds for projects of a few hundred files.
+//! An edit re-parses only the edited file; library inference runs again
+//! over the parsed project, then the analysis reuses the results of every
+//! design unit the edit cannot have affected.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -23,6 +23,7 @@ pub struct World {
     pub lint: Vec<vfl_lint::Diagnostic>,
     pub config_errors: Vec<String>,
     configs: HashMap<PathBuf, Config>,
+    lint_cache: vfl_lint::LintCache,
     /// Files whose text changed since the last analysis.
     pub dirty: bool,
 }
@@ -39,6 +40,7 @@ impl World {
             lint: Vec::new(),
             config_errors: Vec::new(),
             configs: HashMap::new(),
+            lint_cache: vfl_lint::LintCache::default(),
             dirty: true,
         };
         world.refresh();
@@ -119,7 +121,7 @@ impl World {
                 .libraries
                 .resize(self.project.files.len(), Vec::new());
         }
-        self.analysis = vfl_lint::analyze(&self.project);
+        self.analysis = vfl_lint::reanalyze(&self.project, &self.analysis);
         let paths: Vec<PathBuf> = self.project.files.iter().map(|f| f.path.clone()).collect();
         let configs: Vec<Config> = paths.iter().map(|p| self.config(p).clone()).collect();
         let settings: Vec<FileSettings> = self
@@ -134,7 +136,7 @@ impl World {
                 config,
             })
             .collect();
-        let result = vfl_lint::lint(&self.analysis, &settings);
+        let result = vfl_lint::lint_cached(&self.analysis, &settings, &mut self.lint_cache);
         self.lint = result.diagnostics;
         self.config_errors = result.config_errors;
     }
