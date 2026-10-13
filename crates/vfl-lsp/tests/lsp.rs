@@ -511,6 +511,9 @@ fn code_generation_from_entities() {
         action["title"],
         "Generate testbench for `top` in top_tb.vhd"
     );
+    // The edit is computed only when the action is chosen.
+    assert!(action.get("edit").is_none(), "{action}");
+    let action = client.request("codeAction/resolve", action.clone());
     let changes = &action["edit"]["documentChanges"];
     assert_eq!(changes[0]["kind"], "create");
     assert_eq!(changes[0]["uri"], url(&tb_path));

@@ -140,8 +140,19 @@ pub fn generate_request(world: &mut World, params: GenerateParams) -> Result<Gen
 
 pub const TESTBENCH_KIND: &str = "refactor.generate.testbench";
 
+/// What a testbench code action needs to be resolved.
+#[derive(Debug, Serialize, Deserialize)]
+struct TestbenchData {
+    path: PathBuf,
+    entity: String,
+}
+
 /// "Generate testbench for `e`" on an entity declaration of `file`
 /// touching `start..end`, when its testbench file does not exist yet.
+///
+/// Code actions are asked for at every cursor move, so this only reads
+/// the entity headers of the file; the testbench is generated when the
+/// action is chosen ([`resolve`]).
 pub fn code_actions(
     world: &mut World,
     file: FileId,
@@ -150,67 +161,78 @@ pub fn code_actions(
 ) -> Vec<CodeActionOrCommand> {
     let analyzed = &world.analysis.files()[file as usize];
     let path = analyzed.path.clone();
-    // Only the entities under the cursor, so that a request elsewhere costs nothing.
-    let names: Vec<String> = vfl_gen::entity_units(&analyzed.syntax())
+    let entities: Vec<vfl_gen::Entity> = vfl_gen::entity_units(&analyzed.syntax())
         .filter(|u| {
             u.children()
                 .find(|n| n.kind() == vfl_syntax::SyntaxKind::ENTITY_DECL)
                 .is_some_and(|d| d.text_range().start() <= end && start <= d.text_range().end())
         })
-        .filter_map(|u| vfl_gen::Entity::from_unit(&u, "work").map(|e| e.name))
+        .filter_map(|u| vfl_gen::Entity::from_unit(&u, "work"))
         .collect();
+    if entities.is_empty() {
+        return Vec::new();
+    }
+    let extension = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("vhd")
+        .to_owned();
+    let config = world.config(&path).generate.clone();
     let mut out = Vec::new();
-    let mut seen = Vec::new();
-    let found: Vec<Found> = names
-        .iter()
-        .flat_map(|name| vfl_gen::find_entities(&sources(world), Some(name)))
-        .filter(|f| f.path == path && f.range.start() <= end && start <= f.range.end())
-        .collect();
-    for f in found {
-        let Ok(generated) = generate_for(world, Kind::Testbench, &f) else {
-            continue;
-        };
-        let Some(target) = generated.path else {
-            continue;
-        };
-        if target.exists() || seen.contains(&target) {
+    for entity in entities {
+        let name = vfl_gen::testbench_file_name(&entity, &config, &extension);
+        if path.with_file_name(&name).exists() {
             continue;
         }
-        seen.push(target.clone());
-        let Ok(uri) = Url::from_file_path(&target) else {
-            continue;
+        let data = TestbenchData {
+            path: path.clone(),
+            entity: entity.name.clone(),
         };
-        let edit = WorkspaceEdit {
-            document_changes: Some(DocumentChanges::Operations(vec![
-                DocumentChangeOperation::Op(ResourceOp::Create(CreateFile {
-                    uri: uri.clone(),
-                    options: Some(CreateFileOptions {
-                        overwrite: Some(false),
-                        ignore_if_exists: Some(true),
-                    }),
-                    annotation_id: None,
-                })),
-                DocumentChangeOperation::Edit(TextDocumentEdit {
-                    text_document: OptionalVersionedTextDocumentIdentifier { uri, version: None },
-                    edits: vec![OneOf::Left(TextEdit {
-                        range: Range::new(Position::new(0, 0), Position::new(0, 0)),
-                        new_text: generated.text,
-                    })],
-                }),
-            ])),
-            changes: None::<HashMap<Url, Vec<TextEdit>>>,
-            change_annotations: None,
-        };
-        let name = target
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
         out.push(CodeActionOrCommand::CodeAction(CodeAction {
-            title: format!("Generate testbench for `{}` in {name}", f.entity.name),
+            title: format!("Generate testbench for `{}` in {name}", entity.name),
             kind: Some(CodeActionKind::new(TESTBENCH_KIND)),
-            edit: Some(edit),
+            data: serde_json::to_value(data).ok(),
             ..Default::default()
         }));
     }
     out
+}
+
+/// `codeAction/resolve`: adds the edit that creates the testbench file.
+pub fn resolve(world: &mut World, mut action: CodeAction) -> Result<CodeAction, String> {
+    let data: TestbenchData = action
+        .data
+        .clone()
+        .and_then(|d| serde_json::from_value(d).ok())
+        .ok_or("not a vfl code action")?;
+    world.refresh();
+    let found = vfl_gen::find_entities(&sources(world), Some(&data.entity))
+        .into_iter()
+        .find(|f| f.path == data.path)
+        .ok_or_else(|| format!("no entity `{}` in {}", data.entity, data.path.display()))?;
+    let generated = generate_for(world, Kind::Testbench, &found)?;
+    let target = generated.path.ok_or("no testbench file")?;
+    let uri = Url::from_file_path(&target).map_err(|()| "not a file path".to_owned())?;
+    action.edit = Some(WorkspaceEdit {
+        document_changes: Some(DocumentChanges::Operations(vec![
+            DocumentChangeOperation::Op(ResourceOp::Create(CreateFile {
+                uri: uri.clone(),
+                options: Some(CreateFileOptions {
+                    overwrite: Some(false),
+                    ignore_if_exists: Some(true),
+                }),
+                annotation_id: None,
+            })),
+            DocumentChangeOperation::Edit(TextDocumentEdit {
+                text_document: OptionalVersionedTextDocumentIdentifier { uri, version: None },
+                edits: vec![OneOf::Left(TextEdit {
+                    range: Range::new(Position::new(0, 0), Position::new(0, 0)),
+                    new_text: generated.text,
+                })],
+            }),
+        ])),
+        changes: None::<HashMap<Url, Vec<TextEdit>>>,
+        change_annotations: None,
+    });
+    Ok(action)
 }

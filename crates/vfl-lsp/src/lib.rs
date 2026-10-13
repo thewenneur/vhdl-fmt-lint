@@ -72,6 +72,7 @@ pub fn capabilities() -> ServerCapabilities {
                 CodeActionKind::new("source.fixAll.vfl"),
                 CodeActionKind::new(generate::TESTBENCH_KIND),
             ]),
+            resolve_provider: Some(true),
             ..Default::default()
         })),
         ..Default::default()
