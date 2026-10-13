@@ -2,7 +2,8 @@
 
 A Notepad++ plugin that formats and lints VHDL with vfl, as you type, and brings the
 features of the vfl language server to Notepad++: types, parameter hints, completion,
-quick fixes, go to definition, find references, rename and symbol search.
+quick fixes, go to definition, find references, rename and symbol search, and the
+documentation and diagrams of `vfl doc`.
 
 ![Problems shown under each line in Notepad++](screenshot.png)
 
@@ -43,6 +44,9 @@ each file like `vfl lint` does, so names resolve across files, and it reads the 
   searches the declarations of the whole project.
 - **Code generation**: insert an entity or component instantiation or a component
   declaration at the caret, or generate a testbench next to the entity.
+- **Documentation and diagrams**: write the documentation of the project, or open the page
+  of the current file's entity, with its symbol, block diagram, port maps, state machines
+  and hierarchy, in the browser.
 
 ## Commands
 
@@ -65,6 +69,8 @@ Mapper > Plugin commands**.
 | Go to symbol in project | Searches the declarations of the project by name, starting from the word at the caret. |
 | Insert entity instantiation, Insert component instantiation, Insert component declaration | Lists the entities of the project, those of the current file first, and inserts the code for the one picked at the caret. |
 | Generate testbench | Lists the entities of the project and writes a testbench for the one picked next to it (`<entity>_tb.vhd`, see `[generate]` in `vfl.toml`), then opens it. |
+| Generate documentation | Writes the documentation of the current file's project as `vfl doc` does, where and how `[doc]` in `vfl.toml` says, then opens the index: an HTML one in the default browser, a Markdown or AsciiDoc one in Notepad++. |
+| Show diagrams | Writes the HTML documentation of the current file's project to a temporary folder (`%TEMP%\vfl_npp\diagrams`) and opens the page of the first entity (else package) of the file in the default browser. |
 | Show type | Shows what the name at the caret is, as hovering it does. |
 | Show parameters | Shows the parameter hints of the call around the caret. |
 | Complete word | Lists the completions at the caret. Notepad++ keeps **Ctrl+Space** for its own completion, so map this to another key if you use it often. |
@@ -77,6 +83,9 @@ Mapper > Plugin commands**.
 
 The five settings are kept in `plugins\Config\vfl_npp.ini`. Problems in `vfl.toml` are
 shown in a message box, once per problem.
+
+The documentation is made from the files on disk, so save the file first; it is only
+written by the two commands above, never as you type.
 
 A file is VHDL when Notepad++ shows it as VHDL, or its extension is `.vhd`, `.vhdl`, `.vho`
 or `.vht`.
@@ -125,6 +134,8 @@ crates directly:
   parameter hints and completion lists.
 - `src/tools.rs` is the navigation and refactoring side: lists of locations, symbols and
   fixes, jumps and the way back, rename across open files, and highlighting uses.
+- `src/docs.rs` writes the documentation with `vfl_doc`, from the project loaded like
+  `vfl doc` loads it, and finds the page of a file. It is portable and unit-tested too.
 - `src/win.rs` declares the few Win32, Scintilla and Notepad++ definitions it uses.
 
 Messages under lines use Scintilla annotations, which other plugins may also use; the plugin

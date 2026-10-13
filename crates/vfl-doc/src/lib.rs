@@ -135,3 +135,27 @@ pub fn write(design: &Design, config: &DocConfig, dir: &Path) -> std::io::Result
     }
     Ok(files)
 }
+
+/// The id of the page documenting `file`, a file of the project rooted at
+/// `root`: its first entity, else its first package.
+pub fn page_for<'a>(design: &'a Design, root: &Path, file: &Path) -> Option<&'a str> {
+    let mut path = model::relative_path(root, file);
+    if Path::new(&path).is_absolute() {
+        // Not under the root as written: compare the resolved paths.
+        path = model::relative_path(&root.canonicalize().ok()?, &file.canonicalize().ok()?);
+    }
+    let entity = design
+        .entities
+        .iter()
+        .filter(|e| e.file == path)
+        .min_by_key(|e| e.line);
+    match entity {
+        Some(e) => Some(&e.page),
+        None => design
+            .packages
+            .iter()
+            .filter(|p| p.file == path)
+            .min_by_key(|p| p.line)
+            .map(|p| p.page.as_str()),
+    }
+}

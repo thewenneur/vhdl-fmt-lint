@@ -39,6 +39,41 @@ unsafe extern "system" {
     fn GetModuleHandleW(name: *const u16) -> Hwnd;
 }
 
+#[link(name = "shell32")]
+unsafe extern "system" {
+    fn ShellExecuteW(
+        hwnd: Hwnd,
+        operation: *const u16,
+        file: *const u16,
+        parameters: *const u16,
+        directory: *const u16,
+        show: i32,
+    ) -> Hwnd;
+}
+
+const SW_SHOWNORMAL: i32 = 1;
+
+/// Opens `path` with its default application, such as a browser for an
+/// HTML page. Returns whether that worked.
+pub fn shell_open(owner: Hwnd, path: &std::path::Path) -> bool {
+    let operation = wide("open");
+    let file = wide(&path.to_string_lossy());
+    // SAFETY: both strings are NUL-terminated and live across the call;
+    // the other pointers may be null.
+    let result = unsafe {
+        ShellExecuteW(
+            owner,
+            operation.as_ptr(),
+            file.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    // Values above 32 mean success.
+    result as usize > 32
+}
+
 pub const MB_OK: u32 = 0x0;
 pub const MB_OKCANCEL: u32 = 0x1;
 pub const MB_ICONQUESTION: u32 = 0x20;

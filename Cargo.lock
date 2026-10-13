@@ -1001,6 +1001,7 @@ version = "0.1.1"
 dependencies = [
  "tempfile",
  "vfl-config",
+ "vfl-doc",
  "vfl-fmt",
  "vfl-lsp",
  "vfl-project",
