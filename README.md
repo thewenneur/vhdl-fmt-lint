@@ -41,6 +41,13 @@ search for parent configs. See the design doc for the full schema.
 | `vfl-lsp`     | Language server |
 | `vfl-cli`     | The `vfl` binary |
 
+## AI usage disclosure
+
+Most of the code, tests and documentation in this repository are written by Claude
+(Anthropic's AI model, through Claude Code), under the direction of the maintainer, who sets
+the design, reviews every change and decides what is merged. Contributions are held to the
+same standard whoever or whatever wrote them: CI, tests and review.
+
 ## License
 
 Licensed under either of [Apache License 2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), at your option.
