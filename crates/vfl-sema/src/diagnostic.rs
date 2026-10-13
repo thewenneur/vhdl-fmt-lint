@@ -53,4 +53,7 @@ pub mod codes {
     pub const UNNEEDED_SENSITIVITY: &str = "sema/unneeded-sensitivity";
     pub const TYPE_MISMATCH: &str = "sema/type-mismatch";
     pub const NO_MATCHING_OVERLOAD: &str = "sema/no-matching-overload";
+    pub const WIDTH_MISMATCH: &str = "sema/width-mismatch";
+    pub const INFERRED_LATCH: &str = "sema/inferred-latch";
+    pub const CLOCK_DOMAIN_CROSSING: &str = "sema/clock-domain-crossing";
 }

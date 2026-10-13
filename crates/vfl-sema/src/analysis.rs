@@ -696,7 +696,7 @@ impl Analysis {
         for (id, decl) in self.decls() {
             let _ = writeln!(
                 out,
-                "decl {}:{} {} {:?} {}:{:?} {:?} {:?} {:?} {:?} {:?}",
+                "decl {}:{} {} {:?} {}:{:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?}",
                 id.unit,
                 id.index,
                 decl.name,
@@ -708,6 +708,8 @@ impl Analysis {
                 decl.subtype,
                 decl.type_def,
                 decl.params,
+                decl.width,
+                decl.value,
             );
             if let Some(members) = &decl.members {
                 let _ = writeln!(out, "  members {:?}", members.iter().collect::<Vec<_>>());
@@ -872,6 +874,8 @@ fn interface_hash(result: &UnitResult) -> u64 {
         decl.subtype.hash(&mut h);
         decl.type_def.hash(&mut h);
         decl.params.hash(&mut h);
+        decl.width.hash(&mut h);
+        decl.value.hash(&mut h);
         match &decl.members {
             Some(region) => {
                 1u8.hash(&mut h);

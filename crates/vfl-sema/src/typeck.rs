@@ -29,7 +29,7 @@ use crate::syntax::{designator, has_token, is_designator};
 /// A fast hasher for small keys (ranges, ids); the default SipHash is
 /// noticeably slower here, and nothing hashes untrusted keys.
 #[derive(Default)]
-struct FxHasher(u64);
+pub(crate) struct FxHasher(u64);
 
 impl Hasher for FxHasher {
     fn write(&mut self, bytes: &[u8]) {
@@ -57,7 +57,7 @@ impl Hasher for FxHasher {
     }
 }
 
-type FxMap<K, V> = HashMap<K, V, BuildHasherDefault<FxHasher>>;
+pub(crate) type FxMap<K, V> = HashMap<K, V, BuildHasherDefault<FxHasher>>;
 
 /// A type: a base type declaration, or the type of a numeric literal.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -232,6 +232,16 @@ pub(crate) fn check_unit(
         for child in design_unit.children() {
             checker.walk(&child);
         }
+        // The hardware checks share the lookup tables.
+        let rtl = crate::rtl::check_unit(
+            ctx,
+            unit,
+            design_unit,
+            result,
+            &checker.refs_at,
+            &checker.decls_at,
+        );
+        checker.diags.extend(rtl);
     }
     Outcome {
         narrowed: checker.narrowed,

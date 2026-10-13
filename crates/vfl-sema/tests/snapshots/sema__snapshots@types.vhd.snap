@@ -25,6 +25,7 @@ invalid.vhd:31:11: sema/no-matching-overload: no overload of `to_byte` accepts (
 invalid.vhd:32:8: sema/no-matching-overload: no overload of `to_integer` accepts (`STD_LOGIC_VECTOR`)
 invalid.vhd:33:28: sema/type-mismatch: cannot convert `integer` to `STD_LOGIC_VECTOR`
 invalid.vhd:34:7: sema/type-mismatch: expected `integer`, found `STD_LOGIC_VECTOR`
+invalid.vhd:35:11: sema/width-mismatch: `dout` has 8 elements but the value has 4
 invalid.vhd:36:8: sema/type-mismatch: expected `boolean`, found `STD_ULOGIC`
 invalid.vhd:38:11: sema/sensitivity-list: the process reads `n` but its sensitivity list does not name it [fix: Add `n` to the sensitivity list]
 invalid.vhd:38:12: sema/unneeded-sensitivity: `clk` is in the sensitivity list but the process never reads it

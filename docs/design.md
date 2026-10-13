@@ -111,6 +111,25 @@ Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
   units of the same name in one library.
 - Each resolved reference records its access (read, write, both), which feeds the
   unused / unread / undriven / sensitivity checks.
+- Hardware checks (`crates/vfl-sema/src/rtl.rs`) run with type checking, per unit:
+  - `sema/width-mismatch`: an assignment, initial value or port / generic association
+    where a vector of scalars gets a value with a different static number of elements.
+    Declarations record a width when their one-dimensional constraint has static bounds
+    (literals and constants with a static integer value, through subtypes); expression
+    widths come from string and bit string literals, objects, slices, `&`, logical
+    operators, type conversions, and `numeric_std` `+` / `-` (the wider operand).
+    Aggregates, function calls and anything generic-dependent are unknown and never
+    reported.
+  - `sema/inferred-latch`: a combinational process (a sensitivity list or a single
+    trailing `wait on`, no clock edge, no delayed `after` assignments) that assigns a
+    signal on some paths but not all. Paths follow `if` (an `else` is needed), `case`
+    (every alternative), conditional assignments without a final `else`, and loops
+    (assumed to run). Signals assigned in part (`s(3) <=`) are left alone.
+  - `sema/clock-domain-crossing` (info): in an architecture, a signal registered by a
+    process clocked on one clock and read by a process clocked on another. A plain copy
+    into a register (`sync_1 <= s;`, the first stage of a synchronizer), memories (arrays
+    of arrays, as in dual-clock RAMs) and processes with `wait` statements are not
+    reported.
 - Unknown things degrade to "unknown" instead of cascading errors: a library that is not in
   the project (vendor primitives such as `unisim`) makes its names unchecked and is reported
   once as info, and names that may come from it are not reported.
@@ -197,7 +216,8 @@ Guarantees, enforced in tests, in the corpus job and at runtime:
 - Categories: `syntax/*` (parse errors), `sema/*` (cross-file semantic checks: unresolved
   names and units, duplicates, unassociated ports, unused signals / variables / constants /
   ports / generics / use clauses, unread and undriven signals, incomplete or unneeded
-  sensitivity lists), `style/*` (one file: buffer ports, Synopsys arithmetic packages, line
+  sensitivity lists, width mismatches, inferred latches, clock domain crossings),
+  `style/*` (one file: buffer ports, Synopsys arithmetic packages, line
   length, trailing whitespace, tabs, process labels, positional association, `'event` clock
   edges, file names) and `naming/*` (one rule per kind of declaration, off until
   configured, with `prefix`, `suffix`, `case` and `pattern` options).
@@ -366,6 +386,6 @@ and far fewer false errors, with zero configuration.
    record elements and protected type methods (done).
 8. More rules: width mismatches in assignments and associations, inferred latches
    (combinational processes that do not assign a signal on every path), clock domain
-   hints (a signal sampled by two clocks without synchronization).
+   hints (a signal sampled by two clocks without synchronization) (done).
 9. More import formats for library lists: VUnit `run.py`, FuseSoC `.core`, Vivado and
    Quartus project files, alongside today's `vhdl_ls.toml`.

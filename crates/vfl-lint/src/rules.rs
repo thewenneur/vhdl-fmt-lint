@@ -171,6 +171,27 @@ pub const RULES: &[Rule] = &[
         false,
     ),
     rule(
+        codes::WIDTH_MISMATCH,
+        "An assignment, initial value or port association gives a vector a value with a different static number of elements.",
+        Warn,
+        Error,
+        false,
+    ),
+    rule(
+        codes::INFERRED_LATCH,
+        "A combinational process assigns a signal on some paths but not all, which infers a latch.",
+        Warn,
+        Error,
+        false,
+    ),
+    rule(
+        codes::CLOCK_DOMAIN_CROSSING,
+        "A signal registered on one clock is used in logic clocked by another without a synchronizer.",
+        Info,
+        Warn,
+        false,
+    ),
+    rule(
         "style/no-buffer-ports",
         "A port has mode `buffer`.",
         Warn,

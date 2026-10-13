@@ -200,6 +200,13 @@ pub struct Decl {
     pub type_def: Option<Arc<TypeDef>>,
     /// A subprogram's parameters, in order.
     pub params: Option<Arc<[DeclId]>>,
+    /// The number of elements of an object, subtype or array type whose
+    /// one-dimensional constraint has static bounds: `8` for
+    /// `std_logic_vector(7 downto 0)`.
+    pub width: Option<u32>,
+    /// The value of a constant whose initial value is a static integer
+    /// expression.
+    pub value: Option<i64>,
 }
 
 /// The definition of a type, as far as type checking needs it.
