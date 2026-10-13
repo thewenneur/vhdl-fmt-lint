@@ -24,6 +24,8 @@ pub struct World {
     pub analysis: Analysis,
     pub lint: Vec<vfl_lint::Diagnostic>,
     pub config_errors: Vec<String>,
+    /// Why the project could not be loaded as configured.
+    load_error: Option<String>,
     configs: HashMap<PathBuf, Config>,
     lint_cache: vfl_lint::LintCache,
     /// Files whose text changed since the last analysis.
@@ -33,8 +35,9 @@ pub struct World {
 impl World {
     pub fn new(root: &Path) -> World {
         let root = find_root(root);
-        let project = load(&root);
+        let (project, load_error) = load(&root);
         let mut world = World {
+            load_error,
             root,
             analysis: Analysis::new(Vec::new()),
             project,
@@ -58,6 +61,7 @@ impl World {
         };
         World {
             project: empty(&root, Config::default()),
+            load_error: None,
             root,
             analysis: Analysis::new(Vec::new()),
             overlays: HashMap::new(),
@@ -73,7 +77,7 @@ impl World {
     pub fn reload(&mut self) {
         self.configs.clear();
         self.root = find_root(&self.root.dir);
-        self.project = load(&self.root);
+        (self.project, self.load_error) = load(&self.root);
         let overlays: Vec<(PathBuf, String)> = self.overlays.drain().collect();
         for (path, text) in overlays {
             self.set_text(path, text);
@@ -170,6 +174,9 @@ impl World {
         let result = vfl_lint::lint_cached(&self.analysis, &settings, &mut self.lint_cache);
         self.lint = result.diagnostics;
         self.config_errors = result.config_errors;
+        if let Some(error) = &self.load_error {
+            self.config_errors.insert(0, error.clone());
+        }
     }
 
     pub fn file_id(&self, path: &Path) -> Option<FileId> {
@@ -186,13 +193,21 @@ impl World {
     }
 }
 
-fn load(root: &ProjectRoot) -> Project {
-    Project::load(root.clone()).unwrap_or_else(|_| {
-        empty(
-            root,
-            vfl_config::load_for_dir(&root.dir).unwrap_or_default(),
-        )
-    })
+/// Loads the project. When that fails, an invalid `vfl.toml` say, the
+/// sources are still loaded with the default settings, and the error is
+/// returned to be reported.
+fn load(root: &ProjectRoot) -> (Project, Option<String>) {
+    match Project::load(root.clone()) {
+        Ok(project) => (project, None),
+        Err(error) => {
+            let config = vfl_config::load_for_dir(&root.dir).unwrap_or_default();
+            let project = collect_sources(&root.dir, &config.project)
+                .ok()
+                .and_then(|paths| Project::from_paths(root.clone(), config.clone(), paths).ok())
+                .unwrap_or_else(|| empty(root, config));
+            (project, Some(error.to_string()))
+        }
+    }
 }
 
 fn empty(root: &ProjectRoot, config: Config) -> Project {
@@ -246,4 +261,19 @@ pub fn offset(text: &str, index: &LineIndex, position: lsp_types::Position) -> T
         units += c.len_utf16() as u32;
     }
     TextSize::from(line_end as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_config_keeps_sources_and_reports() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("vfl.toml"), "[format]\nindent = \"x\"\n").unwrap();
+        std::fs::write(dir.path().join("a.vhd"), "entity a is\nend entity;\n").unwrap();
+        let world = World::new(dir.path());
+        assert_eq!(world.project.files.len(), 1);
+        assert_eq!(world.config_errors.len(), 1, "{:?}", world.config_errors);
+    }
 }

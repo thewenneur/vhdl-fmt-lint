@@ -9,4 +9,6 @@ pub mod engine;
 #[cfg(windows)]
 mod plugin;
 #[cfg(windows)]
+mod tools;
+#[cfg(windows)]
 mod win;

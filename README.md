@@ -52,8 +52,9 @@ To build the `.vsix` yourself: `cd editors/vscode && npm ci && npm run package`.
 ### Notepad++
 
 The plugin ([editors/notepadpp](editors/notepadpp/README.md)) has the formatter, the linter
-and the editor features of the language server (types on hover, parameter hints, completion)
-built in, so it does not need `vfl` installed. Download and unzip the `vfl_npp` artifact from
+and the editor features of the language server (types on hover, parameter hints, completion,
+quick fixes, go to definition, references, rename, symbols) built in, so it does not need
+`vfl` installed. Download and unzip the `vfl_npp` artifact from
 the same CI runs, close Notepad++, put `vfl_npp.dll` in a new `plugins\vfl_npp` folder of its
 install directory (usually `C:\Program Files\Notepad++\plugins\vfl_npp`) and start it again.
 The plugin's README covers building it and its commands.

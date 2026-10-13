@@ -1,11 +1,13 @@
-//! Hover, signature help and completion at byte offsets, for editors that
-//! link vfl directly instead of speaking LSP, like the Notepad++ plugin.
+//! The language server's editor features at byte offsets, for editors that
+//! link vfl directly instead of speaking LSP, like the Notepad++ plugin:
+//! hover, signature help, completion, go to definition, references,
+//! highlights, outline, project symbols, rename and quick fixes.
 //!
 //! Each query brings the analysis up to date first, then answers from the
 //! same code as the language server.
 
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use lsp_types::{CompletionItemKind, ParameterLabel};
 use vfl_sema::FileId;
@@ -185,4 +187,283 @@ fn utf16_to_byte(text: &str, units: usize) -> usize {
         seen += c.len_utf16();
     }
     text.len()
+}
+
+/// A place in a file. `text` is the file's text as analyzed, which the
+/// range indexes; it may differ from the file on disk.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Location {
+    /// A file an editor can open: bundled library sources are written to
+    /// a cache directory first.
+    pub path: PathBuf,
+    pub range: Range<usize>,
+    /// The 1-based line of `range.start`.
+    pub line: u32,
+    /// The text of that line, trimmed.
+    pub line_text: String,
+}
+
+fn location(world: &World, file: FileId, range: vfl_syntax::TextRange) -> Option<Location> {
+    let path = crate::handlers::openable_path(world, file)?;
+    let doc = world.doc(file);
+    let line = doc.index.line_col(doc.text, range.start()).line;
+    let start = usize::from(doc.index.line_start(line).unwrap_or_default());
+    let end = doc.text[start..]
+        .find('\n')
+        .map_or(doc.text.len(), |i| start + i);
+    Some(Location {
+        path,
+        range: range.into(),
+        line: line + 1,
+        line_text: doc.text[start..end].trim().to_owned(),
+    })
+}
+
+/// Where what is named at byte `offset` is declared.
+pub fn definition(world: &mut World, path: &Path, offset: usize) -> Vec<Location> {
+    let Some((file, offset)) = locate(world, path, offset) else {
+        return Vec::new();
+    };
+    let Some(hit) = crate::handlers::hit_at(world, file, offset) else {
+        return Vec::new();
+    };
+    hit.targets
+        .iter()
+        .filter_map(|id| {
+            let decl = world.analysis.decl(*id)?;
+            location(world, decl.file, decl.range)
+        })
+        .collect()
+}
+
+/// Every place in the project that names what is named at byte `offset`,
+/// its declarations included, in file order.
+pub fn references(world: &mut World, path: &Path, offset: usize) -> Vec<Location> {
+    let Some((file, offset)) = locate(world, path, offset) else {
+        return Vec::new();
+    };
+    let Some(hit) = crate::handlers::hit_at(world, file, offset) else {
+        return Vec::new();
+    };
+    crate::handlers::occurrences(world, &hit.targets, true)
+        .into_iter()
+        .filter(|(f, _, _)| !world.analysis.files()[*f as usize].builtin)
+        .filter_map(|(f, range, _)| location(world, f, range))
+        .collect()
+}
+
+/// How a highlighted name is used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Use {
+    Read,
+    Write,
+    /// Declared, or named without reading or writing a value.
+    Other,
+}
+
+/// The places in the file at `path` that name what is named at byte
+/// `offset`, and how each uses it.
+pub fn highlights(world: &mut World, path: &Path, offset: usize) -> Vec<(Range<usize>, Use)> {
+    let Some((file, offset)) = locate(world, path, offset) else {
+        return Vec::new();
+    };
+    let Some(hit) = crate::handlers::hit_at(world, file, offset) else {
+        return Vec::new();
+    };
+    crate::handlers::occurrences(world, &hit.targets, true)
+        .into_iter()
+        .filter(|(f, _, _)| *f == file)
+        .map(|(_, range, access)| {
+            let kind = if access.writes() {
+                Use::Write
+            } else if access.reads() {
+                Use::Read
+            } else {
+                Use::Other
+            };
+            (range.into(), kind)
+        })
+        .collect()
+}
+
+/// A declaration in a file's outline.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Symbol {
+    pub name: String,
+    /// What it is: `entity`, `signal`, `function`...
+    pub kind: &'static str,
+    /// How deeply it is nested in other listed declarations.
+    pub depth: usize,
+    /// The range of its name.
+    pub range: Range<usize>,
+}
+
+/// The declarations of the file at `path`, in order, nested as in the
+/// language server's document symbols.
+pub fn outline(world: &mut World, path: &Path) -> Vec<Symbol> {
+    world.refresh();
+    let Some(file) = world.file_id(path) else {
+        return Vec::new();
+    };
+    let (decls, roots, children) = crate::handlers::outline(world, file);
+    let mut out = Vec::new();
+    let mut stack: Vec<(usize, usize)> = roots.iter().rev().map(|&i| (i, 0)).collect();
+    while let Some((i, depth)) = stack.pop() {
+        let decl = decls[i].1;
+        out.push(Symbol {
+            name: decl.spelling.clone(),
+            kind: decl.kind.describe(),
+            depth,
+            range: decl.range.into(),
+        });
+        stack.extend(children[i].iter().rev().map(|&c| (c, depth + 1)));
+    }
+    out
+}
+
+/// A declaration found by [`project_symbols`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectSymbol {
+    pub name: String,
+    pub kind: &'static str,
+    /// The design unit it is in, unless it is one.
+    pub container: Option<String>,
+    pub location: Location,
+}
+
+/// The project's design units, types, subprograms and package objects
+/// whose name contains `query`, ignoring case.
+pub fn project_symbols(world: &mut World, query: &str) -> Vec<ProjectSymbol> {
+    world.refresh();
+    crate::handlers::workspace_decls(world, query)
+        .into_iter()
+        .filter_map(|id| {
+            let decl = world.analysis.decl(id)?;
+            Some(ProjectSymbol {
+                name: decl.spelling.clone(),
+                kind: decl.kind.describe(),
+                container: (id.index != 0)
+                    .then(|| world.analysis.unit_decls(id.unit)[0].spelling.clone()),
+                location: location(world, decl.file, decl.range)?,
+            })
+        })
+        .collect()
+}
+
+/// The changes to one file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileEdits {
+    pub path: PathBuf,
+    /// The file's text the ranges index, as analyzed.
+    pub text: String,
+    /// Non-overlapping replacements, in order.
+    pub edits: Vec<(Range<usize>, String)>,
+}
+
+/// The name a rename at byte `offset` would change, or why it cannot.
+pub fn prepare_rename(
+    world: &mut World,
+    path: &Path,
+    offset: usize,
+) -> Result<Range<usize>, String> {
+    let (file, offset) = locate(world, path, offset).ok_or("this file is not analyzed")?;
+    Ok(crate::handlers::rename_targets_at(world, file, offset)?
+        .range
+        .into())
+}
+
+/// The edits renaming what is named at byte `offset` to `new_name`,
+/// across the project, by file.
+pub fn rename(
+    world: &mut World,
+    path: &Path,
+    offset: usize,
+    new_name: &str,
+) -> Result<Vec<FileEdits>, String> {
+    let new_name = new_name.trim();
+    crate::handlers::check_identifier(new_name)?;
+    let (file, offset) = locate(world, path, offset).ok_or("this file is not analyzed")?;
+    let hit = crate::handlers::rename_targets_at(world, file, offset)?;
+    let mut out: Vec<FileEdits> = Vec::new();
+    for (f, range) in crate::handlers::rename_ranges(world, &hit.targets) {
+        let analyzed = &world.analysis.files()[f as usize];
+        let i = match out.iter().position(|e| e.path == analyzed.path) {
+            Some(i) => i,
+            None => {
+                out.push(FileEdits {
+                    path: analyzed.path.clone(),
+                    text: analyzed.text.to_string(),
+                    edits: Vec::new(),
+                });
+                out.len() - 1
+            }
+        };
+        out[i].edits.push((range.into(), new_name.to_owned()));
+    }
+    // A file analyzed in two libraries names the same places twice.
+    for file in &mut out {
+        file.edits.sort_by_key(|(r, _)| (r.start, r.end));
+        file.edits.dedup_by(|a, b| a.0 == b.0);
+    }
+    Ok(out)
+}
+
+/// A fix for a problem.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuickFix {
+    pub title: String,
+    /// Whether it keeps the design's behavior.
+    pub safe: bool,
+    /// The rule of the problem it fixes.
+    pub rule: &'static str,
+    pub edits: Vec<(Range<usize>, String)>,
+}
+
+/// The fixes of the problems touching bytes `start..end` of the file at
+/// `path`, as of the last lint.
+pub fn quick_fixes(world: &mut World, path: &Path, start: usize, end: usize) -> Vec<QuickFix> {
+    world.refresh();
+    let Some(file) = world.file_id(path) else {
+        return Vec::new();
+    };
+    world
+        .lint
+        .iter()
+        .filter(|d| d.file == file)
+        .filter(|d| usize::from(d.range.end()) >= start && usize::from(d.range.start()) <= end)
+        .filter_map(|d| {
+            let fix = d.fix.as_ref()?;
+            Some(QuickFix {
+                title: fix.title.clone(),
+                safe: fix.safe,
+                rule: d.rule,
+                edits: fix
+                    .edits
+                    .iter()
+                    .map(|e| (e.range.into(), e.text.clone()))
+                    .collect(),
+            })
+        })
+        .collect()
+}
+
+/// The text of the file at `path` with every safe fix applied that does
+/// not overlap another, and how many were. `None` when there is none.
+pub fn fix_all(world: &mut World, path: &Path) -> Option<(String, usize)> {
+    world.refresh();
+    let file = world.file_id(path)?;
+    let text = world.doc(file).text;
+    let fixes = crate::handlers::compatible_fixes(
+        text,
+        world
+            .lint
+            .iter()
+            .filter(|d| d.file == file)
+            .filter_map(|d| d.fix.as_ref())
+            .filter(|f| f.safe),
+    );
+    if fixes.is_empty() {
+        return None;
+    }
+    Some(vfl_lint::apply_fixes(text, fixes))
 }
