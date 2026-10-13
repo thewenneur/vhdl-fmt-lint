@@ -1,7 +1,8 @@
 # vhdl-fmt-lint: design
 
-Status: draft, 2026-10-13. Step 1 of the project plan. Implemented so far: config schema and layering
-(`vfl-config`), root discovery and source collection (`vfl-project`), the `vfl` CLI shell.
+Status: draft, 2026-10-13. Implemented so far: config schema and layering (`vfl-config`), root
+discovery and source collection (`vfl-project`), the lossless parser (`vfl-syntax`), and the `vfl`
+CLI shell with `vfl check` (syntax errors).
 
 ## Goals
 
@@ -68,6 +69,18 @@ Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
   diagnostic, which is better than a confusing syntax error.
 - Case-insensitive identifiers are interned with a folded key; extended identifiers
   (`\Foo\`) keep their case.
+- Reserved words depend on the standard: `context`, `force`, `release` and `parameter` are
+  identifiers in VHDL-93, `view` and `private` are identifiers before VHDL-2019.
+- PSL embedded in VHDL-2008 (`default clock`, `property`, `sequence`, `assert always ...`,
+  `cover`, `vunit`) is kept as opaque `PSL_DIRECTIVE` nodes; it is not parsed further yet.
+- Tree shape: one node per construct (`ENTITY_DECL`, `PROCESS_STMT`, `SIGNAL_ASSIGN_STMT`,
+  ...). Trivia sits between nodes, never at a node's edges, so a comment before a
+  declaration is a sibling of it. `prefix(...)` is always `CALL_EXPR`: telling calls,
+  indexing, slices and constraints apart is left to semantic analysis.
+- Testing: snapshot trees for valid and broken inputs, a check that every prefix of every
+  test file (and every single-token deletion) still round-trips, and `scripts/corpus.sh`,
+  which parses pinned OSVVM, UVVM, VUnit, neorv32 and the VESTS VHDL-93 suite with zero
+  errors, and the whole GHDL test suite without a panic or round-trip failure. CI runs it.
 
 ### Semantic model
 

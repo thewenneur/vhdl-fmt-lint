@@ -11,3 +11,7 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+rowan = "0.16"
+
+[dev-dependencies]
+insta = { version = "1", features = ["glob"] }

@@ -1,0 +1,25 @@
+package expressions is
+  constant a : integer := -1 + 2 * 3 ** 2 mod 4 - abs (-5);
+  constant b : boolean := not x and y or z;
+  constant c : bit_vector := "10" & '1' & b"0" sll 1;
+  constant d : integer := integer'high - t'pos(t'left);
+  constant e : time := 10 ns + 2.5 us;
+  constant f : integer := 16#FF# + 2#1010_1010# + 8#17#E2;
+  constant g : real := 1.0E-3 * 3.14_159;
+  constant h : rec := (x => 1, y | z => 2, others => 0);
+  constant i : arr := (1, 2, 3);
+  constant j : arr := (0 to 3 => '1', 4 => '0');
+  constant k : integer := (a + b) * c;
+  constant l : t := t'(others => '0');
+  constant m : ptr := new integer'(5);
+  constant n : ptr := new integer;
+  constant o : bit := "and"('1', '0');
+  constant p : integer := f(1)(2).field'length;
+  constant q : character := 'a';
+  constant r : string := "a ""quoted"" string";
+  constant s : boolean := a = b and c /= d and e < f and g <= h and i > j and k >= l;
+  constant u : integer := \extended id\ + \with\\backslash\;
+  constant v : sub := pkg.func(x => 1, y => open);
+  constant w : boolean := now > 0 fs;
+  constant x : integer := work.pkg.c;
+end package expressions;
