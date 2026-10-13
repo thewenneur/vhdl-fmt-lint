@@ -3,10 +3,11 @@
 //! Speaks LSP over stdio ([`run_stdio`]). It analyzes the whole project
 //! around the workspace folder, as `vfl lint` does, and offers
 //! diagnostics with quick fixes, formatting, go to definition, find
-//! references, hover, document and workspace symbols, rename and
-//! completion.
+//! references, hover with types, signature help, document and workspace
+//! symbols, rename and completion.
 
 mod handlers;
+mod types;
 mod world;
 
 use std::path::PathBuf;
@@ -23,6 +24,17 @@ use lsp_types::{
 use serde::de::DeserializeOwned;
 
 pub use world::World;
+
+/// Answers one request against `world`, as the server would: for
+/// examples and benchmarks. `None` when the method is unknown or fails.
+#[doc(hidden)]
+pub fn handle(
+    world: &mut World,
+    method: &str,
+    params: serde_json::Value,
+) -> Option<serde_json::Value> {
+    handlers::request(world, method, params).ok()
+}
 
 pub fn capabilities() -> ServerCapabilities {
     ServerCapabilities {
@@ -43,6 +55,11 @@ pub fn capabilities() -> ServerCapabilities {
         completion_provider: Some(CompletionOptions {
             trigger_characters: Some(vec![".".into()]),
             ..Default::default()
+        }),
+        signature_help_provider: Some(lsp_types::SignatureHelpOptions {
+            trigger_characters: Some(vec!["(".into(), ",".into()]),
+            retrigger_characters: Some(vec![",".into()]),
+            work_done_progress_options: Default::default(),
         }),
         code_action_provider: Some(CodeActionProviderCapability::Options(CodeActionOptions {
             code_action_kinds: Some(vec![

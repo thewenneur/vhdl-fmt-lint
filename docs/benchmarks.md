@@ -88,6 +88,18 @@ shared between the old and the new analysis instead of being built again. The sl
 edits change a package that most of the project uses (UVVM's `types_pkg`), which
 re-analyzes everything that depends on it.
 
+### Editor requests
+
+`crates/vfl-lsp/examples/request_latency.rs` opens a project, then sends hover, signature
+help and completion at every 7th line of 16 files spread over it (the middle of the line).
+
+| Project | Hover (median / max) | Signature help (median / max) | Completion (median / max) |
+|---|---:|---:|---:|
+| neorv32 | 0.07 / 2.6 ms | 0.01 / 0.9 ms | 0.9 / 3.5 ms |
+| OSVVM | 0.2 / 10 ms | 0.02 / 1.4 ms | 1.5 / 13 ms |
+| UVVM | 0.5 / 4.5 ms | 0.02 / 0.4 ms | 1.3 / 4.3 ms |
+| VUnit | 0.3 / 2.1 ms | 0.02 / 1.8 ms | 1.2 / 7.5 ms |
+
 ## Running it
 
 ```sh

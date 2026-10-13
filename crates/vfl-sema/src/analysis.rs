@@ -638,6 +638,20 @@ impl Analysis {
             .get(id.index as usize)
     }
 
+    /// The type a type or subtype mark denotes, through subtypes and
+    /// incomplete type declarations.
+    pub fn base_type(&self, mut mark: DeclId) -> Option<DeclId> {
+        for _ in 0..32 {
+            let decl = self.decl(mark)?;
+            match decl.kind {
+                DeclKind::Type | DeclKind::GenericType => return Some(mark),
+                DeclKind::Subtype | DeclKind::IncompleteType => mark = decl.subtype?,
+                _ => return None,
+            }
+        }
+        None
+    }
+
     /// The declarations of a unit; index 0 is the unit itself.
     pub fn unit_decls(&self, unit: UnitId) -> &[Decl] {
         &self.results[unit as usize].decls
