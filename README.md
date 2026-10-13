@@ -12,6 +12,13 @@ A fast, fully configurable VHDL formatter, linter and language server, in pure R
 
 Status: early development. See [docs/design.md](docs/design.md) for the design.
 
+Documentation:
+
+- [Configuration reference](docs/configuration.md): every `vfl.toml` key, config lookup and
+  layering, suppression comments.
+- [Lint rules](docs/lints.md): what each rule reports, its level in each preset, its fix and
+  its options.
+
 ## Installation
 
 ### Command line
@@ -95,7 +102,8 @@ vfl lsp                # language server over stdio
 
 Optional. Put a `vfl.toml` at the project root; nested `vfl.toml` files override only the
 keys they set, `extends = "path.toml"` pulls in a shared file, and `root = true` stops the
-search for parent configs. See the design doc for the full schema.
+search for parent configs. Every key is described in the
+[configuration reference](docs/configuration.md), and every rule in [lints.md](docs/lints.md).
 
 ```toml
 [format]
