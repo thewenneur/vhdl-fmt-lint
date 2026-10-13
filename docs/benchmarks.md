@@ -32,8 +32,20 @@ What the remaining vfl errors are:
   file (`td_vvc_entity_support_pkg.vhd`) refers to a name each VVC must provide.
 - VUnit: all 37 refer to OSVVM, a git submodule that was not checked out.
 
-rust_hdl reports the same real problems, plus cascades from them and errors on valid
-code.
+rust_hdl reports the same real problems. Its extra errors are mostly:
+
+- Cascades. When a unit is missing (VUnit's OSVVM submodule), rust_hdl reports every use
+  of every name it would have declared (159 uses of `rnd`, 120 of `OsvvmOptionsType`, ...).
+  vfl reports the missing unit once and does not report names that could come from it.
+- Duplicate units. The repositories ship alternate copies of some units (OSVVM's
+  `deprecated/`, simulator-specific variants in UVVM). rust_hdl reports them as errors;
+  vfl as `sema/duplicate-unit` warnings.
+- Libraries that do not exist in the repository (UVVM templates): an error in rust_hdl,
+  `sema/unknown-library` info in vfl.
+- Type checks. rust_hdl resolves overloads and checks types, which vfl does not do yet, so
+  some of its errors (argument counts, subtype mismatches) are checks vfl does not make.
+  Those were not verified one by one, so the error columns compare noise on valid code
+  more than they compare checking power.
 
 ## Running it
 
