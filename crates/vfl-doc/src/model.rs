@@ -38,6 +38,16 @@ pub struct Entity {
     pub generics: Vec<Interface>,
     pub ports: Vec<Interface>,
     pub architectures: Vec<Architecture>,
+    /// The packages its context clauses (and its architectures') use.
+    pub uses: Vec<Use>,
+}
+
+/// A `use library.unit` of a context clause, keyed.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Use {
+    /// The library key, `work` resolved to the unit's own library.
+    pub library: String,
+    pub unit: String,
 }
 
 impl Entity {
@@ -99,6 +109,56 @@ pub struct Architecture {
     pub fsms: Vec<Fsm>,
     /// Component declarations, for the ports of their instances.
     pub components: Vec<Component>,
+    /// Concurrent signal assignments.
+    pub assignments: Vec<Assignment>,
+    pub aliases: Vec<Alias>,
+    /// Packages its own context clause uses.
+    pub uses: Vec<Use>,
+}
+
+impl Architecture {
+    /// Names with their aliases replaced by the aliased objects.
+    pub fn resolve_aliases(&self, names: &[String]) -> Vec<String> {
+        let mut out: Vec<String> = Vec::with_capacity(names.len());
+        for name in names {
+            let key = identifier_key(name);
+            let resolved = self
+                .aliases
+                .iter()
+                .find(|a| identifier_key(&a.name) == key)
+                .map_or(name, |a| &a.target);
+            if !out
+                .iter()
+                .any(|o| identifier_key(o) == identifier_key(resolved))
+            {
+                out.push(resolved.clone());
+            }
+        }
+        out
+    }
+}
+
+/// A concurrent signal assignment: simple, conditional or selected.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Assignment {
+    pub label: Option<String>,
+    pub line: u32,
+    /// The assigned signal.
+    pub target: String,
+    /// The names it reads, as written (signals or not: callers filter).
+    pub reads: Vec<String>,
+}
+
+/// An object alias: `alias en : std_logic is ctrl(0);`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Alias {
+    pub name: String,
+    pub ty: String,
+    /// The aliased object.
+    pub target: String,
+    /// The index or range of the target, as written (`0`, `2 downto 1`).
+    pub slice: Option<String>,
+    pub description: String,
 }
 
 /// A signal, constant or other object declaration.
@@ -119,6 +179,8 @@ pub struct TypeInfo {
     /// The definition as written, on one line.
     pub definition: String,
     pub description: String,
+    /// The elements of a record type: name, subtype and description.
+    pub fields: Vec<(String, String, String)>,
 }
 
 /// A function or procedure.
@@ -140,9 +202,26 @@ pub struct Process {
     pub sensitivity: Vec<String>,
     /// The clock of a clocked process (`clk` for `rising_edge(clk)`).
     pub clock: Option<String>,
+    /// Whether the clock edge is a falling one.
+    pub falling: bool,
+    /// The reset of a clocked process.
+    pub reset: Option<Reset>,
     /// The signals the process assigns.
     pub drives: Vec<String>,
+    /// The names the process reads, as written (signals or not: callers
+    /// filter).
+    pub reads: Vec<String>,
     pub description: String,
+}
+
+/// The reset of a clocked process.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Reset {
+    pub signal: String,
+    /// Tested outside the clock edge.
+    pub asynchronous: bool,
+    /// `Some(true)` for active high, `Some(false)` for active low.
+    pub active_high: Option<bool>,
 }
 
 /// A component, entity or configuration instantiation.
@@ -195,6 +274,8 @@ pub struct Package {
     pub types: Vec<TypeInfo>,
     pub subprograms: Vec<Subprogram>,
     pub components: Vec<Component>,
+    pub aliases: Vec<Alias>,
+    pub uses: Vec<Use>,
 }
 
 /// A component declaration.
@@ -232,7 +313,7 @@ pub fn build(files: &[FileInput], config: &DocConfig, title: String) -> Design {
         }
     }
     let mut architectures: Vec<(String, String, Architecture)> = Vec::new();
-    let mut package_bodies: Vec<(String, String, String)> = Vec::new();
+    let mut package_bodies: Vec<(String, String, String, Vec<Use>)> = Vec::new();
     for file in files {
         let style = CommentStyle::for_file(file.root, config.comments, &config.comment_marker);
         let ctx = Ctx {
@@ -246,11 +327,17 @@ pub fn build(files: &[FileInput], config: &DocConfig, title: String) -> Design {
             if unit.kind() != SyntaxKind::DESIGN_UNIT {
                 continue;
             }
+            let uses = unit
+                .children()
+                .find(|n| n.kind() == SyntaxKind::CONTEXT_CLAUSE)
+                .map(|c| uses_of(&c, &file.library))
+                .unwrap_or_default();
             for node in unit.children() {
                 match node.kind() {
                     SyntaxKind::ENTITY_DECL => {
                         let mut entity = ctx.entity(&node);
                         entity.library = file.library.clone();
+                        entity.uses = uses.clone();
                         design.entities.push(entity);
                     }
                     SyntaxKind::ARCHITECTURE_BODY => {
@@ -260,7 +347,8 @@ pub fn build(files: &[FileInput], config: &DocConfig, title: String) -> Design {
                             .and_then(|n| ident(&n))
                             .map(|t| identifier_key(t.text()))
                             .unwrap_or_default();
-                        let arch = ctx.architecture(&node, &enums);
+                        let mut arch = ctx.architecture(&node, &enums);
+                        arch.uses = uses.clone();
                         architectures.push((file.library.clone(), entity, arch));
                     }
                     SyntaxKind::CONFIGURATION_DECL => {
@@ -280,6 +368,7 @@ pub fn build(files: &[FileInput], config: &DocConfig, title: String) -> Design {
                     SyntaxKind::PACKAGE_DECL => {
                         let mut package = ctx.package(&node);
                         package.library = file.library.clone();
+                        package.uses = uses.clone();
                         design.packages.push(package);
                     }
                     SyntaxKind::PACKAGE_BODY => {
@@ -290,7 +379,12 @@ pub fn build(files: &[FileInput], config: &DocConfig, title: String) -> Design {
                             .map(|t| identifier_key(t.text()))
                             .unwrap_or_default();
                         let description = style.doc(&node);
-                        package_bodies.push((file.library.clone(), name, description));
+                        package_bodies.push((
+                            file.library.clone(),
+                            name,
+                            description,
+                            uses.clone(),
+                        ));
                     }
                     _ => {}
                 }
@@ -309,20 +403,29 @@ pub fn build(files: &[FileInput], config: &DocConfig, title: String) -> Design {
             .copied()
             .min_by_key(|&i| design.entities[i].library != library);
         if let Some(target) = target {
-            design.entities[target].architectures.push(arch);
+            let entity = &mut design.entities[target];
+            for u in &arch.uses {
+                if !entity.uses.contains(u) {
+                    entity.uses.push(u.clone());
+                }
+            }
+            entity.architectures.push(arch);
         }
     }
-    for (library, name, description) in package_bodies {
-        if description.is_empty() {
-            continue;
-        }
+    for (library, name, description, uses) in package_bodies {
         if let Some(package) = design
             .packages
             .iter_mut()
             .find(|p| p.library == library && identifier_key(&p.name) == name)
-            && package.description.is_empty()
         {
-            package.description = description;
+            if package.description.is_empty() {
+                package.description = description;
+            }
+            for u in uses {
+                if !package.uses.contains(&u) {
+                    package.uses.push(u);
+                }
+            }
         }
     }
     if !config.testbenches {
@@ -388,6 +491,7 @@ impl Ctx<'_> {
             generics,
             ports,
             architectures: Vec::new(),
+            uses: Vec::new(),
         }
     }
 
@@ -514,6 +618,8 @@ impl Ctx<'_> {
         arch.types = declarations.types;
         arch.subprograms = declarations.subprograms;
         arch.components = declarations.components;
+        arch.aliases = declarations.aliases;
+        self.assignments(node, &mut arch.assignments);
         if self.config.processes {
             for process in node
                 .descendants()
@@ -575,9 +681,67 @@ impl Ctx<'_> {
                         });
                     }
                 }
+                SyntaxKind::ALIAS_DECL => {
+                    let ty = decl
+                        .children()
+                        .find(|n| n.kind() == SyntaxKind::SUBTYPE_INDICATION)
+                        .map(|n| compact(&n))
+                        .unwrap_or_default();
+                    // The aliased name follows `is`.
+                    let target = decl
+                        .children_with_tokens()
+                        .skip_while(|e| e.kind() != SyntaxKind::IS_KW)
+                        .find_map(|e| e.into_node());
+                    let Some(target) = target else { continue };
+                    let (object, slice) = match target.kind() {
+                        SyntaxKind::CALL_EXPR => (
+                            target.children().next().map(|n| compact(&n)),
+                            target
+                                .children()
+                                .find(|n| n.kind() == SyntaxKind::ASSOCIATION_LIST)
+                                .map(|n| {
+                                    compact(&n)
+                                        .trim_start_matches('(')
+                                        .trim_end_matches(')')
+                                        .trim()
+                                        .to_owned()
+                                }),
+                        ),
+                        _ => (Some(compact(&target)), None),
+                    };
+                    out.aliases.push(Alias {
+                        name: own_name(&decl).unwrap_or_default(),
+                        ty,
+                        target: object.unwrap_or_default(),
+                        slice,
+                        description,
+                    });
+                }
                 SyntaxKind::TYPE_DECL | SyntaxKind::SUBTYPE_DECL => {
                     let definition = after_token(&decl, SyntaxKind::IS_KW).unwrap_or_default();
+                    let fields = decl
+                        .children()
+                        .filter(|n| n.kind() == SyntaxKind::RECORD_TYPE_DEF)
+                        .flat_map(|r| r.children())
+                        .filter(|n| n.kind() == SyntaxKind::ELEMENT_DECL)
+                        .flat_map(|element| {
+                            let ty = element
+                                .children()
+                                .find(|n| n.kind() == SyntaxKind::SUBTYPE_INDICATION)
+                                .map(|n| compact(&n))
+                                .unwrap_or_default();
+                            let doc = self.style.doc(&element);
+                            element
+                                .children()
+                                .find(|n| n.kind() == SyntaxKind::IDENT_LIST)
+                                .map(|n| idents(&n))
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(move |name| (name, ty.clone(), doc.clone()))
+                        })
+                        .collect();
                     out.types.push(TypeInfo {
+                        fields,
                         name: own_name(&decl).unwrap_or_default(),
                         kind: if decl.kind() == SyntaxKind::TYPE_DECL {
                             "type"
@@ -638,6 +802,38 @@ impl Ctx<'_> {
             types: declarations.types,
             subprograms: declarations.subprograms,
             components: declarations.components,
+            aliases: declarations.aliases,
+            uses: Vec::new(),
+        }
+    }
+
+    /// The concurrent signal assignments of an architecture, in generate
+    /// and block statements too.
+    fn assignments(&self, node: &SyntaxNode, out: &mut Vec<Assignment>) {
+        for child in node.children() {
+            match child.kind() {
+                SyntaxKind::SIGNAL_ASSIGN_STMT | SyntaxKind::SELECTED_ASSIGN_STMT => {
+                    let Some(target) = assignment_target(&child) else {
+                        continue;
+                    };
+                    let Some(name) = base_name(&target) else {
+                        continue;
+                    };
+                    out.push(Assignment {
+                        label: label(&child),
+                        line: self.line(&child),
+                        target: name,
+                        reads: reads(&child),
+                    });
+                }
+                SyntaxKind::FOR_GENERATE_STMT
+                | SyntaxKind::IF_GENERATE_STMT
+                | SyntaxKind::CASE_GENERATE_STMT
+                | SyntaxKind::BLOCK_STMT
+                | SyntaxKind::GENERATE_BODY
+                | SyntaxKind::CASE_ALTERNATIVE => self.assignments(&child, out),
+                _ => {}
+            }
         }
     }
 
@@ -670,12 +866,16 @@ impl Ctx<'_> {
                 drives.push(target);
             }
         }
+        let clock = clock(node);
         Process {
             label,
             line: self.line(node),
             sensitivity,
-            clock: clock(node),
+            falling: clock.as_ref().is_some_and(|(_, falling)| *falling),
+            reset: clock.as_ref().and_then(|_| reset(node)),
+            clock: clock.map(|(c, _)| c),
             drives,
+            reads: reads(node),
             description: self.style.doc(node),
         }
     }
@@ -779,6 +979,48 @@ struct Declarations {
     types: Vec<TypeInfo>,
     subprograms: Vec<Subprogram>,
     components: Vec<Component>,
+    aliases: Vec<Alias>,
+}
+
+/// The packages and contexts a context clause uses, with `work` resolved
+/// to `library`.
+fn uses_of(context: &SyntaxNode, library: &str) -> Vec<Use> {
+    let mut uses = Vec::new();
+    for item in context.children() {
+        let names: Vec<SyntaxNode> = match item.kind() {
+            SyntaxKind::USE_CLAUSE | SyntaxKind::CONTEXT_REFERENCE => item
+                .children()
+                .filter(|n| matches!(n.kind(), SyntaxKind::SELECTED_NAME))
+                .collect(),
+            _ => continue,
+        };
+        for name in names {
+            // `lib.pkg.all` or `lib.pkg.item`: the first two identifiers;
+            // `lib.ctx` for a context reference.
+            let parts: Vec<String> = name
+                .descendants_with_tokens()
+                .filter_map(|e| e.into_token())
+                .filter(|t| matches!(t.kind(), SyntaxKind::IDENT | SyntaxKind::EXT_IDENT))
+                .map(|t| identifier_key(t.text()))
+                .collect();
+            if parts.len() < 2 {
+                continue;
+            }
+            let lib = if parts[0] == "work" {
+                identifier_key(library)
+            } else {
+                parts[0].clone()
+            };
+            let u = Use {
+                library: lib,
+                unit: parts[1].clone(),
+            };
+            if !uses.contains(&u) {
+                uses.push(u);
+            }
+        }
+    }
+    uses
 }
 
 /// The formal and actual of each association, `("", actual)` for
@@ -813,36 +1055,253 @@ fn associations(aspect: &SyntaxNode) -> Vec<(String, String)> {
 
 /// The clock of a clocked process: the signal of its first
 /// `rising_edge(x)`, `falling_edge(x)` or `x'event`.
-fn clock(process: &SyntaxNode) -> Option<String> {
-    for node in process.descendants() {
-        match node.kind() {
-            SyntaxKind::CALL_EXPR => {
-                let callee = node.children().next()?;
-                let name = compact(&callee).to_ascii_lowercase();
-                if name == "rising_edge" || name == "falling_edge" {
-                    let argument = node
-                        .children()
-                        .find(|n| n.kind() == SyntaxKind::ASSOCIATION_LIST)?;
-                    return Some(
-                        compact(&argument)
-                            .trim_matches(|c| c == '(' || c == ')')
-                            .trim()
-                            .to_owned(),
-                    );
+/// With whether the edge is a falling one.
+fn clock(process: &SyntaxNode) -> Option<(String, bool)> {
+    process.descendants().find_map(|node| edge(&node))
+}
+
+/// The clock and edge an expression tests: `rising_edge(clk)`,
+/// `falling_edge(clk)` or `clk'event` (taken as rising, unless compared
+/// with `'0'` in the same conjunction).
+fn edge(node: &SyntaxNode) -> Option<(String, bool)> {
+    match node.kind() {
+        SyntaxKind::CALL_EXPR => {
+            let callee = node.children().next()?;
+            let name = compact(&callee).to_ascii_lowercase();
+            if name == "rising_edge" || name == "falling_edge" {
+                let argument = node
+                    .children()
+                    .find(|n| n.kind() == SyntaxKind::ASSOCIATION_LIST)?;
+                return Some((
+                    compact(&argument)
+                        .trim_matches(|c| c == '(' || c == ')')
+                        .trim()
+                        .to_owned(),
+                    name == "falling_edge",
+                ));
+            }
+            None
+        }
+        SyntaxKind::ATTRIBUTE_NAME => {
+            let text = compact(node);
+            let (prefix, attribute) = text.rsplit_once('\'')?;
+            if !attribute.eq_ignore_ascii_case("event") {
+                return None;
+            }
+            let falling = node
+                .parent()
+                .filter(|p| p.kind() == SyntaxKind::BINARY_EXPR)
+                .is_some_and(|p| compact(&p).contains("= '0'"));
+            Some((prefix.to_owned(), falling))
+        }
+        _ => None,
+    }
+}
+
+/// Whether an expression tests a clock edge.
+fn tests_edge(expr: &SyntaxNode) -> bool {
+    expr.descendants().any(|n| edge(&n).is_some())
+}
+
+/// The reset of a clocked process: the test of the branch before the
+/// clock edge (asynchronous), or of the first `if` under the edge whose
+/// signal is named like a reset (synchronous).
+fn reset(process: &SyntaxNode) -> Option<Reset> {
+    for stmt in process.descendants().filter(|n| n.kind() == SyntaxKind::IF_STMT) {
+        let branches = if_branches(&stmt);
+        let Some(k) = branches
+            .iter()
+            .position(|(c, _)| c.as_ref().is_some_and(tests_edge))
+        else {
+            continue;
+        };
+        if k > 0 {
+            let (signal, active_high) = reset_test(branches[0].0.as_ref()?)?;
+            return Some(Reset {
+                signal,
+                asynchronous: true,
+                active_high,
+            });
+        }
+        // `if rising_edge(clk) then if rst = '1' then ...`
+        let inner = branches[0]
+            .1
+            .iter()
+            .find(|n| n.kind() == SyntaxKind::IF_STMT)?;
+        let first = if_branches(inner).into_iter().next()?;
+        let (signal, active_high) = reset_test(first.0.as_ref()?)?;
+        let key = identifier_key(&signal);
+        if key.contains("rst") || key.contains("reset") {
+            return Some(Reset {
+                signal,
+                asynchronous: false,
+                active_high,
+            });
+        }
+        return None;
+    }
+    // `wait until rising_edge(clk); if rst = '1' then ...`
+    let body: Vec<SyntaxNode> = process.children().collect();
+    let wait = body
+        .iter()
+        .position(|n| n.kind() == SyntaxKind::WAIT_STMT && tests_edge(n))?;
+    let inner = body[wait..].iter().find(|n| n.kind() == SyntaxKind::IF_STMT)?;
+    let first = if_branches(inner).into_iter().next()?;
+    let (signal, active_high) = reset_test(first.0.as_ref()?)?;
+    let key = identifier_key(&signal);
+    (key.contains("rst") || key.contains("reset")).then_some(Reset {
+        signal,
+        asynchronous: false,
+        active_high,
+    })
+}
+
+/// The branches of an `if` statement: each condition (`None` for `else`)
+/// with its statements.
+fn if_branches(stmt: &SyntaxNode) -> Vec<(Option<SyntaxNode>, Vec<SyntaxNode>)> {
+    let mut branches: Vec<(Option<SyntaxNode>, Vec<SyntaxNode>)> = Vec::new();
+    let mut want_condition = false;
+    let mut in_body = false;
+    for element in stmt.children_with_tokens() {
+        match element.kind() {
+            SyntaxKind::IF_KW | SyntaxKind::ELSIF_KW => {
+                want_condition = true;
+                in_body = false;
+            }
+            SyntaxKind::ELSE_KW => {
+                branches.push((None, Vec::new()));
+                in_body = true;
+            }
+            SyntaxKind::THEN_KW => in_body = true,
+            SyntaxKind::END_KW => break,
+            _ => {
+                if let Some(node) = element.into_node() {
+                    if want_condition {
+                        branches.push((Some(node), Vec::new()));
+                        want_condition = false;
+                    } else if in_body && let Some(last) = branches.last_mut() {
+                        last.1.push(node);
+                    }
                 }
             }
-            SyntaxKind::ATTRIBUTE_NAME => {
-                let text = compact(&node);
-                if let Some((prefix, attribute)) = text.rsplit_once('\'')
-                    && attribute.eq_ignore_ascii_case("event")
-                {
-                    return Some(prefix.to_owned());
+        }
+    }
+    branches
+}
+
+/// `rst = '1'`, `rst_n = '0'`, `rst` or `not rst_n`: the signal and
+/// whether it is active high.
+fn reset_test(cond: &SyntaxNode) -> Option<(String, Option<bool>)> {
+    let cond = strip_parens(cond);
+    match cond.kind() {
+        SyntaxKind::NAME => Some((ident(&cond)?.text().to_owned(), Some(true))),
+        SyntaxKind::UNARY_EXPR => {
+            let operand = cond.children().next()?;
+            let operand = strip_parens(&operand);
+            let not = cond
+                .children_with_tokens()
+                .any(|e| e.kind() == SyntaxKind::NOT_KW);
+            (not && operand.kind() == SyntaxKind::NAME)
+                .then(|| Some((ident(&operand)?.text().to_owned(), Some(false))))
+                .flatten()
+        }
+        SyntaxKind::BINARY_EXPR => {
+            let eq = cond
+                .children_with_tokens()
+                .any(|e| e.kind() == SyntaxKind::EQ);
+            if !eq {
+                return None;
+            }
+            let mut sides = cond.children();
+            let (a, b) = (sides.next()?, sides.next()?);
+            let (name, value) = if a.kind() == SyntaxKind::NAME {
+                (a, b)
+            } else {
+                (b, a)
+            };
+            if name.kind() != SyntaxKind::NAME {
+                return None;
+            }
+            let value = compact(&value).to_ascii_lowercase();
+            let high = match value.as_str() {
+                "'1'" | "true" | "1" => Some(true),
+                "'0'" | "false" | "0" => Some(false),
+                _ => return None,
+            };
+            Some((ident(&name)?.text().to_owned(), high))
+        }
+        _ => None,
+    }
+}
+
+fn strip_parens(node: &SyntaxNode) -> SyntaxNode {
+    let mut node = node.clone();
+    while node.kind() == SyntaxKind::PAREN_EXPR {
+        match node.children().next() {
+            Some(inner) => node = inner,
+            None => break,
+        }
+    }
+    node
+}
+
+/// The target of a signal assignment: the node before `<=`.
+fn assignment_target(stmt: &SyntaxNode) -> Option<SyntaxNode> {
+    let mut target = None;
+    for element in stmt.children_with_tokens() {
+        match element.kind() {
+            SyntaxKind::LTE => return target,
+            SyntaxKind::LABEL => {}
+            _ => {
+                if let Some(node) = element.into_node() {
+                    target = Some(node);
                 }
             }
-            _ => {}
         }
     }
     None
+}
+
+/// The simple names read in `node`, by spelling, each once: every name but
+/// the targets of signal and variable assignments.
+fn reads(node: &SyntaxNode) -> Vec<String> {
+    let mut targets = Vec::new();
+    for stmt in node.descendants().filter(|n| {
+        matches!(
+            n.kind(),
+            SyntaxKind::SIGNAL_ASSIGN_STMT
+                | SyntaxKind::SELECTED_ASSIGN_STMT
+                | SyntaxKind::VARIABLE_ASSIGN_STMT
+        )
+    }) {
+        if let Some(target) = assignment_target(&stmt) {
+            let mut base = target;
+            while base.kind() != SyntaxKind::NAME {
+                match base.children().next() {
+                    Some(first) => base = first,
+                    None => break,
+                }
+            }
+            targets.push(base.text_range());
+        }
+    }
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for name in node.descendants().filter(|n| n.kind() == SyntaxKind::NAME) {
+        if targets.contains(&name.text_range()) {
+            continue;
+        }
+        // Labels of the statement itself are not names.
+        if name.parent().is_some_and(|p| p.kind() == SyntaxKind::LABEL) {
+            continue;
+        }
+        if let Some(t) = ident(&name)
+            && seen.insert(identifier_key(t.text()))
+        {
+            out.push(t.text().to_owned());
+        }
+    }
+    out
 }
 
 /// The label of a statement.

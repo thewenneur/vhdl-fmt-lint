@@ -5,6 +5,17 @@ use work.uart_pkg.all;
 
 --! Serializes bytes: a start bit, the data bits LSB first, an optional
 --! parity bit and a stop bit.
+--!
+--! ```wavedrom
+--! { signal: [
+--!   { name: "valid", wave: "010..........." },
+--!   { name: "ready", wave: "010..........." },
+--!   { name: "data",  wave: "x=x...........", data: ["byte"] },
+--!   { name: "txd",   wave: "1.0========1..", data: "d0 d1 d2 d3 d4 d5 d6 d7" }
+--! ],
+--!   head: { text: "One frame without parity, one column per bit" }
+--! }
+--! ```
 entity uart_tx is
   generic (
     CYCLES_PER_BIT : positive := 868;        --! Clock cycles per bit

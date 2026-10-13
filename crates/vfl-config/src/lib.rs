@@ -510,6 +510,21 @@ pub struct DiagramConfig {
     /// A diagram per instance: the instantiated block with the actual of
     /// each port and generic.
     pub port_map: bool,
+    /// The data flow of each architecture with processes or concurrent
+    /// assignments: those and its instances, wired by signal.
+    pub dataflow: bool,
+    /// The clock domains of each architecture with several clocks, with
+    /// the signals that cross between them.
+    pub clocks: bool,
+    /// On the index, the tree of each reset of the top level down to the
+    /// processes it resets.
+    pub resets: bool,
+    /// Which units use which packages.
+    pub dependencies: bool,
+    /// WaveDrom timing diagrams written in doc comments.
+    pub waveforms: bool,
+    /// Bit-field layouts of record types and of aliases of slices.
+    pub fields: bool,
     /// A state diagram of each detected state machine.
     pub fsm: bool,
     /// Show port types next to the pins of a symbol.
@@ -529,6 +544,12 @@ impl Default for DiagramConfig {
             block: true,
             top: true,
             port_map: true,
+            dataflow: true,
+            clocks: true,
+            resets: true,
+            dependencies: true,
+            waveforms: true,
+            fields: true,
             fsm: true,
             port_types: true,
             generics: true,

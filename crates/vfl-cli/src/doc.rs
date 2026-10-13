@@ -21,6 +21,17 @@ pub enum SchemaKind {
     PortMap,
     /// A state machine of an entity's architecture.
     Fsm,
+    /// The processes, assignments and instances of an architecture, wired
+    /// by the signals they read and drive.
+    Dataflow,
+    /// The clock domains of an architecture and the signals crossing them.
+    Clocks,
+    /// Where each reset of an entity goes, down to the processes.
+    Resets,
+    /// Which units use which packages (the entity argument is not used).
+    Dependencies,
+    /// A WaveDrom timing diagram; the argument is a WaveJSON file.
+    Wave,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -139,6 +150,19 @@ fn architecture(e: &vfl_doc::model::Entity, name: Option<&str>) -> Result<usize>
 }
 
 pub fn schema(options: &SchemaOptions) -> Result<()> {
+    let svg_only = !matches!(options.kind, SchemaKind::Hierarchy | SchemaKind::Fsm);
+    if svg_only && options.format != SchemaFormat::Svg {
+        bail!("this diagram is drawn as SVG only");
+    }
+    if options.kind == SchemaKind::Wave {
+        let Some(file) = &options.entity else {
+            bail!("`vfl schema wave` needs a WaveJSON file");
+        };
+        let source =
+            std::fs::read_to_string(file).with_context(|| format!("reading {file}"))?;
+        let svg = vfl_doc::wave::draw(&source).map_err(|e| anyhow::anyhow!("{file}: {e}"))?;
+        return emit(options, svg);
+    }
     let (project, design) = load(&options.project)?;
     let config = &project.config.doc;
     let entity = options
@@ -151,9 +175,6 @@ pub fn schema(options: &SchemaOptions) -> Result<()> {
             let Some(entity) = entity else {
                 bail!("`vfl schema symbol` needs an entity name");
             };
-            if options.format != SchemaFormat::Svg {
-                bail!("symbols are drawn as SVG only");
-            }
             svg::symbol(
                 &design.entities[entity],
                 svg::SymbolOptions {
@@ -184,9 +205,6 @@ pub fn schema(options: &SchemaOptions) -> Result<()> {
             let Some(entity) = entity else {
                 bail!("`vfl schema block` needs an entity name");
             };
-            if options.format != SchemaFormat::Svg {
-                bail!("block diagrams are drawn as SVG only");
-            }
             let e = &design.entities[entity];
             let arch = architecture(e, options.architecture.as_deref())?;
             match vfl_doc::block::block(&design, entity, arch, None) {
@@ -204,13 +222,32 @@ pub fn schema(options: &SchemaOptions) -> Result<()> {
                 ),
             }
         }
+        SchemaKind::Dataflow | SchemaKind::Clocks | SchemaKind::Resets => {
+            let Some(entity) = entity else {
+                bail!("this diagram needs an entity name");
+            };
+            let e = &design.entities[entity];
+            let arch = architecture(e, options.architecture.as_deref())?;
+            let name = format!("{}({})", e.name, e.architectures[arch].name);
+            match options.kind {
+                SchemaKind::Dataflow => vfl_doc::block::dataflow(&design, entity, arch, None)
+                    .with_context(|| {
+                        format!("`{name}` has no process or assignment, or too many blocks")
+                    })?,
+                SchemaKind::Clocks => vfl_doc::clocks::diagram(&design, entity, arch)
+                    .map(|(svg, _)| svg)
+                    .with_context(|| format!("`{name}` has fewer than two clocks"))?,
+                _ => vfl_doc::relations::resets(&design, entity, arch, None)
+                    .with_context(|| format!("no input of `{name}` resets a process"))?,
+            }
+        }
+        SchemaKind::Dependencies => vfl_doc::relations::dependencies(&design, None)
+            .context("no unit uses a package of the project, or the graph is too large")?,
+        SchemaKind::Wave => unreachable!(),
         SchemaKind::PortMap => {
             let Some(entity) = entity else {
                 bail!("`vfl schema port-map` needs an entity name");
             };
-            if options.format != SchemaFormat::Svg {
-                bail!("port maps are drawn as SVG only");
-            }
             let e = &design.entities[entity];
             let arch = architecture(e, options.architecture.as_deref())?;
             let instances = &e.architectures[arch].instances;
@@ -279,6 +316,10 @@ pub fn schema(options: &SchemaOptions) -> Result<()> {
             }
         }
     };
+    emit(options, output)
+}
+
+fn emit(options: &SchemaOptions, output: String) -> Result<()> {
     match &options.output {
         Some(path) => {
             std::fs::write(path, output).with_context(|| format!("writing {}", path.display()))?

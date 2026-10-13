@@ -9,14 +9,19 @@
 //! SVG, Mermaid or DOT ([`svg`], [`text`]).
 
 pub mod block;
+pub mod clocks;
 pub mod comments;
+pub mod fields;
 pub mod fsm;
+pub mod graph;
 pub mod hierarchy;
 pub mod model;
 mod page;
 mod pages;
+pub mod relations;
 pub mod svg;
 pub mod text;
+pub mod wave;
 
 use std::path::Path;
 

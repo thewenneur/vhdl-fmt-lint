@@ -9,7 +9,7 @@
 //! ends in a short stub labelled with the signal's name, as net labels do
 //! in a schematic.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
 use vfl_syntax::identifier_key;
@@ -79,7 +79,7 @@ impl Node {
 
 /// The leading identifier of a name, as key and spelling: `data` for
 /// `data(3)` or `data.field`. `None` for literals and expressions.
-fn base(text: &str) -> Option<(String, String)> {
+pub(crate) fn base(text: &str) -> Option<(String, String)> {
     let text = text.trim();
     let end = text
         .find(|c: char| !(c.is_alphanumeric() || c == '_'))
@@ -98,7 +98,7 @@ fn base(text: &str) -> Option<(String, String)> {
 
 /// The ports of what an instance binds to: the entity, else a component
 /// declaration in the architecture or in a package.
-fn ports_of<'a>(
+pub(crate) fn ports_of<'a>(
     design: &'a Design,
     entity: usize,
     arch: usize,
@@ -141,6 +141,164 @@ pub fn block(
     if a.instances.is_empty() || a.instances.len() > MAX_BLOCKS {
         return None;
     }
+    let (nodes, terminals) = base_nodes(design, entity, arch);
+    Some(draw(
+        nodes,
+        terminals,
+        link,
+        &format!("Block diagram of {}({})", e.name, a.name),
+    ))
+}
+
+/// The data flow of one architecture: its processes, concurrent
+/// assignments and instances as blocks, wired by the signals they read and
+/// drive. `None` when it has no process or assignment, or too many blocks.
+/// Clocks and resets are written under the process name rather than wired.
+pub fn dataflow(
+    design: &Design,
+    entity: usize,
+    arch: usize,
+    link: Option<&dyn Fn(usize) -> String>,
+) -> Option<String> {
+    let e = &design.entities[entity];
+    let a = e.architectures.get(arch)?;
+    let blocks = a.instances.len() + a.processes.len() + a.assignments.len();
+    if (a.processes.is_empty() && a.assignments.is_empty()) || blocks > MAX_BLOCKS {
+        return None;
+    }
+    let (mut nodes, terminals) = base_nodes(design, entity, arch);
+    let known: HashSet<String> = e
+        .ports
+        .iter()
+        .map(|p| identifier_key(&p.name))
+        .chain(a.signals.iter().map(|s| identifier_key(&s.name)))
+        .collect();
+    for p in &a.processes {
+        let mut skip: Vec<String> = Vec::new();
+        let mut detail = Vec::new();
+        if let Some(clock) = &p.clock {
+            skip.push(identifier_key(clock));
+            detail.push(format!("{clock} {}", if p.falling { "↓" } else { "↑" }));
+        }
+        if let Some(reset) = &p.reset {
+            skip.push(identifier_key(&reset.signal));
+            detail.push(format!(
+                "{} {}",
+                reset.signal,
+                if reset.asynchronous { "async" } else { "sync" }
+            ));
+        }
+        if detail.is_empty() {
+            detail.push("combinational".into());
+        }
+        let title = p
+            .label
+            .clone()
+            .unwrap_or_else(|| format!("process @{}", p.line));
+        nodes.push(logic_node(
+            title,
+            detail.join(", "),
+            &a.resolve_aliases(&p.reads),
+            &p.drives,
+            &known,
+            &skip,
+        ));
+    }
+    for s in &a.assignments {
+        let title = s.label.clone().unwrap_or_else(|| format!("{} <=", s.target));
+        nodes.push(logic_node(
+            title,
+            "assignment".into(),
+            &a.resolve_aliases(&s.reads),
+            std::slice::from_ref(&s.target),
+            &known,
+            &[],
+        ));
+    }
+    // Ports only clocks and resets use stay out.
+    let used: HashSet<String> = nodes[terminals..]
+        .iter()
+        .flat_map(|n| n.pins.iter())
+        .filter_map(|p| match &p.actual {
+            Actual::Net(key, _) => Some(key.clone()),
+            _ => None,
+        })
+        .collect();
+    let mut kept = Vec::with_capacity(nodes.len());
+    let mut kept_terminals = 0;
+    for (i, node) in nodes.into_iter().enumerate() {
+        if i < terminals {
+            if !matches!(&node.pins[0].actual, Actual::Net(key, _) if used.contains(key)) {
+                continue;
+            }
+            kept_terminals += 1;
+        }
+        kept.push(node);
+    }
+    Some(draw(
+        kept,
+        kept_terminals,
+        link,
+        &format!("Data flow of {}({})", e.name, a.name),
+    ))
+}
+
+/// A process or assignment block: the signals it reads on the left and
+/// those it drives on the right, unnamed (the wires carry the names).
+fn logic_node(
+    title: String,
+    detail: String,
+    reads: &[String],
+    drives: &[String],
+    known: &HashSet<String>,
+    skip: &[String],
+) -> Node {
+    let mut pins = Vec::new();
+    let driven: Vec<String> = drives.iter().map(|d| identifier_key(d)).collect();
+    for name in reads {
+        let key = identifier_key(name);
+        if known.contains(&key) && !skip.contains(&key) && !driven.contains(&key) {
+            pins.push(Pin {
+                name: String::new(),
+                right: false,
+                drives: false,
+                actual: Actual::Net(key, name.clone()),
+                y: 0.0,
+            });
+        }
+    }
+    for (name, key) in drives.iter().zip(driven) {
+        if known.contains(&key) {
+            pins.push(Pin {
+                name: String::new(),
+                right: true,
+                drives: true,
+                actual: Actual::Net(key, name.clone()),
+                y: 0.0,
+            });
+        }
+    }
+    let left = pins.iter().filter(|p| !p.right).count();
+    let right = pins.len() - left;
+    let w = (width(&cut(&title, 40)).max(width(&cut(&detail, 40))) + 16.0).max(60.0);
+    let h = HEAD + left.max(right).max(1) as f64 * ROW + 6.0;
+    Node {
+        title: Some((title, detail)),
+        entity: None,
+        pins,
+        layer: 1,
+        w,
+        h,
+        x: 0.0,
+        y: 0.0,
+    }
+}
+
+/// The entity's ports as terminals, then a block per instance; with the
+/// number of terminals.
+fn base_nodes(design: &Design, entity: usize, arch: usize) -> (Vec<Node>, usize) {
+    let e = &design.entities[entity];
+    let a = &e.architectures[arch];
     let mut nodes: Vec<Node> = Vec::new();
 
     // The entity's ports, as terminals: inputs drive their net from the
@@ -237,7 +395,17 @@ pub fn block(
             y: 0.0,
         });
     }
+    (nodes, terminals)
+}
 
+/// Lays out and draws blocks and terminals (the first `terminals` nodes),
+/// wired by their nets.
+fn draw(
+    mut nodes: Vec<Node>,
+    terminals: usize,
+    link: Option<&dyn Fn(usize) -> String>,
+    title: &str,
+) -> String {
     // Nets: key -> (node, pin) of every pin on it.
     let mut nets: HashMap<String, Vec<(usize, usize)>> = HashMap::new();
     let mut spelling: HashMap<String, String> = HashMap::new();
@@ -634,7 +802,7 @@ pub fn block(
             c.text(tx, pin.y + 4.0, &cut(&label, NAME_MAX), anchor, class);
         }
     }
-    Some(c.finish(&format!("Block diagram of {}({})", e.name, a.name), 10.0))
+    c.finish(title, 10.0)
 }
 
 /// The port map of one instance of an architecture: the block of the bound

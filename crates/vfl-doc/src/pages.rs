@@ -54,10 +54,47 @@ fn heading(level: u8, content: Vec<Inline>, id: Option<String>) -> Block {
     Block::Heading { level, content, id }
 }
 
-fn doc(text: &str, blocks: &mut Vec<Block>) {
-    if !text.is_empty() {
-        blocks.push(Block::Doc(text.to_owned()));
+fn doc(text: &str, blocks: &mut Vec<Block>, config: &DocConfig) {
+    if text.is_empty() {
+        return;
     }
+    // ```wavedrom blocks become timing diagrams.
+    let mut rest = text;
+    while config.diagrams.waveforms
+        && let Some(start) = rest.find("```wavedrom")
+    {
+        let body_start = start + "```wavedrom".len();
+        let Some(len) = rest[body_start..].find("```") else {
+            break;
+        };
+        let source = &rest[body_start..body_start + len];
+        let before = rest[..start].trim();
+        if !before.is_empty() {
+            blocks.push(Block::Doc(before.to_owned()));
+        }
+        match crate::wave::draw(source) {
+            Ok(svg) => blocks.push(Block::Diagram {
+                file: format!("wave-{:016x}", fnv(source)),
+                alt: "Timing diagram".into(),
+                svg,
+                mermaid: None,
+            }),
+            // Shown as written, to be fixed.
+            Err(_) => blocks.push(Block::Doc(rest[start..body_start + len + 3].to_owned())),
+        }
+        rest = &rest[body_start + len + 3..];
+    }
+    let rest = rest.trim();
+    if !rest.is_empty() {
+        blocks.push(Block::Doc(rest.to_owned()));
+    }
+}
+
+/// A stable hash, for file names derived from content.
+fn fnv(text: &str) -> u64 {
+    text.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    })
 }
 
 fn opt_code(value: &Option<String>) -> Cell {
@@ -179,7 +216,7 @@ pub fn pages(design: &Design, roots: &[Node], config: &DocConfig) -> Vec<Page> {
         pages.push(entity(design, i, users, config));
     }
     for package in &design.packages {
-        pages.push(package_page(package, config));
+        pages.push(package_page(design, package, config));
     }
     pages
 }
@@ -333,6 +370,98 @@ fn top_level(design: &Design, roots: &[Node], config: &DocConfig, blocks: &mut V
     }
 }
 
+/// The reset tree of each top-level entity.
+fn reset_trees(design: &Design, roots: &[Node], config: &DocConfig, blocks: &mut Vec<Block>) {
+    let page_link = |i: usize| format!("{}.{}", entity_page(design, i), extension(config));
+    let mut trees = Vec::new();
+    for (top, architecture) in tops(design, roots) {
+        let entity = &design.entities[top];
+        let arch = match &architecture {
+            Some(name) => entity
+                .architectures
+                .iter()
+                .position(|a| identifier_key(&a.name) == identifier_key(name)),
+            None => entity.architectures.len().checked_sub(1),
+        };
+        let Some(arch) = arch else { continue };
+        if let Some(svg) = crate::relations::resets(design, top, arch, Some(&page_link)) {
+            trees.push((top, svg));
+        }
+    }
+    if trees.is_empty() {
+        return;
+    }
+    blocks.push(heading(2, vec![text("Reset tree")], Some("resets".into())));
+    let several = trees.len() > 1;
+    for (top, svg) in trees {
+        let entity = &design.entities[top];
+        if several {
+            blocks.push(heading(3, vec![link(&entity.name, entity.page.clone(), None)], None));
+        }
+        blocks.push(Block::Diagram {
+            file: format!("resets.{}", entity.page),
+            alt: format!("Reset tree of {}", entity.name),
+            svg,
+            mermaid: None,
+        });
+    }
+}
+
+/// The most bit-field diagrams of one architecture or package.
+const MAX_FIELD_DIAGRAMS: usize = 24;
+
+/// The layouts of record types and of signals with aliased slices.
+fn field_diagrams(
+    scope: &crate::fields::Scope,
+    types: &[crate::model::TypeInfo],
+    signals: &[Object],
+    aliases: &[crate::model::Alias],
+    prefix: &str,
+    level: u8,
+    blocks: &mut Vec<Block>,
+) {
+    let mut diagrams: Vec<(String, String)> = types
+        .iter()
+        .filter_map(|t| Some((t.name.clone(), crate::fields::record(scope, t)?)))
+        .collect();
+    diagrams.extend(crate::fields::aliases(scope, signals, aliases));
+    if diagrams.is_empty() {
+        return;
+    }
+    blocks.push(heading(level, vec![text("Bit fields")], None));
+    for (name, svg) in diagrams.into_iter().take(MAX_FIELD_DIAGRAMS) {
+        blocks.push(Block::Diagram {
+            file: format!("{prefix}.fields-{}", file_safe(&name)),
+            alt: format!("Fields of {name}"),
+            svg,
+            mermaid: None,
+        });
+    }
+}
+
+/// "Uses pkg, ieee.std_logic_1164": links to documented packages.
+fn uses_para(design: &Design, uses: &[crate::model::Use]) -> Option<Block> {
+    if uses.is_empty() {
+        return None;
+    }
+    let mut content = vec![text("Uses ")];
+    for (i, u) in uses.iter().enumerate() {
+        if i > 0 {
+            content.push(text(", "));
+        }
+        match crate::relations::resolve_use(design, u) {
+            Some(p) => content.push(link(
+                &design.packages[p].name,
+                design.packages[p].page.clone(),
+                None,
+            )),
+            None => content.push(code(format!("{}.{}", u.library, u.unit))),
+        }
+    }
+    content.push(text("."));
+    Some(Block::Para(content))
+}
+
 fn index(design: &Design, roots: &[Node], config: &DocConfig) -> Page {
     let mut blocks = vec![heading(1, vec![text(design.title.clone())], None)];
     let libraries = {
@@ -373,6 +502,31 @@ fn index(design: &Design, roots: &[Node], config: &DocConfig) -> Page {
     }
     if config.diagrams.top {
         top_level(design, roots, config, &mut blocks);
+    }
+    if config.diagrams.resets {
+        reset_trees(design, roots, config, &mut blocks);
+    }
+    if config.diagrams.dependencies {
+        let link = |u: crate::relations::Unit| {
+            let page = match u {
+                crate::relations::Unit::Entity(i) => design.entities[i].page.clone(),
+                crate::relations::Unit::Package(i) => design.packages[i].page.clone(),
+            };
+            format!("{page}.{}", extension(config))
+        };
+        if let Some(svg) = crate::relations::dependencies(design, Some(&link)) {
+            blocks.push(heading(
+                2,
+                vec![text("Package dependencies")],
+                Some("dependencies".into()),
+            ));
+            blocks.push(Block::Diagram {
+                file: "dependencies".into(),
+                alt: "Package dependencies".into(),
+                svg,
+                mermaid: None,
+            });
+        }
     }
     if !design.entities.is_empty() {
         blocks.push(heading(2, vec![text("Entities")], Some("entities".into())));
@@ -449,7 +603,8 @@ fn entity(
         meta.push(text(" · testbench"));
     }
     blocks.push(Block::Para(meta));
-    doc(&e.description, &mut blocks);
+    blocks.extend(uses_para(design, &e.uses));
+    doc(&e.description, &mut blocks, config);
     if config.diagrams.symbol && !e.is_testbench() {
         blocks.push(Block::Diagram {
             file: format!("{id}.symbol"),
@@ -518,7 +673,7 @@ fn architecture(
     if arch.file != entity.file {
         blocks.push(Block::Para(vec![location(&arch.file, arch.line)]));
     }
-    doc(&arch.description, blocks);
+    doc(&arch.description, blocks, config);
     if !arch.instances.is_empty() {
         blocks.push(heading(3, vec![text("Instances")], None));
         let page_link = |i: usize| format!("{}.{}", entity_page(design, i), extension(config));
@@ -597,6 +752,52 @@ fn architecture(
             port_maps(design, index, entity, arch, page, &arch_key, blocks);
         }
     }
+    if config.diagrams.dataflow
+        && let Some(a) = entity.architectures.iter().position(|a| std::ptr::eq(a, arch))
+        && let Some(svg) = crate::block::dataflow(
+            design,
+            index,
+            a,
+            Some(&|i: usize| format!("{}.{}", entity_page(design, i), extension(config))),
+        )
+    {
+        blocks.push(heading(3, vec![text("Data flow")], None));
+        blocks.push(Block::Diagram {
+            file: format!("{page}.{arch_key}.dataflow"),
+            alt: format!("Data flow of {}({})", entity.name, arch.name),
+            svg,
+            mermaid: None,
+        });
+    }
+    if config.diagrams.clocks
+        && let Some(a) = entity.architectures.iter().position(|a| std::ptr::eq(a, arch))
+        && let Some((svg, domains)) = crate::clocks::diagram(design, index, a)
+    {
+        blocks.push(heading(3, vec![text("Clock domains")], None));
+        blocks.push(Block::Diagram {
+            file: format!("{page}.{arch_key}.clocks"),
+            alt: format!("Clock domains of {}({})", entity.name, arch.name),
+            svg,
+            mermaid: None,
+        });
+        if !domains.crossings.is_empty() {
+            blocks.push(Block::Table {
+                head: vec!["Signal", "From", "To", "Read by"],
+                rows: domains
+                    .crossings
+                    .iter()
+                    .map(|c| {
+                        vec![
+                            vec![code(c.signal.clone())],
+                            vec![code(c.from.clone())],
+                            vec![code(c.to.clone())],
+                            vec![code(c.reader.clone())],
+                        ]
+                    })
+                    .collect(),
+            });
+        }
+    }
     if !arch.processes.is_empty() {
         blocks.push(heading(3, vec![text("Processes")], None));
         blocks.push(Block::Table {
@@ -655,7 +856,7 @@ fn architecture(
             meta.push(code(initial.clone()));
         }
         blocks.push(Block::Para(meta));
-        doc(&fsm.description, blocks);
+        doc(&fsm.description, blocks, config);
         if config.diagrams.fsm {
             blocks.push(Block::Diagram {
                 file: format!("{page}.{arch_key}.fsm-{}", file_safe(&fsm.signal)),
@@ -691,13 +892,25 @@ fn architecture(
         blocks.push(heading(3, vec![text("Types")], None));
         blocks.push(types_table(&arch.types));
     }
+    if config.diagrams.fields {
+        let scope = crate::fields::Scope::new(design, Some(index), &arch.constants, &arch.types);
+        field_diagrams(
+            &scope,
+            &arch.types,
+            &arch.signals,
+            &arch.aliases,
+            &format!("{page}.{arch_key}"),
+            3,
+            blocks,
+        );
+    }
     if !arch.subprograms.is_empty() {
         blocks.push(heading(3, vec![text("Functions and procedures")], None));
         blocks.push(subprograms_table(&arch.subprograms));
     }
 }
 
-fn package_page(p: &Package, config: &DocConfig) -> Page {
+fn package_page(design: &Design, p: &Package, config: &DocConfig) -> Page {
     let id = p.page.clone();
     let mut blocks = vec![
         heading(1, vec![text("Package "), code(p.name.clone())], None),
@@ -708,7 +921,8 @@ fn package_page(p: &Package, config: &DocConfig) -> Page {
             location(&p.file, p.line),
         ]),
     ];
-    doc(&p.description, &mut blocks);
+    blocks.extend(uses_para(design, &p.uses));
+    doc(&p.description, &mut blocks, config);
     if config.constants && !p.constants.is_empty() {
         blocks.push(heading(
             2,
@@ -724,6 +938,10 @@ fn package_page(p: &Package, config: &DocConfig) -> Page {
     if config.types && !p.types.is_empty() {
         blocks.push(heading(2, vec![text("Types")], Some("types".into())));
         blocks.push(types_table(&p.types));
+    }
+    if config.diagrams.fields {
+        let scope = crate::fields::Scope::new(design, None, &p.constants, &p.types);
+        field_diagrams(&scope, &p.types, &p.signals, &p.aliases, &id, 2, &mut blocks);
     }
     if config.subprograms && !p.subprograms.is_empty() {
         blocks.push(heading(
@@ -745,7 +963,7 @@ fn package_page(p: &Package, config: &DocConfig) -> Page {
                 vec![code(c.name.clone())],
                 Some(format!("component-{}", identifier_key(&c.name))),
             ));
-            doc(&c.description, &mut blocks);
+            doc(&c.description, &mut blocks, config);
             if config.diagrams.symbol {
                 blocks.push(Block::Diagram {
                     file: format!("{id}.{}.symbol", file_safe(&c.name)),

@@ -24,7 +24,8 @@ entity uart is
     rx_data  : out std_logic_vector(7 downto 0); --! Oldest received byte
     rx_read  : in  std_logic;                    --! Take `rx_data`
     rx_empty : out std_logic;                    --! No received byte
-    rx_error : out std_logic;                    --! A frame had a bad stop bit
+    host_clk : in  std_logic;                    --! Clock of `rx_error`
+    rx_error : out std_logic;                    --! A frame had a bad stop bit, on `host_clk`
     -- Serial lines
     txd      : out std_logic;                    --! Serial output
     rxd      : in  std_logic                     --! Serial input
@@ -42,6 +43,7 @@ architecture rtl of uart is
   signal tx_ready : std_logic;
   signal rx_byte  : std_logic_vector(7 downto 0); --! Last received byte
   signal rx_valid : std_logic;
+  signal rx_bad   : std_logic; --! A bad stop bit, on `clk`
 
 begin
 
@@ -81,7 +83,16 @@ begin
       rxd   => rxd,
       data  => rx_byte,
       valid => rx_valid,
-      error => rx_error
+      error => rx_bad
+    );
+
+  --! Brings the error pulses to the host clock.
+  error_sync : entity work.pulse_sync
+    port map (
+      clk_a   => clk,
+      pulse_a => rx_bad,
+      clk_b   => host_clk,
+      pulse_b => rx_error
     );
 
   --! Bytes received and not read yet.

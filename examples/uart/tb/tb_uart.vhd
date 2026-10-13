@@ -30,6 +30,7 @@ begin
       rx_data  => rx_data,
       rx_read  => '0',
       rx_empty => rx_empty,
+      host_clk => clk,
       rx_error => open,
       txd      => serial,
       rxd      => serial
