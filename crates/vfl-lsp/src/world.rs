@@ -10,7 +10,9 @@ use std::path::{Path, PathBuf};
 
 use vfl_config::Config;
 use vfl_lint::FileSettings;
-use vfl_project::{Encoding, Project, ProjectRoot, SourceFile, collect_sources, find_root};
+use vfl_project::{
+    Encoding, Project, ProjectRoot, RootKind, SourceFile, collect_sources, find_root,
+};
 use vfl_sema::{Analysis, FileId};
 use vfl_syntax::{LineIndex, TextSize};
 
@@ -47,6 +49,26 @@ impl World {
         world
     }
 
+    /// A world with no project, for documents that are not saved
+    /// anywhere: only open documents are analyzed, with default settings.
+    pub fn detached() -> World {
+        let root = ProjectRoot {
+            dir: PathBuf::new(),
+            kind: RootKind::Fallback,
+        };
+        World {
+            project: empty(&root, Config::default()),
+            root,
+            analysis: Analysis::new(Vec::new()),
+            overlays: HashMap::new(),
+            lint: Vec::new(),
+            config_errors: Vec::new(),
+            configs: HashMap::new(),
+            lint_cache: vfl_lint::LintCache::default(),
+            dirty: true,
+        }
+    }
+
     /// Reloads every file from disk, keeping open documents.
     pub fn reload(&mut self) {
         self.configs.clear();
@@ -60,11 +82,20 @@ impl World {
     }
 
     /// The config for a file.
+    /// The config for a file. A relative path names a document that is not
+    /// saved anywhere, which gets the defaults.
     pub fn config(&mut self, path: &Path) -> &Config {
-        let dir = path.parent().unwrap_or(Path::new(".")).to_owned();
-        self.configs
-            .entry(dir.clone())
-            .or_insert_with(|| vfl_config::load_for_dir(&dir).unwrap_or_default())
+        let dir = match path.parent() {
+            Some(dir) if path.is_absolute() => dir.to_owned(),
+            _ => PathBuf::new(),
+        };
+        self.configs.entry(dir.clone()).or_insert_with(|| {
+            if dir.as_os_str().is_empty() {
+                Config::default()
+            } else {
+                vfl_config::load_for_dir(&dir).unwrap_or_default()
+            }
+        })
     }
 
     /// Sets the text of an open document.
@@ -156,14 +187,23 @@ impl World {
 }
 
 fn load(root: &ProjectRoot) -> Project {
-    Project::load(root.clone()).unwrap_or_else(|_| Project {
+    Project::load(root.clone()).unwrap_or_else(|_| {
+        empty(
+            root,
+            vfl_config::load_for_dir(&root.dir).unwrap_or_default(),
+        )
+    })
+}
+
+fn empty(root: &ProjectRoot, config: Config) -> Project {
+    Project {
         root: root.clone(),
-        config: vfl_config::load_for_dir(&root.dir).unwrap_or_default(),
+        config,
         files: Vec::new(),
         libraries: Vec::new(),
         unreadable: Vec::new(),
         notes: Vec::new(),
-    })
+    }
 }
 
 /// A text with its line index, for converting LSP positions (UTF-16).
