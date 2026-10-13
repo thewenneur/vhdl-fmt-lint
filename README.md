@@ -17,6 +17,7 @@ Status: early development. See [docs/design.md](docs/design.md) for the design.
 ```sh
 vfl project            # show the discovered root and sources
 vfl config show        # show the effective configuration and where it came from
+vfl check [paths]      # report syntax errors
 vfl fmt [--check] ...  # format (not implemented yet)
 vfl lint ...           # lint (not implemented yet)
 vfl lsp                # language server (not implemented yet)

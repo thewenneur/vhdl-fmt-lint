@@ -1,0 +1,285 @@
+---
+source: crates/vfl-syntax/tests/parser.rs
+expression: render(&parsed)
+input_file: crates/vfl-syntax/tests/data/ok/configuration.vhd
+---
+SOURCE_FILE@0..547
+  DESIGN_UNIT@0..409
+    CONFIGURATION_DECL@0..409
+      CONFIGURATION_KW@0..13 "configuration"
+      WHITESPACE@13..14 " "
+      IDENT@14..17 "cfg"
+      WHITESPACE@17..18 " "
+      OF_KW@18..20 "of"
+      WHITESPACE@20..21 " "
+      NAME@21..24
+        IDENT@21..24 "top"
+      WHITESPACE@24..25 " "
+      IS_KW@25..27 "is"
+      WHITESPACE@27..30 "\n  "
+      USE_CLAUSE@30..43
+        USE_KW@30..33 "use"
+        WHITESPACE@33..34 " "
+        SELECTED_NAME@34..42
+          NAME@34..38
+            IDENT@34..38 "work"
+          DOT@38..39 "."
+          ALL_KW@39..42 "all"
+        SEMI@42..43 ";"
+      WHITESPACE@43..46 "\n  "
+      BLOCK_CONFIGURATION@46..386
+        FOR_KW@46..49 "for"
+        WHITESPACE@49..50 " "
+        NAME@50..59
+          IDENT@50..59 "structure"
+        WHITESPACE@59..64 "\n    "
+        COMPONENT_CONFIGURATION@64..178
+          FOR_KW@64..67 "for"
+          WHITESPACE@67..68 " "
+          IDENT_LIST@68..70
+            IDENT@68..70 "u1"
+          WHITESPACE@70..71 " "
+          COLON@71..72 ":"
+          WHITESPACE@72..73 " "
+          NAME@73..77
+            IDENT@73..77 "comp"
+          WHITESPACE@77..84 "\n      "
+          BINDING_INDICATION@84..164
+            USE_KW@84..87 "use"
+            WHITESPACE@87..88 " "
+            ENTITY_KW@88..94 "entity"
+            WHITESPACE@94..95 " "
+            CALL_EXPR@95..109
+              SELECTED_NAME@95..104
+                NAME@95..99
+                  IDENT@95..99 "work"
+                DOT@99..100 "."
+                IDENT@100..104 "impl"
+              ASSOCIATION_LIST@104..109
+                LPAREN@104..105 "("
+                ASSOCIATION_ELEMENT@105..108
+                  NAME@105..108
+                    IDENT@105..108 "rtl"
+                RPAREN@108..109 ")"
+            WHITESPACE@109..118 "\n        "
+            GENERIC_MAP_ASPECT@118..138
+              GENERIC_KW@118..125 "generic"
+              WHITESPACE@125..126 " "
+              MAP_KW@126..129 "map"
+              WHITESPACE@129..130 " "
+              ASSOCIATION_LIST@130..138
+                LPAREN@130..131 "("
+                ASSOCIATION_ELEMENT@131..137
+                  NAME@131..132
+                    IDENT@131..132 "N"
+                  WHITESPACE@132..133 " "
+                  ARROW@133..135 "=>"
+                  WHITESPACE@135..136 " "
+                  LITERAL@136..137
+                    DECIMAL_LITERAL@136..137 "8"
+                RPAREN@137..138 ")"
+            WHITESPACE@138..147 "\n        "
+            PORT_MAP_ASPECT@147..164
+              PORT_KW@147..151 "port"
+              WHITESPACE@151..152 " "
+              MAP_KW@152..155 "map"
+              WHITESPACE@155..156 " "
+              ASSOCIATION_LIST@156..164
+                LPAREN@156..157 "("
+                ASSOCIATION_ELEMENT@157..163
+                  NAME@157..158
+                    IDENT@157..158 "a"
+                  WHITESPACE@158..159 " "
+                  ARROW@159..161 "=>"
+                  WHITESPACE@161..162 " "
+                  NAME@162..163
+                    IDENT@162..163 "a"
+                RPAREN@163..164 ")"
+          SEMI@164..165 ";"
+          WHITESPACE@165..170 "\n    "
+          END_KW@170..173 "end"
+          WHITESPACE@173..174 " "
+          FOR_KW@174..177 "for"
+          SEMI@177..178 ";"
+        WHITESPACE@178..183 "\n    "
+        COMPONENT_CONFIGURATION@183..256
+          FOR_KW@183..186 "for"
+          WHITESPACE@186..187 " "
+          ALL_KW@187..190 "all"
+          WHITESPACE@190..191 " "
+          COLON@191..192 ":"
+          WHITESPACE@192..193 " "
+          NAME@193..203
+            IDENT@193..203 "other_comp"
+          WHITESPACE@203..210 "\n      "
+          BINDING_INDICATION@210..242
+            USE_KW@210..213 "use"
+            WHITESPACE@213..214 " "
+            CONFIGURATION_KW@214..227 "configuration"
+            WHITESPACE@227..228 " "
+            SELECTED_NAME@228..242
+              NAME@228..232
+                IDENT@228..232 "work"
+              DOT@232..233 "."
+              IDENT@233..242 "other_cfg"
+          SEMI@242..243 ";"
+          WHITESPACE@243..248 "\n    "
+          END_KW@248..251 "end"
+          WHITESPACE@251..252 " "
+          FOR_KW@252..255 "for"
+          SEMI@255..256 ";"
+        WHITESPACE@256..261 "\n    "
+        COMPONENT_CONFIGURATION@261..308
+          FOR_KW@261..264 "for"
+          WHITESPACE@264..265 " "
+          OTHERS_KW@265..271 "others"
+          WHITESPACE@271..272 " "
+          COLON@272..273 ":"
+          WHITESPACE@273..274 " "
+          NAME@274..279
+            IDENT@274..279 "third"
+          WHITESPACE@279..286 "\n      "
+          BINDING_INDICATION@286..294
+            USE_KW@286..289 "use"
+            WHITESPACE@289..290 " "
+            OPEN_KW@290..294 "open"
+          SEMI@294..295 ";"
+          WHITESPACE@295..300 "\n    "
+          END_KW@300..303 "end"
+          WHITESPACE@303..304 " "
+          FOR_KW@304..307 "for"
+          SEMI@307..308 ";"
+        WHITESPACE@308..313 "\n    "
+        BLOCK_CONFIGURATION@313..375
+          FOR_KW@313..316 "for"
+          WHITESPACE@316..317 " "
+          CALL_EXPR@317..327
+            NAME@317..324
+              IDENT@317..324 "gen_for"
+            ASSOCIATION_LIST@324..327
+              LPAREN@324..325 "("
+              ASSOCIATION_ELEMENT@325..326
+                LITERAL@325..326
+                  DECIMAL_LITERAL@325..326 "0"
+              RPAREN@326..327 ")"
+          WHITESPACE@327..334 "\n      "
+          COMPONENT_CONFIGURATION@334..362
+            FOR_KW@334..337 "for"
+            WHITESPACE@337..338 " "
+            IDENT_LIST@338..340
+              IDENT@338..340 "u2"
+            WHITESPACE@340..341 " "
+            COLON@341..342 ":"
+            WHITESPACE@342..343 " "
+            NAME@343..347
+              IDENT@343..347 "comp"
+            WHITESPACE@347..354 "\n      "
+            END_KW@354..357 "end"
+            WHITESPACE@357..358 " "
+            FOR_KW@358..361 "for"
+            SEMI@361..362 ";"
+          WHITESPACE@362..367 "\n    "
+          END_KW@367..370 "end"
+          WHITESPACE@370..371 " "
+          FOR_KW@371..374 "for"
+          SEMI@374..375 ";"
+        WHITESPACE@375..378 "\n  "
+        END_KW@378..381 "end"
+        WHITESPACE@381..382 " "
+        FOR_KW@382..385 "for"
+        SEMI@385..386 ";"
+      WHITESPACE@386..387 "\n"
+      END_KW@387..390 "end"
+      WHITESPACE@390..391 " "
+      CONFIGURATION_KW@391..404 "configuration"
+      WHITESPACE@404..405 " "
+      IDENT@405..408 "cfg"
+      SEMI@408..409 ";"
+  WHITESPACE@409..411 "\n\n"
+  DESIGN_UNIT@411..546
+    ARCHITECTURE_BODY@411..546
+      ARCHITECTURE_KW@411..423 "architecture"
+      WHITESPACE@423..424 " "
+      IDENT@424..425 "a"
+      WHITESPACE@425..426 " "
+      OF_KW@426..428 "of"
+      WHITESPACE@428..429 " "
+      NAME@429..430
+        IDENT@429..430 "e"
+      WHITESPACE@430..431 " "
+      IS_KW@431..433 "is"
+      WHITESPACE@433..436 "\n  "
+      CONFIGURATION_SPEC@436..471
+        FOR_KW@436..439 "for"
+        WHITESPACE@439..440 " "
+        IDENT_LIST@440..442
+          IDENT@440..442 "u1"
+        WHITESPACE@442..443 " "
+        COLON@443..444 ":"
+        WHITESPACE@444..445 " "
+        NAME@445..449
+          IDENT@445..449 "comp"
+        WHITESPACE@449..450 " "
+        BINDING_INDICATION@450..470
+          USE_KW@450..453 "use"
+          WHITESPACE@453..454 " "
+          ENTITY_KW@454..460 "entity"
+          WHITESPACE@460..461 " "
+          SELECTED_NAME@461..470
+            NAME@461..465
+              IDENT@461..465 "work"
+            DOT@465..466 "."
+            IDENT@466..470 "impl"
+        SEMI@470..471 ";"
+      WHITESPACE@471..474 "\n  "
+      CONFIGURATION_SPEC@474..535
+        FOR_KW@474..477 "for"
+        WHITESPACE@477..478 " "
+        ALL_KW@478..481 "all"
+        WHITESPACE@481..482 " "
+        COLON@482..483 ":"
+        WHITESPACE@483..484 " "
+        NAME@484..489
+          IDENT@484..489 "comp2"
+        WHITESPACE@489..490 " "
+        BINDING_INDICATION@490..534
+          USE_KW@490..493 "use"
+          WHITESPACE@493..494 " "
+          ENTITY_KW@494..500 "entity"
+          WHITESPACE@500..501 " "
+          CALL_EXPR@501..516
+            SELECTED_NAME@501..511
+              NAME@501..505
+                IDENT@501..505 "work"
+              DOT@505..506 "."
+              IDENT@506..511 "impl2"
+            ASSOCIATION_LIST@511..516
+              LPAREN@511..512 "("
+              ASSOCIATION_ELEMENT@512..515
+                NAME@512..515
+                  IDENT@512..515 "rtl"
+              RPAREN@515..516 ")"
+          WHITESPACE@516..517 " "
+          PORT_MAP_ASPECT@517..534
+            PORT_KW@517..521 "port"
+            WHITESPACE@521..522 " "
+            MAP_KW@522..525 "map"
+            WHITESPACE@525..526 " "
+            ASSOCIATION_LIST@526..534
+              LPAREN@526..527 "("
+              ASSOCIATION_ELEMENT@527..533
+                NAME@527..528
+                  IDENT@527..528 "x"
+                WHITESPACE@528..529 " "
+                ARROW@529..531 "=>"
+                WHITESPACE@531..532 " "
+                NAME@532..533
+                  IDENT@532..533 "y"
+              RPAREN@533..534 ")"
+        SEMI@534..535 ";"
+      WHITESPACE@535..536 "\n"
+      BEGIN_KW@536..541 "begin"
+      WHITESPACE@541..542 "\n"
+      END_KW@542..545 "end"
+      SEMI@545..546 ";"
+  WHITESPACE@546..547 "\n"

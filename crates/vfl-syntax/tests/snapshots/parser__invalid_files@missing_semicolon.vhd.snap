@@ -1,0 +1,76 @@
+---
+source: crates/vfl-syntax/tests/parser.rs
+expression: render(&parsed)
+input_file: crates/vfl-syntax/tests/data/err/missing_semicolon.vhd
+---
+SOURCE_FILE@0..88
+  DESIGN_UNIT@0..87
+    ARCHITECTURE_BODY@0..87
+      ARCHITECTURE_KW@0..12 "architecture"
+      WHITESPACE@12..13 " "
+      IDENT@13..14 "a"
+      WHITESPACE@14..15 " "
+      OF_KW@15..17 "of"
+      WHITESPACE@17..18 " "
+      NAME@18..19
+        IDENT@18..19 "e"
+      WHITESPACE@19..20 " "
+      IS_KW@20..22 "is"
+      WHITESPACE@22..25 "\n  "
+      SIGNAL_DECL@25..39
+        SIGNAL_KW@25..31 "signal"
+        WHITESPACE@31..32 " "
+        IDENT_LIST@32..33
+          IDENT@32..33 "s"
+        WHITESPACE@33..34 " "
+        COLON@34..35 ":"
+        WHITESPACE@35..36 " "
+        SUBTYPE_INDICATION@36..39
+          NAME@36..39
+            IDENT@36..39 "bit"
+      WHITESPACE@39..42 "\n  "
+      SIGNAL_DECL@42..57
+        SIGNAL_KW@42..48 "signal"
+        WHITESPACE@48..49 " "
+        IDENT_LIST@49..50
+          IDENT@49..50 "t"
+        WHITESPACE@50..51 " "
+        COLON@51..52 ":"
+        WHITESPACE@52..53 " "
+        SUBTYPE_INDICATION@53..56
+          NAME@53..56
+            IDENT@53..56 "bit"
+        SEMI@56..57 ";"
+      WHITESPACE@57..58 "\n"
+      BEGIN_KW@58..63 "begin"
+      WHITESPACE@63..66 "\n  "
+      SIGNAL_ASSIGN_STMT@66..72
+        NAME@66..67
+          IDENT@66..67 "s"
+        WHITESPACE@67..68 " "
+        LTE@68..70 "<="
+        WHITESPACE@70..71 " "
+        WAVEFORM@71..72
+          WAVEFORM_ELEMENT@71..72
+            NAME@71..72
+              IDENT@71..72 "t"
+      WHITESPACE@72..75 "\n  "
+      SIGNAL_ASSIGN_STMT@75..82
+        NAME@75..76
+          IDENT@75..76 "t"
+        WHITESPACE@76..77 " "
+        LTE@77..79 "<="
+        WHITESPACE@79..80 " "
+        WAVEFORM@80..81
+          WAVEFORM_ELEMENT@80..81
+            NAME@80..81
+              IDENT@80..81 "s"
+        SEMI@81..82 ";"
+      WHITESPACE@82..83 "\n"
+      END_KW@83..86 "end"
+      SEMI@86..87 ";"
+  WHITESPACE@87..88 "\n"
+
+errors:
+  39..39: expected `;`, found `signal`
+  72..72: expected `;`, found `t`
