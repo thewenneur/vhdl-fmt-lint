@@ -1,6 +1,7 @@
 //! Navigation, refactoring and fixes: go to definition and back, find
 //! references, symbols in the file or the project, rename, quick fixes,
-//! and highlighting the uses of the name at the caret.
+//! code generated from an entity, and highlighting the uses of the name
+//! at the caret.
 //!
 //! Lists of places or fixes are Scintilla user lists; picking an item
 //! comes back as `SCN_USERLISTSELECTION`.
@@ -13,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::ptr;
 
 use vfl_lsp::editor::{Location, QuickFix, Use};
+use vfl_lsp::generate::Kind;
 
 use crate::engine::{BufferText, Engine};
 use crate::plugin::{
@@ -53,6 +55,8 @@ enum Action {
     /// Select a range of the buffer the list was shown in.
     Select(Range<usize>),
     Fix(QuickFix),
+    /// Generate code from an entity, by qualified name.
+    Generate(Kind, String),
 }
 
 /// The current buffer, read for a query.
@@ -175,9 +179,9 @@ pub(crate) fn list_selected(n: &ScNotification) {
                 tell("The file changed since the fixes were listed. Try again.");
                 return;
             }
-            apply_edits(here.sci, &here.buffer, &fix.edits);
-            lint_current(Trigger::Refresh);
+            apply_fix(&here, fix);
         }
+        Action::Generate(kind, entity) => generate_from(kind, &entity),
     }
 }
 
@@ -386,10 +390,18 @@ fn apply_edits(sci: Hwnd, buffer: &BufferText, edits: &[(Range<usize>, String)])
 }
 
 fn fix_label(fix: &QuickFix) -> String {
-    if fix.safe {
-        format!("{}  [{}]", fix.title, fix.rule)
-    } else {
-        format!("{} (may change behavior)  [{}]", fix.title, fix.rule)
+    // The titles of unsafe fixes say so already.
+    format!("{}  [{}]", fix.title, fix.rule)
+}
+
+/// Applies a fix to the buffer it was listed for, which is in front.
+fn apply_fix(here: &Here, fix: QuickFix) {
+    match &fix.rename {
+        Some(new_name) => rename_to(here, fix.at, new_name),
+        None => {
+            apply_edits(here.sci, &here.buffer, &fix.edits);
+            lint_current(Trigger::Refresh);
+        }
     }
 }
 
@@ -397,11 +409,13 @@ pub(crate) fn quick_fix() {
     let here = here();
     let fixes = engine(|e| e.quick_fixes(here.path(), &here.buffer.text, here.offset, here.offset))
         .unwrap_or_default();
-    match fixes.as_slice() {
-        [] => tell("No fix for a problem at the caret."),
-        [one] if one.safe => {
-            apply_edits(here.sci, &here.buffer, &one.edits);
-            lint_current(Trigger::Refresh);
+    let fixing: Vec<&QuickFix> = fixes.iter().filter(|f| !f.silences).collect();
+    match fixing.as_slice() {
+        [] if fixes.is_empty() => tell("No fix for a problem at the caret."),
+        // A single safe fix is applied; the list offers the others.
+        [one] if one.safe && one.rename.is_none() => {
+            let one = (*one).clone();
+            apply_fix(&here, one);
         }
         _ => show_list(
             &here,
@@ -448,7 +462,16 @@ pub(crate) fn rename() {
     if new == old {
         return;
     }
-    let files = match engine(|e| e.rename(here.path(), &here.buffer.text, here.offset, &new)) {
+    rename_to(&here, here.offset, &new);
+}
+
+/// Renames the name at byte `offset` of the buffer in front to `new`,
+/// asking first when other files change.
+fn rename_to(here: &Here, offset: usize, new: &str) {
+    let old = engine(|e| e.prepare_rename(here.path(), &here.buffer.text, offset))
+        .and_then(Result::ok)
+        .map_or_else(String::new, |range| here.buffer.text[range].to_owned());
+    let files = match engine(|e| e.rename(here.path(), &here.buffer.text, offset, new)) {
         Some(Ok(files)) => files,
         Some(Err(why)) => {
             tell(&format!("Cannot rename: {why}."));
@@ -512,6 +535,86 @@ pub(crate) fn rename() {
             MB_ICONWARNING,
         );
     }
+}
+
+// Code generation.
+
+/// Asks which entity of the project to generate `kind` from, those of the
+/// current file first.
+pub(crate) fn generate(kind: Kind) {
+    let here = here();
+    let mut entities = engine(|e| e.entities(here.path(), &here.buffer.text)).unwrap_or_default();
+    entities.sort_by_key(|e| here.path() != Some(e.path.as_path()));
+    match entities.as_slice() {
+        [] => tell("No entity in this project."),
+        [one] => generate_from(kind, &one.qualified()),
+        _ => show_list(
+            &here,
+            entities
+                .iter()
+                .map(|e| {
+                    (
+                        format!("{}  ({}, {})", e.name, e.library, file_name(&e.path)),
+                        Action::Generate(kind, e.qualified()),
+                    )
+                })
+                .collect(),
+        ),
+    }
+}
+
+fn generate_from(kind: Kind, entity: &str) {
+    let here = here();
+    let generated = match engine(|e| e.generate(here.path(), &here.buffer.text, kind, entity)) {
+        Some(Ok(generated)) => generated,
+        Some(Err(why)) => {
+            tell(&format!("Cannot generate: {why}."));
+            return;
+        }
+        None => return,
+    };
+    match generated.path {
+        Some(path) => {
+            if path.exists() && !confirm(npp(), &format!("{} exists. Replace it?", path.display()))
+            {
+                return;
+            }
+            if let Err(err) = std::fs::write(&path, &generated.text) {
+                tell(&format!("Could not write {}: {err}.", path.display()));
+                return;
+            }
+            if !open(&path) {
+                tell(&format!("Wrote {}.", path.display()));
+            }
+        }
+        None => insert_at_caret(&here, &generated.text),
+    }
+}
+
+/// Inserts lines at the caret, each after the first indented like the
+/// caret's line.
+fn insert_at_caret(here: &Here, text: &str) {
+    let line_start = here.buffer.text[..here.offset]
+        .rfind('\n')
+        .map_or(0, |i| i + 1);
+    let line = &here.buffer.text[line_start..];
+    let indent = &line[..line.len() - line.trim_start_matches([' ', '\t']).len()];
+    let indent = &indent[..indent.len().min(here.offset - line_start)];
+    let newline = if here.buffer.text.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let text = text
+        .trim_end_matches('\n')
+        .replace('\n', &format!("{newline}{indent}"));
+    apply_edits(
+        here.sci,
+        &here.buffer,
+        &[(here.offset..here.offset, text.clone())],
+    );
+    let end = here.buffer.position(here.offset) + here.buffer.encoded_len(&text);
+    send(here.sci, SCI_GOTOPOS, end, 0);
 }
 
 // Highlighting the uses of the name at the caret.

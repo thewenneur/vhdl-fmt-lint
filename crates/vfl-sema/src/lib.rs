@@ -45,7 +45,7 @@ mod typeck;
 
 pub use analysis::{Analysis, AnalyzedFile, FileInput, UnitInfo};
 pub use decl::{
-    Access, Decl, DeclId, DeclKind, Element, FileId, Mode, Reference, Region, Target, TypeDef,
-    UnitId,
+    Access, Decl, DeclId, DeclKind, Element, ElementRef, FileId, Mode, Reference, Region, Target,
+    TypeDef, UnitId,
 };
 pub use diagnostic::{Diagnostic, Edit, Fix, codes};

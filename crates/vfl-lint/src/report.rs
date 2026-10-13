@@ -335,6 +335,7 @@ mod tests {
             range: TextRange::new(TextSize::from(9), TextSize::from(10)),
             message: "signal `x` is never used".into(),
             fix: None,
+            rename: None,
         }
     }
 

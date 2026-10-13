@@ -112,6 +112,10 @@ most of the cost: about 7 ms for OSVVM's 400 KB `AlertLogPkg.vhd`.
 | UVVM | 0.6 / 2.3 ms | 0.8 / 2.0 ms |
 | VUnit | 2.4 / 4.5 ms | 2.4 / 5.9 ms |
 
+It then asks for the semantic tokens of every file, whole and as a delta. On UVVM (302
+files) the median is 0.1 ms; the slowest is `methods_pkg.vhd` (490 KB, 20,357 names):
+7.4 ms whole, 4.8 ms as a delta.
+
 ## Running it
 
 ```sh

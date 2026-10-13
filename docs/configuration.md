@@ -267,6 +267,40 @@ Each entry is either a level, or a table with an optional `level` and rule optio
 `info` findings are shown as notes. `vfl lint` exits with a failure status when there are
 `error` findings, or `warn` findings too with `--deny-warnings`.
 
+## `[generate]`
+
+Code generated from an entity: `vfl new`, and the commands of the editor integrations. The
+text is laid out by the formatter, so `[format]` applies to it too.
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `instance_label` | string | `"u_{entity}"` | Label of a generated instantiation. `{entity}` is replaced by the entity name. |
+| `testbench_name` | string | `"{entity}_tb"` | Name of a testbench entity, and of its file (with the extension of the entity's file). |
+| `testbench_architecture` | string | `"sim"` | Name of a testbench architecture. |
+| `testbench_instance` | string | `"dut"` | Label of the design under test in a testbench. |
+| `clock_period` | string | `"10 ns"` | Period of the clocks a testbench drives, a VHDL time expression. |
+| `reset_cycles` | integer | `5` | Clock cycles a testbench holds the resets active before releasing them. |
+| `clock_pattern` | string | see below | Regular expression for the input ports driven as clocks, when no architecture of the entity shows it with `rising_edge(clk)`, `falling_edge(clk)` or `clk'event`. |
+| `reset_pattern` | string | see below | Regular expression for the input ports driven as resets. |
+| `active_low_pattern` | string | see below | Regular expression for the resets that are active low, when no architecture compares them with `'0'` or `'1'`. |
+
+The default patterns take `clk`, `sys_clk`, `clk100` and `clk_i` as clocks (not `clk_en`);
+`rst`, `areset`, `rst_n`, `rstn` and `rst_i` as resets; and `rst_n`, `rstn`, `resetn` and
+`rst_ni` as active low:
+
+```toml
+[generate]
+clock_pattern = '(?i)^(.*_)?(clk|clock)\d*(_i|_in|_p)?$'
+reset_pattern = '(?i)^(.*_)?(a|s)?(rst|reset)\d*(n|_n|_b|_i|_in|_ni|_n_i)?$'
+active_low_pattern = '(?i)([^i]n|_b|_ni|_n_i)$'
+```
+
+A testbench has an entity without ports, a constant for each generic (with a `TODO` where
+the generic has no default), a signal for each port, the design under test, a clock for each
+clock input, and a stimulus process that holds the resets, waits, and ends the simulation
+(`std.env.finish` from VHDL-2008; with VHDL-93 the clocks stop and the simulation runs out
+of events).
+
 ## In-source comments
 
 These are not config keys, but they adjust settings for part of a file.
@@ -343,6 +377,15 @@ block_boundary = "blank-line"
 preset = "recommended"
 
 [lint.rules]
+
+[generate]
+instance_label = "u_{entity}"
+testbench_name = "{entity}_tb"
+testbench_architecture = "sim"
+testbench_instance = "dut"
+clock_period = "10 ns"
+reset_cycles = 5
+# clock_pattern, reset_pattern, active_low_pattern: see above
 ```
 
 Editor settings (the path to `vfl`, tracing) belong to the editor integration, not to

@@ -283,6 +283,7 @@ impl<'a> Resolver<'a> {
             imports,
             libraries,
             refs: self.refs,
+            elements: Vec::new(),
             diagnostics: self.diags,
             use_items: self.use_items,
             used_imports: self.used_imports.into_iter().collect(),
@@ -495,6 +496,48 @@ impl<'a> Resolver<'a> {
         } else {
             self.ctx.decl(id)
         }
+    }
+
+    /// The declaration that subprogram body `body` completes: one of the
+    /// same kind, name and profile, declared earlier in the region or in
+    /// the package or protected type the region is the body of.
+    fn subprogram_declaration(&self, body: DeclId) -> Option<DeclId> {
+        let decl = self.decl(body)?;
+        let profile = |d: &Decl| -> Option<Vec<Option<DeclId>>> {
+            let mut marks: Vec<Option<DeclId>> = d
+                .params
+                .as_deref()?
+                .iter()
+                .map(|&p| self.decl(p).and_then(|p| p.subtype))
+                .collect();
+            marks.push(d.subtype);
+            Some(marks)
+        };
+        let wanted = profile(decl)?;
+        // A unit's own frame sits on the frame of what it is the body of.
+        let frame = self.frames.last()?;
+        let below = self
+            .frames
+            .len()
+            .checked_sub(2)
+            .map(|i| &self.frames[i])
+            .filter(|_| frame.inherited.is_empty());
+        std::iter::once(&frame.locals)
+            .chain(frame.inherited.iter().map(|r| &**r))
+            .chain(
+                below
+                    .into_iter()
+                    .flat_map(|f| f.inherited.iter().map(|r| &**r)),
+            )
+            .flat_map(|region| region.get(&decl.name).iter().copied())
+            .find(|&c| {
+                c != body
+                    && self.decl(c).is_some_and(|d| {
+                        d.kind == decl.kind
+                            && (c.unit != body.unit || c.index < body.index)
+                            && profile(d).as_ref() == Some(&wanted)
+                    })
+            })
     }
 
     /// Records references for the label repeated after `end`.
@@ -2394,6 +2437,19 @@ impl<'a> Resolver<'a> {
                 .decl(id)
                 .map(|d| d.spelling.clone())
                 .unwrap_or_default();
+            // A process without its list would never wait: keep the last.
+            let fix = crate::diagnostic::list_item_removal(
+                &self.ctx.files[self.file as usize].text,
+                range,
+            )
+            .map(|removed| Fix {
+                title: format!("Remove `{name}` from the sensitivity list"),
+                edits: vec![Edit {
+                    range: removed,
+                    text: String::new(),
+                }],
+                safe: false,
+            });
             self.diags.push(Diagnostic {
                 code: codes::UNNEEDED_SENSITIVITY,
                 file: self.file,
@@ -2401,7 +2457,7 @@ impl<'a> Resolver<'a> {
                 message: format!(
                     "`{name}` is in the sensitivity list but the process never reads it"
                 ),
-                fix: None,
+                fix,
             });
         }
     }
@@ -2613,6 +2669,24 @@ impl<'a> Resolver<'a> {
                 self.frames.pop();
                 self.parents.pop();
                 if let (Some(id), Some(name)) = (id, designator(&spec)) {
+                    // The body completes the declaration with the same
+                    // profile, in a package or earlier in the region.
+                    // References stay in source order: this one goes before
+                    // the body's.
+                    if let Some(declaration) = self.subprogram_declaration(id) {
+                        let range = name.text_range();
+                        let at = self
+                            .refs
+                            .partition_point(|r| r.range.start() < range.start());
+                        self.refs.insert(
+                            at,
+                            Reference {
+                                range,
+                                targets: vec![Target::Decl(declaration)],
+                                access: Access::Other,
+                            },
+                        );
+                    }
                     self.end_label_refs(node, &name, id);
                 }
             }

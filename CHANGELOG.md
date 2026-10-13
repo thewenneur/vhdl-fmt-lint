@@ -1,9 +1,17 @@
 # Changelog
 
-## [Unreleased]
+## Unreleased
 
 ### Added
 
+- **Semantic highlighting**: the language server colors names by what they resolve to
+  (signal, port, variable, constant, generic, type, function, procedure, entity, component,
+  package, library, enumeration literal, label), with modifiers for a port's or
+  parameter's mode, declarations, assignment targets and names from `std` / `ieee`. Whole
+  file, range and delta requests are supported; the largest UVVM file (20,000 names) takes
+  7 ms. The VS Code extension declares the VHDL-specific token types with standard
+  fallbacks, so any theme colors them. The Notepad++ plugin colors signals, ports,
+  constants, variables, types and subprograms (**Color names by meaning**, on by default).
 - **Range formatting**: format only a selection (`textDocument/rangeFormatting`,
   `vfl fmt --lines FIRST:LAST`, **Format selection** in Notepad++). The selection widens to
   the whole statements it touches and to every line aligned with them, so alignment stays

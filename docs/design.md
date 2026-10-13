@@ -48,6 +48,7 @@ Verilog/SystemVerilog, mixed-language projects (designed for, not built).
 | `vfl-sema`   | Incremental semantic model: design units, scopes, name resolution, overloads, types. |
 | `vfl-fmt`    | Formatter: CST to layout IR to text, with an alignment pass. |
 | `vfl-lint`   | Rule framework and built-in rules (syntactic and semantic), fixes. |
+| `vfl-gen`    | Code generated from an entity: instantiations, component declarations, testbench skeletons. |
 | `vfl-lsp`    | Language server: diagnostics, formatting, go-to, hover, signature help, completion, rename. |
 | `vfl-cli`    | The `vfl` binary: `vfl fmt`, `vfl lint`, `vfl check`, `vfl lsp`, `vfl project`. |
 
@@ -130,6 +131,20 @@ Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
     into a register (`sync_1 <= s;`, the first stage of a synchronizer), memories (arrays
     of arrays, as in dual-clock RAMs) and processes with `wait` statements are not
     reported.
+  - `sema/open-input` and `sema/inout-port`: an input port without a default associated
+    with `open`; an `inout` port only read or only driven by its architectures.
+  - Resets (`sema/missing-reset`, `sema/mixed-reset`, `sema/reset-polarity`): a clocked
+    process's reset is the first condition of an `if` whose last branch is the clock edge
+    (asynchronous), or the first condition of an `if` opening the clocked branch on a
+    signal named like a reset (synchronous). Registers assigned in the clocked part but
+    not in the reset part are reported (info), as are, within an architecture, reset
+    signals used both synchronously and asynchronously or tested with both polarities,
+    and active-low names (`rst_n`) tested active high.
+  - State machines (`sema/fsm-unreachable-state`, `sema/fsm-stuck-state`): a `case` on a
+    signal or variable of a project enumeration type whose alternatives assign literals
+    to it or to a same-type next-state object. Any other kind of assignment to these
+    objects leaves the machine alone. States no transition reaches, and reachable states
+    no transition leaves, are reported.
 - Unknown things degrade to "unknown" instead of cascading errors: a library that is not in
   the project (vendor primitives such as `unisim`) makes its names unchecked and is reported
   once as info, and names that may come from it are not reported.
@@ -254,6 +269,8 @@ its type (an object's subtype and what the type is, a subtype's base, a function
 type, record elements reached through `a.b` or `a(i).b`; on a call, only the overload
 type checking chose), signature help for subprogram calls, protected type methods and
 `port map` / `generic map` (the active parameter follows commas and named formals),
+semantic tokens (whole file, range and delta: names typed by what they resolve to, with
+modifiers for port and parameter modes, declarations, writes and `std` / `ieee` names),
 document and workspace symbols, rename (including end labels and selected names) and
 completion (scope, `use`d packages, selected-name members, record elements and protected
 type methods after `value.`, libraries, keywords).

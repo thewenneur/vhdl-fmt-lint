@@ -6,7 +6,7 @@ input_file: crates/vfl-sema/tests/data/rtl.vhd
 rtl_pkg.vhd: work
 child.vhd: work
 top.vhd: work
-top.vhd:13:10: sema/unused-signal: signal `bad_init` is never used
+top.vhd:13:10: sema/unused-signal: signal `bad_init` is never used [fix: Remove the unused signal `bad_init`]
 top.vhd:13:53: sema/width-mismatch: `bad_init` has 4 elements but the value has 5
 top.vhd:14:10: sema/unread-signal: signal `n` is assigned but never read
 top.vhd:15:10: sema/undriven-signal: signal `u` is read but never assigned

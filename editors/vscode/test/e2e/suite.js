@@ -63,6 +63,69 @@ async function run() {
     unused.range,
   );
   assert.ok(fixes && fixes.length > 0, "no quick fix for the unused signal");
+  const titles = fixes.map((f) => f.title);
+  assert.ok(
+    titles.includes("Remove the unused signal `unused_s` (may change behavior)"),
+    `no removal in ${JSON.stringify(titles)}`,
+  );
+  assert.ok(titles.includes("Ignore `sema/unused-signal` on this line"));
+
+  // Renaming `r` changes its declaration and its three uses.
+  const rename = await vscode.commands.executeCommand(
+    "vscode.executeDocumentRenameProvider",
+    uri,
+    new vscode.Position(16, use),
+    "state",
+  );
+  const renamed = rename.get(uri);
+  assert.equal(renamed.length, 4, JSON.stringify(renamed));
+  assert.ok(renamed.every((e) => e.newText === "state"));
+
+  const references = await vscode.commands.executeCommand(
+    "vscode.executeReferenceProvider",
+    uri,
+    new vscode.Position(16, use),
+  );
+  assert.equal(references.length, 4, JSON.stringify(references));
+
+  // Names are colored by what they resolve to: `r` in `r <= not r;` is a
+  // signal being assigned.
+  const legend = await vscode.commands.executeCommand(
+    "vscode.provideDocumentSemanticTokensLegend",
+    uri,
+  );
+  assert.ok(legend && legend.tokenTypes.includes("signal"), "no semantic tokens legend");
+  const tokens = await vscode.commands.executeCommand(
+    "vscode.provideDocumentSemanticTokens",
+    uri,
+  );
+  assert.ok(tokens && tokens.data.length > 0, "no semantic tokens");
+  const decoded = [];
+  let line = 0;
+  let column = 0;
+  for (let i = 0; i < tokens.data.length; i += 5) {
+    line += tokens.data[i];
+    column = tokens.data[i] === 0 ? column + tokens.data[i + 1] : tokens.data[i + 1];
+    decoded.push({ line, column, type: legend.tokenTypes[tokens.data[i + 3]], modifiers: tokens.data[i + 4] });
+  }
+  const assigned = decoded.find((t) => t.line === 13 && t.column === 6);
+  assert.equal(assigned?.type, "signal", JSON.stringify(decoded));
+  assert.ok(assigned.modifiers & (1 << legend.tokenModifiers.indexOf("modification")));
+  const clk = decoded.find((t) => t.line === 4 && t.column === 8);
+  assert.equal(clk?.type, "port");
+  assert.ok(clk.modifiers & (1 << legend.tokenModifiers.indexOf("in")));
+
+  // Code generation: an instantiation at the cursor, and a testbench file.
+  const scratch = await vscode.workspace.openTextDocument({ language: "vhdl", content: "" });
+  await vscode.window.showTextDocument(scratch);
+  await vscode.commands.executeCommand("vfl.insertInstance", "work.e2e_top");
+  assert.match(scratch.getText(), /^u_e2e_top : entity work\.e2e_top\n  port map \(/);
+  await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor");
+
+  await vscode.commands.executeCommand("vfl.generateTestbench", "e2e_top");
+  const tb = vscode.window.activeTextEditor?.document;
+  assert.equal(tb && path.basename(tb.uri.fsPath), "e2e_top_tb.vhd");
+  assert.match(tb.getText(), /dut : entity work\.e2e_top/);
 }
 
 module.exports = { run };

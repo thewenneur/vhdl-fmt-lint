@@ -16,8 +16,9 @@ use vfl_fmt::FormatError;
 use vfl_lsp::World;
 use vfl_lsp::editor::{
     self, Completion, Completions, FileEdits, HoverInfo, Location, ProjectSymbol, QuickFix,
-    SignatureHelp, Symbol, Use,
+    SignatureHelp, Symbol, TokenKind, Use,
 };
+use vfl_lsp::generate::{self, EntityRef, Generated, Kind};
 use vfl_project::{Encoding, find_root};
 
 /// How bad a problem is.
@@ -35,6 +36,44 @@ impl Severity {
             Severity::Warning => "warning",
             Severity::Error => "error",
         }
+    }
+}
+
+/// How a name is colored, by what it resolves to. Names of other kinds
+/// keep the lexer's colors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NameColor {
+    Signal,
+    Port,
+    /// A constant, generic or enumeration literal.
+    Constant,
+    /// A variable or subprogram parameter.
+    Variable,
+    Type,
+    /// A function or procedure.
+    Subprogram,
+}
+
+impl NameColor {
+    pub const ALL: [NameColor; 6] = [
+        NameColor::Signal,
+        NameColor::Port,
+        NameColor::Constant,
+        NameColor::Variable,
+        NameColor::Type,
+        NameColor::Subprogram,
+    ];
+
+    fn of(kind: TokenKind) -> Option<NameColor> {
+        Some(match kind {
+            TokenKind::Signal => NameColor::Signal,
+            TokenKind::Port => NameColor::Port,
+            TokenKind::Constant | TokenKind::Generic | TokenKind::EnumMember => NameColor::Constant,
+            TokenKind::Variable | TokenKind::Parameter => NameColor::Variable,
+            TokenKind::Type | TokenKind::TypeParameter => NameColor::Type,
+            TokenKind::Function | TokenKind::Procedure => NameColor::Subprogram,
+            _ => return None,
+        })
     }
 }
 
@@ -267,6 +306,19 @@ impl Engine {
         editor::highlights(world, &file_path, offset)
     }
 
+    /// The names in the buffer to color, as byte ranges, in order.
+    pub fn name_colors(
+        &mut self,
+        path: Option<&Path>,
+        text: &str,
+    ) -> Vec<(Range<usize>, NameColor)> {
+        let (world, file_path) = self.sync(path, text);
+        editor::semantic_tokens(world, &file_path)
+            .into_iter()
+            .filter_map(|t| Some((t.range, NameColor::of(t.kind)?)))
+            .collect()
+    }
+
     /// The buffer's declarations, nested.
     pub fn outline(&mut self, path: Option<&Path>, text: &str) -> Vec<Symbol> {
         let (world, file_path) = self.sync(path, text);
@@ -329,6 +381,25 @@ impl Engine {
     pub fn fix_all(&mut self, path: Option<&Path>, text: &str) -> Option<(String, usize)> {
         let (world, file_path) = self.sync(path, text);
         editor::fix_all(world, &file_path)
+    }
+
+    /// The entities of the buffer's project.
+    pub fn entities(&mut self, path: Option<&Path>, text: &str) -> Vec<EntityRef> {
+        let (world, _) = self.sync(path, text);
+        generate::entities(world)
+    }
+
+    /// Code generated from `entity` (`name` or `library.name`) of the
+    /// buffer's project.
+    pub fn generate(
+        &mut self,
+        path: Option<&Path>,
+        text: &str,
+        kind: Kind,
+        entity: &str,
+    ) -> Result<Generated, String> {
+        let (world, _) = self.sync(path, text);
+        generate::generate(world, kind, entity)
     }
 
     /// Sets the text of a buffer without asking anything about it.
@@ -859,6 +930,28 @@ end architecture;
     }
 
     #[test]
+    fn colors_names_by_meaning() {
+        let mut engine = Engine::default();
+        let colors: Vec<(&str, NameColor)> = engine
+            .name_colors(None, TYPES)
+            .into_iter()
+            .map(|(range, color)| (&TYPES[range], color))
+            .collect();
+        for expected in [
+            ("rec", NameColor::Type),
+            ("r", NameColor::Signal),
+            ("scale", NameColor::Subprogram),
+            ("x", NameColor::Variable),
+            ("integer", NameColor::Type),
+            ("n", NameColor::Signal),
+        ] {
+            assert!(colors.contains(&expected), "{expected:?} in {colors:?}");
+        }
+        // Units and labels keep the lexer's colors.
+        assert!(!colors.iter().any(|(name, _)| *name == "e" || *name == "a"));
+    }
+
+    #[test]
     fn shows_parameters_of_calls() {
         let mut engine = Engine::default();
         let offset = at(TYPES, ", 3") + 2;
@@ -990,6 +1083,30 @@ end architecture;
     }
 
     #[test]
+    fn generates_from_entities() {
+        let (_dir, _pkg, top) = project();
+        let mut engine = Engine::default();
+        let found = engine.entities(Some(&top), TOP);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].qualified(), "work.top");
+        let instance = engine
+            .generate(Some(&top), TOP, Kind::Instance, "top")
+            .unwrap();
+        assert_eq!(instance.text, "u_top : entity work.top;\n");
+        assert_eq!(instance.path, None);
+        let testbench = engine
+            .generate(Some(&top), TOP, Kind::Testbench, "work.top")
+            .unwrap();
+        assert!(testbench.text.contains("dut : entity work.top;"));
+        assert_eq!(testbench.path, Some(top.with_file_name("top_tb.vhd")));
+        assert!(
+            engine
+                .generate(Some(&top), TOP, Kind::Component, "nope")
+                .is_err()
+        );
+    }
+
+    #[test]
     fn renames_across_files() {
         let (_dir, pkg, top) = project();
         let mut engine = Engine::default();
@@ -1025,8 +1142,19 @@ end architecture;
         let text = "entity e is   \nend entity;\n";
         std::fs::write(&path, text).unwrap();
         let mut engine = Engine::default();
-        let fixes = engine.quick_fixes(Some(&path), text, 11, 11);
+        let all = engine.quick_fixes(Some(&path), text, 11, 11);
+        let fixes: Vec<_> = all.iter().filter(|f| !f.silences).collect();
         assert_eq!(fixes.len(), 1, "{fixes:?}");
+        assert_eq!(
+            all.iter()
+                .filter(|f| f.silences)
+                .map(|f| f.title.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "Ignore `style/trailing-whitespace` on this line",
+                "Ignore `style/trailing-whitespace` in this file"
+            ]
+        );
         assert_eq!(fixes[0].title, "Remove trailing whitespace");
         assert_eq!(fixes[0].edits, [(11..14, String::new())]);
         let (fixed, count) = engine.fix_all(Some(&path), text).expect("a fix");

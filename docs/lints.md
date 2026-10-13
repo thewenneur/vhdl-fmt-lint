@@ -38,6 +38,11 @@ unsafe (it can, so it is worth a look). `vfl lint --fix` applies the safe fixes 
 again; `vfl lint --fix --unsafe-fixes` applies both. In an editor, each fix is offered as a
 quick fix, and the `source.fixAll.vfl` code action applies the safe ones.
 
+Editors offer more quick fixes than `--fix` applies: renaming a declaration everywhere to
+follow its [naming convention](#naming), adding the `use` clause for an
+[undeclared name](#semaunresolved-name) that a package declares, and, for every rule,
+silencing it on the line or in the file with a `-- vfl-ignore` comment.
+
 A finding can be silenced in the source with `-- vfl-ignore rule-id` at the end of its line
 (or on the line above), or for a whole file with `-- vfl-ignore-file rule-id`; see
 [In-source comments](configuration.md#in-source-comments).
@@ -55,26 +60,33 @@ A finding can be silenced in the source with `-- vfl-ignore rule-id` at the end 
 | [`sema/unassociated-port`](#semaunassociated-port) | error | error | |
 | [`sema/type-mismatch`](#sematype-mismatch) | error | error | |
 | [`sema/no-matching-overload`](#semano-matching-overload) | error | error | |
-| [`sema/unused-signal`](#semaunused-signal) | warn | warn | |
-| [`sema/unused-variable`](#semaunused-variable) | warn | warn | |
-| [`sema/unused-constant`](#semaunused-constant) | warn | warn | |
+| [`sema/unused-signal`](#semaunused-signal) | warn | warn | unsafe |
+| [`sema/unused-variable`](#semaunused-variable) | warn | warn | unsafe |
+| [`sema/unused-constant`](#semaunused-constant) | warn | warn | unsafe |
 | [`sema/unused-port`](#semaunused-port) | off | warn | |
 | [`sema/unused-generic`](#semaunused-generic) | off | warn | |
 | [`sema/unused-use`](#semaunused-use) | off | warn | unsafe |
 | [`sema/unread-signal`](#semaunread-signal) | warn | warn | |
 | [`sema/undriven-signal`](#semaundriven-signal) | warn | warn | |
 | [`sema/sensitivity-list`](#semasensitivity-list) | warn | warn | unsafe |
-| [`sema/unneeded-sensitivity`](#semaunneeded-sensitivity) | off | warn | |
+| [`sema/unneeded-sensitivity`](#semaunneeded-sensitivity) | off | warn | unsafe |
 | [`sema/width-mismatch`](#semawidth-mismatch) | warn | error | |
 | [`sema/inferred-latch`](#semainferred-latch) | warn | error | |
 | [`sema/clock-domain-crossing`](#semaclock-domain-crossing) | info | warn | |
-| [`style/no-buffer-ports`](#styleno-buffer-ports) | warn | warn | |
-| [`style/no-std-logic-arith`](#styleno-std-logic-arith) | warn | warn | |
+| [`sema/open-input`](#semaopen-input) | warn | error | |
+| [`sema/inout-port`](#semainout-port) | info | warn | |
+| [`sema/missing-reset`](#semamissing-reset) | info | warn | |
+| [`sema/mixed-reset`](#semamixed-reset) | warn | warn | |
+| [`sema/reset-polarity`](#semareset-polarity) | warn | error | |
+| [`sema/fsm-unreachable-state`](#semafsm-unreachable-state) | warn | warn | |
+| [`sema/fsm-stuck-state`](#semafsm-stuck-state) | info | warn | |
+| [`style/no-buffer-ports`](#styleno-buffer-ports) | warn | warn | unsafe |
+| [`style/no-std-logic-arith`](#styleno-std-logic-arith) | warn | warn | unsafe |
 | [`style/line-length`](#styleline-length) | off | warn | |
 | [`style/trailing-whitespace`](#styletrailing-whitespace) | off | warn | safe |
-| [`style/tabs`](#styletabs) | off | warn | |
+| [`style/tabs`](#styletabs) | off | warn | safe |
 | [`style/process-label`](#styleprocess-label) | off | warn | |
-| [`style/positional-association`](#stylepositional-association) | off | warn | |
+| [`style/positional-association`](#stylepositional-association) | off | warn | safe |
 | [`style/clock-edge`](#styleclock-edge) | off | warn | unsafe |
 | [`style/file-name`](#stylefile-name) | off | warn | |
 | [`naming/<kind>`](#naming) | off | off | |
@@ -111,6 +123,9 @@ x <= undeclared;          -- `undeclared` is not declared
 When a region `use`s something from a library outside the project (see
 [`sema/unknown-library`](#semaunknown-library)), names that are not found there are not
 reported, since they may come from that library.
+
+In an editor, a quick fix adds the `use` clause of each package that declares the name, in
+the project or in the bundled libraries (with its `library` clause when needed).
 
 ### `sema/unresolved-unit`
 
@@ -195,6 +210,10 @@ A constant declared in an architecture, process, subprogram or block is never re
 For these three rules, declarations directly in an entity or a package are not reported,
 because other units can use them; neither are the members of protected types.
 
+Fix (unsafe): removes the name from its declaration, or the whole declaration and its line
+when it declares only that name. It is unsafe because the initial value is no longer
+evaluated, which matters when it calls an impure function.
+
 ### `sema/unused-port`
 
 A port is not referenced by its entity or by any architecture of it. Entities without an
@@ -266,6 +285,9 @@ shape. Fix (unsafe): appends the missing signals to the list.
 A sensitivity list names a signal the process never reads. Harmless for synthesis, but it
 wakes the process in simulation for nothing. Off in `recommended`.
 
+Fix (unsafe): removes the signal from the list. There is no fix when it is the only signal,
+since a process without a sensitivity list and without a `wait` never stops.
+
 ### `sema/width-mismatch`
 
 An assignment, an initial value, or a port or generic association gives a vector a value
@@ -331,6 +353,141 @@ Clocked processes are those that test `rising_edge(clk)`, `falling_edge(clk)` or
 the two ports of a dual-clock RAM), signals registered on several clocks, and processes with
 `wait` (testbenches). `info` in `recommended`, `warn` in `strict`.
 
+### `sema/open-input`
+
+An instantiation associates an input port with `open`, and the port has no default value,
+so the input floats. VHDL requires an input port that is left open to have a default.
+
+```vhdl
+-- entity leaf has `port (a : in std_logic; ...)`
+u1 : entity work.leaf port map (a => open, y => y);   -- input port `a` is left open and has no default value
+```
+
+Both named (`a => open`) and positional (`open`) associations are checked. Leaving an
+input out of the map altogether is [`sema/unassociated-port`](#semaunassociated-port).
+`warn` in `recommended`, `error` in `strict`.
+
+### `sema/inout-port`
+
+An `inout` port is only read, or only driven, by its entity and its architectures, so it
+could be `in` or `out`.
+
+```vhdl
+port (pad : inout std_logic);   -- inout port `pad` is never driven, so it could be `in`
+...
+y <= pad;
+```
+
+An `inout` port passed to an instance's `inout` port counts as both read and driven.
+Entities without an architecture in the project are skipped. `info` in `recommended`,
+`warn` in `strict`.
+
+### `sema/missing-reset`
+
+A clocked process with a reset assigns a register that the reset branch does not. While
+the reset is active, that register has to keep its value, so the reset becomes an enable
+on it: extra logic, and a register that cannot use the flip-flop's reset.
+
+```vhdl
+process (clk, rst) begin
+  if rst = '1' then
+    count <= (others => '0');
+  elsif rising_edge(clk) then
+    count <= count + 1;
+    data  <= din;   -- `data` is not reset by `rst` in this process, so the reset acts as an enable on it
+  end if;
+end process;
+```
+
+To fix it, reset the register too, or move it to a process without a reset. A reset is the
+first condition of an `if` whose last branch is the clock edge (asynchronous), or the
+first condition of an `if` that opens the clocked branch and tests a signal named like a
+reset (`rst`, `reset`, `arst_n`, ...; synchronous). A synchronous reset written last in
+the clocked branch, so that it overrides what comes before, does not affect the registers
+it leaves out and is not reported. Not reported: memories (arrays of arrays), variables,
+and processes with `wait`. `info` in `recommended`, `warn` in `strict`.
+
+### `sema/mixed-reset`
+
+A reset signal resets one process synchronously and another asynchronously, within one
+architecture. The two kinds of register see the reset at different times, and a reset
+used asynchronously should be synchronized on release.
+
+```vhdl
+a : process (clk, rst) begin
+  if rst = '1' then x <= '0'; elsif rising_edge(clk) then x <= d; end if;
+end process;
+b : process (clk) begin
+  if rising_edge(clk) then
+    if rst = '1' then   -- `rst` resets this process synchronously but the process at line 1 asynchronously
+      y <= '0'; else y <= x; end if;
+  end if;
+end process;
+```
+
+Processes inside `if` and `case` generate statements are not compared, since they often
+pick one style or the other from a generic. `warn` in every preset.
+
+### `sema/reset-polarity`
+
+A reset signal is tested active high in one process and active low in another, within one
+architecture; or its name says it is active low (`rst_n`, `resetn`, `nrst`, `rst_l`,
+`rst_b`) but a process resets when it is high.
+
+```vhdl
+if rst = '1' then ...     -- in one process
+if rst = '0' then ...     -- `rst` resets when low here but when high at line 1
+if rst_n = '1' then ...   -- `rst_n` is named as active low but resets when high here
+```
+
+Resets are found as for [`sema/missing-reset`](#semamissing-reset). A level given by a
+constant or generic (`rst = RESET_LEVEL`) is not compared. Processes inside `if` and `case`
+generate statements are not compared with each other. `warn` in `recommended`, `error` in
+`strict`.
+
+### `sema/fsm-unreachable-state`
+
+A state machine has a state that no transition reaches, from its initial value or reset.
+
+A state machine is a `case` on a signal or variable of an enumeration type declared in the
+project, whose alternatives assign literals of that type to it, or to a next-state object
+of the same type that is then copied into it. Transitions are the literals assigned within
+each alternative; a literal assigned outside the `case` (a default, an abort) can come from
+any state, and one assigned in a reset branch is a starting state, as is the initial value
+(or the first literal when there is none).
+
+```vhdl
+type state_t is (IDLE, RUN, SPARE);
+...
+case state is
+  when IDLE  => if go = '1' then next_state <= RUN; end if;
+  when RUN   => next_state <= IDLE;
+  when SPARE => next_state <= IDLE;   -- no transition of `state` reaches state `SPARE` of `state_t`
+end case;
+```
+
+The state machine is left alone when the state is assigned anything but a literal or the
+next-state object (another signal, `state_t'succ(state)`, a function), assigned through a
+procedure, an aggregate or a port map, or when a choice is a range. Only states named by a
+choice are reported. `warn` in every preset.
+
+### `sema/fsm-stuck-state`
+
+A state machine has a reachable state that it never leaves: no transition from that state
+goes to another one, so only a reset gets it out.
+
+```vhdl
+case state is
+  when IDLE => if go = '1' then next_state <= DONE; end if;
+  when DONE => null;   -- `state` never leaves state `DONE` once there, except by a reset
+end case;
+```
+
+State machines are found as for
+[`sema/fsm-unreachable-state`](#semafsm-unreachable-state). Nothing is reported when the
+state is assigned a literal outside the `case` other than by a reset. A final state that
+waits for a reset is sometimes intended, hence `info` in `recommended`; `warn` in `strict`.
+
 ## `style`
 
 These rules look at one file's text and syntax tree.
@@ -340,11 +497,19 @@ These rules look at one file's text and syntax tree.
 A port has mode `buffer`. Since VHDL-2008, ports of mode `out` can be read, and earlier code
 can use an internal signal; `buffer` ports complicate connections in older tools.
 
+Fix (unsafe), with `standard = "2008"` or later: changes the mode to `out`. It is unsafe
+because the port's actual in each instantiation must then be a signal that is not also
+driven elsewhere.
+
 ### `style/no-std-logic-arith`
 
 A use clause names one of the Synopsys packages `std_logic_arith`, `std_logic_unsigned` or
 `std_logic_signed`, which are not standard and conflict with `ieee.numeric_std`. Use
 `numeric_std` (and `numeric_std_unsigned` in VHDL-2008).
+
+Fix (unsafe): names `numeric_std` instead, or `numeric_std_unsigned` for
+`std_logic_unsigned` with `standard = "2008"` or later. It is unsafe because arithmetic
+written for the Synopsys packages may then need conversions.
 
 ### `style/line-length`
 
@@ -370,6 +535,9 @@ A line ends with spaces or tabs. Fix (safe): removes them. `vfl fmt` removes the
 A line's indentation contains a tab. `vfl fmt` with `format.use_tabs = false` (the default)
 re-indents with spaces.
 
+Fix (safe): replaces the indentation with spaces, a tab reaching the next multiple of
+`format.indent` columns.
+
 ### `style/process-label`
 
 A process has no label. Labels name processes in simulators and synthesis reports.
@@ -379,6 +547,9 @@ A process has no label. Labels name processes in simulators and synthesis report
 A component or entity instantiation maps ports or generics by position:
 `port map (clk, open, o)`. Named association (`clk => clk`) survives changes to the
 entity's port order.
+
+Fix (safe): names the formals of the positional associations, from the instantiated entity
+or component when it is in the project.
 
 ### `style/clock-edge`
 
@@ -451,3 +622,9 @@ most one finding: the first problem found. A port is checked against `naming/por
 then against the rule for its mode, so both can be used together. Extended identifiers
 (`\name\`) are not checked. A rule with an invalid option (an unknown `case`, a pattern
 that does not compile) is reported as a configuration warning and skipped.
+
+In an editor, a quick fix renames the declaration everywhere to a name that follows every
+convention that applies to it: the prefixes and suffixes added, the rest of the name in the
+convention's case (`dataValid` becomes `s_data_valid` for `{ prefix = "s_", case =
+"snake" }`). There is none when no such name matches the `pattern`, or when the new name
+would clash with another declaration.

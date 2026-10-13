@@ -40,6 +40,8 @@ pub struct World {
     inferred_from: Vec<(PathBuf, FileSummary)>,
     /// Files whose text changed since the last analysis.
     pub dirty: bool,
+    /// The semantic tokens last sent, for answering with deltas.
+    pub(crate) semantic: crate::semantic::Sent,
 }
 
 impl World {
@@ -60,6 +62,7 @@ impl World {
             sources: None,
             inferred_from: Vec::new(),
             dirty: true,
+            semantic: Default::default(),
         };
         world.refresh();
         world
@@ -86,6 +89,7 @@ impl World {
             sources: None,
             inferred_from: Vec::new(),
             dirty: true,
+            semantic: Default::default(),
         }
     }
 
@@ -145,6 +149,7 @@ impl World {
     /// A document was closed: back to the file on disk, if any.
     pub fn close(&mut self, path: &Path) {
         self.overlays.remove(path);
+        self.semantic.forget(path);
         self.reread(path);
     }
 
