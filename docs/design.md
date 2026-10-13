@@ -244,6 +244,8 @@ its type (an object's subtype and what the type is, a subtype's base, a function
 type, record elements reached through `a.b` or `a(i).b`; on a call, only the overload
 type checking chose), signature help for subprogram calls, protected type methods and
 `port map` / `generic map` (the active parameter follows commas and named formals),
+semantic tokens (whole file, range and delta: names typed by what they resolve to, with
+modifiers for port and parameter modes, declarations, writes and `std` / `ieee` names),
 document and workspace symbols, rename (including end labels and selected names) and
 completion (scope, `use`d packages, selected-name members, record elements and protected
 type methods after `value.`, libraries, keywords).

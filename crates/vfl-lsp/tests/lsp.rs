@@ -440,3 +440,75 @@ fn signature_help_for_calls_and_maps() {
         "procedure add(n : in integer)"
     );
 }
+
+/// Decodes semantic tokens into `(line, column, length, type, modifiers)`.
+fn decode(data: &Value) -> Vec<[u64; 5]> {
+    let ints: Vec<u64> = data
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap())
+        .collect();
+    let (mut line, mut column) = (0, 0);
+    ints.chunks(5)
+        .map(|t| {
+            line += t[0];
+            column = if t[0] == 0 { column + t[1] } else { t[1] };
+            [line, column, t[2], t[3], t[4]]
+        })
+        .collect()
+}
+
+#[test]
+fn semantic_tokens_full_delta_and_range() {
+    let (dir, _pkg, top) = setup();
+    let mut client = Client::start(dir.path());
+    let doc = json!({ "textDocument": { "uri": top } });
+
+    let full = client.request("textDocument/semanticTokens/full", doc.clone());
+    let tokens = decode(&full["data"]);
+    // `width` in the port's range, a constant (type 12) of package `pkg`.
+    let width = tokens
+        .iter()
+        .find(|t| t[0] == 2 && t[3] == 12)
+        .expect("constant token");
+    assert_eq!(width[1..3], [27, 5]);
+    // `d`, an out port (type 11) being assigned: modification, out.
+    let d = tokens.iter().find(|t| t[0] == 6).expect("port token");
+    assert_eq!(d[1..4], [2, 1, 11]);
+    assert_eq!(d[4], 1 << 3 | 1 << 5);
+
+    // An edit that adds a signal: the delta is applied to the old tokens.
+    let text = TOP.replace("is\nbegin", "is\n  signal s : bit;\nbegin");
+    client.notify(
+        "textDocument/didOpen",
+        json!({ "textDocument": { "uri": top, "languageId": "vhdl", "version": 1, "text": text } }),
+    );
+    let delta = client.request(
+        "textDocument/semanticTokens/full/delta",
+        json!({ "textDocument": { "uri": top }, "previousResultId": full["resultId"] }),
+    );
+    let mut data: Vec<Value> = full["data"].as_array().unwrap().clone();
+    for edit in delta["edits"].as_array().unwrap() {
+        let start = edit["start"].as_u64().unwrap() as usize;
+        let count = edit["deleteCount"].as_u64().unwrap() as usize;
+        let new = edit["data"].as_array().cloned().unwrap_or_default();
+        data.splice(start..start + count, new);
+    }
+    let whole = client.request("textDocument/semanticTokens/full", doc.clone());
+    assert_eq!(Value::Array(data), whole["data"]);
+    assert!(
+        decode(&whole["data"])
+            .iter()
+            .any(|t| t[0] == 5 && t[3] == 10)
+    );
+
+    // A range gets only the tokens in it.
+    let range = client.request(
+        "textDocument/semanticTokens/range",
+        json!({ "textDocument": { "uri": top }, "range": {
+            "start": { "line": 5, "character": 0 }, "end": { "line": 6, "character": 0 } } }),
+    );
+    let lines: Vec<u64> = decode(&range["data"]).iter().map(|t| t[0]).collect();
+    assert_eq!(lines, [5, 5]);
+}

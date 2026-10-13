@@ -56,6 +56,127 @@
         "path": "./syntaxes/vhdl.tmLanguage.json"
       }
     ],
+    "semanticTokenTypes": [
+      {
+        "id": "procedure",
+        "superType": "function",
+        "description": "A VHDL procedure."
+      },
+      {
+        "id": "signal",
+        "superType": "variable",
+        "description": "A VHDL signal."
+      },
+      {
+        "id": "port",
+        "superType": "parameter",
+        "description": "A VHDL port; modifiers give its mode."
+      },
+      {
+        "id": "constant",
+        "superType": "variable",
+        "description": "A VHDL constant."
+      },
+      {
+        "id": "generic",
+        "superType": "parameter",
+        "description": "A VHDL generic constant."
+      },
+      {
+        "id": "label",
+        "description": "A VHDL statement label."
+      },
+      {
+        "id": "unit",
+        "superType": "enumMember",
+        "description": "A VHDL physical unit, like ns."
+      },
+      {
+        "id": "attribute",
+        "superType": "property",
+        "description": "A user-defined VHDL attribute."
+      }
+    ],
+    "semanticTokenModifiers": [
+      {
+        "id": "in",
+        "description": "A port or parameter of mode in."
+      },
+      {
+        "id": "out",
+        "description": "A port or parameter of mode out."
+      },
+      {
+        "id": "inout",
+        "description": "A port or parameter of mode inout."
+      },
+      {
+        "id": "buffer",
+        "description": "A port or parameter of mode buffer."
+      },
+      {
+        "id": "linkage",
+        "description": "A port or parameter of mode linkage."
+      }
+    ],
+    "semanticTokenScopes": [
+      {
+        "language": "vhdl",
+        "scopes": {
+          "namespace": [
+            "entity.name.namespace.vhdl"
+          ],
+          "type": [
+            "entity.name.type.vhdl"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter.vhdl"
+          ],
+          "class": [
+            "entity.name.type.entity.vhdl"
+          ],
+          "interface": [
+            "entity.name.type.component.vhdl"
+          ],
+          "function": [
+            "entity.name.function.vhdl"
+          ],
+          "procedure": [
+            "entity.name.function.procedure.vhdl"
+          ],
+          "enumMember": [
+            "variable.other.enummember.vhdl"
+          ],
+          "variable": [
+            "variable.other.vhdl"
+          ],
+          "parameter": [
+            "variable.parameter.vhdl"
+          ],
+          "signal": [
+            "variable.other.signal.vhdl"
+          ],
+          "port": [
+            "variable.parameter.port.vhdl"
+          ],
+          "constant": [
+            "variable.other.constant.vhdl"
+          ],
+          "generic": [
+            "variable.other.constant.generic.vhdl"
+          ],
+          "label": [
+            "entity.name.label.vhdl"
+          ],
+          "unit": [
+            "keyword.other.unit.vhdl"
+          ],
+          "attribute": [
+            "entity.other.attribute-name.vhdl"
+          ]
+        }
+      }
+    ],
     "configuration": {
       "title": "vfl",
       "properties": {

@@ -100,6 +100,10 @@ help and completion at every 7th line of 16 files spread over it (the middle of 
 | UVVM | 0.5 / 4.5 ms | 0.02 / 0.4 ms | 1.3 / 4.3 ms |
 | VUnit | 0.3 / 2.1 ms | 0.02 / 1.8 ms | 1.2 / 7.5 ms |
 
+It then asks for the semantic tokens of every file, whole and as a delta. On UVVM (302
+files) the median is 0.1 ms; the slowest is `methods_pkg.vhd` (490 KB, 20,357 names):
+7.4 ms whole, 4.8 ms as a delta.
+
 ## Running it
 
 ```sh

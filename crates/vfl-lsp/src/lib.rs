@@ -4,11 +4,12 @@
 //! around the workspace folder, as `vfl lint` does, and offers
 //! diagnostics with quick fixes, formatting, go to definition, find
 //! references, hover with types, signature help, document and workspace
-//! symbols, rename and completion. [`editor`] answers hover, signature
+//! symbols, rename, completion and semantic tokens. [`editor`] answers hover, signature
 //! help and completion directly, for editors that link it.
 
 pub mod editor;
 mod handlers;
+mod semantic;
 mod types;
 mod world;
 
@@ -65,6 +66,16 @@ pub fn capabilities() -> ServerCapabilities {
             retrigger_characters: Some(vec![",".into()]),
             work_done_progress_options: Default::default(),
         }),
+        semantic_tokens_provider: Some(
+            lsp_types::SemanticTokensServerCapabilities::SemanticTokensOptions(
+                lsp_types::SemanticTokensOptions {
+                    legend: semantic::legend(),
+                    range: Some(true),
+                    full: Some(lsp_types::SemanticTokensFullOptions::Delta { delta: Some(true) }),
+                    work_done_progress_options: Default::default(),
+                },
+            ),
+        ),
         code_action_provider: Some(CodeActionProviderCapability::Options(CodeActionOptions {
             code_action_kinds: Some(vec![
                 CodeActionKind::QUICKFIX,

@@ -10,7 +10,14 @@ language server:
   **signature help**, **rename**, **completion** (including record elements and protected
   type methods), **document and workspace symbols**, across the whole project and into
   the bundled `std` and `ieee` libraries.
-- **Syntax highlighting** for VHDL-93, 2008 and 2019.
+- **Syntax highlighting** for VHDL-93, 2008 and 2019, and **semantic highlighting** from
+  the analysis: signals, ports (with their mode), variables, constants, generics, types,
+  subprograms, entities, components, packages and enumeration literals each get their own
+  token type. `signal`, `port`, `constant`, `generic`, `procedure`, `label`, `unit` and
+  `attribute` fall back to standard types (`variable`, `parameter`, `function`, ...) in
+  themes that do not know them; to pick your own colors, use
+  `editor.semanticTokenColorCustomizations`, for example
+  `"rules": { "signal": "#c586c0", "port.out": { "bold": true } }`.
 
 The project root, sources and libraries are discovered from the code, so there is nothing to
 set up. Configuration lives in `vfl.toml`, shared with the `vfl` command line; see the

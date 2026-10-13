@@ -16,7 +16,7 @@ use vfl_fmt::FormatError;
 use vfl_lsp::World;
 use vfl_lsp::editor::{
     self, Completion, Completions, FileEdits, HoverInfo, Location, ProjectSymbol, QuickFix,
-    SignatureHelp, Symbol, Use,
+    SignatureHelp, Symbol, TokenKind, Use,
 };
 use vfl_project::{Encoding, find_root};
 
@@ -35,6 +35,44 @@ impl Severity {
             Severity::Warning => "warning",
             Severity::Error => "error",
         }
+    }
+}
+
+/// How a name is colored, by what it resolves to. Names of other kinds
+/// keep the lexer's colors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NameColor {
+    Signal,
+    Port,
+    /// A constant, generic or enumeration literal.
+    Constant,
+    /// A variable or subprogram parameter.
+    Variable,
+    Type,
+    /// A function or procedure.
+    Subprogram,
+}
+
+impl NameColor {
+    pub const ALL: [NameColor; 6] = [
+        NameColor::Signal,
+        NameColor::Port,
+        NameColor::Constant,
+        NameColor::Variable,
+        NameColor::Type,
+        NameColor::Subprogram,
+    ];
+
+    fn of(kind: TokenKind) -> Option<NameColor> {
+        Some(match kind {
+            TokenKind::Signal => NameColor::Signal,
+            TokenKind::Port => NameColor::Port,
+            TokenKind::Constant | TokenKind::Generic | TokenKind::EnumMember => NameColor::Constant,
+            TokenKind::Variable | TokenKind::Parameter => NameColor::Variable,
+            TokenKind::Type | TokenKind::TypeParameter => NameColor::Type,
+            TokenKind::Function | TokenKind::Procedure => NameColor::Subprogram,
+            _ => return None,
+        })
     }
 }
 
@@ -229,6 +267,19 @@ impl Engine {
     ) -> Vec<(Range<usize>, Use)> {
         let (world, file_path) = self.sync(path, text);
         editor::highlights(world, &file_path, offset)
+    }
+
+    /// The names in the buffer to color, as byte ranges, in order.
+    pub fn name_colors(
+        &mut self,
+        path: Option<&Path>,
+        text: &str,
+    ) -> Vec<(Range<usize>, NameColor)> {
+        let (world, file_path) = self.sync(path, text);
+        editor::semantic_tokens(world, &file_path)
+            .into_iter()
+            .filter_map(|t| Some((t.range, NameColor::of(t.kind)?)))
+            .collect()
     }
 
     /// The buffer's declarations, nested.
@@ -786,6 +837,28 @@ end architecture;
             .hover(None, TYPES, at(TYPES, "count, 3"))
             .expect("hover over the element");
         assert!(plain_text(&hover.markdown).contains("element count of rec"));
+    }
+
+    #[test]
+    fn colors_names_by_meaning() {
+        let mut engine = Engine::default();
+        let colors: Vec<(&str, NameColor)> = engine
+            .name_colors(None, TYPES)
+            .into_iter()
+            .map(|(range, color)| (&TYPES[range], color))
+            .collect();
+        for expected in [
+            ("rec", NameColor::Type),
+            ("r", NameColor::Signal),
+            ("scale", NameColor::Subprogram),
+            ("x", NameColor::Variable),
+            ("integer", NameColor::Type),
+            ("n", NameColor::Signal),
+        ] {
+            assert!(colors.contains(&expected), "{expected:?} in {colors:?}");
+        }
+        // Units and labels keep the lexer's colors.
+        assert!(!colors.iter().any(|(name, _)| *name == "e" || *name == "a"));
     }
 
     #[test]

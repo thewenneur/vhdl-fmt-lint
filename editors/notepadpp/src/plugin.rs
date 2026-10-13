@@ -18,7 +18,7 @@ use std::ptr;
 use vfl_lsp::editor::CompletionKind;
 
 use crate::engine::{
-    BufferText, Engine, Severity, completes_after_dot, completion_list, is_library_copy,
+    BufferText, Engine, NameColor, Severity, completes_after_dot, completion_list, is_library_copy,
     is_project_file, is_vhdl_path, minimal_edit, plain_text, signature_tip,
 };
 use crate::tools;
@@ -50,6 +50,7 @@ const MENU: &[(&str, Option<extern "C" fn()>)] = &[
     ("Show messages under lines", Some(cmd_toggle_inline)),
     ("Code assistance", Some(cmd_toggle_assist)),
     ("Highlight uses", Some(cmd_toggle_highlight)),
+    ("Color names by meaning", Some(cmd_toggle_name_colors)),
     ("", None),
     ("Reload project", Some(cmd_reload)),
     ("About", Some(cmd_about)),
@@ -86,6 +87,7 @@ const AUTO_LINT: usize = item("Lint automatically");
 const INLINE: usize = item("Show messages under lines");
 const ASSIST: usize = item("Code assistance");
 const HIGHLIGHT: usize = item("Highlight uses");
+const NAME_COLORS: usize = item("Color names by meaning");
 
 /// How long typing must pause before the buffer is linted again.
 const LINT_DELAY_MS: u32 = 400;
@@ -100,6 +102,27 @@ const INDICATORS: usize = 6;
 pub(crate) const USE_INDICATOR: usize = 3;
 pub(crate) const WRITE_INDICATOR: usize = 4;
 const UNUSED_INDICATOR: usize = 5;
+/// Indicators for name colors, one per [`NameColor`], when Notepad++ is
+/// too old to hand them out.
+const FALLBACK_NAME_INDICATORS: [usize; NameColor::ALL.len()] = [15, 16, 17, 18, 19, 20];
+
+/// Name colors (0x00BBGGRR) on a light and on a dark background.
+fn name_color(color: NameColor, dark: bool) -> isize {
+    match (color, dark) {
+        (NameColor::Signal, false) => 0xAA248E,
+        (NameColor::Port, false) => 0x5714AD,
+        (NameColor::Constant, false) => 0x005EC2,
+        (NameColor::Variable, false) => 0x801000,
+        (NameColor::Type, false) => 0x997F26,
+        (NameColor::Subprogram, false) => 0x265E79,
+        (NameColor::Signal, true) => 0xC086C5,
+        (NameColor::Port, true) => 0xB18FF4,
+        (NameColor::Constant, true) => 0x50A0E5,
+        (NameColor::Variable, true) => 0xFEDC9C,
+        (NameColor::Type, true) => 0xB0C94E,
+        (NameColor::Subprogram, true) => 0xAADCDC,
+    }
+}
 
 /// Squiggle and message colors (0x00BBGGRR), by severity.
 fn color(severity: Severity) -> isize {
@@ -127,6 +150,8 @@ pub(crate) struct Settings {
     assist: bool,
     /// Highlight the uses of the name at the caret.
     pub(crate) highlight: bool,
+    /// Color signals, ports, constants, ... by what the analysis found.
+    name_colors: bool,
 }
 
 impl Default for Settings {
@@ -137,6 +162,7 @@ impl Default for Settings {
             inline_messages: true,
             assist: true,
             highlight: true,
+            name_colors: true,
         }
     }
 }
@@ -172,6 +198,7 @@ pub(crate) struct State {
     annotated: RefCell<HashSet<usize>>,
     pub(crate) settings: Cell<Settings>,
     indicators: Cell<Option<[usize; INDICATORS]>>,
+    name_indicators: Cell<Option<[usize; NameColor::ALL.len()]>>,
     /// The first of our three annotation styles, per view.
     styles: Cell<[Option<isize>; 2]>,
     funcs: Cell<*mut FuncItem>,
@@ -202,6 +229,7 @@ thread_local! {
         annotated: RefCell::default(),
         settings: Cell::default(),
         indicators: Cell::new(None),
+        name_indicators: Cell::new(None),
         styles: Cell::new([None, None]),
         funcs: Cell::new(ptr::null_mut()),
         timer: Cell::new(0),
@@ -294,6 +322,7 @@ pub unsafe extern "C" fn getFuncsArray(count: *mut i32) -> *mut FuncItem {
                             INLINE => settings.inline_messages,
                             ASSIST => settings.assist,
                             HIGHLIGHT => settings.highlight,
+                            NAME_COLORS => settings.name_colors,
                             _ => false,
                         },
                         shortcut: ptr::null_mut(),
@@ -503,6 +532,13 @@ extern "C" fn cmd_toggle_highlight() {
     guard(|| {
         toggle(HIGHLIGHT, |s| &mut s.highlight);
         tools::schedule_highlight();
+    });
+}
+
+extern "C" fn cmd_toggle_name_colors() {
+    guard(|| {
+        toggle(NAME_COLORS, |s| &mut s.name_colors);
+        lint_current(Trigger::Refresh);
     });
 }
 
@@ -776,6 +812,7 @@ pub(crate) fn lint_current(trigger: Trigger) {
         .collect();
     problems.sort_by_key(|p| (p.start, p.end));
     show_problems(sci, view, id, &problems);
+    show_name_colors(sci, path.as_deref(), &buffer, &problems);
     let count = problems.len();
     with(|s| s.problems.borrow_mut().insert(id, problems));
 
@@ -855,6 +892,75 @@ pub(crate) fn indicators() -> [usize; INDICATORS] {
     };
     with(|s| s.indicators.set(Some(indicators)));
     indicators
+}
+
+fn name_indicators() -> [usize; NameColor::ALL.len()] {
+    if let Some(indicators) = with(|s| s.name_indicators.get()) {
+        return indicators;
+    }
+    let mut start: i32 = 0;
+    let allocated = send(
+        npp(),
+        NPPM_ALLOCATEINDICATOR,
+        NameColor::ALL.len(),
+        &mut start as *mut i32 as isize,
+    );
+    let indicators = match usize::try_from(start) {
+        Ok(start) if allocated != 0 && start > 0 => std::array::from_fn(|i| start + i),
+        _ => FALLBACK_NAME_INDICATORS,
+    };
+    with(|s| s.name_indicators.set(Some(indicators)));
+    indicators
+}
+
+/// Colors the names of the buffer by what they resolve to, leaving the
+/// greyed-out unused ones alone.
+fn show_name_colors(
+    sci: Hwnd,
+    path: Option<&std::path::Path>,
+    buffer: &BufferText,
+    problems: &[Problem],
+) {
+    let len = send(sci, SCI_GETLENGTH, 0, 0).max(0) as usize;
+    let indicators = name_indicators();
+    for indicator in indicators {
+        send(sci, SCI_SETINDICATORCURRENT, indicator, 0);
+        send(sci, SCI_INDICATORCLEARRANGE, 0, len as isize);
+    }
+    if !with(|s| s.settings.get().name_colors) {
+        return;
+    }
+    let Some(names) = with(|s| {
+        s.engine
+            .try_borrow_mut()
+            .ok()
+            .map(|mut engine| engine.name_colors(path, &buffer.text))
+    }) else {
+        return;
+    };
+    // The theme's background tells which palette reads well.
+    let back = send(sci, SCI_STYLEGETBACK, STYLE_DEFAULT, 0);
+    let (r, g, b) = (back & 0xFF, (back >> 8) & 0xFF, (back >> 16) & 0xFF);
+    let dark = r * 299 + g * 587 + b * 114 < 128_000;
+    for (color, indicator) in NameColor::ALL.iter().zip(indicators) {
+        send(sci, SCI_INDICSETSTYLE, indicator, INDIC_TEXTFORE);
+        send(sci, SCI_INDICSETFORE, indicator, name_color(*color, dark));
+    }
+    let unused: Vec<(usize, usize)> = problems
+        .iter()
+        .filter(|p| p.unused)
+        .map(|p| (p.start, p.end))
+        .collect();
+    for (range, color) in names {
+        let start = buffer.position(range.start);
+        let end = buffer.position(range.end).min(len);
+        if start >= end || unused.iter().any(|&(s, e)| start < e && s < end) {
+            continue;
+        }
+        let index = NameColor::ALL.iter().position(|c| *c == color).unwrap_or(0);
+        send(sci, SCI_SETINDICATORCURRENT, indicators[index], 0);
+        send(sci, SCI_INDICATORFILLRANGE, start, (end - start) as isize);
+    }
 }
 
 /// Removes the problem underlines and greyed-out names.
@@ -1318,6 +1424,7 @@ fn load_settings() {
                 "messages_under_lines" => settings.inline_messages = value,
                 "code_assistance" => settings.assist = value,
                 "highlight_uses" => settings.highlight = value,
+                "color_names" => settings.name_colors = value,
                 _ => {}
             }
         }
@@ -1332,12 +1439,13 @@ fn save_settings() {
     let s = with(|s| s.settings.get());
     let text = format!(
         "format_on_save={}\nlint_automatically={}\nmessages_under_lines={}\n\
-         code_assistance={}\nhighlight_uses={}\n",
+         code_assistance={}\nhighlight_uses={}\ncolor_names={}\n",
         s.format_on_save as u8,
         s.auto_lint as u8,
         s.inline_messages as u8,
         s.assist as u8,
-        s.highlight as u8
+        s.highlight as u8,
+        s.name_colors as u8
     );
     // A settings file that cannot be written only loses the settings.
     let _ = std::fs::write(path, text);
