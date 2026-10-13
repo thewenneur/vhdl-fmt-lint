@@ -761,3 +761,261 @@ fn writes_asciidoc_pages() {
     assert!(counter.contains("|===\n"), "{counter}");
     file(&files, "work.counter.symbol.svg");
 }
+
+const SYNC: &str = "\
+library ieee;
+use ieee.std_logic_1164.all;
+use work.regs_pkg.all;
+
+entity sync is
+  port (clk_a, clk_b, rst_n, srst : in std_logic; d : in std_logic; q : out std_logic);
+end;
+architecture rtl of sync is
+  signal toggle, local : std_logic;
+  signal stages : std_logic_vector(2 downto 0);
+  alias meta : std_logic is stages(0);
+  alias stable : std_logic_vector(1 downto 0) is stages(2 downto 1);
+begin
+  source : process (clk_a, rst_n) begin
+    if rst_n = '0' then
+      toggle <= '0';
+    elsif rising_edge(clk_a) then
+      toggle <= toggle xor d;
+    end if;
+  end process;
+  destination : process (clk_b) begin
+    if falling_edge(clk_b) then
+      if srst = '1' then
+        stages <= (others => '0');
+      else
+        stages <= stable(0) & meta & toggle;
+      end if;
+    end if;
+  end process;
+  local <= stages(2);
+  q <= local;
+end;
+";
+
+const REGS_PKG: &str = "\
+package regs_pkg is
+  constant WIDTH : natural := 6;
+  type ctrl_t is record
+    enable : bit;
+    mode : bit_vector(1 downto 0);
+    count : integer range 0 to 2 ** WIDTH - 1;
+    data : bit_vector(WIDTH * 2 - 1 downto 0);
+  end record;
+end package;
+";
+
+#[test]
+fn records_processes_clocks_resets_and_assignments() {
+    let d = design(&[("sync.vhd", SYNC), ("regs_pkg.vhd", REGS_PKG)]);
+    let e = d.entities.iter().find(|e| e.name == "sync").unwrap();
+    let a = &e.architectures[0];
+    let source = &a.processes[0];
+    assert_eq!(source.clock.as_deref(), Some("clk_a"));
+    assert!(!source.falling);
+    let reset = source.reset.as_ref().unwrap();
+    assert_eq!(reset.signal, "rst_n");
+    assert!(reset.asynchronous);
+    assert_eq!(reset.active_high, Some(false));
+    let destination = &a.processes[1];
+    assert_eq!(destination.clock.as_deref(), Some("clk_b"));
+    assert!(destination.falling);
+    let reset = destination.reset.as_ref().unwrap();
+    assert_eq!(reset.signal, "srst");
+    assert!(!reset.asynchronous);
+    assert_eq!(reset.active_high, Some(true));
+    // Aliases resolve to the signal they name.
+    assert!(destination.reads.iter().any(|r| r == "toggle"));
+    assert_eq!(
+        a.resolve_aliases(&["meta".into(), "toggle".into()]),
+        ["stages", "toggle"]
+    );
+    assert_eq!(a.assignments.len(), 2);
+    assert_eq!(a.assignments[0].target, "local");
+    assert_eq!(a.assignments[0].reads, ["stages"]);
+    assert_eq!(e.uses.len(), 2, "{:?}", e.uses);
+}
+
+#[test]
+fn dataflow_wires_processes_and_assignments() {
+    let d = design(&[("sync.vhd", SYNC)]);
+    let svg = vfl_doc::block::dataflow(&d, 0, 0, None).unwrap();
+    for text in [
+        ">source</text>",
+        ">destination</text>",
+        ">local &lt;=</text>",
+        ">q &lt;=</text>",
+        "clk_a ↑, rst_n async",
+        "clk_b ↓, srst sync",
+    ] {
+        assert!(svg.contains(text), "{text} missing: {svg}");
+    }
+    // Clocks and resets are in the subtitles, not terminals.
+    assert!(!svg.contains(">clk_a</text>"), "{svg}");
+    // An architecture with nothing to draw.
+    let d = design(&[(
+        "c.vhd",
+        "entity e is end; architecture a of e is begin end;",
+    )]);
+    assert!(vfl_doc::block::dataflow(&d, 0, 0, None).is_none());
+}
+
+#[test]
+fn clock_domains_find_the_crossings() {
+    let d = design(&[("sync.vhd", SYNC)]);
+    let (svg, domains) = vfl_doc::clocks::diagram(&d, 0, 0).unwrap();
+    let names: Vec<&str> = domains.domains.iter().map(|(c, _)| c.as_str()).collect();
+    assert_eq!(names, ["clk_a", "clk_b"]);
+    assert_eq!(domains.domains[1].1, ["destination"]);
+    assert_eq!(
+        domains.crossings,
+        [vfl_doc::clocks::Crossing {
+            signal: "toggle".into(),
+            from: "clk_a".into(),
+            to: "clk_b".into(),
+            reader: "destination".into(),
+        }]
+    );
+    assert!(svg.contains("vfl-cross"), "{svg}");
+    // One clock: no diagram.
+    let d = design(&[("c.vhd", COUNTER)]);
+    assert!(vfl_doc::clocks::diagram(&d, 0, 0).is_none());
+}
+
+#[test]
+fn reset_tree_follows_ports_into_instances() {
+    let top = "\
+entity top is
+  port (clk, rst_n, d : in bit; q : out bit);
+end;
+architecture str of top is
+  signal rst : bit;
+begin
+  rst <= not rst_n;
+  u_sync : entity work.sync port map (clk_a => clk, clk_b => clk, rst_n => rst_n,
+                                      srst => rst, d => d, q => q);
+end;
+";
+    let d = design(&[("sync.vhd", SYNC), ("top.vhd", top)]);
+    let t = d.entities.iter().position(|e| e.name == "top").unwrap();
+    let svg = vfl_doc::relations::resets(&d, t, 0, None).unwrap();
+    for text in [
+        ">rst_n</text>",
+        ">u_sync</text>",
+        ">source</text>",
+        "async, active low",
+        ">destination</text>",
+        "sync, active high",
+    ] {
+        assert!(svg.contains(text), "{text} missing: {svg}");
+    }
+}
+
+#[test]
+fn dependencies_link_units_to_packages() {
+    let d = design(&[("sync.vhd", SYNC), ("regs_pkg.vhd", REGS_PKG)]);
+    let svg = vfl_doc::relations::dependencies(&d, None).unwrap();
+    assert!(
+        svg.contains(">sync</text>") && svg.contains(">regs_pkg</text>"),
+        "{svg}"
+    );
+    // `ieee` is outside the project.
+    assert!(!svg.contains(">std_logic_1164</text>"), "{svg}");
+    assert!(svg.contains("vfl-edge"), "{svg}");
+    let d = design(&[("c.vhd", COUNTER)]);
+    assert!(vfl_doc::relations::dependencies(&d, None).is_none());
+}
+
+#[test]
+fn wavedrom_parses_json5_and_draws_lanes() {
+    let value = vfl_doc::wave::parse(
+        "{ signal: [ { name: 'clk', wave: 'p...' }, // a comment\n {}, ], head: {text: \"t\"}, }",
+    )
+    .unwrap();
+    let vfl_doc::wave::Value::Object(fields) = &value else {
+        panic!("{value:?}");
+    };
+    assert_eq!(fields[0].0, "signal");
+    let svg = vfl_doc::wave::draw(
+        r#"{ signal: [
+            { name: "clk", wave: "p..." },
+            ["bus", { name: "data", wave: "x=.=", data: ["a", "b"] }],
+            { name: "en", wave: "01|0" }
+        ], foot: { text: "end" } }"#,
+    )
+    .unwrap();
+    for text in [
+        ">clk</text>",
+        ">bus</text>",
+        ">data</text>",
+        ">a</text>",
+        ">b</text>",
+        ">end</text>",
+    ] {
+        assert!(svg.contains(text), "{text} missing: {svg}");
+    }
+    assert!(svg.contains("vfl-wave-x"), "{svg}");
+    assert!(vfl_doc::wave::draw("{ signal: [ { wave: ").is_err());
+    assert!(vfl_doc::wave::draw("{ nothing: 1 }").is_err());
+}
+
+#[test]
+fn wavedrom_blocks_in_doc_comments_become_diagrams() {
+    let text = "\
+--! A strobe.
+--! ```wavedrom
+--! { signal: [ { name: \"stb\", wave: \"010\" } ] }
+--! ```
+entity strobe is
+  port (stb : out bit);
+end;
+";
+    let config = DocConfig {
+        format: DocFormat::Markdown,
+        ..DocConfig::default()
+    };
+    let d = design_with(&[("s.vhd", text)], &config);
+    let files = vfl_doc::generate(&d, &config);
+    let page = file(&files, "work.strobe.md");
+    assert!(!page.contains("```wavedrom"), "{page}");
+    let wave = files
+        .iter()
+        .find(|f| f.path.starts_with("wave-") && f.path.ends_with(".svg"))
+        .expect("a wave svg");
+    assert!(page.contains(&format!("]({})", wave.path)), "{page}");
+    // Off: the block stays as code.
+    let mut config = config;
+    config.diagrams.waveforms = false;
+    let files = vfl_doc::generate(&d, &config);
+    assert!(file(&files, "work.strobe.md").contains("```wavedrom"));
+}
+
+#[test]
+fn bit_fields_of_records_and_aliased_slices() {
+    let d = design(&[("sync.vhd", SYNC), ("regs_pkg.vhd", REGS_PKG)]);
+    let p = &d.packages[0];
+    let packages = vfl_doc::fields::Scope::packages(&d);
+    let scope = vfl_doc::fields::Scope::new(&packages, &d, None, &p.constants, &p.types);
+    assert_eq!(scope.integer("2 ** WIDTH - 1"), Some(63));
+    assert_eq!(scope.integer("(WIDTH + 2) / 3 mod 2"), Some(0));
+    assert_eq!(scope.bits("bit_vector(WIDTH * 2 - 1 downto 0)"), Some(12));
+    assert_eq!(scope.bits("integer range 0 to 2 ** WIDTH - 1"), Some(6));
+    assert_eq!(scope.bits("bit"), Some(1));
+    assert_eq!(scope.bits("ctrl_t"), Some(21));
+    assert_eq!(scope.integer("WIDTH / 0"), None);
+    let svg = vfl_doc::fields::record(&scope, &p.types[0]).unwrap();
+    assert!(svg.contains("ctrl_t : 21 bits"), "{svg}");
+    assert!(svg.contains(">12 bits</text>"), "{svg}");
+
+    let e = d.entities.iter().position(|e| e.name == "sync").unwrap();
+    let a = &d.entities[e].architectures[0];
+    let scope = vfl_doc::fields::Scope::new(&packages, &d, Some(e), &a.constants, &a.types);
+    let maps = vfl_doc::fields::aliases(&scope, &a.signals, &a.aliases);
+    assert_eq!(maps.len(), 1);
+    assert_eq!(maps[0].0, "stages");
+    assert!(maps[0].1.contains(">stable</text>") && maps[0].1.contains(">meta</text>"));
+}

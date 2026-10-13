@@ -15,36 +15,43 @@ use crate::model::{Alias, Design, Object, TypeInfo};
 use crate::svg::{Canvas, cut, width};
 
 /// Names a size can depend on: constants (with generic defaults) and
-/// types, by key.
+/// types, by key, then those of the parent scope.
 pub struct Scope<'a> {
+    parent: Option<&'a Scope<'a>>,
     constants: HashMap<String, String>,
     types: HashMap<String, &'a TypeInfo>,
 }
 
 impl<'a> Scope<'a> {
+    /// The declarations of every package, built once and shared as the
+    /// parent of the other scopes.
+    pub fn packages(design: &'a Design) -> Self {
+        let mut scope = Scope {
+            parent: None,
+            constants: HashMap::new(),
+            types: HashMap::new(),
+        };
+        for p in &design.packages {
+            scope.declare(&p.constants, &p.types);
+        }
+        scope
+    }
+
     /// The scope of an architecture of `entity` (or of a package when
-    /// `entity` is `None`): its declarations, the generics, and every
-    /// package's declarations.
+    /// `entity` is `None`): its declarations and the generics, then the
+    /// packages.
     pub fn new(
+        packages: &'a Scope<'a>,
         design: &'a Design,
         entity: Option<usize>,
         constants: &[Object],
         types: &'a [TypeInfo],
     ) -> Self {
         let mut scope = Scope {
+            parent: Some(packages),
             constants: HashMap::new(),
             types: HashMap::new(),
         };
-        for p in &design.packages {
-            for c in &p.constants {
-                if let Some(v) = &c.value {
-                    scope.constants.insert(identifier_key(&c.name), v.clone());
-                }
-            }
-            for t in &p.types {
-                scope.types.insert(identifier_key(&t.name), t);
-            }
-        }
         if let Some(e) = entity {
             for g in &design.entities[e].generics {
                 if let Some(v) = &g.default {
@@ -52,15 +59,33 @@ impl<'a> Scope<'a> {
                 }
             }
         }
+        scope.declare(constants, types);
+        scope
+    }
+
+    fn declare(&mut self, constants: &[Object], types: &'a [TypeInfo]) {
         for c in constants {
             if let Some(v) = &c.value {
-                scope.constants.insert(identifier_key(&c.name), v.clone());
+                self.constants.insert(identifier_key(&c.name), v.clone());
             }
         }
         for t in types {
-            scope.types.insert(identifier_key(&t.name), t);
+            self.types.insert(identifier_key(&t.name), t);
         }
-        scope
+    }
+
+    fn constant(&self, key: &str) -> Option<&str> {
+        match self.constants.get(key) {
+            Some(v) => Some(v),
+            None => self.parent?.constant(key),
+        }
+    }
+
+    fn ty(&self, key: &str) -> Option<&'a TypeInfo> {
+        match self.types.get(key) {
+            Some(t) => Some(t),
+            None => self.parent?.ty(key),
+        }
     }
 
     /// The value of an integer expression of literals, constants and
@@ -105,11 +130,18 @@ impl<'a> Scope<'a> {
             let mark = lower[..open].trim();
             let inner = &ty[open + 1..ty.len() - 1];
             let element = match mark {
-                "std_logic_vector" | "std_ulogic_vector" | "bit_vector" | "signed" | "unsigned"
-                | "unresolved_signed" | "unresolved_unsigned" | "u_signed" | "u_unsigned" => 1,
+                "std_logic_vector"
+                | "std_ulogic_vector"
+                | "bit_vector"
+                | "signed"
+                | "unsigned"
+                | "unresolved_signed"
+                | "unresolved_unsigned"
+                | "u_signed"
+                | "u_unsigned" => 1,
                 _ => {
                     // A constrained array subtype: the element of its type.
-                    let t = self.types.get(&identifier_key(mark))?;
+                    let t = self.ty(&identifier_key(mark))?;
                     let def = t.definition.to_ascii_lowercase();
                     let of = def.rfind(" of ")?;
                     self.bits_at(&t.definition[of + 4..], depth + 1)?
@@ -123,7 +155,7 @@ impl<'a> Scope<'a> {
             "character" => return Some(8),
             _ => {}
         }
-        let t = self.types.get(&identifier_key(&lower))?;
+        let t = self.ty(&identifier_key(&lower))?;
         if !t.fields.is_empty() {
             return t
                 .fields
@@ -361,7 +393,7 @@ impl Expr<'_, '_> {
                 if self.depth > 16 {
                     return None;
                 }
-                let text = self.scope.constants.get(&identifier_key(&name))?;
+                let text = self.scope.constant(&identifier_key(&name))?;
                 let tokens = tokenize(text)?;
                 let mut inner = Expr {
                     tokens: &tokens,
@@ -410,18 +442,24 @@ fn draw(title: &str, heading: &str, fields: &[Field]) -> String {
         let natural = f.bits.map_or(48.0, |b| b as f64 * scale);
         let label_w = width(&cut(&f.name, 24)).max(width(&f.detail)) + 10.0;
         let w = natural.max(if f.reserved { 16.0 } else { label_w });
-        c.rect(
-            x,
-            top,
-            w,
-            H,
-            if f.reserved { "vfl-ext" } else { "vfl-box" },
-        );
+        c.rect(x, top, w, H, if f.reserved { "vfl-ext" } else { "vfl-box" });
         if !f.reserved {
-            c.text(x + w / 2.0, top + 18.0, &cut(&f.name, 24), "middle", "vfl-title");
+            c.text(
+                x + w / 2.0,
+                top + 18.0,
+                &cut(&f.name, 24),
+                "middle",
+                "vfl-title",
+            );
         }
         if w >= width(&f.detail) + 4.0 {
-            c.text(x + w / 2.0, top + 35.0, &f.detail, "middle", "vfl-muted vfl-small");
+            c.text(
+                x + w / 2.0,
+                top + 35.0,
+                &f.detail,
+                "middle",
+                "vfl-muted vfl-small",
+            );
         }
         x += w;
     }
@@ -487,7 +525,7 @@ pub fn aliases(scope: &Scope, signals: &[Object], aliases: &[Alias]) -> Vec<(Str
         if slices.is_empty() {
             continue;
         }
-        slices.sort_by(|a, b| b.0.cmp(&a.0));
+        slices.sort_by_key(|s| std::cmp::Reverse(s.0));
         let mut fields = Vec::new();
         let mut next = total; // bits above `next` are laid out
         for (msb, lsb, alias) in slices {

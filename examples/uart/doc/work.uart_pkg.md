@@ -2,6 +2,8 @@
 
 Library `work` · `rtl/uart_pkg.vhd:5`
 
+Uses `ieee.std_logic_1164`.
+
 Shared definitions of the UART.
 
 <a id="constants"></a>

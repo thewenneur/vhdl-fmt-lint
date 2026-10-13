@@ -22,9 +22,9 @@ pub enum Unit {
 /// The documented package a `use` names.
 pub fn resolve_use(design: &Design, u: &Use) -> Option<usize> {
     design
-        .packages
-        .iter()
-        .position(|p| identifier_key(&p.library) == u.library && identifier_key(&p.name) == u.unit)
+        .packages_by_name
+        .get(&(u.library.clone(), u.unit.clone()))
+        .copied()
 }
 
 /// The dependency graph: every unit that uses a documented package, and
@@ -33,7 +33,11 @@ pub fn resolve_use(design: &Design, u: &Use) -> Option<usize> {
 pub fn dependencies(design: &Design, link: Option<&dyn Fn(Unit) -> String>) -> Option<String> {
     let mut units: Vec<(Unit, Vec<usize>)> = Vec::new();
     for (i, e) in design.entities.iter().enumerate() {
-        let used: Vec<usize> = e.uses.iter().filter_map(|u| resolve_use(design, u)).collect();
+        let used: Vec<usize> = e
+            .uses
+            .iter()
+            .filter_map(|u| resolve_use(design, u))
+            .collect();
         units.push((Unit::Entity(i), used));
     }
     for (i, p) in design.packages.iter().enumerate() {
@@ -143,12 +147,17 @@ fn follow(
         });
     }
     for s in &a.assignments {
-        if identifier_key(&s.target) == key
-            || !s.reads.iter().any(|r| identifier_key(r) == key)
-        {
+        if identifier_key(&s.target) == key || !s.reads.iter().any(|r| identifier_key(r) == key) {
             continue;
         }
-        let children = follow(design, entity, arch, &identifier_key(&s.target), depth + 1, budget);
+        let children = follow(
+            design,
+            entity,
+            arch,
+            &identifier_key(&s.target),
+            depth + 1,
+            budget,
+        );
         if children.iter().any(|c| c.used) {
             out.push(ResetNode {
                 title: s.target.clone(),
@@ -222,7 +231,14 @@ pub fn resets(
     let mut budget = MAX_NODES;
     let mut roots = Vec::new();
     for port in e.ports.iter().filter(|p| p.direction() == Direction::In) {
-        let children = follow(design, entity, arch, &identifier_key(&port.name), 0, &mut budget);
+        let children = follow(
+            design,
+            entity,
+            arch,
+            &identifier_key(&port.name),
+            0,
+            &mut budget,
+        );
         if children.iter().any(|c| c.used) {
             roots.push(ResetNode {
                 title: port.name.clone(),
@@ -260,10 +276,7 @@ pub fn resets(
         });
         for child in &node.children {
             let c = add(child, false, nodes, edges, link);
-            edges.push(GraphEdge {
-                from: index,
-                to: c,
-            });
+            edges.push(GraphEdge { from: index, to: c });
         }
         index
     }

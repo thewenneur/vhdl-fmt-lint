@@ -2,6 +2,8 @@
 
 Library `work` · `rtl/fifo.vhd:8`
 
+Uses `ieee.std_logic_1164`, `ieee.numeric_std`.
+
 A synchronous first-in first-out buffer.
 
 Writes to a full FIFO and reads from an empty one are ignored.
@@ -42,6 +44,10 @@ Writes to a full FIFO and reads from an empty one are ignored.
 <a id="arch-rtl"></a>
 
 ## Architecture `rtl`
+
+### Data flow
+
+![Data flow of fifo(rtl)](work.fifo.rtl.dataflow.svg)
 
 ### Processes
 

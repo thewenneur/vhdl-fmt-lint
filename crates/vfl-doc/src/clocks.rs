@@ -126,7 +126,9 @@ pub fn domains(design: &Design, entity: usize, arch: usize) -> Option<Domains> {
     for p in &a.processes {
         let clocks: Vec<String> = p.clock.iter().map(|c| identifier_key(c)).collect();
         if let Some(c) = &p.clock {
-            spelling.entry(identifier_key(c)).or_insert_with(|| c.clone());
+            spelling
+                .entry(identifier_key(c))
+                .or_insert_with(|| c.clone());
         }
         let mut skip: Vec<String> = clocks.clone();
         if let Some(r) = &p.reset {
@@ -149,7 +151,10 @@ pub fn domains(design: &Design, entity: usize, arch: usize) -> Option<Domains> {
     }
     for s in &a.assignments {
         elements.push(Element {
-            title: s.label.clone().unwrap_or_else(|| format!("{} <=", s.target)),
+            title: s
+                .label
+                .clone()
+                .unwrap_or_else(|| format!("{} <=", s.target)),
             clocks: Vec::new(),
             reads: a
                 .resolve_aliases(&s.reads)
@@ -214,7 +219,9 @@ pub fn domains(design: &Design, entity: usize, arch: usize) -> Option<Domains> {
     for el in &elements {
         if el.clocks.len() == 1 {
             for d in &el.drives {
-                net.entry(d.clone()).or_default().insert(el.clocks[0].clone());
+                net.entry(d.clone())
+                    .or_default()
+                    .insert(el.clocks[0].clone());
             }
         }
     }
@@ -308,37 +315,36 @@ pub fn draw(domains: &Domains, title: &str) -> String {
     let mut c = Canvas::new();
     let mut boxes: Vec<(String, f64, f64)> = Vec::new(); // clock, center x, bottom
     let mut x = 0.0;
-    let draw_box = |c: &mut Canvas,
-                        x: &mut f64,
-                        head: &str,
-                        lines: &[String],
-                        class: &str|
-     -> (f64, f64) {
-        let mut shown: Vec<String> = lines.iter().take(MAX_LINES).map(|l| cut(l, 36)).collect();
-        if shown.is_empty() {
-            shown.push("—".into());
-        }
-        if lines.len() > MAX_LINES {
-            shown.push(format!("… {} more", lines.len() - MAX_LINES));
-        }
-        let w = shown
-            .iter()
-            .map(|l| width(l))
-            .fold(width(&cut(head, 36)), f64::max)
-            + 20.0;
-        let h = HEAD + shown.len().max(1) as f64 * ROW + 8.0;
-        c.rect(*x, 0.0, w, h, class);
-        c.rect(*x, 0.0, w, HEAD, "vfl-head");
-        c.text(*x + w / 2.0, 17.0, &cut(head, 36), "middle", "vfl-title");
-        for (i, line) in shown.iter().enumerate() {
-            c.text(*x + 10.0, HEAD + 14.0 + i as f64 * ROW, line, "start", "");
-        }
-        let center = *x + w / 2.0;
-        *x += w + GAP;
-        (center, h)
-    };
+    let draw_box =
+        |c: &mut Canvas, x: &mut f64, head: &str, lines: &[String], class: &str| -> (f64, f64) {
+            let mut shown: Vec<String> = lines.iter().take(MAX_LINES).map(|l| cut(l, 36)).collect();
+            if shown.is_empty() {
+                shown.push("—".into());
+            }
+            if lines.len() > MAX_LINES {
+                shown.push(format!("… {} more", lines.len() - MAX_LINES));
+            }
+            let w = shown
+                .iter()
+                .map(|l| width(l))
+                .fold(width(&cut(head, 36)), f64::max)
+                + 20.0;
+            let h = HEAD + shown.len().max(1) as f64 * ROW + 8.0;
+            c.rect(*x, 0.0, w, h, class);
+            c.rect(*x, 0.0, w, HEAD, "vfl-head");
+            c.text(*x + w / 2.0, 17.0, &cut(head, 36), "middle", "vfl-title");
+            for (i, line) in shown.iter().enumerate() {
+                c.text(*x + 10.0, HEAD + 14.0 + i as f64 * ROW, line, "start", "");
+            }
+            let center = *x + w / 2.0;
+            *x += w + GAP;
+            (center, h)
+        };
     let (bridged, alone): (Vec<_>, Vec<_>) = domains.domains.iter().partition(|(clock, _)| {
-        domains.bridges.iter().any(|(_, clocks)| clocks.contains(clock))
+        domains
+            .bridges
+            .iter()
+            .any(|(_, clocks)| clocks.contains(clock))
     });
     // Domains joined by a bridge sit on each side of it.
     let mut order: Vec<&(String, Vec<String>)> = Vec::new();

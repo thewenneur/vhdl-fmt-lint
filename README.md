@@ -7,7 +7,10 @@ A fast, fully configurable VHDL formatter, linter and language server, in pure R
 - **Linter**: syntactic and cross-file semantic rules, with autofixes.
 - **Documentation**: `vfl doc` generates HTML, Markdown or AsciiDoc documentation of the design
   from its doc comments, with entity symbols, the instantiation tree, the top level and every
-  architecture as block diagrams wired by signal, port maps and state machine diagrams; `vfl schema` draws one diagram as SVG, Mermaid or DOT.
+  architecture as block diagrams wired by signal, port maps, data flow, clock domains and their
+  crossings, reset trees, package dependencies, record and register bit fields, state machines
+  and WaveDrom timing diagrams written in doc comments; `vfl schema` draws one diagram as SVG,
+  Mermaid or DOT.
   See [examples/uart/doc](examples/uart/doc/index.md) for an example.
   In VS Code, **vfl: Generate Documentation** and **vfl: Show Diagrams** (a button in the
   editor title bar, showing the current file's entity in a view beside it); in Notepad++,
@@ -110,7 +113,7 @@ vfl fmt -              # format standard input to standard output
 vfl lint [--fix] ...   # lint, resolving names across the whole project
 vfl rules              # list lint rules and their levels
 vfl doc [-o dir]       # write HTML (or --format markdown|asciidoc) documentation with diagrams
-vfl schema block top   # draw a diagram: symbol, hierarchy, block, port-map or fsm
+vfl schema block top   # draw one diagram: block, fsm, dataflow, clocks, resets, ...
 vfl new tb counter     # write counter_tb.vhd, a testbench for entity counter
 vfl new instance counter     # print an instantiation (also: component, component-instance)
 vfl lsp                # language server over stdio

@@ -205,7 +205,10 @@ pub fn dataflow(
         ));
     }
     for s in &a.assignments {
-        let title = s.label.clone().unwrap_or_else(|| format!("{} <=", s.target));
+        let title = s
+            .label
+            .clone()
+            .unwrap_or_else(|| format!("{} <=", s.target));
         nodes.push(logic_node(
             title,
             "assignment".into(),

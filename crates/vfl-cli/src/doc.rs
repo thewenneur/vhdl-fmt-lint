@@ -169,8 +169,7 @@ pub fn schema(options: &SchemaOptions) -> Result<()> {
         let Some(file) = &options.entity else {
             bail!("`vfl schema wave` needs a WaveJSON file");
         };
-        let source =
-            std::fs::read_to_string(file).with_context(|| format!("reading {file}"))?;
+        let source = std::fs::read_to_string(file).with_context(|| format!("reading {file}"))?;
         let svg = vfl_doc::wave::draw(&source).map_err(|e| anyhow::anyhow!("{file}: {e}"))?;
         return emit(options, svg);
     }

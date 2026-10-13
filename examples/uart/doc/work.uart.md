@@ -2,6 +2,8 @@
 
 Library `work` · `rtl/uart.vhd:10`
 
+Uses `ieee.std_logic_1164`, [`uart_pkg`](work.uart_pkg.md).
+
 A UART with a FIFO on each side.
 
 Bytes written to `tx_data` are queued and sent on `txd`; bytes received
@@ -33,7 +35,8 @@ on `rxd` are queued until read from `rx_data`.
 | `rx_data` | out | `std_logic_vector(7 downto 0)` | Oldest received byte |
 | `rx_read` | in | `std_logic` | Take `rx_data` |
 | `rx_empty` | out | `std_logic` | No received byte |
-| `rx_error` | out | `std_logic` | A frame had a bad stop bit |
+| `host_clk` | in | `std_logic` | Clock of `rx_error` |
+| `rx_error` | out | `std_logic` | A frame had a bad stop bit, on `host_clk` |
 | `txd` | out | `std_logic` | Serial output |
 | `rxd` | in | `std_logic` | Serial input |
 
@@ -56,6 +59,7 @@ on `rxd` are queued until read from `rx_data`.
 | `tx_fifo` | [`fifo`](work.fifo.md) | entity | Bytes waiting to be sent. |
 | `transmitter` | [`uart_tx`](work.uart_tx.md) | entity |  |
 | `receiver` | [`uart_rx`](work.uart_rx.md) | entity |  |
+| `error_sync` | [`pulse_sync`](work.pulse_sync.md) | entity | Brings the error pulses to the host clock. |
 | `rx_fifo` | [`fifo`](work.fifo.md) | entity | Bytes received and not read yet. |
 
 ### Port maps
@@ -72,9 +76,21 @@ on `rxd` are queued until read from `rx_data`.
 
 ![Port map of receiver](work.uart.rtl.map-receiver.svg)
 
+#### `error_sync`
+
+![Port map of error\_sync](work.uart.rtl.map-error_sync.svg)
+
 #### `rx_fifo`
 
 ![Port map of rx\_fifo](work.uart.rtl.map-rx_fifo.svg)
+
+### Data flow
+
+![Data flow of uart(rtl)](work.uart.rtl.dataflow.svg)
+
+### Clock domains
+
+![Clock domains of uart(rtl)](work.uart.rtl.clocks.svg)
 
 ### Signals
 
@@ -87,6 +103,7 @@ on `rxd` are queued until read from `rx_data`.
 | `tx_ready` | `std_logic` |  |
 | `rx_byte` | `std_logic_vector(7 downto 0)` | Last received byte |
 | `rx_valid` | `std_logic` |  |
+| `rx_bad` | `std_logic` | A bad stop bit, on `clk` |
 
 ### Constants
 

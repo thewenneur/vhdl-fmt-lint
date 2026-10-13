@@ -328,9 +328,26 @@ is the literal the reset branch assigns, else the declaration's default.
 
 ### `[doc.diagrams]`
 
-`vfl schema symbol|hierarchy|block|port-map|fsm [entity]` draws one of these diagrams alone,
-as SVG (the default), or for `hierarchy` and `fsm` as Mermaid (`-f mermaid`) or Graphviz DOT
-(`-f dot`). `port-map` takes the instance with `--instance label`.
+`vfl schema <kind> [entity]` draws one of these diagrams alone, as SVG (the default), or for
+`hierarchy` and `fsm` as Mermaid (`-f mermaid`) or Graphviz DOT (`-f dot`). The kinds are
+`symbol`, `hierarchy`, `block`, `port-map` (with `--instance label`), `fsm`, `dataflow`,
+`clocks`, `resets`, `dependencies` (no entity) and `wave` (the argument is a WaveJSON file).
+
+A doc comment can hold a timing diagram as a fenced block in the
+[WaveDrom](https://wavedrom.com/tutorial.html) WaveJSON syntax, drawn by vfl itself:
+
+````vhdl
+--! ```wavedrom
+--! { signal: [
+--!   { name: "valid", wave: "010.." },
+--!   { name: "data",  wave: "x=x..", data: ["byte"] }
+--! ] }
+--! ```
+````
+
+Lanes, groups, spacers, `head` and `foot` text and `config.hscale` are drawn; the wave
+characters are `0 1 l h L H u d` (levels), `p n P N` (clocks), `x` (unknown), `z`, `= 2-9`
+(data), `.` (repeat) and `|` (gap). Edges, `node` arrows and skins are not drawn.
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
@@ -339,6 +356,12 @@ as SVG (the default), or for `hierarchy` and `fsm` as Mermaid (`-f mermaid`) or 
 | `block` | boolean | `true` | Draw each architecture with instances as a block diagram: its instances as blocks, wired to each other and to the ports of the entity by the signals of their port maps. Signals between neighbouring columns are drawn as wires, longer ones as named stubs. Architectures with more than 80 instances are left to the instance table. |
 | `top` | boolean | `true` | Draw the top level on the index: the block diagram (or, without instances, the symbol) of each entity at the root of the hierarchy, or for a testbench of the entities it instantiates. |
 | `port_map` | boolean | `true` | Draw each instance of an architecture as the block it instantiates, with the actual connected to each port (`open` and defaulted inputs muted) and its generic map. |
+| `dataflow` | boolean | `true` | Draw each architecture with processes or concurrent assignments as its processes, assignments and instances, wired by the signals they read and drive, with each process's clock and reset. |
+| `clocks` | boolean | `true` | For each architecture with two or more clocks, draw its clock domains (processes and instances grouped by clock, through combinational logic) and the signals crossing them, also listed in a table. |
+| `resets` | boolean | `true` | Draw a reset tree on the index for each top-level entity: where each reset port goes, through assignments and port maps, down to the processes, with their kind (synchronous or asynchronous, active high or low). |
+| `dependencies` | boolean | `true` | Draw on the index which entities and packages use which packages of the project. |
+| `waveforms` | boolean | `true` | Draw the ```` ```wavedrom ```` blocks of doc comments as timing diagrams (else they stay code blocks). |
+| `fields` | boolean | `true` | Draw the bit layout of each record type whose field widths are known (from their subtypes, constants and generics), and of each signal with aliases of its slices. |
 | `fsm` | boolean | `true` | Draw a state diagram per state machine. Past ten labelled transitions, the conditions are left to the transition table. |
 | `port_types` | boolean | `true` | Write the port types next to the pins of a symbol. |
 | `generics` | boolean | `true` | Write the generics in a symbol. |
@@ -476,6 +499,12 @@ hierarchy = true
 block = true
 top = true
 port_map = true
+dataflow = true
+clocks = true
+resets = true
+dependencies = true
+waveforms = true
+fields = true
 fsm = true
 port_types = true
 generics = true

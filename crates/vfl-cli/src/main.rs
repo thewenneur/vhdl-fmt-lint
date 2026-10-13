@@ -111,18 +111,19 @@ enum Command {
         #[arg(value_enum)]
         kind: doc::SchemaKind,
         /// The entity, as `name` or `library.name`. For `hierarchy`, the top
-        /// (default: every entity no other one instantiates).
+        /// (default: every entity no other one instantiates). For `wave`, a
+        /// WaveJSON file.
         entity: Option<String>,
         /// For `fsm`, the state signal (default: the entity's only state machine).
         #[arg(long)]
         signal: Option<String>,
-        /// For `block` and `port-map`, the architecture (default: the last one).
+        /// For `block`, `port-map`, `dataflow`, `clocks` and `resets`, the architecture (default: the last one).
         #[arg(long)]
         architecture: Option<String>,
         /// For `port-map`, the instance label (default: the only instance).
         #[arg(long)]
         instance: Option<String>,
-        /// Output format. `symbol`, `block` and `port-map` are SVG only.
+        /// Output format. Only `hierarchy` and `fsm` have Mermaid and DOT; the others are SVG only.
         #[arg(long, short, value_enum, default_value = "svg")]
         format: doc::SchemaFormat,
         /// Write to this file instead of standard output.

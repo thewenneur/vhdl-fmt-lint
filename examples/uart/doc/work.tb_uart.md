@@ -2,6 +2,8 @@
 
 Library `work` · `tb/tb_uart.vhd:5` · testbench
 
+Uses `ieee.std_logic_1164`.
+
 Sends a byte through the UART looped back on itself.
 
 <a id="arch-sim"></a>
@@ -21,6 +23,10 @@ Sends a byte through the UART looped back on itself.
 #### `dut`
 
 ![Port map of dut](work.tb_uart.sim.map-dut.svg)
+
+### Data flow
+
+![Data flow of tb\_uart(sim)](work.tb_uart.sim.dataflow.svg)
 
 ### Processes
 

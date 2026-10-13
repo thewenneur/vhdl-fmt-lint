@@ -2,6 +2,8 @@
 
 Library `work` · `rtl/uart_rx.vhd:6`
 
+Uses `ieee.std_logic_1164`.
+
 Deserializes frames of eight data bits and one stop bit, sampling each
 bit in its middle.
 
@@ -37,6 +39,10 @@ bit in its middle.
 <a id="arch-rtl"></a>
 
 ## Architecture `rtl`
+
+### Data flow
+
+![Data flow of uart\_rx(rtl)](work.uart_rx.rtl.dataflow.svg)
 
 ### Processes
 
@@ -77,3 +83,7 @@ Current and next registers
 |---|---|---|---|
 | `state_t` | type | `(IDLE, START, DATA_BIT, STOP)` |  |
 | `engine_t` | type | `record state : state_t; shift : std_logic_vector(7 downto 0); bit_idx : natural range 0 to 7; timer : natural range 0 to CYCLES_PER_BIT - 1; end record` | The receiver's registers. |
+
+### Bit fields
+
+![Fields of engine\_t](work.uart_rx.rtl.fields-engine_t.svg)

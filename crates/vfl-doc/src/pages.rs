@@ -212,11 +212,12 @@ pub fn pages(design: &Design, roots: &[Node], config: &DocConfig) -> Vec<Page> {
             }
         }
     }
+    let packages = crate::fields::Scope::packages(design);
     for (i, users) in users.iter().enumerate() {
-        pages.push(entity(design, i, users, config));
+        pages.push(entity(design, i, users, &packages, config));
     }
     for package in &design.packages {
-        pages.push(package_page(design, package, config));
+        pages.push(package_page(design, package, &packages, config));
     }
     pages
 }
@@ -396,7 +397,11 @@ fn reset_trees(design: &Design, roots: &[Node], config: &DocConfig, blocks: &mut
     for (top, svg) in trees {
         let entity = &design.entities[top];
         if several {
-            blocks.push(heading(3, vec![link(&entity.name, entity.page.clone(), None)], None));
+            blocks.push(heading(
+                3,
+                vec![link(&entity.name, entity.page.clone(), None)],
+                None,
+            ));
         }
         blocks.push(Block::Diagram {
             file: format!("resets.{}", entity.page),
@@ -584,6 +589,7 @@ fn entity(
     design: &Design,
     index: usize,
     users: &[(usize, String, String)],
+    packages: &crate::fields::Scope,
     config: &DocConfig,
 ) -> Page {
     let e: &Entity = &design.entities[index];
@@ -646,7 +652,7 @@ fn entity(
         ));
     }
     for arch in &e.architectures {
-        architecture(design, index, arch, &id, config, &mut blocks);
+        architecture(design, index, arch, &id, packages, config, &mut blocks);
     }
     Page {
         id,
@@ -660,6 +666,7 @@ fn architecture(
     index: usize,
     arch: &Architecture,
     page: &str,
+    packages: &crate::fields::Scope,
     config: &DocConfig,
     blocks: &mut Vec<Block>,
 ) {
@@ -753,7 +760,10 @@ fn architecture(
         }
     }
     if config.diagrams.dataflow
-        && let Some(a) = entity.architectures.iter().position(|a| std::ptr::eq(a, arch))
+        && let Some(a) = entity
+            .architectures
+            .iter()
+            .position(|a| std::ptr::eq(a, arch))
         && let Some(svg) = crate::block::dataflow(
             design,
             index,
@@ -770,7 +780,10 @@ fn architecture(
         });
     }
     if config.diagrams.clocks
-        && let Some(a) = entity.architectures.iter().position(|a| std::ptr::eq(a, arch))
+        && let Some(a) = entity
+            .architectures
+            .iter()
+            .position(|a| std::ptr::eq(a, arch))
         && let Some((svg, domains)) = crate::clocks::diagram(design, index, a)
     {
         blocks.push(heading(3, vec![text("Clock domains")], None));
@@ -893,7 +906,8 @@ fn architecture(
         blocks.push(types_table(&arch.types));
     }
     if config.diagrams.fields {
-        let scope = crate::fields::Scope::new(design, Some(index), &arch.constants, &arch.types);
+        let scope =
+            crate::fields::Scope::new(packages, design, Some(index), &arch.constants, &arch.types);
         field_diagrams(
             &scope,
             &arch.types,
@@ -910,7 +924,12 @@ fn architecture(
     }
 }
 
-fn package_page(design: &Design, p: &Package, config: &DocConfig) -> Page {
+fn package_page(
+    design: &Design,
+    p: &Package,
+    packages: &crate::fields::Scope,
+    config: &DocConfig,
+) -> Page {
     let id = p.page.clone();
     let mut blocks = vec![
         heading(1, vec![text("Package "), code(p.name.clone())], None),
@@ -940,8 +959,16 @@ fn package_page(design: &Design, p: &Package, config: &DocConfig) -> Page {
         blocks.push(types_table(&p.types));
     }
     if config.diagrams.fields {
-        let scope = crate::fields::Scope::new(design, None, &p.constants, &p.types);
-        field_diagrams(&scope, &p.types, &p.signals, &p.aliases, &id, 2, &mut blocks);
+        let scope = crate::fields::Scope::new(packages, design, None, &p.constants, &p.types);
+        field_diagrams(
+            &scope,
+            &p.types,
+            &p.signals,
+            &p.aliases,
+            &id,
+            2,
+            &mut blocks,
+        );
     }
     if config.subprograms && !p.subprograms.is_empty() {
         blocks.push(heading(

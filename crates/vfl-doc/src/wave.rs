@@ -250,10 +250,7 @@ fn rows(signal: &[Value], indent: usize, out: &mut Vec<Row>) {
                     _ => (String::new(), &items[..]),
                 };
                 if !name.is_empty() {
-                    out.push(Row::Group {
-                        name,
-                        indent,
-                    });
+                    out.push(Row::Group { name, indent });
                 }
                 rows(rest, indent + 1, out);
             }
@@ -334,7 +331,13 @@ pub fn draw(source: &str) -> Result<String, String> {
     c.raw(STYLE);
     let mut y = 0.0;
     if let Some(head) = text_of("head") {
-        c.text(x0 + cycles as f64 * period / 2.0, 14.0, &cut(&head, 80), "middle", "vfl-title");
+        c.text(
+            x0 + cycles as f64 * period / 2.0,
+            14.0,
+            &cut(&head, 80),
+            "middle",
+            "vfl-title",
+        );
         y += 26.0;
     }
     let top = y;
@@ -486,5 +489,10 @@ fn lane(c: &mut Canvas, wave: &str, data: &[String], x0: f64, y: f64, period: f6
             -(low - high + 4.0)
         ));
     }
-    c.extend(x0, high, x0 + segments.last().map_or(0, |s| s.2) as f64 * period, low);
+    c.extend(
+        x0,
+        high,
+        x0 + segments.last().map_or(0, |s| s.2) as f64 * period,
+        low,
+    );
 }

@@ -1,9 +1,13 @@
 # Entity `uart_tx`
 
-Library `work` · `rtl/uart_tx.vhd:8`
+Library `work` · `rtl/uart_tx.vhd:19`
+
+Uses `ieee.std_logic_1164`, [`uart_pkg`](work.uart_pkg.md).
 
 Serializes bytes: a start bit, the data bits LSB first, an optional
 parity bit and a stop bit.
+
+![Timing diagram](wave-fec127465b3439b0.svg)
 
 ![Symbol of uart\_tx](work.uart_tx.symbol.svg)
 
@@ -38,6 +42,10 @@ parity bit and a stop bit.
 <a id="arch-rtl"></a>
 
 ## Architecture `rtl`
+
+### Data flow
+
+![Data flow of uart\_tx(rtl)](work.uart_tx.rtl.dataflow.svg)
 
 ### Processes
 

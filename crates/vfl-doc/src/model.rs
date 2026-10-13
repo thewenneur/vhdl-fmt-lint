@@ -20,6 +20,9 @@ pub struct Design {
     pub configurations: Vec<(String, String, String)>,
     /// Entity key -> indexes into `entities`, for resolving instances.
     pub by_name: HashMap<String, Vec<usize>>,
+    /// (library key, name key) -> the first package of that name, for
+    /// resolving `use` clauses.
+    pub packages_by_name: HashMap<(String, String), usize>,
 }
 
 /// An entity and its architectures.
@@ -459,6 +462,12 @@ pub fn build(files: &[FileInput], config: &DocConfig, title: String) -> Design {
     }
     for (i, e) in design.entities.iter().enumerate() {
         design.by_name.entry(e.key()).or_default().push(i);
+    }
+    for (i, p) in design.packages.iter().enumerate() {
+        design
+            .packages_by_name
+            .entry((identifier_key(&p.library), identifier_key(&p.name)))
+            .or_insert(i);
     }
     design
 }
@@ -1107,7 +1116,10 @@ fn tests_edge(expr: &SyntaxNode) -> bool {
 /// clock edge (asynchronous), or of the first `if` under the edge whose
 /// signal is named like a reset (synchronous).
 fn reset(process: &SyntaxNode) -> Option<Reset> {
-    for stmt in process.descendants().filter(|n| n.kind() == SyntaxKind::IF_STMT) {
+    for stmt in process
+        .descendants()
+        .filter(|n| n.kind() == SyntaxKind::IF_STMT)
+    {
         let branches = if_branches(&stmt);
         let Some(k) = branches
             .iter()
@@ -1145,7 +1157,9 @@ fn reset(process: &SyntaxNode) -> Option<Reset> {
     let wait = body
         .iter()
         .position(|n| n.kind() == SyntaxKind::WAIT_STMT && tests_edge(n))?;
-    let inner = body[wait..].iter().find(|n| n.kind() == SyntaxKind::IF_STMT)?;
+    let inner = body[wait..]
+        .iter()
+        .find(|n| n.kind() == SyntaxKind::IF_STMT)?;
     let first = if_branches(inner).into_iter().next()?;
     let (signal, active_high) = reset_test(first.0.as_ref()?)?;
     let key = identifier_key(&signal);

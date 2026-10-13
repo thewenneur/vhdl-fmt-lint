@@ -130,9 +130,11 @@ pub fn layered(nodes: &[GraphNode], edges: &[GraphEdge], title: &str) -> String 
     // Sizes and positions.
     let size = |v: usize| -> (f64, f64) {
         let node = &nodes[v];
-        let w = width(&cut(&node.title, MAX_LABEL))
-            .max(node.detail.as_ref().map_or(0.0, |d| width(&cut(d, MAX_LABEL))))
-            + 16.0;
+        let w = width(&cut(&node.title, MAX_LABEL)).max(
+            node.detail
+                .as_ref()
+                .map_or(0.0, |d| width(&cut(d, MAX_LABEL))),
+        ) + 16.0;
         let h = if node.detail.is_some() { 36.0 } else { 22.0 };
         (w.max(40.0), h)
     };
@@ -193,8 +195,22 @@ pub fn layered(nodes: &[GraphNode], edges: &[GraphEdge], title: &str) -> String 
         if let Some(link) = &node.link {
             c.raw(&format!(r#"<a href="{}">"#, escape(link)));
         }
-        c.rect(x, y, w, h, if node.class.is_empty() { "vfl-box" } else { node.class });
-        let title_class = if node.class == "vfl-term" { "" } else { "vfl-title" };
+        c.rect(
+            x,
+            y,
+            w,
+            h,
+            if node.class.is_empty() {
+                "vfl-box"
+            } else {
+                node.class
+            },
+        );
+        let title_class = if node.class == "vfl-term" {
+            ""
+        } else {
+            "vfl-title"
+        };
         c.text(
             x + w / 2.0,
             y + 15.0,
