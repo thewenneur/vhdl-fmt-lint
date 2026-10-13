@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Parses pinned open-source VHDL projects and fails on any syntax error or
-# round-trip mismatch. Usage: scripts/corpus.sh [CACHE_DIR]
+# round-trip mismatch. Then formats them, with the default config and a very
+# different one, and fails on any formatter error or output that changes
+# when formatted again. Usage: scripts/corpus.sh [CACHE_DIR]
 set -euo pipefail
 
 cache=${1:-.corpus}
@@ -27,7 +29,10 @@ for entry in "${repos[@]}"; do
 done
 
 cargo build --release -q -p vfl-syntax --example parse_corpus
-run=target/release/examples/parse_corpus
+cargo build --release -q -p vfl-fmt --example fmt_corpus
+target=${CARGO_TARGET_DIR:-target}
+run=$target/release/examples/parse_corpus
+fmt=$target/release/examples/fmt_corpus
 status=0
 
 # OSVVM uses VHDL-2019 in a few packages; its *_template.vhd files hold `$` placeholders.
@@ -37,12 +42,43 @@ $run --quiet --std 2008 "$cache/vunit" || status=1
 $run --quiet --std 2008 "$cache/neorv32" || status=1
 # The VESTS VHDL-93 conformance suite (compliant tests only). One file is
 # an incomplete book excerpt and does not parse.
-$run --quiet --std 93 --exclude ch_18_fg_18_09 \
-  "$cache/ghdl/testsuite/vests/vhdl-93/ashenden/compliant" \
-  "$cache/ghdl/testsuite/vests/vhdl-93/billowitch/compliant" \
-  "$cache/ghdl/testsuite/vests/vhdl-93/clifton-labs/compliant" || status=1
+vests=(
+  "$cache/ghdl/testsuite/vests/vhdl-93/ashenden/compliant"
+  "$cache/ghdl/testsuite/vests/vhdl-93/billowitch/compliant"
+  "$cache/ghdl/testsuite/vests/vhdl-93/clifton-labs/compliant"
+)
+$run --quiet --std 93 --exclude ch_18_fg_18_09 "${vests[@]}" || status=1
 # The whole GHDL test suite, broken files included: nothing may panic or
 # fail to round-trip.
 $run --quiet --allow-errors "$cache/ghdl/testsuite" || status=1
+
+# Formatting. The output must parse to the same tokens and comments, and
+# formatting it again must change nothing. Files with syntax errors are skipped.
+alt_config=$(mktemp)
+trap 'rm -f "$alt_config"' EXIT
+printf '%s\n' \
+  '[format]' \
+  'keyword_case = "upper"' \
+  'identifier_case = "lower"' \
+  'use_tabs = true' \
+  'indent = 4' \
+  'end_label = "add"' \
+  'end_keyword = "add"' \
+  'max_width = 60' \
+  'interface_list = "preserve"' \
+  'association_list = "expand"' \
+  'close_paren = "attached"' \
+  'case_alternative = "break"' \
+  '[format.align]' \
+  'block_boundary = "never"' >"$alt_config"
+for config in "" "--config $alt_config"; do
+  # shellcheck disable=SC2086 # $config is meant to split.
+  {
+    $fmt --quiet $config --std 2019 --exclude _template "$cache/OSVVM" || status=1
+    $fmt --quiet $config --std 2008 "$cache/UVVM" "$cache/vunit" "$cache/neorv32" || status=1
+    $fmt --quiet $config --std 93 "${vests[@]}" || status=1
+    $fmt --quiet $config "$cache/ghdl/testsuite" || status=1
+  }
+done
 
 exit $status

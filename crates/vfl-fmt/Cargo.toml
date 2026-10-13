@@ -11,5 +11,11 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+rowan = "0.16"
+thiserror.workspace = true
 vfl-config.workspace = true
 vfl-syntax.workspace = true
+
+[dev-dependencies]
+insta = { version = "1", features = ["glob"] }
+toml.workspace = true

@@ -122,12 +122,42 @@ impl From<StandardSetting> for Standard {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct FormatConfig {
+    /// Lines longer than this get their lists broken up, one element per line.
     pub max_width: u32,
+    /// Columns per indentation level (also the tab width with `use_tabs`).
     pub indent: u32,
+    /// Columns added for a statement continued on the next line, outside
+    /// parentheses. Defaults to `indent`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub continuation_indent: Option<u32>,
+    /// Indent with tabs instead of spaces. Alignment always uses spaces.
     pub use_tabs: bool,
     pub keyword_case: Case,
+    /// Case of basic identifiers. Extended identifiers (`\Foo\`) never change.
     pub identifier_case: Case,
     pub end_label: EndLabel,
+    /// Whether `end` repeats the optional construct keyword
+    /// (`end entity`, `end architecture`, `end function`, ...).
+    pub end_keyword: EndKeyword,
+    /// `lbl : process` rather than `lbl: process`.
+    pub space_before_label_colon: bool,
+    /// A space between `(` and the keyword before it: `process (clk)`,
+    /// `port map (`, `if (` rather than `process(clk)`. Applies after
+    /// `process`, `port`, `generic`, `map`, `parameter`, `array`, `block`,
+    /// `if`, `elsif`, `while` and `until`. Calls and indexing never get a
+    /// space: `f(x)`, `v(7 downto 0)`.
+    pub space_after_keyword: bool,
+    /// Longer runs of blank lines are shortened to this.
+    pub max_blank_lines: u32,
+    /// Layout of `generic (...)` and `port (...)` clauses.
+    pub interface_list: ListLayout,
+    /// Layout of `generic map (...)` and `port map (...)`.
+    pub association_list: ListLayout,
+    /// Where `)` goes when a list is laid out one element per line.
+    pub close_paren: CloseParen,
+    /// Whether `when x => stmt;` may keep its statement on the `when` line.
+    pub case_alternative: CaseAlternative,
+    pub line_ending: LineEnding,
     pub align: AlignConfig,
 }
 
@@ -136,10 +166,20 @@ impl Default for FormatConfig {
         FormatConfig {
             max_width: 100,
             indent: 2,
+            continuation_indent: None,
             use_tabs: false,
             keyword_case: Case::Lower,
             identifier_case: Case::Preserve,
             end_label: EndLabel::Preserve,
+            end_keyword: EndKeyword::Preserve,
+            space_before_label_colon: true,
+            space_after_keyword: true,
+            max_blank_lines: 2,
+            interface_list: ListLayout::Expand,
+            association_list: ListLayout::Auto,
+            close_paren: CloseParen::OwnLine,
+            case_alternative: CaseAlternative::Preserve,
+            line_ending: LineEnding::Auto,
             align: AlignConfig::default(),
         }
     }
@@ -162,22 +202,84 @@ pub enum EndLabel {
     Preserve,
 }
 
+/// Whether `end` repeats an optional construct keyword.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EndKeyword {
+    Add,
+    Remove,
+    Preserve,
+}
+
+/// How a parenthesized list is laid out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ListLayout {
+    /// Always one element per line, with `(` ending the first line.
+    Expand,
+    /// One element per line if the list spans several lines or does not
+    /// fit in `max_width`; otherwise kept on one line.
+    Auto,
+    /// Keep the line breaks as written; expand only if it does not fit.
+    Preserve,
+}
+
+/// Where the closing `)` of an expanded list goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CloseParen {
+    /// On its own line, at the indentation of the line that opened the list.
+    OwnLine,
+    /// Right after the last element.
+    Attached,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CaseAlternative {
+    /// Every statement of a case alternative starts its own line.
+    Break,
+    /// A first statement written on the `when` line stays there.
+    Preserve,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LineEnding {
+    /// Whatever the file uses already (LF for new files).
+    Auto,
+    Lf,
+    Crlf,
+}
+
 /// `[format.align]`: which columns the formatter lines up across
 /// consecutive lines of the same shape.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct AlignConfig {
+    /// `:` in port clauses and subprogram parameter lists.
     pub port_colon: bool,
+    /// The subtype after the mode (`in`, `out`, ...) in port clauses and
+    /// parameter lists.
     pub port_mode: bool,
+    /// `:` in generic clauses.
     pub generic_colon: bool,
+    /// `:=` default values in generic and port clauses.
+    pub interface_default: bool,
     /// `<=` and `:=` in consecutive statements.
     pub assignment: bool,
     /// `=>` in port maps, generic maps and aggregates.
     pub association: bool,
-    /// Names, `:` and types in declarative parts.
+    /// `:` and `:=` in object declarations and record elements, and `is` in
+    /// type and subtype declarations.
     pub declaration: bool,
-    /// `=>` after `when` choices in case statements.
+    /// `=>` of case alternatives whose statement is on the same line.
     pub case_choice: bool,
+    /// `when` in conditional and selected assignments.
+    pub when_clause: bool,
+    /// Continuation lines of conditional and selected assignments start
+    /// under the first value instead of one indentation level in.
+    pub conditional_continuation: bool,
     pub trailing_comment: bool,
     pub block_boundary: BlockBoundary,
 }
@@ -188,10 +290,13 @@ impl Default for AlignConfig {
             port_colon: true,
             port_mode: true,
             generic_colon: true,
+            interface_default: true,
             assignment: true,
             association: true,
             declaration: true,
             case_choice: true,
+            when_clause: true,
+            conditional_continuation: true,
             trailing_comment: true,
             block_boundary: BlockBoundary::BlankLine,
         }
@@ -206,7 +311,8 @@ pub enum BlockBoundary {
     BlankLine,
     /// A blank line or a full-line comment starts a new block.
     Comment,
-    /// Only a change of construct starts a new block.
+    /// Blank lines and comments do not end a block; any other line without
+    /// the aligned token does.
     Never,
 }
 
@@ -325,6 +431,16 @@ mod tests {
         };
         assert_eq!(*level, Some(Level::Warn));
         assert_eq!(options["prefix"].as_str(), Some("s_"));
+    }
+
+    #[test]
+    fn design_doc_config_example_parses() {
+        let doc = include_str!("../../../docs/design.md");
+        let section = &doc[doc.find("## Configuration").unwrap()..];
+        let start = section.find("```toml\n").unwrap() + "```toml\n".len();
+        let end = start + section[start..].find("```").unwrap();
+        let config = Config::from_toml_str(&section[start..end]).unwrap();
+        assert_eq!(config.format, FormatConfig::default());
     }
 
     #[test]

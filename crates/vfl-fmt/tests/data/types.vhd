@@ -1,0 +1,25 @@
+package types is
+  type pair is record
+    a, b : integer;
+    flag : boolean;
+  end record;
+
+  type distance is range 0 to 1e9
+    units
+      nm;
+      um = 1000 nm;
+    end units;
+
+  type state_t is (
+    IDLE,
+    RUN,
+    DONE
+  );
+
+  type counter_t is protected
+    procedure increment;
+    impure function value return integer;
+  end protected;
+
+  type matrix is array (0 to 3, 0 to 3) of integer;
+end package;

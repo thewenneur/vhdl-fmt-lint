@@ -18,7 +18,8 @@ Status: early development. See [docs/design.md](docs/design.md) for the design.
 vfl project            # show the discovered root and sources
 vfl config show        # show the effective configuration and where it came from
 vfl check [paths]      # report syntax errors
-vfl fmt [--check] ...  # format (not implemented yet)
+vfl fmt [--check] ...  # format in place, or list the files that would change
+vfl fmt -               # format standard input to standard output
 vfl lint ...           # lint (not implemented yet)
 vfl lsp                # language server (not implemented yet)
 ```
@@ -28,6 +29,19 @@ vfl lsp                # language server (not implemented yet)
 Optional. Put a `vfl.toml` at the project root; nested `vfl.toml` files override only the
 keys they set, `extends = "path.toml"` pulls in a shared file, and `root = true` stops the
 search for parent configs. See the design doc for the full schema.
+
+```toml
+[format]
+indent = 4
+keyword_case = "upper"
+end_label = "add"
+
+[format.align]
+block_boundary = "never"   # align whole port lists, across blank lines and comments
+```
+
+Formatting can be switched off for a region with `-- vfl: off` / `-- vfl: on`, or for the next
+statement with `-- vfl: skip`.
 
 ## Workspace
 
