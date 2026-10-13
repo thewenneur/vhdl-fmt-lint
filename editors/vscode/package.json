@@ -259,6 +259,18 @@
         "command": "vfl.generateTestbench",
         "title": "Generate Testbench...",
         "category": "vfl"
+      },
+      {
+        "command": "vfl.generateDocs",
+        "title": "Generate Documentation",
+        "category": "vfl",
+        "icon": "$(book)"
+      },
+      {
+        "command": "vfl.showDiagrams",
+        "title": "Show Diagrams",
+        "category": "vfl",
+        "icon": "$(type-hierarchy)"
       }
     ],
     "menus": {
@@ -278,6 +290,10 @@
         {
           "command": "vfl.insertComponent",
           "when": "editorLangId == vhdl"
+        },
+        {
+          "command": "vfl.showDiagrams",
+          "when": "editorLangId == vhdl"
         }
       ],
       "editor/context": [
@@ -290,6 +306,30 @@
           "command": "vfl.generateTestbench",
           "when": "editorLangId == vhdl",
           "group": "1_modification@11"
+        },
+        {
+          "command": "vfl.showDiagrams",
+          "when": "editorLangId == vhdl",
+          "group": "1_modification@12"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "vfl.showDiagrams",
+          "when": "resourceLangId == vhdl && resourceScheme == file",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "vfl.generateDocs",
+          "when": "explorerResourceIsFolder || resourceLangId == vhdl",
+          "group": "7_modification@50"
+        },
+        {
+          "command": "vfl.showDiagrams",
+          "when": "resourceLangId == vhdl",
+          "group": "7_modification@51"
         }
       ]
     }

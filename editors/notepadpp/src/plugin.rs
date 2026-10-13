@@ -59,6 +59,9 @@ const MENU: &[(&str, Option<extern "C" fn()>)] = &[
     ("Insert component declaration", Some(cmd_insert_component)),
     ("Generate testbench", Some(cmd_testbench)),
     ("", None),
+    ("Generate documentation", Some(cmd_generate_docs)),
+    ("Show diagrams", Some(cmd_show_diagrams)),
+    ("", None),
     ("Show type", Some(cmd_show_type)),
     ("Show parameters", Some(cmd_show_parameters)),
     ("Complete word", Some(cmd_complete)),
@@ -754,6 +757,14 @@ extern "C" fn cmd_insert_component() {
 
 extern "C" fn cmd_testbench() {
     guard(|| tools::generate(Kind::Testbench));
+}
+
+extern "C" fn cmd_generate_docs() {
+    guard(tools::generate_docs);
+}
+
+extern "C" fn cmd_show_diagrams() {
+    guard(tools::show_diagrams);
 }
 
 extern "C" fn cmd_toggle_highlight() {

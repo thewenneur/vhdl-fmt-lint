@@ -1,5 +1,6 @@
 //! The `vfl` command-line tool.
 
+mod doc;
 mod lint;
 mod new;
 
@@ -84,6 +85,59 @@ enum Command {
         #[command(subcommand)]
         command: ConfigCommand,
     },
+    /// Generate documentation of the design, with diagrams.
+    ///
+    /// Writes an index, a page per entity (generics, ports, symbol,
+    /// architectures, instances, processes, state machines) and a page per
+    /// package, as HTML, Markdown or AsciiDoc. Doc comments are the comments
+    /// directly above a declaration or at the end of its line (`--!` ones
+    /// if the file has any). Settings are under `[doc]` in vfl.toml.
+    Doc {
+        /// A directory or file of the project (default: the current directory).
+        #[arg(default_value = ".")]
+        path: PathBuf,
+        /// Output directory (default: `doc.out_dir`, relative to the project root).
+        #[arg(long, short)]
+        out: Option<PathBuf>,
+        /// Output format (default: `doc.format`).
+        #[arg(long, value_enum)]
+        format: Option<DocFormatArg>,
+        /// Title of the index page (default: `doc.title`, else the project directory's name).
+        #[arg(long)]
+        title: Option<String>,
+        /// Print the page of the first entity (else package) this file
+        /// declares instead of the index (the index if it declares none).
+        #[arg(long, value_name = "FILE")]
+        page_for: Option<PathBuf>,
+    },
+    /// Draw one diagram: an entity's symbol, the design hierarchy, the block
+    /// diagram of an architecture or a state machine.
+    Schema {
+        #[arg(value_enum)]
+        kind: doc::SchemaKind,
+        /// The entity, as `name` or `library.name`. For `hierarchy`, the top
+        /// (default: every entity no other one instantiates). For `wave`, a
+        /// WaveJSON file.
+        entity: Option<String>,
+        /// For `fsm`, the state signal (default: the entity's only state machine).
+        #[arg(long)]
+        signal: Option<String>,
+        /// For `block`, `port-map`, `dataflow`, `clocks` and `resets`, the architecture (default: the last one).
+        #[arg(long)]
+        architecture: Option<String>,
+        /// For `port-map`, the instance label (default: the only instance).
+        #[arg(long)]
+        instance: Option<String>,
+        /// Output format. Only `hierarchy` and `fsm` have Mermaid and DOT; the others are SVG only.
+        #[arg(long, short, value_enum, default_value = "svg")]
+        format: doc::SchemaFormat,
+        /// Write to this file instead of standard output.
+        #[arg(long, short)]
+        output: Option<PathBuf>,
+        /// A directory or file of the project.
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+    },
     /// Generate code from an entity of the project: a testbench, an
     /// instantiation or a component declaration.
     ///
@@ -110,6 +164,13 @@ enum Command {
     },
     /// Run the language server over stdio.
     Lsp,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum DocFormatArg {
+    Html,
+    Markdown,
+    Asciidoc,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -186,6 +247,44 @@ fn run(cli: Cli) -> Result<bool> {
             Ok(true)
         }
         Command::Lsp => vfl_lsp::run_stdio().map(|()| true),
+        Command::Doc {
+            path,
+            out,
+            format,
+            title,
+            page_for,
+        } => doc::doc(
+            &path,
+            out.as_deref(),
+            format.map(|f| match f {
+                DocFormatArg::Html => vfl_config::DocFormat::Html,
+                DocFormatArg::Markdown => vfl_config::DocFormat::Markdown,
+                DocFormatArg::Asciidoc => vfl_config::DocFormat::Asciidoc,
+            }),
+            title,
+            page_for.as_deref(),
+        )
+        .map(|()| true),
+        Command::Schema {
+            kind,
+            entity,
+            signal,
+            architecture,
+            instance,
+            format,
+            output,
+            project,
+        } => doc::schema(&doc::SchemaOptions {
+            kind,
+            entity,
+            signal,
+            architecture,
+            instance,
+            format,
+            output,
+            project,
+        })
+        .map(|()| true),
         Command::New {
             kind,
             entity,

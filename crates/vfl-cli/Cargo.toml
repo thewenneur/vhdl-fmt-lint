@@ -16,6 +16,7 @@ workspace = true
 
 [dependencies]
 vfl-config.workspace = true
+vfl-doc.workspace = true
 vfl-fmt.workspace = true
 vfl-gen.workspace = true
 vfl-lint.workspace = true

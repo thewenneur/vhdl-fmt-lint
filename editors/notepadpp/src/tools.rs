@@ -45,6 +45,8 @@ pub(crate) struct ToolState {
     highlight_timer: Cell<usize>,
     /// The buffer and caret the uses are shown for.
     highlighted: Cell<Option<(usize, usize)>>,
+    /// Documentation being written on the worker's thread.
+    writing_docs: Cell<bool>,
 }
 
 struct List {
@@ -785,4 +787,88 @@ fn highlight_uses() {
             }
         },
     );
+}
+
+// Documentation.
+
+/// The current file, if it is saved: the documentation is made from the
+/// files on disk.
+fn saved_file() -> Option<PathBuf> {
+    let path = buffer_path(current_buffer()).filter(|p| p.is_absolute() && p.is_file());
+    if path.is_none() {
+        tell("Save the file first: the documentation is made from the files on disk.");
+    }
+    path
+}
+
+/// Writes the documentation on the worker's thread, so that Notepad++ stays
+/// responsive on large projects, then runs `then` here with the result.
+/// One run at a time: a second command while one runs is refused.
+fn write_docs(
+    out: Option<PathBuf>,
+    then: impl FnOnce(Result<crate::docs::Written, String>) + 'static,
+) {
+    let Some(file) = saved_file() else {
+        return;
+    };
+    if with(|s| s.tools.writing_docs.replace(true)) {
+        tell("The documentation is still being written.");
+        return;
+    }
+    const WRITING: &str = "vfl: writing the documentation...";
+    let before = status_text(npp());
+    set_status_text(npp(), WRITING);
+    // No key: it must not be dropped for a later request, and runs in
+    // order with them.
+    request(
+        None,
+        move |_engine| {
+            // A panic here must still reach `then`, which clears the flag.
+            std::panic::catch_unwind(|| crate::docs::write(&file, out.as_deref()))
+                .unwrap_or_else(|_| Err("vfl hit an internal error".into()))
+        },
+        move |result| {
+            with(|s| s.tools.writing_docs.set(false));
+            // Put back the file type, unless Notepad++ already did (on a
+            // switch of buffer).
+            if let Some(before) = before
+                && status_text(npp()).as_deref() == Some(WRITING)
+            {
+                set_status_text(npp(), &before);
+            }
+            then(result);
+        },
+    );
+}
+
+/// Writes the documentation of the current file's project where `[doc]`
+/// says, then opens its index: an HTML one in the browser, others here.
+pub(crate) fn generate_docs() {
+    write_docs(None, |result| match result {
+        Ok(written) => {
+            let opened = if written.html {
+                shell_open(npp(), &written.index)
+            } else {
+                open(&written.index)
+            };
+            if !opened {
+                tell(&format!("Wrote {}.", written.index.display()));
+            }
+        }
+        Err(why) => tell(&format!("Could not write the documentation: {why}.")),
+    });
+}
+
+/// Writes the HTML documentation of the current file's project to a
+/// temporary directory and opens the page of the file's entity, with its
+/// diagrams, in the browser.
+pub(crate) fn show_diagrams() {
+    write_docs(Some(crate::docs::diagrams_dir()), |result| match result {
+        Ok(written) => {
+            if !shell_open(npp(), &written.page) {
+                tell(&format!("Could not open {}.", written.page.display()));
+            }
+        }
+        Err(why) => tell(&format!("Could not draw the diagrams: {why}.")),
+    });
 }

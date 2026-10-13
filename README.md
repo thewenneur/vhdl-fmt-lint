@@ -5,6 +5,16 @@ A fast, fully configurable VHDL formatter, linter and language server, in pure R
 - **Formatter**: every rule configurable, including column alignment of ports, generics,
   assignments, associations, declarations and comments. Idempotent and token-preserving.
 - **Linter**: syntactic and cross-file semantic rules, with autofixes.
+- **Documentation**: `vfl doc` generates HTML, Markdown or AsciiDoc documentation of the design
+  from its doc comments, with entity symbols, the instantiation tree, the top level and every
+  architecture as block diagrams wired by signal, port maps, data flow, clock domains and their
+  crossings, reset trees, package dependencies, record and register bit fields, state machines
+  and WaveDrom timing diagrams written in doc comments; `vfl schema` draws one diagram as SVG,
+  Mermaid or DOT.
+  See [examples/uart/doc](examples/uart/doc/index.md) for an example.
+  In VS Code, **vfl: Generate Documentation** and **vfl: Show Diagrams** (a button in the
+  editor title bar, showing the current file's entity in a view beside it); in Notepad++,
+  **Generate documentation** and **Show diagrams** in the plugin's menu.
 - **Language server**: diagnostics, formatting, navigation and refactoring in any LSP editor.
 - **Code generation**: instantiations, component declarations and testbench skeletons from
   an entity.
@@ -103,6 +113,8 @@ vfl fmt -              # format standard input to standard output
 vfl fmt --lines 10:20 f.vhd  # format only those lines (and the statements around them)
 vfl lint [--fix] ...   # lint, resolving names across the whole project
 vfl rules              # list lint rules and their levels
+vfl doc [-o dir]       # write HTML (or --format markdown|asciidoc) documentation with diagrams
+vfl schema block top   # draw one diagram: block, fsm, dataflow, clocks, resets, ...
 vfl new tb counter     # write counter_tb.vhd, a testbench for entity counter
 vfl new instance counter     # print an instantiation (also: component, component-instance)
 vfl lsp                # language server over stdio

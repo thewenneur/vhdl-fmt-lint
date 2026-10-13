@@ -12,6 +12,8 @@ the config files it was built from.
 - [`[format]`](#format): the formatter
 - [`[format.align]`](#formatalign): column alignment
 - [`[lint]`](#lint): presets and per-rule settings
+- [`[doc]`](#doc): documentation generation (`vfl doc`)
+- [`[doc.diagrams]`](#docdiagrams): the diagrams in the documentation (`vfl schema`)
 - [In-source comments](#in-source-comments): suppressing findings, switching the formatter off
 - [Default configuration](#default-configuration): every key with its default value
 
@@ -267,6 +269,105 @@ Each entry is either a level, or a table with an optional `level` and rule optio
 `info` findings are shown as notes. `vfl lint` exits with a failure status when there are
 `error` findings, or `warn` findings too with `--deny-warnings`.
 
+## `[doc]`
+
+`vfl doc [path]` writes the documentation of the project: an index with the design
+hierarchy, the block diagram of the top level and the list of entities and packages, a page per entity (description, block
+symbol, generics, ports, who instantiates it, and per architecture its instances, processes,
+state machines, signals, constants, types and subprograms) and a page per package. Options
+on the command line (`--out`, `--format`, `--title`) override these keys. `[doc]` is read
+from the configs that apply to the project root.
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `out_dir` | string | `"doc"` | Where `vfl doc` writes, relative to the project root. Existing files there are overwritten, others are kept. |
+| `format` | string | `"html"` | `"html"`: self-contained pages with the diagrams inline, light and dark. `"markdown"`: `.md` pages, with the diagrams as `.svg` files next to them (or Mermaid blocks, see `[doc.diagrams]`). `"asciidoc"`: `.adoc` pages for Asciidoctor (or Antora), with the diagrams as `.svg` files next to them. |
+| `title` | string | unset | The title of the index page. Unset: the name of the project directory. |
+| `comments` | string | `"auto"` | Which comments document a declaration: `"marked"` (only comments starting with `--` and `comment_marker`, as in TerosHDL and Doxygen), `"all"` (every comment), `"auto"` (marked comments in files that have any, all comments in the others) or `"none"`. |
+| `comment_marker` | string | `"!"` | What follows `--` in a marked comment: `"!"` for `--!`. |
+| `exclude` | array of strings | `[]` | Gitignore-style globs, relative to the project root, of files whose units are left out of the documentation (their entities still count when resolving instances). |
+| `testbenches` | boolean | `true` | Document entities without ports. |
+| `signals` | boolean | `true` | List the signals of architectures and packages. |
+| `constants` | boolean | `true` | List constants. |
+| `types` | boolean | `true` | List types and subtypes. |
+| `subprograms` | boolean | `true` | List functions and procedures. |
+| `processes` | boolean | `true` | List processes, with their sensitivity list, clock and the signals they drive. |
+| `instances` | boolean | `true` | List the instances of each architecture. |
+| `fsm` | boolean | `true` | Detect state machines and list their states and transitions. |
+
+A comment documents the declaration, port, generic, process or instance directly below it
+(no blank line between), or the one it ends the line of. Comment lines are joined, and a
+blank comment line starts a new paragraph. Separator lines (`-----`) and `vfl-ignore` and
+`vfl:` directives are skipped.
+
+```vhdl
+--! A FIFO with a configurable depth.
+--!
+--! Writes to a full FIFO are dropped.
+entity fifo is
+  generic (
+    DEPTH : positive := 16  --! Number of words
+  );
+  port (
+    clk : in std_logic;     --! Rising edge clock
+    --! Synchronous, active high
+    rst : in std_logic;
+```
+
+A state machine is a `case` on a signal or variable of an enumeration type (or on an element
+of a record, such as `engine.state`) whose alternatives assign literals of that type to it, or
+to a next-state object of the same type. Both one-process and two-process machines are found,
+whether the process is clocked with a synchronous or an asynchronous reset, combinational
+(the next-state logic of a two-process machine) or written with `wait` statements; so are
+next-state logic in concurrent conditional (`next <= A when c else B`) and selected
+(`with state select`) assignments, and `if state = S` tests outside of a `case`. A
+transition's condition is made of the `if` conditions around the assignment. The initial state
+is the literal the reset branch assigns, else the declaration's default.
+
+[examples/uart](../examples/uart) is a small design with its generated documentation in
+`examples/uart/doc`.
+
+### `[doc.diagrams]`
+
+`vfl schema <kind> [entity]` draws one of these diagrams alone, as SVG (the default), or for
+`hierarchy` and `fsm` as Mermaid (`-f mermaid`) or Graphviz DOT (`-f dot`). The kinds are
+`symbol`, `hierarchy`, `block`, `port-map` (with `--instance label`), `fsm`, `dataflow`,
+`clocks`, `resets`, `dependencies` (no entity) and `wave` (the argument is a WaveJSON file).
+
+A doc comment can hold a timing diagram as a fenced block in the
+[WaveDrom](https://wavedrom.com/tutorial.html) WaveJSON syntax, drawn by vfl itself:
+
+````vhdl
+--! ```wavedrom
+--! { signal: [
+--!   { name: "valid", wave: "010.." },
+--!   { name: "data",  wave: "x=x..", data: ["byte"] }
+--! ] }
+--! ```
+````
+
+Lanes, groups, spacers, `head` and `foot` text and `config.hscale` are drawn; the wave
+characters are `0 1 l h L H u d` (levels), `p n P N` (clocks), `x` (unknown), `z`, `= 2-9`
+(data), `.` (repeat) and `|` (gap). Edges, `node` arrows and skins are not drawn.
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `symbol` | boolean | `true` | Draw each entity (and each component of a package) as a block: inputs on the left, outputs and bidirectional ports on the right. |
+| `hierarchy` | boolean | `true` | Draw the instantiation tree on the index (and the instances of each architecture when `block` is off). A subtree already drawn higher up is not drawn again. |
+| `block` | boolean | `true` | Draw each architecture with instances as a block diagram: its instances as blocks, wired to each other and to the ports of the entity by the signals of their port maps. Signals between neighbouring columns are drawn as wires, longer ones as named stubs. Architectures with more than 80 instances are left to the instance table. |
+| `top` | boolean | `true` | Draw the top level on the index: the block diagram (or, without instances, the symbol) of each entity at the root of the hierarchy, or for a testbench of the entities it instantiates. |
+| `port_map` | boolean | `true` | Draw each instance of an architecture as the block it instantiates, with the actual connected to each port (`open` and defaulted inputs muted) and its generic map. |
+| `dataflow` | boolean | `true` | Draw each architecture with processes or concurrent assignments as its processes, assignments and instances, wired by the signals they read and drive, with each process's clock and reset. |
+| `clocks` | boolean | `true` | For each architecture with two or more clocks, draw its clock domains (processes and instances grouped by clock, through combinational logic) and the signals crossing them, also listed in a table. |
+| `resets` | boolean | `true` | Draw a reset tree on the index for each top-level entity: where each reset port goes, through assignments and port maps, down to the processes, with their kind (synchronous or asynchronous, active high or low). |
+| `dependencies` | boolean | `true` | Draw on the index which entities and packages use which packages of the project. |
+| `waveforms` | boolean | `true` | Draw the ```` ```wavedrom ```` blocks of doc comments as timing diagrams (else they stay code blocks). |
+| `fields` | boolean | `true` | Draw the bit layout of each record type whose field widths are known (from their subtypes, constants and generics), and of each signal with aliases of its slices. |
+| `fsm` | boolean | `true` | Draw a state diagram per state machine. Past ten labelled transitions, the conditions are left to the transition table. |
+| `port_types` | boolean | `true` | Write the port types next to the pins of a symbol. |
+| `generics` | boolean | `true` | Write the generics in a symbol. |
+| `markdown` | string | `"svg"` | How Markdown pages draw the hierarchy and state diagrams: `"svg"` files, or `"mermaid"` blocks, which GitHub and GitLab render. Symbols are always SVG. |
+
 ## `[generate]`
 
 Code generated from an entity: `vfl new`, and the commands of the editor integrations. The
@@ -377,6 +478,39 @@ block_boundary = "blank-line"
 preset = "recommended"
 
 [lint.rules]
+
+[doc]
+out_dir = "doc"
+format = "html"
+# title = "..."   # unset: the project directory's name
+comments = "auto"
+comment_marker = "!"
+exclude = []
+testbenches = true
+signals = true
+constants = true
+types = true
+subprograms = true
+processes = true
+instances = true
+fsm = true
+
+[doc.diagrams]
+symbol = true
+hierarchy = true
+block = true
+top = true
+port_map = true
+dataflow = true
+clocks = true
+resets = true
+dependencies = true
+waveforms = true
+fields = true
+fsm = true
+port_types = true
+generics = true
+markdown = "svg"
 
 [generate]
 instance_label = "u_{entity}"

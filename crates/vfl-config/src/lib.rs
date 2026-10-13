@@ -45,6 +45,7 @@ pub struct Config {
     pub project: ProjectConfig,
     pub format: FormatConfig,
     pub lint: LintConfig,
+    pub doc: DocConfig,
     pub generate: GenerateConfig,
 }
 
@@ -422,6 +423,152 @@ impl RuleSetting {
     }
 }
 
+/// `[doc]`: documentation and diagram generation (`vfl doc`, `vfl schema`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DocConfig {
+    /// Where `vfl doc` writes, relative to the project root.
+    pub out_dir: String,
+    pub format: DocFormat,
+    /// The title of the index page. Defaults to the project directory's name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Which comments document the declaration next to them.
+    pub comments: DocComments,
+    /// What follows `--` in a marked doc comment (`--!`).
+    pub comment_marker: String,
+    /// Gitignore-style globs, relative to the project root, of files whose
+    /// units are left out of the documentation.
+    pub exclude: Vec<String>,
+    /// Document entities without ports (testbenches).
+    pub testbenches: bool,
+    pub signals: bool,
+    pub constants: bool,
+    pub types: bool,
+    pub subprograms: bool,
+    pub processes: bool,
+    pub instances: bool,
+    /// Detect finite state machines and document their states and transitions.
+    pub fsm: bool,
+    pub diagrams: DiagramConfig,
+}
+
+impl Default for DocConfig {
+    fn default() -> Self {
+        DocConfig {
+            out_dir: "doc".into(),
+            format: DocFormat::Html,
+            title: None,
+            comments: DocComments::Auto,
+            comment_marker: "!".into(),
+            exclude: Vec::new(),
+            testbenches: true,
+            signals: true,
+            constants: true,
+            types: true,
+            subprograms: true,
+            processes: true,
+            instances: true,
+            fsm: true,
+            diagrams: DiagramConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DocFormat {
+    Html,
+    Markdown,
+    Asciidoc,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DocComments {
+    /// Marked comments in files that have any, every adjacent comment in
+    /// the others.
+    Auto,
+    /// Only comments starting with the marker.
+    Marked,
+    /// Every comment directly above or at the end of the declaration's line.
+    All,
+    /// No comments.
+    None,
+}
+
+/// `[doc.diagrams]`: which diagrams the documentation embeds.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DiagramConfig {
+    /// A block symbol of each entity, with its generics and ports.
+    pub symbol: bool,
+    /// The instantiation tree of the design.
+    pub hierarchy: bool,
+    /// A block diagram of each architecture with instances: the instances
+    /// wired by the signals between their ports.
+    pub block: bool,
+    /// On the index, the block diagram of each top-level entity (for a
+    /// testbench, of the design it tests).
+    pub top: bool,
+    /// A diagram per instance: the instantiated block with the actual of
+    /// each port and generic.
+    pub port_map: bool,
+    /// The data flow of each architecture with processes or concurrent
+    /// assignments: those and its instances, wired by signal.
+    pub dataflow: bool,
+    /// The clock domains of each architecture with several clocks, with
+    /// the signals that cross between them.
+    pub clocks: bool,
+    /// On the index, the tree of each reset of the top level down to the
+    /// processes it resets.
+    pub resets: bool,
+    /// Which units use which packages.
+    pub dependencies: bool,
+    /// WaveDrom timing diagrams written in doc comments.
+    pub waveforms: bool,
+    /// Bit-field layouts of record types and of aliases of slices.
+    pub fields: bool,
+    /// A state diagram of each detected state machine.
+    pub fsm: bool,
+    /// Show port types next to the pins of a symbol.
+    pub port_types: bool,
+    /// Show generics in a symbol.
+    pub generics: bool,
+    /// How Markdown pages draw the hierarchy and state diagrams: SVG files,
+    /// or Mermaid blocks that GitHub and GitLab render.
+    pub markdown: MarkdownDiagrams,
+}
+
+impl Default for DiagramConfig {
+    fn default() -> Self {
+        DiagramConfig {
+            symbol: true,
+            hierarchy: true,
+            block: true,
+            top: true,
+            port_map: true,
+            dataflow: true,
+            clocks: true,
+            resets: true,
+            dependencies: true,
+            waveforms: true,
+            fields: true,
+            fsm: true,
+            port_types: true,
+            generics: true,
+            markdown: MarkdownDiagrams::Svg,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MarkdownDiagrams {
+    Svg,
+    Mermaid,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -522,6 +669,7 @@ mod tests {
         let doc = include_str!("../../../docs/configuration.md").replace("\r\n", "\n");
         let mut config = Config::default();
         config.format.continuation_indent = Some(2);
+        config.doc.title = Some("Design".into());
         let toml::Value::Table(table) = toml::Value::try_from(&config).unwrap() else {
             panic!("the config is not a table");
         };

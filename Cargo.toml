@@ -17,6 +17,7 @@ vfl-sema = { path = "crates/vfl-sema" }
 vfl-fmt = { path = "crates/vfl-fmt" }
 vfl-lint = { path = "crates/vfl-lint" }
 vfl-lsp = { path = "crates/vfl-lsp" }
+vfl-doc = { path = "crates/vfl-doc" }
 vfl-gen = { path = "crates/vfl-gen" }
 
 anyhow = "1"
