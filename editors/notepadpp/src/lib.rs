@@ -5,6 +5,7 @@
 //! glue only builds on Windows.
 
 pub mod engine;
+pub mod parity;
 pub mod trace;
 pub mod worker;
 

@@ -987,6 +987,7 @@ dependencies = [
 name = "vfl-npp"
 version = "0.1.1"
 dependencies = [
+ "serde_json",
  "tempfile",
  "vfl-config",
  "vfl-fmt",

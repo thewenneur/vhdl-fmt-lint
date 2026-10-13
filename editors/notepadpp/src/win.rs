@@ -200,6 +200,7 @@ pub struct ScNotification {
 
 pub const SCI_GETLENGTH: u32 = 2006;
 pub const SCI_GETCURRENTPOS: u32 = 2008;
+pub const SCI_GETANCHOR: u32 = 2009;
 pub const SCI_GOTOPOS: u32 = 2025;
 pub const SCI_AUTOCSHOW: u32 = 2100;
 pub const SCI_AUTOCCANCEL: u32 = 2101;

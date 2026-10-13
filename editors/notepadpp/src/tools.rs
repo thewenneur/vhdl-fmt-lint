@@ -18,7 +18,9 @@ use std::sync::Arc;
 use vfl_lsp::editor::{FileEdits, Location, QuickFix, Use};
 use vfl_lsp::generate::Kind;
 
-use crate::engine::BufferText;
+use vfl_config::Level;
+
+use crate::engine::{BufferText, Severity};
 use crate::plugin::{
     Here, Trigger, USE_INDICATOR, WRITE_INDICATOR, buffer_path, c_string, caret, current_buffer,
     current_scintilla, guard, here, indicators, is_vhdl, lint_current, npp, post, read_buffer,
@@ -302,6 +304,43 @@ pub(crate) fn outline() {
     );
 }
 
+/// Lists the problems of every file of the project, like the language
+/// server's problems view.
+pub(crate) fn project_problems() {
+    here().ask(
+        Key::Command,
+        |engine, path, buffer, _| engine.project_problems(path, &buffer.text),
+        |here, problems| {
+            if problems.is_empty() {
+                tell("No problems found in the project.");
+                return;
+            }
+            let items = problems
+                .into_iter()
+                .map(|p| {
+                    let severity = match p.level {
+                        Level::Error => Severity::Error,
+                        Level::Warn => Severity::Warning,
+                        _ => Severity::Info,
+                    };
+                    (
+                        format!(
+                            "{}:{}: {}: {} [{}]",
+                            file_name(&p.location.path),
+                            p.location.line,
+                            severity.label(),
+                            p.message,
+                            p.rule
+                        ),
+                        Action::Go(p.location),
+                    )
+                })
+                .collect();
+            show_list(&here, items);
+        },
+    );
+}
+
 /// The word at the caret, to start a search with.
 fn word_at_caret(here: &Here) -> String {
     let start = send(here.sci, SCI_WORDSTARTPOSITION, here.position, 1).max(0) as usize;
@@ -400,9 +439,16 @@ fn changed() {
 }
 
 pub(crate) fn quick_fix() {
-    here().ask(
+    let here = here();
+    let anchor = send(here.sci, SCI_GETANCHOR, 0, 0).max(0) as usize;
+    here.ask(
         Key::Command,
-        |engine, path, buffer, offset| engine.quick_fixes(path, &buffer.text, offset, offset),
+        move |engine, path, buffer, offset| {
+            // The problems the selection touches, or those at the caret.
+            let other = buffer.offset(anchor);
+            let (start, end) = (offset.min(other), offset.max(other));
+            engine.quick_fixes(path, &buffer.text, start, end)
+        },
         |here, fixes| {
             let fixing: Vec<&QuickFix> = fixes.iter().filter(|f| !f.silences).collect();
             match fixing.as_slice() {

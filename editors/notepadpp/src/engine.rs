@@ -15,8 +15,8 @@ use vfl_config::{Config, Level};
 use vfl_fmt::FormatError;
 use vfl_lsp::World;
 use vfl_lsp::editor::{
-    self, Completion, Completions, FileEdits, HoverInfo, Location, ProjectSymbol, QuickFix,
-    SignatureHelp, Symbol, TokenKind, Use,
+    self, Completion, Completions, FileEdits, HoverInfo, Location, ProjectProblem, ProjectSymbol,
+    QuickFix, SignatureHelp, Symbol, TokenKind, Use,
 };
 use vfl_lsp::generate::{self, EntityRef, Generated, Kind};
 use vfl_project::{Encoding, find_root};
@@ -335,6 +335,13 @@ impl Engine {
     ) -> Vec<ProjectSymbol> {
         let (world, _) = self.sync(path, text);
         editor::project_symbols(world, query)
+    }
+
+    /// The problems of every file of the buffer's project, by file and
+    /// position.
+    pub fn project_problems(&mut self, path: Option<&Path>, text: &str) -> Vec<ProjectProblem> {
+        let (world, _) = self.sync(path, text);
+        editor::problems(world)
     }
 
     /// The name a rename at `offset` would change, or why it cannot.
@@ -1056,6 +1063,40 @@ end architecture;
         let kinds: Vec<Use> = uses.iter().map(|(_, u)| *u).collect();
         assert_eq!(kinds, [Use::Other, Use::Write, Use::Read]);
         assert!(uses.iter().all(|(r, _)| &TOP[r.clone()] == "n"));
+    }
+
+    #[test]
+    fn lists_the_problems_of_the_project() {
+        let (_dir, pkg, top) = project();
+        let other = top.with_file_name("other.vhd");
+        std::fs::write(&other, "entity other is\nend entity;\narchitecture a of other is\n  signal s : bit;\nbegin\nend;\n").unwrap();
+        let mut engine = Engine::default();
+        // The edited buffer counts, not the file on disk.
+        let text = TOP.replace("m <= n + width;", "m <= n + wid;");
+        let problems = engine.project_problems(Some(&top), &text);
+        let found: Vec<(&Path, u32, &str)> = problems
+            .iter()
+            .map(|p| (p.location.path.as_path(), p.location.line, p.rule))
+            .collect();
+        assert!(
+            found.contains(&(other.as_path(), 4, "sema/unused-signal")),
+            "{found:?}"
+        );
+        assert!(
+            found
+                .iter()
+                .any(|(path, line, _)| *path == top.as_path() && *line == 9),
+            "{found:?}"
+        );
+        assert!(
+            !found.iter().any(|(path, _, _)| *path == pkg.as_path()),
+            "{found:?}"
+        );
+        assert!(
+            found
+                .windows(2)
+                .all(|w| (w[0].0, w[0].1) <= (w[1].0, w[1].1))
+        );
     }
 
     #[test]

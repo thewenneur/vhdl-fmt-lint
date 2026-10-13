@@ -38,7 +38,8 @@ are ready, and are dropped if the file changed in the meantime.
 ![Parameter hints for a call in Notepad++](assist.png)
 - **Format document**, as one undo step that keeps the caret and scroll position.
   Optionally on every save, or as you type. **Format selection** formats only the selected lines.
-- **Next problem** / **Previous problem** jump between problems.
+- **Next problem** / **Previous problem** jump between problems. **List problems in project**
+  lists those of every file, like the language server's problems view.
 - **Quick fixes**: **Fix problem at caret** lists the fixes for the problem at the caret:
   the rule's own fix, renaming a name everywhere to follow a naming convention, adding the
   `use` clause for a name declared in a package, or silencing the rule on the line or in
@@ -69,7 +70,8 @@ Mapper > Plugin commands**.
 | Format selection | Formats the selected lines, or the caret's line, with the whole statements and aligned lines they are part of. |
 | Lint document | Lints the current file, whatever its language, and goes to the first problem. |
 | Next problem, Previous problem | Moves to the next or previous problem and shows its message. |
-| Fix problem at caret | Lists the fixes for the problems at the caret, and comments that silence their rules; a single safe fix is applied directly. |
+| List problems in project | Lists the problems of every file of the project, as the language server's problems view shows them, with unsaved edits counted; choosing one opens it. |
+| Fix problem at caret | Lists the fixes for the problems at the caret (or in the selection), and comments that silence their rules; a single safe fix is applied directly. |
 | Fix all problems | Applies every fix that can be applied safely to the current file, as one undo step. |
 | Clear problems | Removes the underlines and messages from the current file. |
 | Go to definition | Opens the declaration of the name at the caret. Library units such as `ieee.std_logic_1164` open as read-only copies of the bundled sources. |
@@ -124,6 +126,12 @@ From Linux, with `mingw-w64` installed:
 rustup target add x86_64-pc-windows-gnu
 cargo build --release -p vfl-npp --target x86_64-pc-windows-gnu
 ```
+
+## Parity with the language server
+
+Every request the vfl language server answers has a command here; `src/parity.rs` lists
+which, and its tests fail when the server gains a request or a kind of code action that the
+plugin does not offer yet.
 
 ## How it works
 

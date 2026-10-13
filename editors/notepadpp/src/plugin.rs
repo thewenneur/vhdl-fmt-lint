@@ -39,6 +39,7 @@ const MENU: &[(&str, Option<extern "C" fn()>)] = &[
     ("Lint document", Some(cmd_lint)),
     ("Next problem", Some(cmd_next)),
     ("Previous problem", Some(cmd_previous)),
+    ("List problems in project", Some(cmd_project_problems)),
     ("Fix problem at caret", Some(cmd_quick_fix)),
     ("Fix all problems", Some(cmd_fix_all)),
     ("Clear problems", Some(cmd_clear)),
@@ -687,6 +688,10 @@ extern "C" fn cmd_next() {
 
 extern "C" fn cmd_previous() {
     guard(|| step_problem(false));
+}
+
+extern "C" fn cmd_project_problems() {
+    guard(tools::project_problems);
 }
 
 extern "C" fn cmd_clear() {
