@@ -9,6 +9,9 @@ A fast, fully configurable VHDL formatter, linter and language server, in pure R
   from its doc comments, with entity symbols, the instantiation tree, the top level and every
   architecture as block diagrams wired by signal, port maps and state machine diagrams; `vfl schema` draws one diagram as SVG, Mermaid or DOT.
   See [examples/uart/doc](examples/uart/doc/index.md) for an example.
+  In VS Code, **vfl: Generate Documentation** and **vfl: Show Diagrams** (a button in the
+  editor title bar, showing the current file's entity in a view beside it); in Notepad++,
+  **Generate documentation** and **Show diagrams** in the plugin's menu.
 - **Language server**: diagnostics, formatting, navigation and refactoring in any LSP editor.
 - **Code generation**: instantiations, component declarations and testbench skeletons from
   an entity.

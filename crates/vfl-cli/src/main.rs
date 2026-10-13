@@ -100,6 +100,10 @@ enum Command {
         /// Title of the index page (default: `doc.title`, else the project directory's name).
         #[arg(long)]
         title: Option<String>,
+        /// Print the page of the first entity (else package) this file
+        /// declares instead of the index (the index if it declares none).
+        #[arg(long, value_name = "FILE")]
+        page_for: Option<PathBuf>,
     },
     /// Draw one diagram: an entity's symbol, the design hierarchy, the block
     /// diagram of an architecture or a state machine.
@@ -238,6 +242,7 @@ fn run(cli: Cli) -> Result<bool> {
             out,
             format,
             title,
+            page_for,
         } => doc::doc(
             &path,
             out.as_deref(),
@@ -247,6 +252,7 @@ fn run(cli: Cli) -> Result<bool> {
                 DocFormatArg::Asciidoc => vfl_config::DocFormat::Asciidoc,
             }),
             title,
+            page_for.as_deref(),
         )
         .map(|()| true),
         Command::Schema {

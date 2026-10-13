@@ -68,6 +68,7 @@ pub fn doc(
     out: Option<&Path>,
     format: Option<DocFormat>,
     title: Option<String>,
+    page_for: Option<&Path>,
 ) -> Result<()> {
     let (project, mut design) = load(path)?;
     let mut config: DocConfig = project.config.doc.clone();
@@ -83,11 +84,21 @@ pub fn doc(
     };
     let files = vfl_doc::write(&design, &config, &dir)
         .with_context(|| format!("writing {}", dir.display()))?;
-    let index = match config.format {
-        DocFormat::Html => "index.html",
-        DocFormat::Markdown => "index.md",
-        DocFormat::Asciidoc => "index.adoc",
+    let extension = match config.format {
+        DocFormat::Html => "html",
+        DocFormat::Markdown => "md",
+        DocFormat::Asciidoc => "adoc",
     };
+    let mut page = format!("index.{extension}");
+    if let Some(file) = page_for {
+        let file = std::path::absolute(file)?;
+        if let Some(id) = vfl_doc::page_for(&design, &project.root.dir, &file) {
+            let name = format!("{id}.{extension}");
+            if files.iter().any(|f| f.path == name) {
+                page = name;
+            }
+        }
+    }
     eprintln!(
         "{} entities, {} packages: {} files written to {}",
         design.entities.len(),
@@ -95,7 +106,7 @@ pub fn doc(
         files.len(),
         dir.display()
     );
-    println!("{}", dir.join(index).display());
+    println!("{}", std::path::absolute(dir.join(page))?.display());
     Ok(())
 }
 

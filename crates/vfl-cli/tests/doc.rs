@@ -84,6 +84,47 @@ fn doc_writes_the_configured_format_under_the_root() {
 }
 
 #[test]
+fn doc_page_for_prints_the_page_of_a_file() {
+    let dir = project(&[
+        ("vfl.toml", "[doc]\nformat = \"markdown\"\n"),
+        ("src/blink.vhd", BLINK),
+        (
+            "src/pkg.vhd",
+            "package util is\n  constant W : natural := 8;\nend package;\n",
+        ),
+        ("src/empty.vhd", "-- nothing\n"),
+    ]);
+    let out = dir.path().join("out");
+    let page_for = |file: &str| {
+        let (ok, stdout, stderr) = vfl(
+            &dir.path().join("src"),
+            &[
+                "doc",
+                "..",
+                "--format",
+                "html",
+                "-o",
+                out.to_str().unwrap(),
+                "--page-for",
+                file,
+            ],
+        );
+        assert!(ok, "{stdout}{stderr}");
+        let page = std::path::PathBuf::from(stdout.trim_end());
+        assert!(page.is_absolute() && page.exists(), "{stdout}");
+        page.file_name().unwrap().to_string_lossy().into_owned()
+    };
+    // The first entity of the file, relative to the working directory.
+    assert_eq!(page_for("blink.vhd"), "work.blink.html");
+    // Absolute paths work too; a file with only a package gives its page.
+    let pkg = dir.path().join("src/pkg.vhd");
+    assert_eq!(page_for(pkg.to_str().unwrap()), "work.util.html");
+    // Nothing declared: the index.
+    assert_eq!(page_for("empty.vhd"), "index.html");
+    assert!(out.join("index.html").exists());
+}
+
+#[test]
 fn schema_draws_one_diagram() {
     let dir = project(&[("vfl.toml", ""), ("blink.vhd", BLINK)]);
     let (ok, stdout, stderr) = vfl(dir.path(), &["schema", "symbol", "blink"]);

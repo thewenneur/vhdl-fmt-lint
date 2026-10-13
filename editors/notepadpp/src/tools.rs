@@ -681,3 +681,53 @@ fn highlight_uses() {
         send(sci, SCI_INDICATORFILLRANGE, start, (end - start) as isize);
     }
 }
+
+// Documentation.
+
+/// The current file, if it is saved: the documentation is made from the
+/// files on disk.
+fn saved_file() -> Option<PathBuf> {
+    let path = buffer_path(current_buffer()).filter(|p| p.is_absolute() && p.is_file());
+    if path.is_none() {
+        tell("Save the file first: the documentation is made from the files on disk.");
+    }
+    path
+}
+
+/// Writes the documentation of the current file's project where `[doc]`
+/// says, then opens its index: an HTML one in the browser, others here.
+pub(crate) fn generate_docs() {
+    let Some(file) = saved_file() else {
+        return;
+    };
+    match crate::docs::write(&file, None) {
+        Ok(written) => {
+            let opened = if written.html {
+                shell_open(npp(), &written.index)
+            } else {
+                open(&written.index)
+            };
+            if !opened {
+                tell(&format!("Wrote {}.", written.index.display()));
+            }
+        }
+        Err(why) => tell(&format!("Could not write the documentation: {why}.")),
+    }
+}
+
+/// Writes the HTML documentation of the current file's project to a
+/// temporary directory and opens the page of the file's entity, with its
+/// diagrams, in the browser.
+pub(crate) fn show_diagrams() {
+    let Some(file) = saved_file() else {
+        return;
+    };
+    match crate::docs::write(&file, Some(&crate::docs::diagrams_dir())) {
+        Ok(written) => {
+            if !shell_open(npp(), &written.page) {
+                tell(&format!("Could not open {}.", written.page.display()));
+            }
+        }
+        Err(why) => tell(&format!("Could not draw the diagrams: {why}.")),
+    }
+}

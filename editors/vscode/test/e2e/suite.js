@@ -2,6 +2,7 @@
 // language server and that its features reach the editor.
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const path = require("node:path");
 const vscode = require("vscode");
 
@@ -75,6 +76,23 @@ async function run() {
   const tb = vscode.window.activeTextEditor?.document;
   assert.equal(tb && path.basename(tb.uri.fsPath), "e2e_top_tb.vhd");
   assert.match(tb.getText(), /dut : entity work\.e2e_top/);
+
+  // Documentation: written where `[doc]` says, the index returned.
+  const index = await vscode.commands.executeCommand("vfl.generateDocs");
+  assert.equal(index, path.join(folder, "doc", "index.html"));
+  assert.ok(fs.existsSync(path.join(folder, "doc", "work.e2e_top.html")));
+
+  // Diagrams: the page of the file's entity, in a webview beside the editor.
+  const page = await vscode.commands.executeCommand("vfl.showDiagrams", uri);
+  assert.equal(path.basename(page), "work.e2e_top.html");
+  assert.ok(!page.startsWith(folder), `${page} is not in the extension's storage`);
+  const webviewTab = (label) =>
+    vscode.window.tabGroups.all
+      .flatMap((g) => g.tabs)
+      .find((t) => t.input instanceof vscode.TabInputWebview && t.label === label);
+  await until("the diagrams view", () => webviewTab("e2e_top"));
+  await vscode.commands.executeCommand("vfl.openDocPage", "index.html");
+  await until("the index in the diagrams view", () => webviewTab("Documentation"));
 }
 
 module.exports = { run };
