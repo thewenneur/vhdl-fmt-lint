@@ -32,11 +32,102 @@ unsafe extern "system" {
     fn SetDlgItemTextW(dialog: Hwnd, id: i32, text: *const u16) -> i32;
     fn SetFocus(hwnd: Hwnd) -> Hwnd;
     fn FindWindowExW(parent: Hwnd, after: Hwnd, class: *const u16, title: *const u16) -> Hwnd;
+    pub fn PostMessageW(hwnd: Hwnd, msg: u32, wparam: usize, lparam: isize) -> i32;
+    fn RegisterClassW(class: *const WndClassW) -> u16;
+    fn CreateWindowExW(
+        ex_style: u32,
+        class: *const u16,
+        name: *const u16,
+        style: u32,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        parent: Hwnd,
+        menu: Hwnd,
+        instance: Hwnd,
+        param: *mut c_void,
+    ) -> Hwnd;
+    pub fn DefWindowProcW(hwnd: Hwnd, msg: u32, wparam: usize, lparam: isize) -> isize;
 }
 
 #[link(name = "kernel32")]
 unsafe extern "system" {
     fn GetModuleHandleW(name: *const u16) -> Hwnd;
+    fn GetModuleHandleExW(flags: u32, name: *const u16, module: *mut Hwnd) -> i32;
+}
+
+type WndProc = unsafe extern "system" fn(Hwnd, u32, usize, isize) -> isize;
+
+#[repr(C)]
+struct WndClassW {
+    style: u32,
+    wnd_proc: Option<WndProc>,
+    cls_extra: i32,
+    wnd_extra: i32,
+    instance: Hwnd,
+    icon: Hwnd,
+    cursor: Hwnd,
+    background: Hwnd,
+    menu_name: *const u16,
+    class_name: *const u16,
+}
+
+const HWND_MESSAGE: isize = -3;
+const GET_MODULE_HANDLE_EX_FLAG_PIN: u32 = 0x1;
+const GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS: u32 = 0x4;
+pub const WM_APP: u32 = 0x8000;
+
+/// A hidden window that only receives messages, handled by `proc`, for
+/// other threads to post to.
+pub fn message_window(name: &str, proc: WndProc) -> Hwnd {
+    let class_name = wide(name);
+    // SAFETY: the class and window are created with valid, NUL-terminated
+    // names; the class may already exist if the plugin was loaded before.
+    unsafe {
+        let instance = GetModuleHandleW(std::ptr::null());
+        let class = WndClassW {
+            style: 0,
+            wnd_proc: Some(proc),
+            cls_extra: 0,
+            wnd_extra: 0,
+            instance,
+            icon: std::ptr::null_mut(),
+            cursor: std::ptr::null_mut(),
+            background: std::ptr::null_mut(),
+            menu_name: std::ptr::null(),
+            class_name: class_name.as_ptr(),
+        };
+        RegisterClassW(&class);
+        CreateWindowExW(
+            0,
+            class_name.as_ptr(),
+            class_name.as_ptr(),
+            0,
+            0,
+            0,
+            0,
+            0,
+            HWND_MESSAGE as Hwnd,
+            std::ptr::null_mut(),
+            instance,
+            std::ptr::null_mut(),
+        )
+    }
+}
+
+/// Keeps the plugin loaded until Notepad++ exits, so that its thread never
+/// runs code that was unloaded.
+pub fn pin_module() {
+    let mut module: Hwnd = std::ptr::null_mut();
+    // SAFETY: with FROM_ADDRESS, the name is an address inside this module.
+    unsafe {
+        GetModuleHandleExW(
+            GET_MODULE_HANDLE_EX_FLAG_PIN | GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+            pin_module as *const u16,
+            &mut module,
+        );
+    }
 }
 
 pub const MB_OK: u32 = 0x0;
@@ -109,6 +200,7 @@ pub struct ScNotification {
 
 pub const SCI_GETLENGTH: u32 = 2006;
 pub const SCI_GETCURRENTPOS: u32 = 2008;
+pub const SCI_GETANCHOR: u32 = 2009;
 pub const SCI_GOTOPOS: u32 = 2025;
 pub const SCI_AUTOCSHOW: u32 = 2100;
 pub const SCI_AUTOCCANCEL: u32 = 2101;
@@ -149,7 +241,9 @@ pub const SCI_AUTOCGETTYPESEPARATOR: u32 = 2285;
 pub const SCI_AUTOCSETTYPESEPARATOR: u32 = 2286;
 pub const SCI_REGISTERIMAGE: u32 = 2405;
 pub const SCI_FINDCOLUMN: u32 = 2456;
+pub const SCI_STYLEGETFORE: u32 = 2481;
 pub const SCI_STYLEGETBACK: u32 = 2482;
+pub const SCI_STYLEGETITALIC: u32 = 2484;
 pub const SCI_STYLEGETSIZE: u32 = 2485;
 pub const SCI_STYLEGETFONT: u32 = 2486;
 pub const SCI_SETINDICATORCURRENT: u32 = 2500;
@@ -163,7 +257,9 @@ pub const SCI_ANNOTATIONSETTEXT: u32 = 2540;
 pub const SCI_ANNOTATIONSETSTYLE: u32 = 2542;
 pub const SCI_ANNOTATIONCLEARALL: u32 = 2547;
 pub const SCI_ANNOTATIONSETVISIBLE: u32 = 2548;
+pub const SCI_ANNOTATIONGETVISIBLE: u32 = 2549;
 pub const SCI_ANNOTATIONSETSTYLEOFFSET: u32 = 2550;
+pub const SCI_ANNOTATIONGETSTYLEOFFSET: u32 = 2551;
 pub const SCI_ALLOCATEEXTENDEDSTYLES: u32 = 2553;
 pub const SCI_SETFIRSTVISIBLELINE: u32 = 2613;
 pub const SCI_AUTOCSETORDER: u32 = 2660;
@@ -178,6 +274,13 @@ pub const INDIC_TEXTFORE: isize = 17;
 pub const SC_ORDER_CUSTOM: usize = 2;
 pub const ANNOTATION_STANDARD: usize = 1;
 pub const SC_TIME_FOREVER: isize = 10_000_000;
+pub const SCI_SETMODEVENTMASK: u32 = 2359;
+pub const SCI_GETLINECOUNT: u32 = 2154;
+pub const SCI_POSITIONFROMLINE: u32 = 2167;
+pub const SCI_DOCLINEFROMVISIBLE: u32 = 2221;
+pub const SCI_LINESONSCREEN: u32 = 2370;
+pub const SCI_GETMODEVENTMASK: u32 = 2378;
+pub const SC_MOD_CHANGEINDICATOR: isize = 0x4000;
 pub const SC_MOD_INSERTTEXT: i32 = 0x1;
 pub const SC_MOD_DELETETEXT: i32 = 0x2;
 

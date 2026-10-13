@@ -4,7 +4,8 @@
 //! at the caret.
 //!
 //! Lists of places or fixes are Scintilla user lists; picking an item
-//! comes back as `SCN_USERLISTSELECTION`.
+//! comes back as `SCN_USERLISTSELECTION`. The answers come from the
+//! worker's thread, see [`Here::ask`].
 
 #![allow(unsafe_code)]
 
@@ -12,17 +13,21 @@ use std::cell::{Cell, RefCell};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::ptr;
+use std::sync::Arc;
 
-use vfl_lsp::editor::{Location, QuickFix, Use};
+use vfl_lsp::editor::{FileEdits, Location, QuickFix, Use};
 use vfl_lsp::generate::Kind;
 
-use crate::engine::{BufferText, Engine};
+use vfl_config::Level;
+
+use crate::engine::{BufferText, Severity};
 use crate::plugin::{
-    Trigger, USE_INDICATOR, WRITE_INDICATOR, buffer_path, c_string, caret, current_buffer,
-    current_scintilla, guard, indicators, is_vhdl, lint_current, npp, read_buffer, replace_text,
-    with,
+    Here, Trigger, USE_INDICATOR, WRITE_INDICATOR, buffer_path, c_string, caret, current_buffer,
+    current_scintilla, guard, here, indicators, is_vhdl, lint_current, npp, post, read_buffer,
+    replace_text, request, with,
 };
 use crate::win::*;
+use crate::worker::Key;
 
 /// The list type of our user lists, to tell them from other plugins'.
 const LIST_ID: i32 = 0x7F1;
@@ -45,7 +50,7 @@ pub(crate) struct ToolState {
 struct List {
     /// The buffer the list was shown in, and its text then.
     buffer: usize,
-    text: String,
+    text: Arc<BufferText>,
     /// Each item's label, in the buffer's encoding, and its action.
     items: Vec<(Vec<u8>, Action)>,
 }
@@ -57,43 +62,6 @@ enum Action {
     Fix(QuickFix),
     /// Generate code from an entity, by qualified name.
     Generate(Kind, String),
-}
-
-/// The current buffer, read for a query.
-struct Here {
-    sci: Hwnd,
-    id: usize,
-    path: Option<PathBuf>,
-    buffer: BufferText,
-    position: usize,
-    offset: usize,
-}
-
-fn here() -> Here {
-    let (sci, _) = current_scintilla();
-    let id = current_buffer();
-    let buffer = read_buffer(sci);
-    let position = caret(sci);
-    let offset = buffer.offset(position);
-    Here {
-        sci,
-        id,
-        path: buffer_path(id),
-        buffer,
-        position,
-        offset,
-    }
-}
-
-impl Here {
-    /// The path to give the engine: `None` for unsaved buffers.
-    fn path(&self) -> Option<&Path> {
-        self.path.as_deref().filter(|p| p.is_absolute())
-    }
-}
-
-fn engine<T>(f: impl FnOnce(&mut Engine) -> T) -> Option<T> {
-    with(|s| s.engine.try_borrow_mut().ok().map(|mut e| f(&mut e)))
 }
 
 fn tell(text: &str) {
@@ -145,7 +113,7 @@ fn show_list(here: &Here, items: Vec<(String, Action)>) {
     with(|s| {
         *s.tools.list.borrow_mut() = Some(List {
             buffer: here.id,
-            text: here.buffer.text.clone(),
+            text: here.buffer.clone(),
             items,
         })
     });
@@ -168,18 +136,18 @@ pub(crate) fn list_selected(n: &ScNotification) {
         Action::Go(location) => open_location(&location, true),
         Action::Select(range) => {
             let here = here();
-            if here.id == list.buffer && here.buffer.text == list.text {
+            if here.id == list.buffer && here.buffer.text == list.text.text {
                 remember(&here);
                 select(here.sci, &here.buffer, range);
             }
         }
         Action::Fix(fix) => {
             let here = here();
-            if here.id != list.buffer || here.buffer.text != list.text {
+            if here.id != list.buffer || here.buffer.text != list.text.text {
                 tell("The file changed since the fixes were listed. Try again.");
                 return;
             }
-            apply_fix(&here, fix);
+            apply_fix(here, fix);
         }
         Action::Generate(kind, entity) => generate_from(kind, &entity),
     }
@@ -249,20 +217,21 @@ fn location_label(location: &Location) -> String {
 }
 
 pub(crate) fn go_to_definition() {
-    let here = here();
-    let found =
-        engine(|e| e.definition(here.path(), &here.buffer.text, here.offset)).unwrap_or_default();
-    match found.as_slice() {
-        [] => tell("No declaration found for the name at the caret."),
-        [one] => open_location(one, true),
-        _ => show_list(
-            &here,
-            found
-                .into_iter()
-                .map(|l| (location_label(&l), Action::Go(l)))
-                .collect(),
-        ),
-    }
+    here().ask(
+        Key::Command,
+        |engine, path, buffer, offset| engine.definition(path, &buffer.text, offset),
+        |here, found| match found.as_slice() {
+            [] => tell("No declaration found for the name at the caret."),
+            [one] => open_location(one, true),
+            _ => show_list(
+                &here,
+                found
+                    .into_iter()
+                    .map(|l| (location_label(&l), Action::Go(l)))
+                    .collect(),
+            ),
+        },
+    );
 }
 
 pub(crate) fn go_back() {
@@ -278,46 +247,98 @@ pub(crate) fn go_back() {
 }
 
 pub(crate) fn find_references() {
-    let here = here();
-    let found =
-        engine(|e| e.references(here.path(), &here.buffer.text, here.offset)).unwrap_or_default();
-    if found.is_empty() {
-        tell("No references found for the name at the caret.");
-        return;
-    }
-    show_list(
-        &here,
-        found
-            .into_iter()
-            .map(|l| (location_label(&l), Action::Go(l)))
-            .collect(),
+    here().ask(
+        Key::Command,
+        |engine, path, buffer, offset| engine.references(path, &buffer.text, offset),
+        |here, found| {
+            if found.is_empty() {
+                tell("No references found for the name at the caret.");
+                return;
+            }
+            show_list(
+                &here,
+                found
+                    .into_iter()
+                    .map(|l| (location_label(&l), Action::Go(l)))
+                    .collect(),
+            );
+        },
     );
 }
 
 pub(crate) fn outline() {
-    let here = here();
-    let symbols = engine(|e| e.outline(here.path(), &here.buffer.text)).unwrap_or_default();
-    if symbols.is_empty() {
-        tell("No declarations in this file.");
-        return;
-    }
-    let items = symbols
-        .into_iter()
-        .map(|symbol| {
-            let position = here.buffer.position(symbol.range.start);
-            let line = send(here.sci, SCI_LINEFROMPOSITION, position, 0).max(0) + 1;
-            (
-                format!(
-                    "{}{}  ({}, line {line})",
-                    "    ".repeat(symbol.depth),
-                    symbol.name,
-                    symbol.kind
-                ),
-                Action::Select(symbol.range),
-            )
-        })
-        .collect();
-    show_list(&here, items);
+    here().ask(
+        Key::Command,
+        |engine, path, buffer, _| {
+            let symbols = engine.outline(path, &buffer.text);
+            let line_starts: Vec<usize> = std::iter::once(0)
+                .chain(buffer.text.match_indices('\n').map(|(i, _)| i + 1))
+                .collect();
+            symbols
+                .into_iter()
+                .map(|symbol| {
+                    let line = line_starts.partition_point(|&s| s <= symbol.range.start);
+                    (
+                        format!(
+                            "{}{}  ({}, line {line})",
+                            "    ".repeat(symbol.depth),
+                            symbol.name,
+                            symbol.kind
+                        ),
+                        symbol.range,
+                    )
+                })
+                .collect::<Vec<_>>()
+        },
+        |here, items| {
+            if items.is_empty() {
+                tell("No declarations in this file.");
+                return;
+            }
+            let items = items
+                .into_iter()
+                .map(|(label, range)| (label, Action::Select(range)))
+                .collect();
+            show_list(&here, items);
+        },
+    );
+}
+
+/// Lists the problems of every file of the project, like the language
+/// server's problems view.
+pub(crate) fn project_problems() {
+    here().ask(
+        Key::Command,
+        |engine, path, buffer, _| engine.project_problems(path, &buffer.text),
+        |here, problems| {
+            if problems.is_empty() {
+                tell("No problems found in the project.");
+                return;
+            }
+            let items = problems
+                .into_iter()
+                .map(|p| {
+                    let severity = match p.level {
+                        Level::Error => Severity::Error,
+                        Level::Warn => Severity::Warning,
+                        _ => Severity::Info,
+                    };
+                    (
+                        format!(
+                            "{}:{}: {}: {} [{}]",
+                            file_name(&p.location.path),
+                            p.location.line,
+                            severity.label(),
+                            p.message,
+                            p.rule
+                        ),
+                        Action::Go(p.location),
+                    )
+                })
+                .collect();
+            show_list(&here, items);
+        },
+    );
 }
 
 /// The word at the caret, to start a search with.
@@ -342,34 +363,41 @@ pub(crate) fn project_symbols() {
     ) else {
         return;
     };
-    let found = engine(|e| e.project_symbols(here.path(), &here.buffer.text, query.trim()))
-        .unwrap_or_default();
-    if found.is_empty() {
-        tell(&format!(
-            "No design unit, type, subprogram or package object named like `{}`.",
-            query.trim()
-        ));
-        return;
-    }
-    let items = found
-        .into_iter()
-        .map(|symbol| {
-            let place = match &symbol.container {
-                Some(container) => format!("{} in {container}", symbol.kind),
-                None => symbol.kind.to_owned(),
-            };
-            (
-                format!(
-                    "{}  ({place}, {}:{})",
-                    symbol.name,
-                    file_name(&symbol.location.path),
-                    symbol.location.line
-                ),
-                Action::Go(symbol.location),
-            )
-        })
-        .collect();
-    show_list(&here, items);
+    let query = query.trim().to_owned();
+    here.ask(
+        Key::Command,
+        {
+            let query = query.clone();
+            move |engine, path, buffer, _| engine.project_symbols(path, &buffer.text, &query)
+        },
+        move |here, found| {
+            if found.is_empty() {
+                tell(&format!(
+                    "No design unit, type, subprogram or package object named like `{query}`."
+                ));
+                return;
+            }
+            let items = found
+                .into_iter()
+                .map(|symbol| {
+                    let place = match &symbol.container {
+                        Some(container) => format!("{} in {container}", symbol.kind),
+                        None => symbol.kind.to_owned(),
+                    };
+                    (
+                        format!(
+                            "{}  ({place}, {}:{})",
+                            symbol.name,
+                            file_name(&symbol.location.path),
+                            symbol.location.line
+                        ),
+                        Action::Go(symbol.location),
+                    )
+                })
+                .collect();
+            show_list(&here, items);
+        },
+    );
 }
 
 // Editing.
@@ -395,8 +423,8 @@ fn fix_label(fix: &QuickFix) -> String {
 }
 
 /// Applies a fix to the buffer it was listed for, which is in front.
-fn apply_fix(here: &Here, fix: QuickFix) {
-    match &fix.rename {
+fn apply_fix(here: Here, fix: QuickFix) {
+    match fix.rename {
         Some(new_name) => rename_to(here, fix.at, new_name),
         None => {
             apply_edits(here.sci, &here.buffer, &fix.edits);
@@ -405,50 +433,74 @@ fn apply_fix(here: &Here, fix: QuickFix) {
     }
 }
 
+/// Tells that the buffer changed while an answer was computed.
+fn changed() {
+    tell("The file changed while vfl was working on it. Try again.");
+}
+
 pub(crate) fn quick_fix() {
     let here = here();
-    let fixes = engine(|e| e.quick_fixes(here.path(), &here.buffer.text, here.offset, here.offset))
-        .unwrap_or_default();
-    let fixing: Vec<&QuickFix> = fixes.iter().filter(|f| !f.silences).collect();
-    match fixing.as_slice() {
-        [] if fixes.is_empty() => tell("No fix for a problem at the caret."),
-        // A single safe fix is applied; the list offers the others.
-        [one] if one.safe && one.rename.is_none() => {
-            let one = (*one).clone();
-            apply_fix(&here, one);
-        }
-        _ => show_list(
-            &here,
-            fixes
-                .into_iter()
-                .map(|f| (fix_label(&f), Action::Fix(f)))
-                .collect(),
-        ),
-    }
+    let anchor = send(here.sci, SCI_GETANCHOR, 0, 0).max(0) as usize;
+    here.ask(
+        Key::Command,
+        move |engine, path, buffer, offset| {
+            // The problems the selection touches, or those at the caret.
+            let other = buffer.offset(anchor);
+            let (start, end) = (offset.min(other), offset.max(other));
+            engine.quick_fixes(path, &buffer.text, start, end)
+        },
+        |here, fixes| {
+            let fixing: Vec<&QuickFix> = fixes.iter().filter(|f| !f.silences).collect();
+            match fixing.as_slice() {
+                [] if fixes.is_empty() => tell("No fix for a problem at the caret."),
+                // A single safe fix is applied; the list offers the others.
+                [one] if one.safe && one.rename.is_none() => {
+                    if !here.is_current() {
+                        return changed();
+                    }
+                    let one = (*one).clone();
+                    apply_fix(here, one);
+                }
+                _ => show_list(
+                    &here,
+                    fixes
+                        .into_iter()
+                        .map(|f| (fix_label(&f), Action::Fix(f)))
+                        .collect(),
+                ),
+            }
+        },
+    );
 }
 
 pub(crate) fn fix_all(trigger: Trigger) {
-    let here = here();
-    match engine(|e| e.fix_all(here.path(), &here.buffer.text)).flatten() {
-        Some((fixed, _)) => {
-            replace_text(here.sci, &here.buffer, &fixed);
-            lint_current(Trigger::Refresh);
-        }
-        None if trigger == Trigger::Command => tell("No problem with a safe fix."),
-        None => {}
-    }
+    here().ask(
+        Key::Command,
+        |engine, path, buffer, _| engine.fix_all(path, &buffer.text),
+        move |here, fixed| match fixed {
+            Some(_) if !here.is_current() => changed(),
+            Some((fixed, _)) => {
+                replace_text(here.sci, &here.buffer, &fixed);
+                lint_current(Trigger::Refresh);
+            }
+            None if trigger == Trigger::Command => tell("No problem with a safe fix."),
+            None => {}
+        },
+    );
 }
 
 pub(crate) fn rename() {
-    let here = here();
-    let range = match engine(|e| e.prepare_rename(here.path(), &here.buffer.text, here.offset)) {
-        Some(Ok(range)) => range,
-        Some(Err(why)) => {
-            tell(&format!("Cannot rename: {why}."));
-            return;
-        }
-        None => return,
-    };
+    here().ask(
+        Key::Command,
+        |engine, path, buffer, offset| engine.prepare_rename(path, &buffer.text, offset),
+        |here, range| match range {
+            Ok(range) => ask_new_name(here, range),
+            Err(why) => tell(&format!("Cannot rename: {why}.")),
+        },
+    );
+}
+
+fn ask_new_name(here: Here, range: Range<usize>) {
     let old = here.buffer.text[range].to_owned();
     let Some(new) = input_box(
         npp(),
@@ -462,23 +514,33 @@ pub(crate) fn rename() {
     if new == old {
         return;
     }
-    rename_to(&here, here.offset, &new);
+    let offset = here.offset();
+    rename_to(here, offset, new);
 }
 
 /// Renames the name at byte `offset` of the buffer in front to `new`,
 /// asking first when other files change.
-fn rename_to(here: &Here, offset: usize, new: &str) {
-    let old = engine(|e| e.prepare_rename(here.path(), &here.buffer.text, offset))
-        .and_then(Result::ok)
-        .map_or_else(String::new, |range| here.buffer.text[range].to_owned());
-    let files = match engine(|e| e.rename(here.path(), &here.buffer.text, offset, new)) {
-        Some(Ok(files)) => files,
-        Some(Err(why)) => {
-            tell(&format!("Cannot rename: {why}."));
-            return;
-        }
-        None => return,
-    };
+fn rename_to(here: Here, offset: usize, new: String) {
+    let path = here.path().map(Path::to_owned);
+    let buffer = here.buffer.clone();
+    let new_name = new.clone();
+    request(
+        Some(Key::Command),
+        move |engine| {
+            let path = path.as_deref();
+            let old = engine
+                .prepare_rename(path, &buffer.text, offset)
+                .map_or_else(|_| String::new(), |range| buffer.text[range].to_owned());
+            (old, engine.rename(path, &buffer.text, offset, &new_name))
+        },
+        move |(old, files)| match files {
+            Ok(files) => apply_rename(&here, &old, &new, files),
+            Err(why) => tell(&format!("Cannot rename: {why}.")),
+        },
+    );
+}
+
+fn apply_rename(here: &Here, old: &str, new: &str, files: Vec<FileEdits>) {
     let places: usize = files.iter().map(|f| f.edits.len()).sum();
     let elsewhere = files
         .iter()
@@ -514,8 +576,9 @@ fn rename_to(here: &Here, offset: usize, new: &str) {
         }
         apply_edits(sci, &buffer, &file.edits);
         // The file may go to the back before it is linted again.
-        let renamed = read_buffer(sci);
-        engine(|e| e.update(here.path().map(|_| file.path.as_path()), &renamed.text));
+        let renamed = read_buffer(sci).text;
+        let path = here.path().map(|_| file.path.clone());
+        post(move |engine| engine.update(path.as_deref(), &renamed));
     }
     if let Some(path) = here.path()
         && buffer_path(current_buffer()).as_deref() != Some(path)
@@ -542,64 +605,74 @@ fn rename_to(here: &Here, offset: usize, new: &str) {
 /// Asks which entity of the project to generate `kind` from, those of the
 /// current file first.
 pub(crate) fn generate(kind: Kind) {
-    let here = here();
-    let mut entities = engine(|e| e.entities(here.path(), &here.buffer.text)).unwrap_or_default();
-    entities.sort_by_key(|e| here.path() != Some(e.path.as_path()));
-    match entities.as_slice() {
-        [] => tell("No entity in this project."),
-        [one] => generate_from(kind, &one.qualified()),
-        _ => show_list(
-            &here,
-            entities
-                .iter()
-                .map(|e| {
-                    (
-                        format!("{}  ({}, {})", e.name, e.library, file_name(&e.path)),
-                        Action::Generate(kind, e.qualified()),
-                    )
-                })
-                .collect(),
-        ),
-    }
+    here().ask(
+        Key::Command,
+        |engine, path, buffer, _| engine.entities(path, &buffer.text),
+        move |here, mut entities| {
+            entities.sort_by_key(|e| here.path() != Some(e.path.as_path()));
+            match entities.as_slice() {
+                [] => tell("No entity in this project."),
+                [one] => generate_from(kind, &one.qualified()),
+                _ => show_list(
+                    &here,
+                    entities
+                        .iter()
+                        .map(|e| {
+                            (
+                                format!("{}  ({}, {})", e.name, e.library, file_name(&e.path)),
+                                Action::Generate(kind, e.qualified()),
+                            )
+                        })
+                        .collect(),
+                ),
+            }
+        },
+    );
 }
 
 fn generate_from(kind: Kind, entity: &str) {
-    let here = here();
-    let generated = match engine(|e| e.generate(here.path(), &here.buffer.text, kind, entity)) {
-        Some(Ok(generated)) => generated,
-        Some(Err(why)) => {
-            tell(&format!("Cannot generate: {why}."));
-            return;
-        }
-        None => return,
-    };
-    match generated.path {
-        Some(path) => {
-            if path.exists() && !confirm(npp(), &format!("{} exists. Replace it?", path.display()))
-            {
-                return;
+    let entity = entity.to_owned();
+    here().ask(
+        Key::Command,
+        move |engine, path, buffer, _| engine.generate(path, &buffer.text, kind, &entity),
+        |_, generated| {
+            let generated = match generated {
+                Ok(generated) => generated,
+                Err(why) => {
+                    tell(&format!("Cannot generate: {why}."));
+                    return;
+                }
+            };
+            match generated.path {
+                Some(path) => {
+                    if path.exists()
+                        && !confirm(npp(), &format!("{} exists. Replace it?", path.display()))
+                    {
+                        return;
+                    }
+                    if let Err(err) = std::fs::write(&path, &generated.text) {
+                        tell(&format!("Could not write {}: {err}.", path.display()));
+                        return;
+                    }
+                    if !open(&path) {
+                        tell(&format!("Wrote {}.", path.display()));
+                    }
+                }
+                // Where the caret is now: the code does not depend on it.
+                None => insert_at_caret(&here(), &generated.text),
             }
-            if let Err(err) = std::fs::write(&path, &generated.text) {
-                tell(&format!("Could not write {}: {err}.", path.display()));
-                return;
-            }
-            if !open(&path) {
-                tell(&format!("Wrote {}.", path.display()));
-            }
-        }
-        None => insert_at_caret(&here, &generated.text),
-    }
+        },
+    );
 }
 
 /// Inserts lines at the caret, each after the first indented like the
 /// caret's line.
 fn insert_at_caret(here: &Here, text: &str) {
-    let line_start = here.buffer.text[..here.offset]
-        .rfind('\n')
-        .map_or(0, |i| i + 1);
+    let offset = here.offset();
+    let line_start = here.buffer.text[..offset].rfind('\n').map_or(0, |i| i + 1);
     let line = &here.buffer.text[line_start..];
     let indent = &line[..line.len() - line.trim_start_matches([' ', '\t']).len()];
-    let indent = &indent[..indent.len().min(here.offset - line_start)];
+    let indent = &indent[..indent.len().min(offset - line_start)];
     let newline = if here.buffer.text.contains("\r\n") {
         "\r\n"
     } else {
@@ -608,12 +681,8 @@ fn insert_at_caret(here: &Here, text: &str) {
     let text = text
         .trim_end_matches('\n')
         .replace('\n', &format!("{newline}{indent}"));
-    apply_edits(
-        here.sci,
-        &here.buffer,
-        &[(here.offset..here.offset, text.clone())],
-    );
-    let end = here.buffer.position(here.offset) + here.buffer.encoded_len(&text);
+    apply_edits(here.sci, &here.buffer, &[(offset..offset, text.clone())]);
+    let end = here.buffer.position(offset) + here.buffer.encoded_len(&text);
     send(here.sci, SCI_GOTOPOS, end, 0);
 }
 
@@ -678,24 +747,42 @@ fn highlight_uses() {
     if send(sci, SCI_GETSELECTIONSTART, 0, 0) != send(sci, SCI_GETSELECTIONEND, 0, 0) {
         return;
     }
-    let here = here();
-    let uses =
-        engine(|e| e.highlights(here.path(), &here.buffer.text, here.offset)).unwrap_or_default();
-    if uses.len() < 2 {
-        return;
-    }
-    for (indicator, color) in [(read, 0xC08040), (write, 0x3080E0)] {
-        send(sci, SCI_INDICSETSTYLE, indicator, INDIC_ROUNDBOX);
-        send(sci, SCI_INDICSETFORE, indicator, color);
-        send(sci, SCI_INDICSETALPHA, indicator, 60);
-        send(sci, SCI_INDICSETOUTLINEALPHA, indicator, 140);
-        send(sci, SCI_INDICSETUNDER, indicator, 1);
-    }
-    for (range, kind) in uses {
-        let start = here.buffer.position(range.start);
-        let end = here.buffer.position(range.end);
-        let indicator = if kind == Use::Write { write } else { read };
-        send(sci, SCI_SETINDICATORCURRENT, indicator, 0);
-        send(sci, SCI_INDICATORFILLRANGE, start, (end - start) as isize);
-    }
+    here().ask(
+        Key::Highlight,
+        |engine, path, buffer, offset| {
+            engine
+                .highlights(path, &buffer.text, offset)
+                .into_iter()
+                .map(|(range, kind)| {
+                    (
+                        buffer.position(range.start),
+                        buffer.position(range.end),
+                        kind == Use::Write,
+                    )
+                })
+                .collect::<Vec<_>>()
+        },
+        move |here, uses| {
+            if uses.len() < 2
+                || !here.is_current()
+                || caret(here.sci) != here.position
+                || with(|s| s.tools.highlighted.get()) != Some((here.id, here.position))
+            {
+                return;
+            }
+            let sci = here.sci;
+            for (indicator, color) in [(read, 0xC08040), (write, 0x3080E0)] {
+                send(sci, SCI_INDICSETSTYLE, indicator, INDIC_ROUNDBOX);
+                send(sci, SCI_INDICSETFORE, indicator, color);
+                send(sci, SCI_INDICSETALPHA, indicator, 60);
+                send(sci, SCI_INDICSETOUTLINEALPHA, indicator, 140);
+                send(sci, SCI_INDICSETUNDER, indicator, 1);
+            }
+            for (start, end, written) in uses {
+                let indicator = if written { write } else { read };
+                send(sci, SCI_SETINDICATORCURRENT, indicator, 0);
+                send(sci, SCI_INDICATORFILLRANGE, start, (end - start) as isize);
+            }
+        },
+    );
 }
