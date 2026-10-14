@@ -180,8 +180,8 @@ pub fn completion(world: &mut World, path: &Path, offset: usize) -> Option<Compl
     let text = world.doc(file).text;
     let before = &text[..usize::from(offset)];
     let start = before
-        .rfind(|c: char| !(c.is_alphanumeric() || c == '_'))
-        .map_or(0, |i| i + 1);
+        .trim_end_matches(|c: char| c.is_alphanumeric() || c == '_')
+        .len();
     let items = crate::handlers::completion_at(world, file, offset)
         .into_iter()
         .map(|item| Completion {

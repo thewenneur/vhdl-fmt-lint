@@ -100,6 +100,23 @@ pub fn capabilities() -> ServerCapabilities {
     }
 }
 
+/// Applies the changes of a `textDocument/didChange` notification to the
+/// text of a document. Positions past a line or the text are clamped.
+#[doc(hidden)]
+pub fn apply_changes(text: &mut String, changes: Vec<lsp_types::TextDocumentContentChangeEvent>) {
+    for change in changes {
+        match change.range {
+            Some(range) => {
+                let index = vfl_syntax::LineIndex::new(text);
+                let start = usize::from(world::offset(text, &index, range.start));
+                let end = usize::from(world::offset(text, &index, range.end));
+                text.replace_range(start..end.max(start), &change.text);
+            }
+            None => *text = change.text,
+        }
+    }
+}
+
 /// Runs the server on stdin and stdout until the client shuts it down.
 pub fn run_stdio() -> Result<()> {
     let (connection, io) = Connection::stdio();
@@ -339,17 +356,7 @@ impl Server<'_> {
                     && let Ok(path) = p.text_document.uri.to_file_path()
                 {
                     let mut text = world.overlays.get(&path).cloned().unwrap_or_default();
-                    for change in p.content_changes {
-                        match change.range {
-                            Some(range) => {
-                                let index = vfl_syntax::LineIndex::new(&text);
-                                let start = usize::from(world::offset(&text, &index, range.start));
-                                let end = usize::from(world::offset(&text, &index, range.end));
-                                text.replace_range(start..end.max(start), &change.text);
-                            }
-                            None => text = change.text,
-                        }
-                    }
+                    apply_changes(&mut text, p.content_changes);
                     world.set_text(path, text);
                 }
             }

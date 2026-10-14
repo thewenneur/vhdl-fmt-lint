@@ -104,3 +104,40 @@ jobs:
         with:
           name: vfl-vscode
           path: editors/vscode/*.vsix
+
+  # A short run of each fuzz target (see fuzz/README.md), from the seed
+  # corpus. Longer runs are for local use.
+  fuzz:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - uses: actions/cache@v4
+        id: cargo-fuzz
+        with:
+          path: ~/.cargo/bin/cargo-fuzz
+          key: cargo-fuzz-0.13.2-${{ runner.os }}
+      - if: steps.cargo-fuzz.outputs.cache-hit != 'true'
+        run: cargo install cargo-fuzz --version 0.13.2 --locked
+      - run: fuzz/seed.sh
+      - run: cargo +nightly fuzz build -s none
+        working-directory: fuzz
+      - name: Fuzz each target for 45 seconds
+        working-directory: fuzz
+        run: |
+          for target in parse format verilog lint reanalyze lsp; do
+            echo "::group::$target"
+            cargo +nightly fuzz run -s none "$target" "corpus/$target" -- \
+              -dict=hdl.dict -max_total_time=45 -max_len=16384 -timeout=30
+            echo "::endgroup::"
+          done
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts

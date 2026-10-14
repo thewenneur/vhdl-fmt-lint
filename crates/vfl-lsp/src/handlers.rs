@@ -1291,8 +1291,8 @@ pub(crate) fn completion_at(world: &World, file: FileId, offset: TextSize) -> Ve
     let offset = offset.min(TextSize::of(doc.text));
     let before = &doc.text[..usize::from(offset)];
     let word_start = before
-        .rfind(|c: char| !(c.is_alphanumeric() || c == '_'))
-        .map_or(0, |i| i + 1);
+        .trim_end_matches(|c: char| c.is_alphanumeric() || c == '_')
+        .len();
     let analysis = &world.analysis;
     let mut items = Items::default();
 

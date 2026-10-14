@@ -36,6 +36,10 @@ pub struct Lexed {
 /// How deep included files are read, to stop on include cycles.
 const MAX_INCLUDE_DEPTH: u32 = 16;
 
+/// How many included files are read in all, so that a file included
+/// several times on each level of a cycle does not take exponential time.
+const MAX_INCLUDE_READS: u32 = 1024;
+
 /// Splits `text` into tokens. Concatenating the tokens gives back `text`.
 pub fn lex(text: &str, options: &Options) -> Lexed {
     let mut macros = Macros::new();
@@ -74,6 +78,8 @@ struct Lexer<'a> {
     includes: Vec<String>,
     include: Option<IncludeReader<'a>>,
     depth: u32,
+    /// How many more included files may be read.
+    reads_left: u32,
     /// Where the token being lexed starts.
     token_start: usize,
 }
@@ -190,6 +196,7 @@ impl<'a> Lexer<'a> {
             includes: Vec::new(),
             include: options.include,
             depth,
+            reads_left: MAX_INCLUDE_READS,
             token_start: 0,
         }
     }
@@ -545,7 +552,8 @@ impl<'a> Lexer<'a> {
                 if self.peek() == b'"' {
                     let s = self.pos;
                     self.string();
-                    let version = self.text[s + 1..self.pos.saturating_sub(1).max(s + 1)].trim();
+                    let quoted = &self.text[s + 1..self.pos];
+                    let version = quoted.strip_suffix('"').unwrap_or(quoted).trim();
                     match version.parse::<Standard>() {
                         Ok(std) => self.standards.push(std),
                         Err(_) => {
@@ -699,7 +707,9 @@ impl<'a> Lexer<'a> {
             b'"' => {
                 let start = self.pos;
                 self.string();
-                Some(self.text[start + 1..self.pos.saturating_sub(1).max(start + 1)].to_owned())
+                // An unterminated name has no closing quote.
+                let quoted = &self.text[start + 1..self.pos];
+                Some(quoted.strip_suffix('"').unwrap_or(quoted).to_owned())
             }
             b'<' => match self.rest().find(['>', '\n']) {
                 Some(end) if self.rest().as_bytes()[end] == b'>' => {
@@ -731,11 +741,12 @@ impl<'a> Lexer<'a> {
         }
         let Some(name) = name else { return };
         self.includes.push(name.clone());
-        if self.depth >= MAX_INCLUDE_DEPTH {
+        if self.depth >= MAX_INCLUDE_DEPTH || self.reads_left == 0 {
             return;
         }
         let Some(read) = self.include else { return };
         let Some(text) = read(&name) else { return };
+        self.reads_left -= 1;
         let options = Options {
             standard: self.standard(),
             defines: &[],
@@ -743,7 +754,9 @@ impl<'a> Lexer<'a> {
         };
         let macros = std::mem::take(&mut self.macros);
         let mut inner = Lexer::new(&text, &options, macros, self.depth + 1);
+        inner.reads_left = self.reads_left;
         inner.run();
+        self.reads_left = inner.reads_left;
         self.macros = inner.macros;
         self.includes.append(&mut inner.includes);
     }
@@ -985,6 +998,37 @@ mod tests {
         assert_eq!(pos, text.len());
         out.retain(|(k, _)| *k != WHITESPACE);
         out
+    }
+
+    /// Found by fuzzing: an unterminated file name (or keyword version)
+    /// ending in a multi-byte character panicked.
+    #[test]
+    fn unterminated_quoted_names() {
+        let lexed = lex("`include \"a®", &Options::default());
+        assert_eq!(lexed.includes, ["a®"]);
+        let lexed = lex("`begin_keywords \"1364-2005®", &Options::default());
+        assert!(!lexed.errors.is_empty());
+    }
+
+    /// Found by fuzzing: a file that includes itself twice took
+    /// exponential time.
+    #[test]
+    fn include_cycles_read_a_bounded_number_of_files() {
+        let text = "`include \"a.vh\"\n`include \"a.vh\"\n";
+        let reads = std::cell::Cell::new(0u32);
+        let read = |_: &str| {
+            reads.set(reads.get() + 1);
+            Some(text.to_owned())
+        };
+        let lexed = lex(
+            text,
+            &Options {
+                include: Some(&read),
+                ..Options::default()
+            },
+        );
+        assert_eq!(reads.get(), MAX_INCLUDE_READS);
+        assert!(lexed.includes.len() <= 2 * MAX_INCLUDE_READS as usize + 2);
     }
 
     #[test]
