@@ -16,6 +16,7 @@ use vfl_syntax::{GreenNode, LineIndex, Standard, SyntaxKind, SyntaxNode, TextRan
 use crate::checks;
 use crate::decl::{Decl, DeclId, DeclKind, ElementRef, FileId, Reference, Region, UnitId};
 use crate::diagnostic::Diagnostic;
+use crate::foreign::{self, ForeignInput, ForeignModule};
 use crate::resolver::{ImportId, Resolver, UseItem};
 use crate::stdlib;
 use crate::syntax::{designator, simple_name_token};
@@ -40,6 +41,9 @@ pub struct AnalyzedFile {
     pub libraries: Vec<String>,
     /// A bundled `std` or `ieee` file.
     pub builtin: bool,
+    /// The modules of a file of another language (Verilog). Its tree is
+    /// then that of an empty VHDL file.
+    pub foreign: Option<Arc<[ForeignModule]>>,
     pub line_index: LineIndex,
 }
 
@@ -234,7 +238,13 @@ fn bundled() -> &'static [Bundled] {
 impl Analysis {
     /// Analyzes `files` together with the bundled `std` and `ieee` libraries.
     pub fn new(inputs: Vec<FileInput>) -> Analysis {
-        Analysis::build(inputs, None)
+        Analysis::build(inputs, Vec::new(), None)
+    }
+
+    /// Analyzes `files` together with modules of other languages, which
+    /// VHDL instantiates like entities, and the bundled libraries.
+    pub fn with_foreign(inputs: Vec<FileInput>, foreign: Vec<ForeignInput>) -> Analysis {
+        Analysis::build(inputs, foreign, None)
     }
 
     /// Analyzes a new version of the project, reusing the results of the
@@ -246,7 +256,18 @@ impl Analysis {
     /// or renamed, or when `self` was built by [`Analysis::new`] (which
     /// skips the bookkeeping reuse needs), everything is analyzed again.
     pub fn update(&self, inputs: Vec<FileInput>) -> Analysis {
-        Analysis::build(inputs, Some(self))
+        Analysis::build(inputs, Vec::new(), Some(self))
+    }
+
+    /// [`Analysis::update`] with modules of other languages: a changed
+    /// module is analyzed again, and the units that use it only if what
+    /// VHDL sees of it changed.
+    pub fn update_with_foreign(
+        &self,
+        inputs: Vec<FileInput>,
+        foreign: Vec<ForeignInput>,
+    ) -> Analysis {
+        Analysis::build(inputs, foreign, Some(self))
     }
 
     /// How many units were analyzed (not reused) to build this analysis.
@@ -263,19 +284,36 @@ impl Analysis {
             .any(|(u, &fresh)| u.file == file && fresh)
     }
 
-    fn build(inputs: Vec<FileInput>, previous: Option<&Analysis>) -> Analysis {
+    fn build(
+        inputs: Vec<FileInput>,
+        foreign: Vec<ForeignInput>,
+        previous: Option<&Analysis>,
+    ) -> Analysis {
         let user_files = inputs.len();
-        // A file unchanged since the previous analysis (same tree) keeps
-        // its line index and its units.
-        let unchanged = |id: usize, path: &Path, green: &GreenNode| -> Option<usize> {
+        // A file unchanged since the previous analysis (same tree, or same
+        // modules) keeps its line index and its units.
+        let same_modules =
+            |a: &Option<Arc<[ForeignModule]>>, b: &Option<Arc<[ForeignModule]>>| match (a, b) {
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                (None, None) => true,
+                _ => false,
+            };
+        let unchanged = |id: usize,
+                         path: &Path,
+                         green: &GreenNode,
+                         modules: &Option<Arc<[ForeignModule]>>|
+         -> Option<usize> {
             let old = previous?.files.get(id)?;
-            (old.path == path && std::ptr::eq(&*old.green, &**green)).then_some(id)
+            (old.path == path
+                && std::ptr::eq(&*old.green, &**green)
+                && same_modules(&old.foreign, modules))
+            .then_some(id)
         };
         let mut files: Vec<AnalyzedFile> = inputs
             .into_par_iter()
             .enumerate()
             .map(|(id, input)| {
-                let line_index = match unchanged(id, &input.path, &input.green) {
+                let line_index = match unchanged(id, &input.path, &input.green, &None) {
                     Some(id) => previous.expect("unchanged").files[id].line_index.clone(),
                     None => LineIndex::new(&input.text),
                 };
@@ -286,12 +324,30 @@ impl Analysis {
                     green: input.green,
                     libraries: input.libraries,
                     builtin: false,
+                    foreign: None,
                 }
             })
             .collect();
+        for input in foreign {
+            let modules = Some(input.modules);
+            let green = empty_tree();
+            let line_index = match unchanged(files.len(), &input.path, green, &modules) {
+                Some(id) => previous.expect("unchanged").files[id].line_index.clone(),
+                None => LineIndex::new(&input.text),
+            };
+            files.push(AnalyzedFile {
+                path: input.path,
+                text: input.text,
+                green: green.clone(),
+                libraries: input.libraries,
+                builtin: false,
+                foreign: modules,
+                line_index,
+            });
+        }
         for (library, name, text, green) in bundled() {
             let path = PathBuf::from(format!("<bundled>/{library}/{name}"));
-            let line_index = match unchanged(files.len(), &path, green) {
+            let line_index = match unchanged(files.len(), &path, green, &None) {
                 Some(id) => previous.expect("unchanged").files[id].line_index.clone(),
                 None => LineIndex::new(text),
             };
@@ -302,6 +358,7 @@ impl Analysis {
                 green: green.clone(),
                 libraries: vec![library.clone()],
                 builtin: true,
+                foreign: None,
             });
         }
 
@@ -311,7 +368,7 @@ impl Analysis {
             .enumerate()
             .map(|(id, file)| {
                 if let Some(p) = previous
-                    && unchanged(id, &file.path, &file.green).is_some()
+                    && unchanged(id, &file.path, &file.green, &file.foreign).is_some()
                     && p.files[id].libraries == file.libraries
                 {
                     return p.per_file[id].clone();
@@ -406,6 +463,10 @@ impl Analysis {
                 .expect("unit index is valid")
         };
         let analyze = |unit: UnitId| -> UnitResult {
+            let info = &units[unit as usize];
+            if let Some(modules) = &files[info.file as usize].foreign {
+                return foreign::module_result(info.file, unit, &modules[info.index]);
+            }
             let result = Resolver::new(&ctx, unit).run(&design_unit(unit));
             checks::unit_checks(&ctx, unit, result)
         };
@@ -420,7 +481,10 @@ impl Analysis {
             Some(p) => files
                 .iter()
                 .zip(&p.files)
-                .map(|(new, old)| !std::ptr::eq(&*new.green, &*old.green) && new.green != old.green)
+                .map(|(new, old)| match (&new.foreign, &old.foreign) {
+                    (Some(a), Some(b)) => !Arc::ptr_eq(a, b) && a != b,
+                    _ => !std::ptr::eq(&*new.green, &*old.green) && new.green != old.green,
+                })
                 .collect(),
             None => vec![true; files.len()],
         };
@@ -547,7 +611,9 @@ impl Analysis {
         let outcomes: Vec<Option<typeck::Outcome>> = (0..units.len() as UnitId)
             .into_par_iter()
             .map(|unit| {
-                if !fresh[unit as usize] {
+                if !fresh[unit as usize]
+                    || files[units[unit as usize].file as usize].foreign.is_some()
+                {
                     return None;
                 }
                 let result = ctx.result(unit)?;
@@ -607,14 +673,20 @@ impl Analysis {
         }
     }
 
-    /// Every analyzed file: the inputs, in order, then the bundled ones.
+    /// Every analyzed file: the inputs, in order, then the files of other
+    /// languages, then the bundled ones.
     pub fn files(&self) -> &[AnalyzedFile] {
         &self.files
     }
 
-    /// The inputs only.
+    /// The VHDL inputs only.
     pub fn user_files(&self) -> &[AnalyzedFile] {
         &self.files[..self.user_files]
+    }
+
+    /// The modules of a file of another language, if it is one.
+    pub fn foreign_modules(&self, file: FileId) -> Option<&[ForeignModule]> {
+        self.files.get(file as usize)?.foreign.as_deref()
     }
 
     pub fn file_id(&self, path: &Path) -> Option<FileId> {
@@ -763,9 +835,35 @@ impl Analysis {
     }
 }
 
+/// The tree of an empty VHDL file: that of every file of another language.
+fn empty_tree() -> &'static GreenNode {
+    static EMPTY: OnceLock<GreenNode> = OnceLock::new();
+    EMPTY.get_or_init(|| vfl_syntax::parse("", Standard::Vhdl2008).green().clone())
+}
+
 /// The design units of a file, one per library it is in, with the
 /// `(library, unit)` pairs each refers to.
 fn file_units(file_id: FileId, file: &AnalyzedFile) -> Vec<UnitWithDeps> {
+    if let Some(modules) = &file.foreign {
+        let mut out = Vec::new();
+        for (index, module) in modules.iter().enumerate() {
+            for library in &file.libraries {
+                out.push((
+                    UnitInfo {
+                        file: file_id,
+                        index,
+                        kind: DeclKind::Entity,
+                        name: foreign::foreign_key(&module.name),
+                        primary: None,
+                        library: library.clone(),
+                        name_range: module.name_range,
+                    },
+                    Vec::new(),
+                ));
+            }
+        }
+        return out;
+    }
     let root = file.syntax();
     let mut out = Vec::new();
     for (index, design_unit) in root
@@ -867,11 +965,12 @@ fn unit_dependencies(design_unit: &SyntaxNode) -> Vec<(String, String)> {
 fn same_structure(previous: &Analysis, files: &[AnalyzedFile], units: &[UnitInfo]) -> bool {
     previous.files.len() == files.len()
         && previous.units.len() == units.len()
-        && previous
-            .files
-            .iter()
-            .zip(files)
-            .all(|(a, b)| a.path == b.path && a.libraries == b.libraries && a.builtin == b.builtin)
+        && previous.files.iter().zip(files).all(|(a, b)| {
+            a.path == b.path
+                && a.libraries == b.libraries
+                && a.builtin == b.builtin
+                && a.foreign.is_some() == b.foreign.is_some()
+        })
         && previous.units.iter().zip(units).all(|(a, b)| {
             a.file == b.file
                 && a.index == b.index

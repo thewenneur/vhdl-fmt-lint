@@ -136,7 +136,10 @@ fn walk(
         label,
         unit: design.entities[entity].name.clone(),
         entity: Some(entity),
-        architecture: arch.map(|a| design.entities[entity].architectures[a].name.clone()),
+        // A Verilog module's architecture is not named.
+        architecture: arch
+            .filter(|_| !design.entities[entity].verilog)
+            .map(|a| design.entities[entity].architectures[a].name.clone()),
         children: Vec::new(),
         recursive: stack.contains(&entity),
         repeated: false,

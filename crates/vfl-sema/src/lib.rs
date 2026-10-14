@@ -37,6 +37,7 @@ mod analysis;
 mod checks;
 mod decl;
 mod diagnostic;
+mod foreign;
 mod resolver;
 mod rtl;
 mod stdlib;
@@ -49,3 +50,4 @@ pub use decl::{
     TypeDef, UnitId,
 };
 pub use diagnostic::{Diagnostic, Edit, Fix, codes};
+pub use foreign::{ForeignInput, ForeignModule, ForeignObject, foreign_key};

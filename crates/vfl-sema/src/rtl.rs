@@ -301,6 +301,17 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// Whether a declaration is a vector port of a module of another
+    /// language, whose width is literal.
+    fn is_foreign_vector(&self, decl: &Decl) -> bool {
+        decl.width.is_some()
+            && self
+                .ctx
+                .files
+                .get(decl.file as usize)
+                .is_some_and(|f| f.foreign.is_some())
+    }
+
     /// Whether an object is an array of arrays: a memory.
     fn is_memory(&self, decl: &Decl) -> bool {
         match self.object_type(decl) {
@@ -585,7 +596,7 @@ impl<'a> Checker<'a> {
                 Some(_) => None,
                 None => interface.get(position).and_then(|&id| self.decl(id)),
             }
-            .filter(|d| self.is_vector(d))
+            .filter(|d| self.is_vector(d) || self.is_foreign_vector(d))
             .and_then(|d| Some((d.width?, d.spelling.clone())));
             self.check_value(&formal_width, &actual);
         }

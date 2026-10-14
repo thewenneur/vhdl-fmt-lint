@@ -1,4 +1,5 @@
-//! Documentation and diagram generation for VHDL designs.
+//! Documentation and diagram generation for VHDL designs, with the
+//! Verilog and SystemVerilog modules they instantiate.
 //!
 //! [`load`] reads a documentation model ([`Design`]) off the syntax trees of
 //! a project: entities with their generics, ports and architectures,
@@ -21,6 +22,7 @@ mod pages;
 pub mod relations;
 pub mod svg;
 pub mod text;
+mod verilog;
 pub mod wave;
 
 use std::path::Path;
@@ -72,7 +74,21 @@ pub fn load(project: &Project, config: &DocConfig) -> Result<Design, globset::Er
             library,
         });
     }
-    Ok(model::build(&inputs, config, title(project, config)))
+    let mut verilog = Vec::new();
+    for (file, libraries) in project.verilog.iter().zip(&project.verilog_libraries) {
+        let path = model::relative_path(&project.root.dir, &file.path);
+        if excluded.is_match(&path) {
+            continue;
+        }
+        let library = libraries.first().map_or("work", |(l, _)| l.as_str());
+        verilog.extend(verilog::entities(&file.modules, &file.text, &path, library));
+    }
+    Ok(model::build(
+        &inputs,
+        verilog,
+        config,
+        title(project, config),
+    ))
 }
 
 fn title(project: &Project, config: &DocConfig) -> String {

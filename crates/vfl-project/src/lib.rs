@@ -7,6 +7,7 @@ mod import;
 mod infer;
 mod load;
 mod summary;
+mod verilog;
 
 use std::path::{Path, PathBuf};
 
@@ -16,10 +17,11 @@ pub use load::{Encoding, LibrarySources, LoadError, Project, SourceFile, decode,
 pub use summary::{
     FileSummary, UnitKind, UnitRef, UnitSummary, name_token, simple_name, summarize,
 };
+pub use verilog::{VerilogFile, module_key, parse_verilog, verilog_standard};
 
 use ignore::WalkBuilder;
 use ignore::overrides::OverrideBuilder;
-use vfl_config::{ProjectConfig, VerilogConfig, config_chain, find_config};
+use vfl_config::{Config, ProjectConfig, VerilogConfig, config_chain, find_config};
 
 /// Directories whose presence marks a version-control root.
 const VCS_MARKERS: [&str; 3] = [".git", ".hg", ".jj"];
@@ -127,6 +129,24 @@ pub fn collect(
     config: &ProjectConfig,
 ) -> Result<(Vec<PathBuf>, Vec<PathBuf>), ignore::Error> {
     walk(root, config, &config.extensions, true)
+}
+
+/// Lists the sources of a project under `root`, VHDL and Verilog together,
+/// and the files of other tools that may list libraries, in one walk,
+/// both sorted.
+pub fn collect_project(
+    root: &Path,
+    config: &Config,
+) -> Result<(Vec<PathBuf>, Vec<PathBuf>), ignore::Error> {
+    let extensions: Vec<String> = config
+        .project
+        .extensions
+        .iter()
+        .chain(&config.verilog.extensions)
+        .chain(&config.verilog.sv_extensions)
+        .cloned()
+        .collect();
+    walk(root, &config.project, &extensions, true)
 }
 
 /// Lists the VHDL sources and the Verilog and SystemVerilog sources under

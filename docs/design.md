@@ -464,8 +464,15 @@ and far fewer false errors, with zero configuration.
        (an expression, an item or a statement). Classes, covergroups, properties,
        sequences and constraints are opaque. `vfl check` reads `.v`/`.sv` files
        (done).
-    2. Mixed-language projects: module summaries bound as entities in the VHDL
-       analysis, cross-language navigation, diagrams.
+    2. Mixed-language projects: each module's summary (name, parameters, ports,
+       instances, comments) is read off its tree and given to the VHDL analysis as a
+       unit of a foreign file, whose VHDL tree is empty. The module is an entity, its
+       parameters generics and its ports ports, with no VHDL type, so the type checker
+       leaves their associations alone; literal vector widths are still checked.
+       Library inference treats modules as entities and their instances as default
+       bindings. A Verilog edit re-analyzes the module, and the VHDL units that use it
+       only when its interface changed. Hover, go to definition and `vfl doc` (module
+       pages, hierarchy, block diagrams) cross languages (done).
     3. Formatter (the layout engine made generic over node kinds) and editor features.
     4. Lint rules and semantic checks for the synthesizable subset.
 

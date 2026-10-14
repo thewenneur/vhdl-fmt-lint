@@ -408,8 +408,12 @@ of events).
 
 ## `[verilog]`
 
-Verilog and SystemVerilog sources. `vfl check` parses them; the other commands only
-handle VHDL so far. The extension of a file decides how it is parsed: files with
+Verilog and SystemVerilog sources. `vfl check` parses them. In `vfl lint`, `vfl doc`
+and the language server, their modules are entities VHDL can instantiate (`entity
+work.fifo`, or through a component): the generic and port maps of an entity
+instantiation are checked against the module's parameters and ports, and a module goes in the libraries of the units that
+instantiate it, as an entity would (`[project.libraries]` patterns apply to Verilog
+files too). Verilog files are not linted themselves yet. The extension of a file decides how it is parsed: files with
 `sv_extensions` as SystemVerilog, files with `extensions` as Verilog. A
 `` `begin_keywords `` directive in a file still changes the reserved words for the part
 of the file it covers.
