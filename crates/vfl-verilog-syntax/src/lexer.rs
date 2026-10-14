@@ -706,7 +706,9 @@ impl<'a> Lexer<'a> {
             b'"' => {
                 let start = self.pos;
                 self.string();
-                Some(self.text[start + 1..self.pos.saturating_sub(1).max(start + 1)].to_owned())
+                // An unterminated name has no closing quote.
+                let quoted = &self.text[start + 1..self.pos];
+                Some(quoted.strip_suffix('"').unwrap_or(quoted).to_owned())
             }
             b'<' => match self.rest().find(['>', '\n']) {
                 Some(end) if self.rest().as_bytes()[end] == b'>' => {
@@ -995,6 +997,14 @@ mod tests {
         assert_eq!(pos, text.len());
         out.retain(|(k, _)| *k != WHITESPACE);
         out
+    }
+
+    /// Found by fuzzing: an unterminated file name ending in a multi-byte
+    /// character panicked.
+    #[test]
+    fn unterminated_include_name() {
+        let lexed = lex("`include \"a®", &Options::default());
+        assert_eq!(lexed.includes, ["a®"]);
     }
 
     /// Found by fuzzing: a file that includes itself twice took
