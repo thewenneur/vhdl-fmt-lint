@@ -38,6 +38,8 @@
 - **Editor requests in a Verilog file**: hover, completion and the other requests made in
   an open Verilog file panicked the language server, which analyzes Verilog files only
   for their modules. They now get no answer, until the editor supports Verilog.
+- **Unterminated string at the end of a file**: the type checker panicked when the string
+  ended in a multi-byte character.
 - **Verilog include cycles**: a file including itself more than once on each level of a
   cycle took exponential time to parse (50 s for 175 bytes). At most 1024 included files
   are now read per file.

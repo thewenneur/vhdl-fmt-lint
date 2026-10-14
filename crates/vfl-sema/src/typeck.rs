@@ -3087,12 +3087,12 @@ fn literal(node: &SyntaxNode) -> Val {
         }
         SyntaxKind::CHAR_LITERAL => Val::Char(token.text().to_owned()),
         SyntaxKind::STRING_LITERAL => {
-            let text = token.text();
-            if text.len() >= 2 && text.starts_with('"') {
-                Val::Str(Some(text[1..text.len() - 1].replace("\"\"", "\"")))
-            } else {
-                Val::Str(None)
-            }
+            // An unterminated string has no closing quote.
+            let inner = token
+                .text()
+                .strip_prefix('"')
+                .and_then(|t| t.strip_suffix('"'));
+            Val::Str(inner.map(|t| t.replace("\"\"", "\"")))
         }
         SyntaxKind::BIT_STRING_LITERAL => Val::Str(None),
         SyntaxKind::NULL_KW => Val::Null,
