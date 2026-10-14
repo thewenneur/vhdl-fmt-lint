@@ -938,6 +938,7 @@ dependencies = [
  "vfl-config",
  "vfl-project",
  "vfl-syntax",
+ "vfl-verilog-syntax",
 ]
 
 [[package]]
@@ -1020,7 +1021,9 @@ dependencies = [
  "thiserror",
  "toml",
  "vfl-config",
+ "vfl-sema",
  "vfl-syntax",
+ "vfl-verilog-syntax",
  "yaml-rust2",
 ]
 

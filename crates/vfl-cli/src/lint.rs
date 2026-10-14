@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail};
 use vfl_config::{Config, Level};
 use vfl_lint::report::{self, Format, Source};
 use vfl_lint::{Diagnostic, FileSettings};
-use vfl_project::{Project, collect_sources, encode, find_root};
+use vfl_project::{Project, collect_project, collect_sources, encode, find_root};
 
 use crate::ConfigCache;
 
@@ -55,11 +55,12 @@ fn requested(paths: &[PathBuf]) -> Result<Vec<(PathBuf, Vec<PathBuf>)>> {
     Ok(groups)
 }
 
-/// Loads the project at `root`, adding `extra` files it does not include.
+/// Loads the project at `root`, with its Verilog files, adding `extra`
+/// files it does not include.
 fn load(root: &Path, extra: &[PathBuf]) -> Result<Project> {
     let root = find_root(root);
     let config = vfl_config::load_for_dir(&root.dir)?;
-    let mut paths = collect_sources(&root.dir, &config.project)
+    let (mut paths, _) = collect_project(&root.dir, &config)
         .with_context(|| format!("scanning {}", root.dir.display()))?;
     for file in extra {
         if !paths.contains(file) {

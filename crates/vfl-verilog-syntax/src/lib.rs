@@ -32,6 +32,7 @@
 mod grammar;
 mod lexer;
 mod parser;
+pub mod summary;
 mod syntax_kind;
 
 use std::fmt;

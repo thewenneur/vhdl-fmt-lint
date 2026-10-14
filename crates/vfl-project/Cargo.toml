@@ -13,6 +13,8 @@ workspace = true
 [dependencies]
 vfl-config.workspace = true
 vfl-syntax.workspace = true
+vfl-sema.workspace = true
+vfl-verilog-syntax.workspace = true
 globset.workspace = true
 ignore.workspace = true
 rayon.workspace = true

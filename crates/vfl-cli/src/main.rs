@@ -14,7 +14,9 @@ use clap::{Parser, Subcommand, ValueEnum};
 use vfl_config::Config;
 use vfl_fmt::FormatError;
 use vfl_lint::report::Format;
-use vfl_project::{Project, collect_all_sources, collect_sources, decode, encode, find_root};
+use vfl_project::{
+    Project, collect_all_sources, collect_sources, decode, encode, find_root, parse_verilog,
+};
 
 #[derive(Parser)]
 #[command(name = "vfl", version, about = "VHDL formatter and linter")]
@@ -370,7 +372,8 @@ fn check(paths: &[PathBuf], tree: bool) -> Result<()> {
             .and_then(|e| config.verilog.standard_for_extension(e));
         let (dump, errors) = match verilog {
             Some(standard) => {
-                let parsed = parse_verilog(&file, &text, config, standard);
+                let root = find_root(file.parent().unwrap_or(Path::new("."))).dir;
+                let parsed = parse_verilog(&file, &text, config, &root, standard);
                 (tree.then(|| parsed.debug_tree()), parsed.errors().to_vec())
             }
             None => {
@@ -424,41 +427,6 @@ fn all_source_files(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
         }
     }
     Ok(files)
-}
-
-/// Parses a Verilog or SystemVerilog file, reading the files it includes
-/// from its directory and the configured include directories.
-fn parse_verilog(
-    file: &Path,
-    text: &str,
-    config: &Config,
-    standard: vfl_config::VerilogStandard,
-) -> vfl_verilog_syntax::Parse {
-    let standard = standard
-        .as_str()
-        .parse()
-        .expect("config standards are parser standards");
-    let dir = file.parent().unwrap_or(Path::new(".")).to_owned();
-    let root = find_root(&dir).dir;
-    let search: Vec<PathBuf> = std::iter::once(dir)
-        .chain(config.verilog.include_dirs.iter().map(|d| root.join(d)))
-        .collect();
-    let read = |name: &str| -> Option<String> {
-        search
-            .iter()
-            .map(|d| d.join(name))
-            .find(|p| p.is_file())
-            .and_then(|p| std::fs::read(p).ok())
-            .map(|bytes| decode(bytes).0)
-    };
-    vfl_verilog_syntax::parse_with(
-        text,
-        &vfl_verilog_syntax::Options {
-            standard,
-            defines: &config.verilog.defines,
-            include: Some(&read),
-        },
-    )
 }
 
 fn parse_lines(arg: &str) -> Result<(usize, usize), String> {
@@ -621,6 +589,17 @@ fn show_project(path: &Path, vhdl_ls: bool) -> Result<()> {
         println!("  {shown}  [{}]", names.join(", "));
         for (library, reason) in libraries {
             println!("      {library}: {}", relative(reason.to_string()));
+        }
+    }
+    if !project.verilog.is_empty() {
+        println!("verilog sources ({}):", project.verilog.len());
+        for (file, libraries) in project.verilog.iter().zip(&project.verilog_libraries) {
+            let names: Vec<&str> = libraries.iter().map(|(l, _)| l.as_str()).collect();
+            let shown = relative(file.path.display().to_string());
+            println!("  {shown}  [{}]", names.join(", "));
+            for (library, reason) in libraries {
+                println!("      {library}: {}", relative(reason.to_string()));
+            }
         }
     }
     for (path, error) in &project.unreadable {

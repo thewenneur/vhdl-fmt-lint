@@ -111,6 +111,16 @@ fn opt_code(value: &Option<String>) -> Cell {
     value.iter().map(|v| code(v.clone())).collect()
 }
 
+/// A type as code; nothing for a Verilog parameter or port written
+/// without one.
+fn type_cell(ty: &str) -> Vec<Inline> {
+    if ty.is_empty() {
+        Vec::new()
+    } else {
+        vec![code(ty.to_owned())]
+    }
+}
+
 fn generics_table(generics: &[Interface]) -> Block {
     Block::Table {
         head: vec!["Name", "Type", "Default", "Description"],
@@ -119,7 +129,7 @@ fn generics_table(generics: &[Interface]) -> Block {
             .map(|g| {
                 vec![
                     vec![code(g.name.clone())],
-                    vec![code(g.ty.clone())],
+                    type_cell(&g.ty),
                     opt_code(&g.default),
                     vec![text(g.description.clone())],
                 ]
@@ -139,7 +149,7 @@ fn ports_table(ports: &[Interface]) -> Block {
                 } else {
                     p.mode.as_str()
                 };
-                let mut ty = vec![code(p.ty.clone())];
+                let mut ty = type_cell(&p.ty);
                 if let Some(default) = &p.default {
                     ty.push(text(" := "));
                     ty.push(code(default.clone()));
@@ -604,17 +614,17 @@ fn entity(
 ) -> Page {
     let e: &Entity = &design.entities[index];
     let id = e.page.clone();
-    let mut blocks = vec![heading(
-        1,
-        vec![text("Entity "), code(e.name.clone())],
-        None,
-    )];
+    let what = if e.verilog { "Module " } else { "Entity " };
+    let mut blocks = vec![heading(1, vec![text(what), code(e.name.clone())], None)];
     let mut meta = vec![
         text("Library "),
         code(e.library.clone()),
         text(" · "),
         location(&e.file, e.line),
     ];
+    if e.verilog {
+        meta.push(text(" · Verilog"));
+    }
     if e.is_testbench() {
         meta.push(text(" · testbench"));
     }
@@ -682,11 +692,15 @@ fn architecture(
 ) {
     let entity = &design.entities[index];
     let arch_key = identifier_key(&arch.name);
-    blocks.push(heading(
-        2,
-        vec![text("Architecture "), code(arch.name.clone())],
-        Some(format!("arch-{arch_key}")),
-    ));
+    // A Verilog module has no architecture of its own: its instances
+    // follow its ports.
+    if !entity.verilog {
+        blocks.push(heading(
+            2,
+            vec![text("Architecture "), code(arch.name.clone())],
+            Some(format!("arch-{arch_key}")),
+        ));
+    }
     if arch.file != entity.file {
         blocks.push(Block::Para(vec![location(&arch.file, arch.line)]));
     }
@@ -722,7 +736,9 @@ fn architecture(
                         Some(&arch.name),
                         &mut hierarchy::Expand::children(),
                     );
-                    node.architecture = Some(arch.name.clone());
+                    if !entity.verilog {
+                        node.architecture = Some(arch.name.clone());
+                    }
                     vec![node]
                 })
                 .unwrap_or_default();
@@ -755,6 +771,7 @@ fn architecture(
                         InstanceKind::Component => "component",
                         InstanceKind::Entity => "entity",
                         InstanceKind::Configuration => "configuration",
+                        InstanceKind::Module => "module",
                     };
                     vec![
                         vec![code(instance.path())],

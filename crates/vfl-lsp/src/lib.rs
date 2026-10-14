@@ -272,6 +272,7 @@ impl Server<'_> {
     fn register_watchers(&mut self) -> Result<()> {
         let watchers = [
             "**/*.{vhd,vhdl,vho,vht}",
+            "**/*.{v,vh,sv,svh}",
             "**/{vfl,.vfl,vhdl_ls,.vhdl_ls}.toml",
             "**/run.py",
             "**/*.{core,xpr,qsf,qip,tcl}",
