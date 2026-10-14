@@ -346,7 +346,8 @@ The aim: open any VHDL file and get correct cross-file analysis, without a libra
 
 **1. Find the root.** Walk up from the file: the outermost directory with a `vfl.toml`
 wins, so nested override configs do not split the project, stopping at a config with
-`root = true` and never going above the nearest VCS root (`.git`, `.hg`, `.jj`). Without a
+`root = true` and never going above the nearest VCS root (`.git`, `.hg`, `.jj`; a git
+submodule, whose `.git` file points into `.git/modules/`, belongs to its superproject). Without a
 config, the VCS root; failing that, the file's own directory. In the LSP, workspace folders
 are also roots.
 
