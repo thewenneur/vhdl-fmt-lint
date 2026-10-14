@@ -11,12 +11,13 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use smallvec::smallvec;
 use vfl_syntax::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange, identifier_key};
 
 use crate::analysis::{Ctx, UnitResult};
 use crate::decl::{
-    Access, Decl, DeclId, DeclKind, Element, FileId, Mode, Reference, Region, Target, TypeDef,
-    UnitId,
+    Access, Decl, DeclId, DeclKind, Element, FileId, Mode, Reference, Region, Target, Targets,
+    TypeDef, UnitId,
 };
 use crate::diagnostic::{Diagnostic, Edit, Fix, codes};
 use crate::syntax::*;
@@ -78,7 +79,7 @@ pub(crate) enum ImportKind {
     /// `use lib.pkg.all`.
     All(Arc<Region>),
     /// `use lib.pkg.x` or `use lib.pkg`.
-    Names(String, Vec<Target>),
+    Names(String, Targets),
     /// `use lib.all`: every unit of a library.
     Library(String),
     /// Something that could not be resolved: every failed lookup in its
@@ -101,7 +102,7 @@ pub(crate) struct UseItem {
 /// The result of looking a name up.
 #[derive(Debug, Clone)]
 enum Lookup {
-    Found(Vec<Target>),
+    Found(Targets),
     /// Not checkable; never an error.
     Unknown,
     NotFound,
@@ -269,7 +270,7 @@ impl<'a> Resolver<'a> {
         }
         for id in std::mem::take(&mut self.implicit) {
             let range = self.decls[id.index as usize].range;
-            self.record(range, vec![Target::Decl(id)], Access::ReadWrite);
+            self.record(range, smallvec![Target::Decl(id)], Access::ReadWrite);
         }
         let mut imports = Vec::new();
         let mut libraries = Vec::new();
@@ -347,7 +348,7 @@ impl<'a> Resolver<'a> {
         };
         self.refs.push(Reference {
             range,
-            targets: vec![Target::Decl(DeclId { unit, index: 0 })],
+            targets: smallvec![Target::Decl(DeclId { unit, index: 0 })],
             access: Access::Other,
         });
         let mut locals = Region::default();
@@ -390,7 +391,7 @@ impl<'a> Resolver<'a> {
             match self.ctx.unit_in_library(&self.library, &key, self.file) {
                 Some(unit) => self.refs.push(Reference {
                     range: token.text_range(),
-                    targets: vec![Target::Decl(DeclId { unit, index: 0 })],
+                    targets: smallvec![Target::Decl(DeclId { unit, index: 0 })],
                     access: Access::Other,
                 }),
                 None => self.error(
@@ -552,7 +553,7 @@ impl<'a> Resolver<'a> {
                 {
                     self.refs.push(Reference {
                         range: token.text_range(),
-                        targets: vec![Target::Decl(id)],
+                        targets: smallvec![Target::Decl(id)],
                         access: Access::Other,
                     });
                 }
@@ -622,7 +623,7 @@ impl<'a> Resolver<'a> {
                 if let Some(deferred) = deferred {
                     self.record(
                         range,
-                        vec![Target::Decl(deferred), Target::Decl(id)],
+                        smallvec![Target::Decl(deferred), Target::Decl(id)],
                         Access::Other,
                     );
                 }
@@ -956,7 +957,7 @@ impl<'a> Resolver<'a> {
                 }
                 self.refs.push(Reference {
                     range: token.text_range(),
-                    targets: vec![Target::Library(self.library_name(&key))],
+                    targets: smallvec![Target::Library(self.library_name(&key).into())],
                     access: Access::Other,
                 });
                 self.frames.last_mut().unwrap().libraries.push(key);
@@ -1014,7 +1015,7 @@ impl<'a> Resolver<'a> {
             return vec![match self.name_expr(&prefix, Access::Other) {
                 Lookup::Found(targets) => {
                     if let [Target::Library(lib)] = targets.as_slice() {
-                        ImportKind::Library(lib.clone())
+                        ImportKind::Library(lib.to_string())
                     } else {
                         match self.members_of(&targets) {
                             Some(region) => ImportKind::All(region),
@@ -1085,7 +1086,7 @@ impl<'a> Resolver<'a> {
         // An inner declaration hides outer ones, except that overloadable
         // declarations (subprograms, enumeration literals) add up: every
         // visible overload is a candidate for overload resolution.
-        let mut overloads: Vec<Target> = Vec::new();
+        let mut overloads = Targets::new();
         for frame in self.frames.iter().rev() {
             let mut ids = frame.locals.get(name);
             if ids.is_empty() {
@@ -1108,7 +1109,7 @@ impl<'a> Resolver<'a> {
             }
             overloads.extend(ids.iter().map(|&id| Target::Decl(id)));
         }
-        let mut found = Vec::new();
+        let mut found = Targets::new();
         let mut opaque = false;
         let mut used = Vec::new();
         for frame in self.frames.iter().rev() {
@@ -1160,7 +1161,7 @@ impl<'a> Resolver<'a> {
         }
         for frame in self.frames.iter().rev() {
             if frame.libraries.iter().any(|l| l == name) {
-                return Lookup::Found(vec![Target::Library(self.library_name(name))]);
+                return Lookup::Found(smallvec![Target::Library(self.library_name(name).into())]);
             }
         }
         if opaque {
@@ -1467,7 +1468,7 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    fn record(&mut self, range: TextRange, targets: Vec<Target>, access: Access) {
+    fn record(&mut self, range: TextRange, targets: Targets, access: Access) {
         self.refs.push(Reference {
             range,
             targets,
@@ -1558,7 +1559,7 @@ impl<'a> Resolver<'a> {
         };
         if let [Target::Library(lib)] = targets.as_slice() {
             if let Some(unit) = self.ctx.unit_in_library(lib, &key, self.file) {
-                let target = vec![Target::Decl(DeclId { unit, index: 0 })];
+                let target = smallvec![Target::Decl(DeclId { unit, index: 0 })];
                 if self.ctx.result(unit).is_none() {
                     return Lookup::Unknown;
                 }
@@ -1593,7 +1594,7 @@ impl<'a> Resolver<'a> {
         let package_name = package.spelling.clone();
         let ids = members.get(&key);
         if !ids.is_empty() {
-            let found: Vec<Target> = ids.iter().map(|&id| Target::Decl(id)).collect();
+            let found: Targets = ids.iter().map(|&id| Target::Decl(id)).collect();
             self.record(suffix.text_range(), found.clone(), access);
             return Lookup::Found(found);
         }
@@ -2092,7 +2093,7 @@ impl<'a> Resolver<'a> {
         match self.ctx.architecture(library, &decl.name, &key) {
             Some(unit) => self.record(
                 token.text_range(),
-                vec![Target::Decl(DeclId { unit, index: 0 })],
+                smallvec![Target::Decl(DeclId { unit, index: 0 })],
                 Access::Other,
             ),
             None => self.error(
@@ -2264,8 +2265,12 @@ impl<'a> Resolver<'a> {
             if let Some(inner) = inner
                 && let Some(id) = find(&identifier_key(inner.text()))
             {
-                self.record(token.text_range(), Vec::new(), Access::Other);
-                self.record(inner.text_range(), vec![Target::Decl(id)], Access::Other);
+                self.record(token.text_range(), Targets::new(), Access::Other);
+                self.record(
+                    inner.text_range(),
+                    smallvec![Target::Decl(id)],
+                    Access::Other,
+                );
                 return Some(id);
             }
             // Not a conversion we can see through: leave the formal alone.
@@ -2273,7 +2278,11 @@ impl<'a> Resolver<'a> {
         }
         match found.take() {
             Some(id) => {
-                self.record(token.text_range(), vec![Target::Decl(id)], Access::Other);
+                self.record(
+                    token.text_range(),
+                    smallvec![Target::Decl(id)],
+                    Access::Other,
+                );
                 if formal.kind() == SyntaxKind::CALL_EXPR {
                     for list in formal.children().skip(1) {
                         self.with_access(Access::Read, |s| s.visit(&list));
@@ -2685,7 +2694,7 @@ impl<'a> Resolver<'a> {
                             at,
                             Reference {
                                 range,
-                                targets: vec![Target::Decl(declaration)],
+                                targets: smallvec![Target::Decl(declaration)],
                                 access: Access::Other,
                             },
                         );

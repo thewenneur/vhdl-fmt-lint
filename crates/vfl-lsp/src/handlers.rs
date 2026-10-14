@@ -282,7 +282,7 @@ pub(crate) fn hit_at(world: &World, file: FileId, offset: TextSize) -> Option<Hi
             for t in &reference.targets {
                 match t {
                     Target::Decl(id) => targets.push(*id),
-                    Target::Library(name) => library = Some(name.clone()),
+                    Target::Library(name) => library = Some(name.to_string()),
                 }
             }
             return Some(Hit {
@@ -1283,7 +1283,7 @@ pub(crate) fn completion_at(world: &World, file: FileId, offset: TextSize) -> Ve
                 match target {
                     Target::Library(library) => {
                         for unit in analysis.units() {
-                            if unit.library == *library
+                            if *unit.library == **library
                                 && unit.primary.is_none()
                                 && !matches!(
                                     unit.kind,

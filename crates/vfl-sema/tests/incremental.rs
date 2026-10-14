@@ -63,8 +63,14 @@ fn check(fixture: &str, file: &str, edit: impl Fn(&str) -> String) -> usize {
     files[index].1 = edit(&files[index].1);
     let after = edited(&before, &files, index);
     let full = Analysis::new(after.clone());
+    // The language server's way: the previous analysis is consumed.
+    let owned = Analysis::new(Vec::new())
+        .update(before.clone())
+        .into_update_with_foreign(after.clone(), Vec::new());
     let incremental = previous.update(after);
     assert_eq!(incremental.dump(), full.dump(), "{file}");
+    assert_eq!(owned.dump(), full.dump(), "{file}");
+    assert_eq!(owned.reanalyzed_units(), incremental.reanalyzed_units());
     incremental.reanalyzed_units()
 }
 

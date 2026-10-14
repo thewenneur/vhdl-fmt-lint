@@ -1039,6 +1039,7 @@ dependencies = [
  "insta",
  "rayon",
  "rowan",
+ "smallvec",
  "toml",
  "vfl-config",
  "vfl-project",

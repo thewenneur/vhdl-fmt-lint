@@ -1,11 +1,14 @@
 //! Mapping byte offsets to lines and columns.
 
+use std::sync::Arc;
+
 use rowan::TextSize;
 
 /// Line start offsets of a text, for turning offsets into line/column pairs.
+/// Cloning it shares the offsets.
 #[derive(Debug, Clone)]
 pub struct LineIndex {
-    starts: Vec<TextSize>,
+    starts: Arc<[TextSize]>,
 }
 
 /// A zero-based line, and a zero-based column counted in characters.
@@ -22,7 +25,9 @@ impl LineIndex {
             text.match_indices('\n')
                 .map(|(i, _)| TextSize::from(i as u32 + 1)),
         );
-        LineIndex { starts }
+        LineIndex {
+            starts: starts.into(),
+        }
     }
 
     /// The line and column of `offset` in `text`, which must be the text
