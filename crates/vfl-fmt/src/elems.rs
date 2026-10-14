@@ -130,7 +130,12 @@ pub(crate) fn collect<L: Lang>(
                     advance(&mut col, raw);
                     continue;
                 }
-                let text = if L::is_comment(kind) && !raw.contains('\n') {
+                // Blanks after a directive's `\` are kept: without them it
+                // would continue on the next line.
+                let text = if L::is_comment(kind)
+                    && !raw.contains('\n')
+                    && !(L::keeps_column(kind) && raw.trim_end().ends_with('\\'))
+                {
                     raw.trim_end().to_owned()
                 } else {
                     apply_case(raw, L::case_of(kind, config))

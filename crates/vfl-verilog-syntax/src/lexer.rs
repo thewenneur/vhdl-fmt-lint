@@ -668,7 +668,10 @@ impl<'a> Lexer<'a> {
                 b'/' if bytes.get(pos + 1) == Some(&b'*') => {
                     pos = match self.text[pos + 2..].find("*/") {
                         Some(end) => pos + 2 + end + 2,
-                        None => bytes.len(),
+                        None => {
+                            self.error_at("unterminated block comment", pos, pos + 2);
+                            bytes.len()
+                        }
                     };
                 }
                 // A line comment ends the body, unless it ends with a line
@@ -695,7 +698,17 @@ impl<'a> Lexer<'a> {
                 _ => pos += 1,
             }
         }
-        let end = self.text[self.pos..pos].trim_end_matches([' ', '\t']).len();
+        let body = &self.text[self.pos..pos];
+        let mut end = body.trim_end_matches([' ', '\t']).len();
+        if body[..end].ends_with('\\') && matches!(bytes.get(pos), None | Some(b'\n' | b'\r')) {
+            if end == body.len() && pos == bytes.len() {
+                self.error_at("line continuation at the end of the file", pos - 1, pos);
+            }
+            // The blanks between a `\` and the end of the line are kept in
+            // the directive, so that formatting cannot make it a line
+            // continuation.
+            end = body.len();
+        }
         self.advance_to(self.pos + end);
         self.macros.insert(name.to_owned(), has_args);
     }
@@ -859,8 +872,12 @@ impl<'a> Lexer<'a> {
             .iter()
             .filter_map(|e| rest.find(e))
             .min()
-            .map(|i| rest[..i].rfind('\n').map_or(0, |nl| nl + 1))
-            .unwrap_or(rest.len());
+            .map(|i| rest[..i].rfind('\n').map_or(0, |nl| nl + 1));
+        let end = end.unwrap_or_else(|| {
+            let directive = self.token_start;
+            self.error_at("protected text without its end", directive, start);
+            rest.len()
+        });
         self.advance_to(self.pos + end);
         self.push(INACTIVE, start);
         self.token_start = self.pos;
@@ -1008,6 +1025,36 @@ mod tests {
         assert_eq!(lexed.includes, ["a®"]);
         let lexed = lex("`begin_keywords \"1364-2005®", &Options::default());
         assert!(!lexed.errors.is_empty());
+    }
+
+    /// Found by fuzzing: a macro body ending in `\` at the end of the file,
+    /// or before blanks, became a line continuation once formatted.
+    #[test]
+    fn backslash_at_the_end_of_a_define() {
+        let lexed = lex("`define A x \\", &Options::default());
+        assert_eq!(lexed.errors.len(), 1, "{:?}", lexed.errors);
+        let text = "`define A x \\  \nwire b;\n";
+        let toks = kinds(text, Standard::default());
+        assert_eq!(toks[0], (DIRECTIVE, "`define A x \\  "), "{toks:?}");
+    }
+
+    /// Found by fuzzing: protected text with no end ran to the end of the
+    /// file with no error, so the file was formatted.
+    #[test]
+    fn unterminated_protected_text() {
+        let lexed = lex("`protected\nabc", &Options::default());
+        assert_eq!(lexed.errors.len(), 1, "{:?}", lexed.errors);
+        let lexed = lex("`protected\nabc\n`endprotected\n", &Options::default());
+        assert!(lexed.errors.is_empty());
+    }
+
+    /// Found by fuzzing: a block comment left open in a macro body ran to
+    /// the end of the file with no error, so the file was formatted.
+    #[test]
+    fn unterminated_comment_in_a_define() {
+        let lexed = lex("`define A /* x", &Options::default());
+        assert_eq!(lexed.errors.len(), 1);
+        assert_eq!(lexed.errors[0].message, "unterminated block comment");
     }
 
     /// Found by fuzzing: a file that includes itself twice took

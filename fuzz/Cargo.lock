@@ -760,6 +760,7 @@ dependencies = [
  "thiserror",
  "vfl-config",
  "vfl-syntax",
+ "vfl-verilog-syntax",
 ]
 
 [[package]]
@@ -812,6 +813,7 @@ dependencies = [
  "anyhow",
  "lsp-server",
  "lsp-types",
+ "rowan",
  "serde",
  "serde_json",
  "vfl-config",
@@ -821,6 +823,7 @@ dependencies = [
  "vfl-project",
  "vfl-sema",
  "vfl-syntax",
+ "vfl-verilog-syntax",
 ]
 
 [[package]]

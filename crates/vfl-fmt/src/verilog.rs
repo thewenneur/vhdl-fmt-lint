@@ -372,6 +372,19 @@ fn spaced_in_source(prev: &Elem<Verilog>, cur: &Elem<Verilog>) -> bool {
     }
 }
 
+/// Whether `prev` and `cur`, both operators, lex differently once
+/// written together.
+fn would_join(prev: &Elem<Verilog>, cur: &Elem<Verilog>) -> bool {
+    let operator =
+        |text: &str| !text.is_empty() && text.bytes().all(|b| b"+-*/%<>=!~&|^?:@#'.".contains(&b));
+    if !operator(&prev.text) || !operator(&cur.text) {
+        return false;
+    }
+    let joined = format!("{}{}", prev.text, cur.text);
+    let lexed = vfl_verilog_syntax::lex(&joined, &Options::default());
+    !matches!(&lexed.tokens[..], [a, b] if a.kind == prev.kind && b.kind == cur.kind)
+}
+
 /// Whether `elem` is the operator of a prefix expression: `~a`, `-1`, `!x`.
 fn is_prefix_operator(elem: &Elem<Verilog>) -> bool {
     elem.parent.as_ref().is_some_and(|p| {
@@ -427,6 +440,10 @@ fn space_between(prev: &Elem<Verilog>, cur: &Elem<Verilog>, config: &FormatConfi
     }
     // An escaped identifier ends at white space.
     if prev.kind == ESC_IDENT {
+        return true;
+    }
+    // Operators written apart that would read as one: `- -a`, `~ &b`.
+    if spaced_in_source(prev, cur) && would_join(prev, cur) {
         return true;
     }
     // The arguments of a macro are kept as written.

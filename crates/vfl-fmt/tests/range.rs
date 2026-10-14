@@ -210,3 +210,14 @@ fn format_on_type_follows_the_config() {
     config.on_type = false;
     assert_eq!(typed(&config, ';'), text);
 }
+
+/// Found by fuzzing: lines broken by a lone `\r` lost their blank lines.
+#[test]
+fn files_with_lone_carriage_returns_are_formatted_whole() {
+    let text =
+        "entity e is\nend;\narchitecture a of e is\nbegin\n  x <= y;\n\r\r\r  z <= w;\nend;\n";
+    let config = FormatConfig::default();
+    let whole = format(text, &config, Standard::Vhdl2008).unwrap();
+    let at = text.find("  z").unwrap();
+    assert_eq!(fmt_range(text, at..at), whole);
+}

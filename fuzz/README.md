@@ -10,6 +10,7 @@ nothing here is built by the main workspace or ships in `vfl`.
 | `parse` | No panic; the tree gives back the input byte for byte, in 93, 2008 and 2019. |
 | `verilog` | Same for Verilog and SystemVerilog, in every standard, with predefined macros and included files (cycles included); module summaries never panic. |
 | `format` | No panic or internal error; formatting is idempotent; formatting one line and then the whole file gives what formatting the whole file gives. |
+| `format_verilog` | Same for Verilog and SystemVerilog, in every standard. |
 | `lint` | Analysis and every lint rule (strict preset) never panic on up to four VHDL and Verilog files; applying all fixes never breaks the syntax of a file that parsed. |
 | `reanalyze` | After each edit to a VHDL or Verilog file, `Analysis::update` and `lint_cached` (what the language server uses) give exactly what a full analysis and lint give. |
 | `lsp` | VHDL and Verilog documents edited with `didChange` events (positions out of range included), and every request answered at the edit; the final diagnostics equal those of a server that opened the final text. |

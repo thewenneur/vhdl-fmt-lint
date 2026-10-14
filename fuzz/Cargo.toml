@@ -71,3 +71,10 @@ path = "fuzz_targets/verilog.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "format_verilog"
+path = "fuzz_targets/format_verilog.rs"
+test = false
+doc = false
+bench = false

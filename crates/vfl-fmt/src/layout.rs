@@ -259,7 +259,11 @@ pub(crate) fn breaks<L: Lang>(
         let mut count = elem.src_newlines.min(max);
         if i == 0 || L::stays_on_line(elems, i) {
             count = 0;
-        } else if forced[i] || L::ends_line(elems[i - 1].kind) {
+        } else if forced[i]
+            || L::ends_line(elems[i - 1].kind)
+                // A comment after a directive stays on its line.
+                && !(L::keeps_column(elems[i - 1].kind) && count == 0 && elem.is_comment())
+        {
             count = count.max(1);
         }
         nl.push(count);

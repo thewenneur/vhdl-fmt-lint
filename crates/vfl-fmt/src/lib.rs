@@ -113,7 +113,7 @@ pub fn format_verilog(
     format_with::<Verilog>(text, config, *options)
 }
 
-fn format_with<L: Lang>(
+pub(crate) fn format_with<L: Lang>(
     text: &str,
     config: &FormatConfig,
     std: L::Std<'_>,

@@ -30,7 +30,7 @@ use vfl_verilog_syntax::{Options, Verilog};
 use crate::kinds::is_item;
 use crate::lang::{Element, Lang, Node, Token};
 use crate::verify::{first_difference, lexical};
-use crate::{FormatError, Laid, Source, lay_out, parse_valid};
+use crate::{FormatError, Laid, Source, format_with, lay_out, parse_valid};
 
 /// A change to a file: replace the bytes `range` of the original text by
 /// `text`.
@@ -186,6 +186,24 @@ fn ranges_with<L: Lang>(
     std: L::Std<'_>,
     incremental: bool,
 ) -> Result<Vec<Edit>, FormatError> {
+    if ranges.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Lines are found by `\n`: a file that also breaks lines with a lone
+    // `\r` is formatted whole.
+    if text
+        .match_indices('\r')
+        .any(|(i, _)| text.as_bytes().get(i + 1) != Some(&b'\n'))
+    {
+        let out = format_with::<L>(text, config, std)?;
+        return Ok(match out == text {
+            true => Vec::new(),
+            false => vec![Edit {
+                range: 0..text.len(),
+                text: out,
+            }],
+        });
+    }
     let source = Source::new(text);
     let src = source.text.as_str();
     let root = parse_valid::<L>(src, std)?;

@@ -178,3 +178,32 @@ fn ranges() {
         "module m;\n  assign a = b;\n  assign c = d;\n\nassign e=f;\nendmodule\n"
     );
 }
+
+#[test]
+fn a_backslash_before_blanks_stays_one_line() {
+    // Without its blanks, the `\` would continue the macro on the next line.
+    let text = "`define A x \\  \nmodule m; endmodule\n";
+    assert_eq!(fmt(text), "`define A x \\  \nmodule m;\nendmodule\n");
+}
+
+#[test]
+fn comments_after_directives_stay_on_their_line() {
+    let text = "`ifndef Q // guard\n`define A 1 // one\nmodule m; endmodule\n`endif // Q\n";
+    assert_eq!(
+        fmt(text),
+        "`ifndef Q // guard\n`define A 1 // one\nmodule m;\nendmodule\n`endif // Q\n"
+    );
+    // A `\` right before a comment ends the macro there.
+    assert_eq!(
+        fmt("`define A 1 \\// c\nmodule m; endmodule\n"),
+        "`define A 1 \\ // c\nmodule m;\nendmodule\n"
+    );
+}
+
+#[test]
+fn operators_written_apart_stay_apart() {
+    assert_eq!(
+        fmt("module m; assign a = - -b; assign c = ~ &d; endmodule"),
+        "module m;\n  assign a = - -b;\n  assign c = ~ &d;\nendmodule\n"
+    );
+}

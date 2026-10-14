@@ -41,7 +41,8 @@
   (lossless round trip; Verilog with macros and include cycles), the formatter
   (idempotence, range formatting agreeing with whole-file formatting), the linter and its
   fixes, incremental re-analysis of mixed VHDL and Verilog projects (equal to a full
-  analysis) and the language server under `didChange` edits. CI runs each target briefly.
+  analysis) and the language server under `didChange` edits, and the Verilog formatter.
+  CI runs each target briefly.
 
 ### Fixed
 
@@ -59,6 +60,11 @@
 - **Verilog include cycles**: a file including itself more than once on each level of a
   cycle took exponential time to parse (50 s for 175 bytes). At most 1024 included files
   are now read per file.
+- **Range formatting and lone carriage returns**: in a file that breaks lines with a lone
+  `\r` (old Mac line endings), formatting a range dropped the blank lines before it. Such
+  a file is now formatted whole.
+- **Verilog lexer**: a block comment left open in a `` `define `` body and protected text
+  with no end are now syntax errors, as an open block comment elsewhere is.
 
 ## [0.2.1] - 2026-10-14
 
