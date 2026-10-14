@@ -354,8 +354,14 @@ impl World {
             .collect();
     }
 
+    /// The analyzed VHDL file at `path`. A Verilog file is analyzed only
+    /// for its modules, with no VHDL tree to answer requests from.
     pub fn file_id(&self, path: &Path) -> Option<FileId> {
-        self.analysis.file_id(path)
+        let file = self.analysis.file_id(path)?;
+        self.analysis
+            .foreign_modules(file)
+            .is_none()
+            .then_some(file)
     }
 
     /// The text and line index of an analyzed file.

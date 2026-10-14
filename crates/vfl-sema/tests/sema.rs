@@ -89,3 +89,19 @@ fn bundled_libraries_have_no_errors() {
     assert!(analysis.diagnostics().is_empty());
     assert!(analysis.units().len() > 20);
 }
+
+/// Found by fuzzing: an unterminated string ending in a multi-byte
+/// character panicked the type checker.
+#[test]
+fn unterminated_string_ending_in_a_multi_byte_character() {
+    let text = "package n constant:=\"qê";
+    for std in [Standard::Vhdl1993, Standard::Vhdl2008, Standard::Vhdl2019] {
+        let input = FileInput {
+            path: PathBuf::from("p.vhd"),
+            text: Arc::from(text),
+            green: parse(text, std).green().clone(),
+            libraries: vec!["work".into()],
+        };
+        Analysis::new(vec![input]);
+    }
+}

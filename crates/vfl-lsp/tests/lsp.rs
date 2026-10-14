@@ -1107,3 +1107,36 @@ fn verilog_modules_across_languages() {
     );
     assert_eq!(messages(&mut client), Vec::<String>::new());
 }
+
+/// Found by fuzzing: a word start after a multi-byte character.
+#[test]
+fn completion_after_a_non_ascii_character() {
+    let mut world = vfl_lsp::World::detached();
+    let path = std::env::temp_dir().join("vfl_completion_non_ascii.vhd");
+    world.set_text(path.clone(), "entity e is end;\n--\u{93}x".into());
+    let uri = lsp_types::Url::from_file_path(&path).unwrap().to_string();
+    let completion = vfl_lsp::handle(&mut world, "textDocument/completion", at(&uri, 1, 4));
+    assert!(completion.is_some());
+    let completion = vfl_lsp::editor::completion(&mut world, &path, 21).unwrap();
+    assert_eq!(completion.start, 21);
+}
+
+/// Found by fuzzing: requests on a Verilog document, which has no VHDL
+/// tree, panicked.
+#[test]
+fn requests_on_a_verilog_document() {
+    let mut world = vfl_lsp::World::detached();
+    let path = std::env::temp_dir().join("vfl_requests_on_verilog.sv");
+    world.set_text(path.clone(), "module m(input a);\nendmodule\n".into());
+    world.refresh();
+    let uri = lsp_types::Url::from_file_path(&path).unwrap().to_string();
+    for method in [
+        "textDocument/hover",
+        "textDocument/completion",
+        "textDocument/definition",
+        "textDocument/signatureHelp",
+    ] {
+        vfl_lsp::handle(&mut world, method, at(&uri, 0, 8));
+    }
+    assert!(vfl_lsp::editor::hover(&mut world, &path, 8).is_none());
+}

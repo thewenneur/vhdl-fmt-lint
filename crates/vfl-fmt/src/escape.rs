@@ -106,6 +106,11 @@ pub(crate) fn protected(elems: &[Elem], regions: &[Region]) -> Vec<bool> {
             *mark = true;
         }
         marks[region.directive] = false;
+        // `vfl fmt` keeps the `-- vfl: on` line as written too, so range
+        // formatting must not indent it.
+        if let Some(on) = region.on {
+            marks[on] = true;
+        }
     }
     marks
 }

@@ -23,6 +23,28 @@
   doc` documents each module (parameters, ports, comments, instances) and draws it in
   the hierarchy, block and symbol diagrams. `vfl project` lists the Verilog files with
   their libraries.
+- **Fuzz testing** (`fuzz/`): cargo-fuzz targets for the VHDL and Verilog parsers
+  (lossless round trip; Verilog with macros and include cycles), the formatter
+  (idempotence, range formatting agreeing with whole-file formatting), the linter and its
+  fixes, incremental re-analysis of mixed VHDL and Verilog projects (equal to a full
+  analysis) and the language server under `didChange` edits. CI runs each target briefly.
+
+### Fixed
+
+- **Completion after a non-ASCII character**: the language server panicked when the word
+  before the cursor followed a multi-byte character.
+- **Range formatting and `-- vfl: on`**: formatting a range indented the `-- vfl: on` line,
+  which `vfl fmt` keeps as written, so the two disagreed.
+- **Editor requests in a Verilog file**: hover, completion and the other requests made in
+  an open Verilog file panicked the language server, which analyzes Verilog files only
+  for their modules. They now get no answer, until the editor supports Verilog.
+- **Unterminated string at the end of a file**: the type checker panicked when the string
+  ended in a multi-byte character.
+- **Unterminated Verilog include name**: `` `include "name `` with no closing quote,
+  ending in a multi-byte character, panicked the parser.
+- **Verilog include cycles**: a file including itself more than once on each level of a
+  cycle took exponential time to parse (50 s for 175 bytes). At most 1024 included files
+  are now read per file.
 
 ## [0.2.1] - 2026-10-14
 
