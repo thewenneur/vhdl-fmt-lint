@@ -441,8 +441,9 @@ work.fifo`, or through a component): the generic and port maps of an entity
 instantiation are checked against the module's parameters and ports, and a module goes in the libraries of the units that
 instantiate it, as an entity would (`[project.libraries]` patterns apply to Verilog
 files too). `vfl fmt` formats them (see [Verilog and SystemVerilog](#verilog-and-systemverilog)
-under `[format]`), and the language server reports their syntax errors; they are not
-linted themselves yet. The extension of a file decides how it is parsed: files with
+under `[format]`), and `vfl lint` and the language server lint them with the rules of
+[lints.md](lints.md#verilog-and-systemverilog), names resolved across the project's
+Verilog files and packages. The extension of a file decides how it is parsed: files with
 `sv_extensions` as SystemVerilog, files with `extensions` as Verilog. A
 `` `begin_keywords `` directive in a file still changes the reserved words for the part
 of the file it covers.
@@ -474,9 +475,10 @@ Lint suppression:
 | `-- vfl-ignore rule-a` on a line of its own | Silences them on the next line of code. |
 | `-- vfl-ignore-file rule-a` anywhere | Silences them in the whole file. |
 
-Without rule ids, every rule is silenced. A category (`naming`, `style`, `sema`) silences all
-its rules. Ids may be separated by commas or spaces, and the list may be followed by another
-`--` comment explaining why.
+Without rule ids, every rule is silenced. A category (`naming`, `style`, `sema`, `verilog`)
+silences all its rules. Ids may be separated by commas or spaces, and the list may be followed
+by another `--` comment explaining why. Verilog and SystemVerilog files write the same
+comments with `//` (`// vfl-ignore sema/unused-signal // kept for the next board rev`).
 
 ```vhdl
 signal spare : std_logic;  -- vfl-ignore sema/unused-signal -- kept for the next board rev

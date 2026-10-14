@@ -5,7 +5,7 @@
 # when formatted again, also when only single lines are formatted. Then
 # lints them and fails on more semantic errors than the known ones, and
 # checks that re-analysis after edits, reusing the previous analysis,
-# matches a full analysis. Last, parses and formats Verilog and
+# matches a full analysis. Last, parses, formats and lints Verilog and
 # SystemVerilog projects the same way. Usage: scripts/corpus.sh [CACHE_DIR]
 set -euo pipefail
 
@@ -159,6 +159,29 @@ for config in "" "--config $alt_config"; do
   $fmt --quiet --ranges --verilog $config "$cache/sv-tests/tests" "$cache/picorv32" \
     "$cache/verilog-ethernet/rtl" "$cache/verilog-ethernet/lib" "$cache/common_cells" \
     "$cache/ibex" "$cache/cva6" || status=1
+done
+
+# Linting Verilog and SystemVerilog, each project as a whole. The known
+# semantic errors are real: verilog-ethernet passes ssio_sdr_in an
+# IODDR_STYLE parameter it does not have, a deprecated common_cells file and
+# cva6's PMP testbench pass parameters their modules no longer have. The
+# whole of ibex and cva6, testbenches included, must not panic.
+for expected in "picorv32 0" "verilog-ethernet/rtl 2" "common_cells 1" "ibex/rtl 0" "cva6/core 3"; do
+  read -r name known <<<"$expected"
+  found=$(lint_errors "$cache/$name")
+  if [ "$found" -gt "$known" ]; then
+    echo "$name: $found semantic errors, expected at most $known" >&2
+    (cd "$cache/$name" && "$vfl" lint --output-format concise 2>/dev/null | grep ': error\[sema/' >&2) || true
+    status=1
+  fi
+done
+for project in ibex cva6; do
+  code=0
+  (cd "$cache/$project" && "$vfl" lint >/dev/null 2>&1) || code=$?
+  if [ "$code" -gt 1 ]; then
+    echo "$project: vfl lint failed with status $code" >&2
+    status=1
+  fi
 done
 
 exit $status

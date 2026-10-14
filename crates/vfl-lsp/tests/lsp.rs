@@ -1140,3 +1140,33 @@ fn requests_on_a_verilog_document() {
     }
     assert!(vfl_lsp::editor::hover(&mut world, &path, 8).is_none());
 }
+
+/// Verilog documents get lint problems, their fixes and comments that
+/// silence them in `//` comments.
+#[test]
+fn verilog_problems_and_fixes() {
+    let mut world = vfl_lsp::World::detached();
+    let path = std::env::temp_dir().join("vfl_verilog_problems.sv");
+    let text = "module m (input wire clk, input wire d, output reg q);\n  \
+                always @(posedge clk) q = d;\nendmodule\n";
+    world.set_text(path.clone(), text.into());
+    let problems = vfl_lsp::editor::problems(&mut world);
+    let rules: Vec<&str> = problems.iter().map(|p| p.rule).collect();
+    assert_eq!(rules, ["verilog/blocking-in-clocked"], "{problems:?}");
+    let at = text.find(" = d").unwrap() + 1;
+    let fixes = vfl_lsp::editor::quick_fixes(&mut world, &path, at, at);
+    let titles: Vec<&str> = fixes.iter().map(|f| f.title.as_str()).collect();
+    assert_eq!(
+        titles,
+        [
+            "Use a non-blocking assignment (may change behavior)",
+            "Ignore `verilog/blocking-in-clocked` on this line",
+            "Ignore `verilog/blocking-in-clocked` in this file",
+        ]
+    );
+    assert_eq!(fixes[0].edits, [(at..at + 1, "<=".to_owned())]);
+    assert_eq!(
+        fixes[1].edits[0].1,
+        "  // vfl-ignore verilog/blocking-in-clocked"
+    );
+}

@@ -120,7 +120,8 @@ fn lsp_diagnostic(world: &World, d: &vfl_lint::Diagnostic) -> lsp_types::Diagnos
     }
 }
 
-/// The diagnostics of every user file that has some.
+/// The diagnostics of every user file that has some, Verilog files
+/// included.
 pub fn diagnostics(world: &World) -> Vec<(Url, Vec<lsp_types::Diagnostic>)> {
     let mut by_file: HashMap<FileId, Vec<lsp_types::Diagnostic>> = HashMap::new();
     for d in &world.lint {
@@ -138,32 +139,6 @@ pub fn diagnostics(world: &World) -> Vec<(Url, Vec<lsp_types::Diagnostic>)> {
             ))
         })
         .collect();
-    for file in &world.project.verilog {
-        let errors = file.parse.errors();
-        if errors.is_empty() {
-            continue;
-        }
-        let Some(url) = uri(&file.path) else {
-            continue;
-        };
-        let index = LineIndex::new(&file.text);
-        let doc = Doc {
-            text: &file.text,
-            index: &index,
-        };
-        let diagnostics = errors
-            .iter()
-            .map(|e| lsp_types::Diagnostic {
-                range: doc.range(e.range),
-                severity: Some(lsp_types::DiagnosticSeverity::ERROR),
-                code: Some(NumberOrString::String("syntax/error".into())),
-                source: Some("vfl".into()),
-                message: e.message.clone(),
-                ..Default::default()
-            })
-            .collect();
-        out.push((url, diagnostics));
-    }
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out
 }
@@ -1381,7 +1356,8 @@ pub(crate) fn completion_at(world: &World, file: FileId, offset: TextSize) -> Ve
 }
 
 fn code_actions(world: &mut World, params: CodeActionParams) -> Option<Vec<CodeActionOrCommand>> {
-    let file = file_of(world, &params.text_document.uri)?;
+    // Verilog files have quick fixes too.
+    let file = world.any_file_id(&params.text_document.uri.to_file_path().ok()?)?;
     let doc = world.doc(file);
     let start = doc.offset(params.range.start);
     let end = doc.offset(params.range.end);
@@ -1439,7 +1415,7 @@ fn code_actions(world: &mut World, params: CodeActionParams) -> Option<Vec<CodeA
             }));
         }
     }
-    if wants(&CodeActionKind::new(crate::generate::TESTBENCH_KIND)) {
+    if world.is_vhdl(file) && wants(&CodeActionKind::new(crate::generate::TESTBENCH_KIND)) {
         out.extend(crate::generate::code_actions(world, file, start, end));
     }
     Some(out)

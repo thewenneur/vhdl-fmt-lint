@@ -37,10 +37,23 @@
   folds their blocks, lists and comments, and colors their names by declaration. The VS
   Code extension registers the `verilog` and `systemverilog` languages with a grammar;
   the Notepad++ plugin formats, checks, outlines and colors Verilog buffers.
+- **Verilog and SystemVerilog linting**: `vfl lint`, the language server and the
+  Notepad++ plugin lint Verilog files, with names resolved across the project's modules,
+  packages and included files. New `verilog/*` rules: blocking assignments in clocked
+  blocks and non-blocking ones in combinational blocks (with fixes), multiple drivers,
+  implicit nets, unconnected inputs, missing `` `default_nettype none `` and `case`
+  without `default`. The shared rules apply too: undeclared and duplicate names, unknown
+  ports and parameters of instances, unused, unread and undriven signals, ports and
+  parameters, sensitivity lists (with fixes), inferred latches, width mismatches in
+  assignments and port connections, resets, unreachable and stuck states, positional
+  connections (with a fix), process labels, file names, line style and naming
+  conventions (new `naming/module`, `naming/parameter` and `naming/task`). Suppression
+  comments are written `// vfl-ignore rule`. Tuned on picorv32, verilog-ethernet, ibex,
+  cva6, common_cells and sv-tests.
 - **Fuzz testing** (`fuzz/`): cargo-fuzz targets for the VHDL and Verilog parsers
   (lossless round trip; Verilog with macros and include cycles), the formatter
   (idempotence, range formatting agreeing with whole-file formatting), the linter and its
-  fixes, incremental re-analysis of mixed VHDL and Verilog projects (equal to a full
+  fixes (Verilog's included), incremental re-analysis of mixed VHDL and Verilog projects (equal to a full
   analysis) and the language server under `didChange` edits, and the Verilog formatter.
   CI runs each target briefly.
 

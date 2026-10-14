@@ -46,7 +46,7 @@ enum Command {
         #[arg(long, value_name = "FIRST:LAST", value_parser = parse_lines)]
         lines: Vec<(usize, usize)>,
     },
-    /// Lint VHDL files.
+    /// Lint VHDL, Verilog and SystemVerilog files.
     ///
     /// The whole project around each path is analyzed, so names are
     /// resolved across files, but only the given files are reported.

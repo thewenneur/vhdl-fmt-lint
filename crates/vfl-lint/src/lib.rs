@@ -1,8 +1,11 @@
-//! Configurable VHDL linter.
+//! Configurable VHDL and Verilog linter.
 //!
 //! [`lint`] runs every enabled rule over the files of an [`Analysis`]:
 //! syntax errors, the semantic checks of `vfl-sema` (`sema/*`), style rules
 //! that look at one file (`style/*`) and naming conventions (`naming/*`).
+//! Verilog and SystemVerilog files get the rules of the [`verilog`]
+//! module, which share the VHDL rules' ids where they mean the same and
+//! add `verilog/*` ones.
 //! Each rule's level comes from the file's `[lint]` config (a preset plus
 //! per-rule overrides), and `-- vfl-ignore` comments silence findings.
 //! [`lint_cached`] reuses the findings of files nothing changed for. Some
@@ -14,9 +17,11 @@ pub mod report;
 pub mod rules;
 mod style;
 mod suppress;
+mod verilog;
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use rayon::prelude::*;
 use vfl_config::{Config, Level};
@@ -75,6 +80,10 @@ pub struct FileSettings<'a> {
     pub file: FileId,
     pub syntax_errors: &'a [SyntaxError],
     pub config: &'a Config,
+    /// For a Verilog file, its syntax tree. The Verilog rules read what
+    /// the other Verilog files given declare (packages, modules), so a
+    /// project's Verilog files are best linted together.
+    pub verilog: Option<&'a vfl_verilog_syntax::Parse>,
 }
 
 /// The diagnostics of a lint run, sorted by file and position, and
@@ -94,10 +103,15 @@ pub fn lint(analysis: &Analysis, files: &[FileSettings]) -> LintResult {
 #[derive(Default)]
 pub struct LintCache {
     files: HashMap<PathBuf, CachedFile>,
+    /// What each Verilog file declares for the others, by its tree.
+    exports: HashMap<PathBuf, (GreenNode, Arc<verilog::Exports>)>,
 }
 
 struct CachedFile {
     green: GreenNode,
+    /// A Verilog file's tree, and what its findings depend on in the
+    /// other files.
+    verilog: Option<(GreenNode, u64)>,
     config: Config,
     sema: Vec<vfl_sema::Diagnostic>,
     diagnostics: Vec<Diagnostic>,
@@ -116,14 +130,67 @@ pub fn lint_cached(
     for d in analysis.diagnostics() {
         sema.entry(d.file).or_default().push(d);
     }
+    // What the Verilog files declare, reused for unchanged trees. A VHDL
+    // project skips all of it.
+    let any_verilog = files.iter().any(|s| s.verilog.is_some());
+    let exports: Vec<(PathBuf, Arc<verilog::Exports>)> = if any_verilog {
+        files
+            .par_iter()
+            .filter_map(|settings| {
+                let parse = settings.verilog?;
+                let path = &analysis.files()[settings.file as usize].path;
+                let exports = match cache.exports.get(path) {
+                    Some((green, exports)) if std::ptr::eq(&**green, &**parse.green()) => {
+                        exports.clone()
+                    }
+                    _ => Arc::new(verilog::Exports::new(&parse.syntax(), parse.includes())),
+                };
+                Some((path.clone(), exports))
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    if any_verilog || !cache.exports.is_empty() {
+        cache.exports = files
+            .iter()
+            .filter_map(|s| s.verilog)
+            .zip(&exports)
+            .map(|(parse, (path, e))| (path.clone(), (parse.green().clone(), e.clone())))
+            .collect();
+    }
+    let project = any_verilog.then(|| verilog::Project::new(analysis, exports.clone()));
+    // What each Verilog file sees of the others, for reuse.
+    let dependencies: HashMap<FileId, u64> = match &project {
+        Some(project) => files
+            .iter()
+            .filter(|s| s.verilog.is_some())
+            .zip(&exports)
+            .map(|(s, (_, e))| (s.file, project.dependencies(e)))
+            .collect(),
+        None => HashMap::new(),
+    };
+    let verilog_key = |settings: &FileSettings| {
+        settings
+            .verilog
+            .map(|parse| (parse.green().clone(), dependencies[&settings.file]))
+    };
     // Which files can reuse their findings.
     let reuse: Vec<bool> = files
         .par_iter()
         .map(|settings| {
             let file = &analysis.files()[settings.file as usize];
             let file_sema = sema.get(&settings.file).map(Vec::as_slice).unwrap_or(&[]);
+            let key = verilog_key(settings);
             cache.files.get(&file.path).is_some_and(|cached| {
                 std::ptr::eq(&*cached.green, &*file.green)
+                    && match (&cached.verilog, &key) {
+                        (Some((g, d)), Some((green, deps))) => {
+                            std::ptr::eq(&**g, &**green) && d == deps
+                        }
+                        (None, None) => true,
+                        _ => false,
+                    }
                     && cached.config == *settings.config
                     && cached.sema.len() == file_sema.len()
                     && cached.sema.iter().zip(file_sema).all(|(a, b)| a == *b)
@@ -167,9 +234,11 @@ pub fn lint_cached(
                 settings,
                 file_sema,
                 decls.get(&settings.file).map(Vec::as_slice).unwrap_or(&[]),
+                project.as_ref(),
             );
             let cached = CachedFile {
                 green: file.green.clone(),
+                verilog: verilog_key(settings),
                 config: settings.config.clone(),
                 sema: file_sema.iter().map(|d| (*d).clone()).collect(),
                 diagnostics: diagnostics.clone(),
@@ -210,6 +279,7 @@ fn lint_file(
     settings: &FileSettings,
     sema: &[&vfl_sema::Diagnostic],
     decls: &[&vfl_sema::Decl],
+    project: Option<&verilog::Project>,
 ) -> (Vec<Diagnostic>, Vec<String>) {
     let file = &analysis.files()[settings.file as usize];
     let lint_config = &settings.config.lint;
@@ -229,7 +299,6 @@ fn lint_file(
         .collect();
     let enabled = |id: &str| enabled_cache.get(id).copied().unwrap_or(false);
 
-    let root = file.syntax();
     let mut findings = Vec::new();
     for error in settings.syntax_errors {
         findings.push(Finding::new(
@@ -247,31 +316,55 @@ fn lint_file(
         .and_then(|o| o.get("max"))
         .and_then(|v| v.as_integer())
         .map_or(120, |v| v.max(1) as usize);
-    style::check(
-        &style::StyleContext {
-            text: &file.text,
-            root: &root,
-            file_stem: file
-                .path
-                .file_stem()
-                .map(|s| s.to_string_lossy().into_owned()),
-            max_line_length,
-            indent: settings.config.format.indent as usize,
-            standard: settings.config.standard(),
-        },
-        enabled,
-        &mut findings,
-    );
-    for finding in &mut findings {
-        if finding.rule == "style/positional-association" {
-            finding.fix = name_formals(analysis, settings.file, &root, finding.range);
-        }
-    }
     let (conventions, naming_errors) = naming::conventions(lint_config);
     errors.extend(naming_errors);
-    naming::check(decls, &file.text, &root, &conventions, &mut findings);
+    let suppressions = match (settings.verilog, project) {
+        (Some(parse), Some(project)) => {
+            let root = parse.syntax();
+            verilog::check(
+                &verilog::Context {
+                    text: &file.text,
+                    root: &root,
+                    path: &file.path,
+                    includes: parse.includes(),
+                    project,
+                    max_line_length,
+                    indent: settings.config.format.indent as usize,
+                    conventions: &conventions,
+                    parses: settings.syntax_errors.is_empty(),
+                },
+                enabled,
+                &mut findings,
+            );
+            Suppressions::verilog(&root, &file.text, &file.line_index)
+        }
+        _ => {
+            let root = file.syntax();
+            style::check(
+                &style::StyleContext {
+                    text: &file.text,
+                    root: &root,
+                    file_stem: file
+                        .path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().into_owned()),
+                    max_line_length,
+                    indent: settings.config.format.indent as usize,
+                    standard: settings.config.standard(),
+                },
+                enabled,
+                &mut findings,
+            );
+            for finding in &mut findings {
+                if finding.rule == "style/positional-association" {
+                    finding.fix = name_formals(analysis, settings.file, &root, finding.range);
+                }
+            }
+            naming::check(decls, &file.text, &root, &conventions, &mut findings);
+            Suppressions::new(&root, &file.text, &file.line_index)
+        }
+    };
 
-    let suppressions = Suppressions::new(&root, &file.text, &file.line_index);
     let mut out = Vec::new();
     for finding in findings {
         let level = if finding.rule.starts_with("naming/") {

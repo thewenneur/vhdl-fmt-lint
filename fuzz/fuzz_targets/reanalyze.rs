@@ -11,17 +11,27 @@ use vfl_fuzz::Source;
 use vfl_lint::{FileSettings, LintCache, lint, lint_cached};
 use vfl_sema::{Analysis, FileInput, ForeignInput};
 use vfl_syntax::{Standard, SyntaxError};
+use vfl_verilog_syntax::Parse;
 
-/// The analysis inputs of the files, and the syntax errors of the VHDL ones.
+/// The analysis inputs of the files, the syntax errors of the VHDL ones
+/// and the trees of the Verilog ones.
 fn inputs(
     files: &[Source],
     std: Standard,
     config: &Config,
-) -> (Vec<FileInput>, Vec<ForeignInput>, Vec<Vec<SyntaxError>>) {
-    let (mut vhdl, mut foreign, mut errors) = (Vec::new(), Vec::new(), Vec::new());
+) -> (
+    Vec<FileInput>,
+    Vec<ForeignInput>,
+    Vec<Vec<SyntaxError>>,
+    Vec<Parse>,
+) {
+    let (mut vhdl, mut foreign, mut errors, mut verilog) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     for (i, file) in files.iter().enumerate() {
         if file.verilog {
-            foreign.push(vfl_fuzz::foreign(file.path(i), &file.text, config));
+            let (input, parse) = vfl_fuzz::foreign(file.path(i), &file.text, config);
+            foreign.push(input);
+            verilog.push(parse);
             continue;
         }
         let parse = vfl_syntax::parse(&file.text, std);
@@ -33,17 +43,25 @@ fn inputs(
             libraries: vec!["work".into()],
         });
     }
-    (vhdl, foreign, errors)
+    (vhdl, foreign, errors, verilog)
 }
 
-fn settings<'a>(errors: &'a [Vec<SyntaxError>], config: &'a Config) -> Vec<FileSettings<'a>> {
+/// Verilog files follow the VHDL ones in the analysis.
+fn settings<'a>(
+    errors: &'a [Vec<SyntaxError>],
+    verilog: &'a [Parse],
+    config: &'a Config,
+) -> Vec<FileSettings<'a>> {
     errors
         .iter()
+        .map(|e| (e.as_slice(), None))
+        .chain(verilog.iter().map(|p| (p.errors(), Some(p))))
         .enumerate()
-        .map(|(i, errors)| FileSettings {
+        .map(|(i, (syntax_errors, verilog))| FileSettings {
             file: i as _,
-            syntax_errors: errors,
+            syntax_errors,
             config,
+            verilog,
         })
         .collect()
 }
@@ -57,22 +75,23 @@ fuzz_target!(|data: &[u8]| {
     if edits.is_empty() {
         return;
     }
-    let (mut vhdl, mut foreign, errors) = inputs(&files, std, &config);
+    let (mut vhdl, mut foreign, errors, mut verilog) = inputs(&files, std, &config);
     // Only analyses built by `update` keep what reuse needs.
     let mut analysis = Analysis::new(Vec::new()).update_with_foreign(vhdl.clone(), foreign.clone());
     let mut cache = LintCache::default();
-    lint_cached(&analysis, &settings(&errors, &config), &mut cache);
+    lint_cached(&analysis, &settings(&errors, &verilog, &config), &mut cache);
     for edit in &edits {
         let i = edit.file % files.len();
         vfl_fuzz::apply(&mut files[i].text, edit);
         // Unchanged files keep their trees and modules, as in the server,
         // so that reuse is exercised.
-        let (new_vhdl, new_foreign, errors) = inputs(&files, std, &config);
+        let (new_vhdl, new_foreign, errors, new_verilog) = inputs(&files, std, &config);
         let (mut v, mut f) = (0, 0);
         for (j, file) in files.iter().enumerate() {
             if file.verilog {
                 if j == i {
                     foreign[f] = new_foreign[f].clone();
+                    verilog[f] = new_verilog[f].clone();
                 }
                 f += 1;
             } else {
@@ -85,8 +104,8 @@ fuzz_target!(|data: &[u8]| {
         analysis = analysis.update_with_foreign(vhdl.clone(), foreign.clone());
         let full = Analysis::with_foreign(vhdl.clone(), foreign.clone());
         assert_eq!(analysis.dump(), full.dump(), "analysis after {edit:?}");
-        let cached = lint_cached(&analysis, &settings(&errors, &config), &mut cache);
-        let fresh = lint(&full, &settings(&errors, &config));
+        let cached = lint_cached(&analysis, &settings(&errors, &verilog, &config), &mut cache);
+        let fresh = lint(&full, &settings(&errors, &verilog, &config));
         assert_eq!(
             format!("{:?}", cached.diagnostics),
             format!("{:?}", fresh.diagnostics),

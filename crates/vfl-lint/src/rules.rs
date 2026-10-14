@@ -241,6 +241,55 @@ pub const RULES: &[Rule] = &[
         false,
     ),
     rule(
+        "verilog/blocking-in-clocked",
+        "A clocked `always` block assigns a signal with a blocking assignment (`=`).",
+        Warn,
+        Warn,
+        true,
+    ),
+    rule(
+        "verilog/nonblocking-in-combinational",
+        "A combinational `always` block uses a non-blocking assignment (`<=`).",
+        Warn,
+        Warn,
+        true,
+    ),
+    rule(
+        "verilog/multiple-drivers",
+        "A variable is assigned by more than one `always` block, or by a block and a continuous assignment.",
+        Warn,
+        Error,
+        false,
+    ),
+    rule(
+        "verilog/implicit-net",
+        "A name nothing declares is connected to a port or assigned, which declares an implicit 1-bit wire.",
+        Warn,
+        Error,
+        false,
+    ),
+    rule(
+        "verilog/unconnected-input",
+        "An instance leaves an input port of a project module without a default unconnected.",
+        Off,
+        Warn,
+        false,
+    ),
+    rule(
+        "verilog/default-nettype",
+        "A module is not under `` `default_nettype none ``, so undeclared names become implicit wires.",
+        Off,
+        Warn,
+        false,
+    ),
+    rule(
+        "verilog/case-default",
+        "A `case` in a combinational block has no `default` and does not list every value.",
+        Off,
+        Warn,
+        false,
+    ),
+    rule(
         "style/no-buffer-ports",
         "A port has mode `buffer`.",
         Warn,
@@ -329,6 +378,9 @@ pub const NAMING_KINDS: &[(&str, &str)] = &[
     ("process", "process labels"),
     ("instance", "instance labels"),
     ("generate", "generate statement labels"),
+    ("module", "Verilog modules, interfaces and programs"),
+    ("parameter", "Verilog parameters"),
+    ("task", "Verilog tasks"),
 ];
 
 /// Looks up a rule by id.

@@ -971,12 +971,14 @@ version = "0.2.1"
 dependencies = [
  "rayon",
  "regex",
+ "rowan",
  "serde_json",
  "toml",
  "vfl-config",
  "vfl-project",
  "vfl-sema",
  "vfl-syntax",
+ "vfl-verilog-syntax",
 ]
 
 [[package]]

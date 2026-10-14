@@ -1,7 +1,7 @@
 //! The fixes offered for the problems in a range: each rule's own fix,
 //! renaming a declaration to follow a naming convention, importing a name
 //! that is declared in a package, and silencing the rule with a
-//! `-- vfl-ignore` comment.
+//! `-- vfl-ignore` comment (`// vfl-ignore` in Verilog).
 
 use vfl_sema::{DeclKind, FileId};
 use vfl_syntax::{SyntaxKind, TextRange, TextSize};
@@ -68,7 +68,7 @@ pub(crate) fn actions(world: &World, file: FileId, start: TextSize, end: TextSiz
                 edits: Vec::new(),
             });
         }
-        if d.rule == vfl_sema::codes::UNRESOLVED_NAME {
+        if d.rule == vfl_sema::codes::UNRESOLVED_NAME && world.is_vhdl(file) {
             fixes.extend(
                 imports(world, file, d.range)
                     .into_iter()
@@ -223,21 +223,22 @@ fn silence(
     rule: &str,
 ) -> Vec<(String, (FileId, TextRange, String))> {
     let text = world.doc(file).text;
+    let marker = if world.is_vhdl(file) { "--" } else { "//" };
     let start = usize::from(range.start());
     let line_start = text[..start].rfind('\n').map_or(0, |i| i + 1);
     let line_end = text[start..].find('\n').map_or(text.len(), |i| start + i);
     let line = text[line_start..line_end].trim_end_matches('\r');
     let indent = &line[..line.len() - line.trim_start().len()];
     let mut out = Vec::new();
-    let on_line = match ignore_comment(line) {
+    let on_line = match ignore_comment(line, marker) {
         // Add the rule to the comment that is there.
         Some(after_rules) => (line_start + after_rules, format!(", {rule}")),
-        None if !line.contains("--") => (
+        None if !line.contains(marker) => (
             line_start + line.trim_end().len(),
-            format!("  -- vfl-ignore {rule}"),
+            format!("  {marker} vfl-ignore {rule}"),
         ),
         // A comment ends the line: silence it from the line above.
-        None => (line_start, format!("{indent}-- vfl-ignore {rule}\n")),
+        None => (line_start, format!("{indent}{marker} vfl-ignore {rule}\n")),
     };
     out.push((
         format!("Ignore `{rule}` on this line"),
@@ -252,22 +253,23 @@ fn silence(
         (
             file,
             TextRange::empty(TextSize::from(0)),
-            format!("-- vfl-ignore-file {rule}\n"),
+            format!("{marker} vfl-ignore-file {rule}\n"),
         ),
     ));
     out
 }
 
 /// Where the rule list of a trailing `-- vfl-ignore rules` comment ends in
-/// `line`, if it has one that names rules.
-fn ignore_comment(line: &str) -> Option<usize> {
-    let comment = line.find("-- vfl-ignore ")?;
-    if line[comment..].starts_with("-- vfl-ignore-file") {
+/// `line`, if it has one that names rules. `marker` starts a comment.
+fn ignore_comment(line: &str, marker: &str) -> Option<usize> {
+    let start = format!("{marker} vfl-ignore ");
+    let comment = line.find(&start)?;
+    if line[comment..].starts_with(&format!("{marker} vfl-ignore-file")) {
         return None;
     }
-    let rules_start = comment + "-- vfl-ignore ".len();
+    let rules_start = comment + start.len();
     let rest = &line[rules_start..];
-    let rules = rest.find("--").map_or(rest, |i| &rest[..i]).trim_end();
+    let rules = rest.find(marker).map_or(rest, |i| &rest[..i]).trim_end();
     (!rules.is_empty()).then_some(rules_start + rules.len())
 }
 
@@ -278,11 +280,14 @@ mod tests {
     #[test]
     fn trailing_ignore_comments_are_extended() {
         let line = "  signal x : bit;  -- vfl-ignore sema/unused-signal -- legacy";
-        let at = ignore_comment(line).unwrap();
+        let at = ignore_comment(line, "--").unwrap();
         assert_eq!(
             &line[..at],
             "  signal x : bit;  -- vfl-ignore sema/unused-signal"
         );
-        assert_eq!(ignore_comment("  x <= y; -- note"), None);
+        assert_eq!(ignore_comment("  x <= y; -- note", "--"), None);
+        let line = "  wire x;  // vfl-ignore sema/unused-signal // legacy";
+        let at = ignore_comment(line, "//").unwrap();
+        assert_eq!(&line[..at], "  wire x;  // vfl-ignore sema/unused-signal");
     }
 }

@@ -311,7 +311,7 @@ pub fn check(
 }
 
 /// `naming/<kind>` as a static string.
-fn leak_id(kind: &str) -> &'static str {
+pub(crate) fn leak_id(kind: &str) -> &'static str {
     const IDS: &[(&str, &str)] = &[
         ("entity", "naming/entity"),
         ("architecture", "naming/architecture"),
@@ -333,6 +333,9 @@ fn leak_id(kind: &str) -> &'static str {
         ("process", "naming/process"),
         ("instance", "naming/instance"),
         ("generate", "naming/generate"),
+        ("module", "naming/module"),
+        ("parameter", "naming/parameter"),
+        ("task", "naming/task"),
     ];
     IDS.iter()
         .find(|(k, _)| *k == kind)

@@ -20,7 +20,7 @@ pub struct StyleContext<'a> {
 pub fn check(ctx: &StyleContext, enabled: impl Fn(&str) -> bool, out: &mut Vec<Finding>) {
     if enabled("style/line-length") || enabled("style/trailing-whitespace") || enabled("style/tabs")
     {
-        lines(ctx, &enabled, out);
+        lines(ctx.text, ctx.max_line_length, ctx.indent, &enabled, out);
     }
     for node in ctx.root.descendants() {
         match node.kind() {
@@ -141,26 +141,31 @@ fn first_token(node: &SyntaxNode, kind: SyntaxKind) -> Option<vfl_syntax::Syntax
         .find(|t| t.kind() == kind)
 }
 
-fn lines(ctx: &StyleContext, enabled: &impl Fn(&str) -> bool, out: &mut Vec<Finding>) {
+/// `style/line-length`, `style/trailing-whitespace` and `style/tabs`,
+/// which only look at the text.
+pub(crate) fn lines(
+    text: &str,
+    max_line_length: usize,
+    tab_width: usize,
+    enabled: &impl Fn(&str) -> bool,
+    out: &mut Vec<Finding>,
+) {
     let mut offset = 0usize;
-    for line in ctx.text.split_inclusive('\n') {
+    for line in text.split_inclusive('\n') {
         let content = line.trim_end_matches(['\n', '\r']);
         let start = offset;
         offset += line.len();
         if enabled("style/line-length") {
             let width = content.chars().count();
-            if width > ctx.max_line_length {
+            if width > max_line_length {
                 let cut = content
                     .char_indices()
-                    .nth(ctx.max_line_length)
+                    .nth(max_line_length)
                     .map_or(content.len(), |(i, _)| i);
                 out.push(Finding::new(
                     "style/line-length",
                     range(start + cut, start + content.len()),
-                    format!(
-                        "line is {width} characters long (max {})",
-                        ctx.max_line_length
-                    ),
+                    format!("line is {width} characters long (max {max_line_length})"),
                 ));
             }
         }
@@ -186,7 +191,7 @@ fn lines(ctx: &StyleContext, enabled: &impl Fn(&str) -> bool, out: &mut Vec<Find
             let indent = content.len() - content.trim_start_matches([' ', '\t']).len();
             if content[..indent].contains('\t') {
                 let r = range(start, start + indent);
-                let tab = ctx.indent.max(1);
+                let tab = tab_width.max(1);
                 let mut column = 0;
                 for c in content[..indent].chars() {
                     column = if c == '\t' {
