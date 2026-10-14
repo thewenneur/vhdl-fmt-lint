@@ -130,10 +130,10 @@ jobs:
       - name: Fuzz each target for 45 seconds
         working-directory: fuzz
         run: |
-          for target in parse format lint reanalyze lsp; do
+          for target in parse format verilog lint reanalyze lsp; do
             echo "::group::$target"
             cargo +nightly fuzz run -s none "$target" "corpus/$target" -- \
-              -dict=vhdl.dict -max_total_time=45 -max_len=16384 -timeout=30
+              -dict=hdl.dict -max_total_time=45 -max_len=16384 -timeout=30
             echo "::endgroup::"
           done
       - if: failure()

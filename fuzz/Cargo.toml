@@ -22,8 +22,10 @@ vfl-config = { path = "../crates/vfl-config" }
 vfl-fmt = { path = "../crates/vfl-fmt" }
 vfl-lint = { path = "../crates/vfl-lint" }
 vfl-lsp = { path = "../crates/vfl-lsp" }
+vfl-project = { path = "../crates/vfl-project" }
 vfl-sema = { path = "../crates/vfl-sema" }
 vfl-syntax = { path = "../crates/vfl-syntax" }
+vfl-verilog-syntax = { path = "../crates/vfl-verilog-syntax" }
 
 [profile.release]
 debug = 1
@@ -59,6 +61,13 @@ bench = false
 [[bin]]
 name = "lsp"
 path = "fuzz_targets/lsp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "verilog"
+path = "fuzz_targets/verilog.rs"
 test = false
 doc = false
 bench = false

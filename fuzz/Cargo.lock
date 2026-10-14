@@ -774,8 +774,10 @@ dependencies = [
  "vfl-fmt",
  "vfl-lint",
  "vfl-lsp",
+ "vfl-project",
  "vfl-sema",
  "vfl-syntax",
+ "vfl-verilog-syntax",
 ]
 
 [[package]]
@@ -831,7 +833,9 @@ dependencies = [
  "thiserror",
  "toml",
  "vfl-config",
+ "vfl-sema",
  "vfl-syntax",
+ "vfl-verilog-syntax",
  "yaml-rust2",
 ]
 
@@ -849,6 +853,14 @@ name = "vfl-syntax"
 version = "0.2.1"
 dependencies = [
  "rowan",
+]
+
+[[package]]
+name = "vfl-verilog-syntax"
+version = "0.2.1"
+dependencies = [
+ "rowan",
+ "vfl-syntax",
 ]
 
 [[package]]

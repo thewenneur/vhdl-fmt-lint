@@ -1,19 +1,13 @@
-//! The language server never panics while documents are edited the way
-//! editors send changes, positions out of range included, and every
-//! request is answered at arbitrary positions. After the edits, its
+//! The language server never panics while VHDL and Verilog documents are
+//! edited the way editors send changes, positions out of range included,
+//! and every request is answered at arbitrary positions. After the edits, its
 //! diagnostics are those of a server that opened the final text.
 #![no_main]
-
-use std::path::PathBuf;
 
 use libfuzzer_sys::fuzz_target;
 use lsp_types::{Position, Range, TextDocumentContentChangeEvent, Url};
 use serde_json::{Value, json};
 use vfl_lsp::World;
-
-fn path(i: usize) -> PathBuf {
-    PathBuf::from(format!("/fuzz/f{i}.vhd"))
-}
 
 /// A position from raw edit bytes: often in range, sometimes past the end
 /// of the line or of the text, as a buggy or racing client may send.
@@ -78,18 +72,18 @@ fn requests(world: &mut World, uri: &Url, at: Position) {
 }
 
 fuzz_target!(|data: &[u8]| {
-    let (files, script) = vfl_fuzz::split(data);
+    let (mut files, script) = vfl_fuzz::split(data);
     let edits = vfl_fuzz::edits(script);
     let mut world = World::detached();
-    let mut texts = files.clone();
-    for (i, text) in files.into_iter().enumerate() {
-        world.set_text(path(i), text);
+    for (i, file) in files.iter().enumerate() {
+        world.set_text(file.path(i), file.text.clone());
     }
     world.refresh();
     for edit in &edits {
-        let i = edit.file % texts.len();
-        let uri = Url::from_file_path(path(i)).unwrap();
-        let start = position(&texts[i], edit.start);
+        let i = edit.file % files.len();
+        let path = files[i].path(i);
+        let uri = Url::from_file_path(&path).unwrap();
+        let start = position(&files[i].text, edit.start);
         let end = Position::new(
             start.line + (edit.len as u32 >> 3),
             (edit.len as u32 & 7) * 9,
@@ -101,19 +95,21 @@ fuzz_target!(|data: &[u8]| {
             range_length: None,
             text: edit.text.clone(),
         };
-        vfl_lsp::apply_changes(&mut texts[i], vec![change]);
-        world.set_text(path(i), texts[i].clone());
+        vfl_lsp::apply_changes(&mut files[i].text, vec![change]);
+        world.set_text(path, files[i].text.clone());
         world.refresh();
         requests(&mut world, &uri, start);
     }
     if edits.is_empty() {
-        let uri = Url::from_file_path(path(0)).unwrap();
-        requests(&mut world, &uri, Position::new(0, 0));
+        for (i, file) in files.iter().enumerate() {
+            let uri = Url::from_file_path(file.path(i)).unwrap();
+            requests(&mut world, &uri, Position::new(0, 0));
+        }
         return;
     }
     let mut fresh = World::detached();
-    for (i, text) in texts.into_iter().enumerate() {
-        fresh.set_text(path(i), text);
+    for (i, file) in files.iter().enumerate() {
+        fresh.set_text(file.path(i), file.text.clone());
     }
     fresh.refresh();
     assert_eq!(

@@ -1,6 +1,8 @@
 //! Helpers shared by the fuzz targets: turning fuzzer bytes into source
 //! text, a standard, a configuration and a script of edits.
 
+use std::path::{Path, PathBuf};
+
 use vfl_config::Config;
 use vfl_syntax::Standard;
 
@@ -55,16 +57,71 @@ preset = "strict"
     Config::from_toml_str(CONFIGS[byte as usize % CONFIGS.len()]).expect("valid fuzz config")
 }
 
+/// A source file of fuzzer input.
+#[derive(Debug, Clone)]
+pub struct Source {
+    pub text: String,
+    /// A Verilog or SystemVerilog file rather than VHDL.
+    pub verilog: bool,
+}
+
+impl Source {
+    /// Its path in a project: `/fuzz/f<i>.vhd`, or `.sv` for Verilog.
+    pub fn path(&self, i: usize) -> PathBuf {
+        let extension = if self.verilog { "sv" } else { "vhd" };
+        PathBuf::from(format!("/fuzz/f{i}.{extension}"))
+    }
+}
+
 /// Splits fuzzer input into source files and an edit script: the files
-/// come first, separated by `\x01`, then a `\0` and the script. A plain
-/// VHDL file is one file and no edits, so source files make good seeds.
-pub fn split(data: &[u8]) -> (Vec<String>, &[u8]) {
+/// come first, each starting with `\x01` (VHDL) or `\x02` (Verilog) but
+/// the first, which is VHDL unless it starts with `\x02`; then a `\0` and
+/// the script. A plain VHDL file is one file and no edits, so source files
+/// make good seeds.
+pub fn split(data: &[u8]) -> (Vec<Source>, &[u8]) {
     let (files, script) = match data.iter().position(|&b| b == 0) {
         Some(i) => (&data[..i], &data[i + 1..]),
         None => (data, &[][..]),
     };
-    let files = files.split(|&b| b == 1).take(4).map(text).collect();
-    (files, script)
+    let mut sources = Vec::new();
+    let mut verilog = false;
+    let mut start = 0;
+    for (i, &b) in files.iter().enumerate() {
+        if b == 1 || b == 2 {
+            if i > 0 {
+                sources.push(Source {
+                    text: text(&files[start..i]),
+                    verilog,
+                });
+            }
+            verilog = b == 2;
+            start = i + 1;
+        }
+    }
+    sources.push(Source {
+        text: text(&files[start..]),
+        verilog,
+    });
+    sources.truncate(4);
+    (sources, script)
+}
+
+/// A Verilog file as the analysis of VHDL sees it: its modules.
+pub fn foreign(path: PathBuf, text: &str, config: &Config) -> vfl_sema::ForeignInput {
+    let file = vfl_project::VerilogFile::new(
+        path,
+        text.to_owned(),
+        vfl_project::Encoding::Utf8,
+        config,
+        Path::new("/fuzz"),
+        vfl_config::VerilogStandard::Sv2017,
+    );
+    vfl_sema::ForeignInput {
+        path: file.path,
+        text: file.text,
+        libraries: vec!["work".into()],
+        modules: file.foreign,
+    }
 }
 
 /// Text edits likely to change meaning rather than just break the syntax.

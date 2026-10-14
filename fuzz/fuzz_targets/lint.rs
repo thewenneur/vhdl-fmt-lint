@@ -1,9 +1,8 @@
-//! Semantic analysis and every lint rule never panic, on up to four files
-//! of one library, and applying their fixes never breaks the syntax of a
-//! file that parsed.
+//! Semantic analysis and every lint rule never panic, on up to four VHDL
+//! and Verilog files of one library, and applying their fixes never breaks
+//! the syntax of a file that parsed.
 #![no_main]
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use libfuzzer_sys::fuzz_target;
@@ -15,19 +14,33 @@ fuzz_target!(|data: &[u8]| {
     let pick = script.first().copied().unwrap_or(0);
     let config = vfl_fuzz::config(pick);
     let std = vfl_fuzz::standard(pick / 4);
-    let parses: Vec<_> = files.iter().map(|t| vfl_syntax::parse(t, std)).collect();
-    let inputs = files
+    let vhdl: Vec<(usize, &str)> = files
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| !f.verilog)
+        .map(|(i, f)| (i, f.text.as_str()))
+        .collect();
+    let foreign = files
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| f.verilog)
+        .map(|(i, f)| vfl_fuzz::foreign(f.path(i), &f.text, &config))
+        .collect();
+    let parses: Vec<_> = vhdl
+        .iter()
+        .map(|(_, t)| vfl_syntax::parse(t, std))
+        .collect();
+    let inputs = vhdl
         .iter()
         .zip(&parses)
-        .enumerate()
-        .map(|(i, (text, parse))| FileInput {
-            path: PathBuf::from(format!("/fuzz/f{i}.vhd")),
-            text: Arc::from(text.as_str()),
+        .map(|(&(i, text), parse)| FileInput {
+            path: files[i].path(i),
+            text: Arc::from(text),
             green: parse.green().clone(),
             libraries: vec!["work".into()],
         })
         .collect();
-    let analysis = Analysis::new(inputs);
+    let analysis = Analysis::with_foreign(inputs, foreign);
     let settings: Vec<FileSettings> = parses
         .iter()
         .enumerate()
@@ -38,7 +51,7 @@ fuzz_target!(|data: &[u8]| {
         })
         .collect();
     let result = lint(&analysis, &settings);
-    for (i, text) in files.iter().enumerate() {
+    for (i, &(_, text)) in vhdl.iter().enumerate() {
         let fixes = result
             .diagnostics
             .iter()

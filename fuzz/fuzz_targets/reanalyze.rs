@@ -1,34 +1,48 @@
-//! Re-analysis after edits, reusing the previous analysis and lint
-//! results as the language server does, gives exactly what analyzing and
-//! linting from scratch gives.
+//! Re-analysis after edits to VHDL and Verilog files, reusing the previous
+//! analysis and lint results as the language server does, gives exactly
+//! what analyzing and linting from scratch gives.
 #![no_main]
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use libfuzzer_sys::fuzz_target;
+use vfl_config::Config;
+use vfl_fuzz::Source;
 use vfl_lint::{FileSettings, LintCache, lint, lint_cached};
-use vfl_sema::{Analysis, FileInput};
-use vfl_syntax::Standard;
+use vfl_sema::{Analysis, FileInput, ForeignInput};
+use vfl_syntax::{Standard, SyntaxError};
 
-fn input(i: usize, text: &str, std: Standard) -> FileInput {
-    FileInput {
-        path: PathBuf::from(format!("/fuzz/f{i}.vhd")),
-        text: Arc::from(text),
-        green: vfl_syntax::parse(text, std).green().clone(),
-        libraries: vec!["work".into()],
+/// The analysis inputs of the files, and the syntax errors of the VHDL ones.
+fn inputs(
+    files: &[Source],
+    std: Standard,
+    config: &Config,
+) -> (Vec<FileInput>, Vec<ForeignInput>, Vec<Vec<SyntaxError>>) {
+    let (mut vhdl, mut foreign, mut errors) = (Vec::new(), Vec::new(), Vec::new());
+    for (i, file) in files.iter().enumerate() {
+        if file.verilog {
+            foreign.push(vfl_fuzz::foreign(file.path(i), &file.text, config));
+            continue;
+        }
+        let parse = vfl_syntax::parse(&file.text, std);
+        errors.push(parse.errors().to_vec());
+        vhdl.push(FileInput {
+            path: file.path(i),
+            text: Arc::from(file.text.as_str()),
+            green: parse.green().clone(),
+            libraries: vec!["work".into()],
+        });
     }
+    (vhdl, foreign, errors)
 }
 
-fn settings<'a>(
-    inputs: &[FileInput],
-    errors: &'a [Vec<vfl_syntax::SyntaxError>],
-    config: &'a vfl_config::Config,
-) -> Vec<FileSettings<'a>> {
-    (0..inputs.len())
-        .map(|i| FileSettings {
+fn settings<'a>(errors: &'a [Vec<SyntaxError>], config: &'a Config) -> Vec<FileSettings<'a>> {
+    errors
+        .iter()
+        .enumerate()
+        .map(|(i, errors)| FileSettings {
             file: i as _,
-            syntax_errors: &errors[i],
+            syntax_errors: errors,
             config,
         })
         .collect()
@@ -43,32 +57,36 @@ fuzz_target!(|data: &[u8]| {
     if edits.is_empty() {
         return;
     }
-    let mut inputs: Vec<FileInput> = files
-        .iter()
-        .enumerate()
-        .map(|(i, t)| input(i, t, std))
-        .collect();
+    let (mut vhdl, mut foreign, errors) = inputs(&files, std, &config);
     // Only analyses built by `update` keep what reuse needs.
-    let mut analysis = Analysis::new(Vec::new()).update(inputs.clone());
+    let mut analysis = Analysis::new(Vec::new()).update_with_foreign(vhdl.clone(), foreign.clone());
     let mut cache = LintCache::default();
-    let errors = |files: &[String]| -> Vec<_> {
-        files
-            .iter()
-            .map(|t| vfl_syntax::parse(t, std).errors().to_vec())
-            .collect()
-    };
-    let errs = errors(&files);
-    lint_cached(&analysis, &settings(&inputs, &errs, &config), &mut cache);
+    lint_cached(&analysis, &settings(&errors, &config), &mut cache);
     for edit in &edits {
         let i = edit.file % files.len();
-        vfl_fuzz::apply(&mut files[i], edit);
-        inputs[i] = input(i, &files[i], std);
-        analysis = analysis.update(inputs.clone());
-        let full = Analysis::new(inputs.clone());
+        vfl_fuzz::apply(&mut files[i].text, edit);
+        // Unchanged files keep their trees and modules, as in the server,
+        // so that reuse is exercised.
+        let (new_vhdl, new_foreign, errors) = inputs(&files, std, &config);
+        let (mut v, mut f) = (0, 0);
+        for (j, file) in files.iter().enumerate() {
+            if file.verilog {
+                if j == i {
+                    foreign[f] = new_foreign[f].clone();
+                }
+                f += 1;
+            } else {
+                if j == i {
+                    vhdl[v] = new_vhdl[v].clone();
+                }
+                v += 1;
+            }
+        }
+        analysis = analysis.update_with_foreign(vhdl.clone(), foreign.clone());
+        let full = Analysis::with_foreign(vhdl.clone(), foreign.clone());
         assert_eq!(analysis.dump(), full.dump(), "analysis after {edit:?}");
-        let errs = errors(&files);
-        let cached = lint_cached(&analysis, &settings(&inputs, &errs, &config), &mut cache);
-        let fresh = lint(&full, &settings(&inputs, &errs, &config));
+        let cached = lint_cached(&analysis, &settings(&errors, &config), &mut cache);
+        let fresh = lint(&full, &settings(&errors, &config));
         assert_eq!(
             format!("{:?}", cached.diagnostics),
             format!("{:?}", fresh.diagnostics),
