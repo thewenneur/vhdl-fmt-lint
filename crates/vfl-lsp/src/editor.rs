@@ -352,42 +352,10 @@ pub fn problems(world: &mut World) -> Vec<ProjectProblem> {
             })
         })
         .collect();
-    for file in &world.project.verilog {
-        if file.parse.errors().is_empty() {
-            continue;
-        }
-        let index = vfl_syntax::LineIndex::new(&file.text);
-        let doc = crate::world::Doc {
-            text: &file.text,
-            index: &index,
-        };
-        for error in file.parse.errors() {
-            out.push(ProjectProblem {
-                location: location_in(file.path.clone(), doc, error.range),
-                level: vfl_config::Level::Error,
-                rule: "syntax/error",
-                message: error.message.clone(),
-            });
-        }
-    }
     out.sort_by(|a, b| {
         (&a.location.path, a.location.range.start).cmp(&(&b.location.path, b.location.range.start))
     });
     out
-}
-
-/// The syntax errors of the Verilog file at `path`, with their byte
-/// ranges.
-pub fn verilog_syntax_errors(world: &World, path: &Path) -> Vec<(Range<usize>, String)> {
-    crate::verilog::file(world, path)
-        .map(|file| {
-            file.parse
-                .errors()
-                .iter()
-                .map(|e| (e.range.into(), e.message.clone()))
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 /// The declarations of the file at `path`, in order, nested as in the
@@ -553,7 +521,7 @@ pub struct QuickFix {
 /// that silence the rules.
 pub fn quick_fixes(world: &mut World, path: &Path, start: usize, end: usize) -> Vec<QuickFix> {
     world.refresh();
-    let Some(file) = world.file_id(path) else {
+    let Some(file) = world.any_file_id(path) else {
         return Vec::new();
     };
     let at = |offset: usize| TextSize::from(offset.min(u32::MAX as usize) as u32);
@@ -583,7 +551,7 @@ pub fn quick_fixes(world: &mut World, path: &Path, start: usize, end: usize) -> 
 /// not overlap another, and how many were. `None` when there is none.
 pub fn fix_all(world: &mut World, path: &Path) -> Option<(String, usize)> {
     world.refresh();
-    let file = world.file_id(path)?;
+    let file = world.any_file_id(path)?;
     let text = world.doc(file).text;
     let fixes = crate::handlers::compatible_fixes(
         text,

@@ -233,7 +233,8 @@ impl Engine {
             findings: Vec::new(),
             config_errors: world.config_errors.clone(),
         };
-        if let Some(id) = world.file_id(&file_path) {
+        // VHDL and Verilog files alike.
+        if let Some(id) = world.any_file_id(&file_path) {
             output.findings = world
                 .lint
                 .iter()
@@ -248,17 +249,6 @@ impl Engine {
                     },
                     rule: d.rule,
                     message: d.message.clone(),
-                })
-                .collect();
-        } else {
-            output.findings = editor::verilog_syntax_errors(world, &file_path)
-                .into_iter()
-                .map(|(range, message)| Finding {
-                    start: range.start,
-                    end: range.end,
-                    severity: Severity::Error,
-                    rule: "syntax/error",
-                    message,
                 })
                 .collect();
         }

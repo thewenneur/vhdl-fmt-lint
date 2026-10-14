@@ -1,6 +1,6 @@
 //! Semantic analysis and every lint rule never panic, on up to four VHDL
 //! and Verilog files of one library, and applying their fixes never breaks
-//! the syntax of a file that parsed.
+//! the syntax of a file that parsed, in either language.
 #![no_main]
 
 use std::sync::Arc;
@@ -20,11 +20,16 @@ fuzz_target!(|data: &[u8]| {
         .filter(|(_, f)| !f.verilog)
         .map(|(i, f)| (i, f.text.as_str()))
         .collect();
-    let foreign = files
+    let (foreign, verilog): (Vec<_>, Vec<_>) = files
         .iter()
         .enumerate()
         .filter(|(_, f)| f.verilog)
         .map(|(i, f)| vfl_fuzz::foreign(f.path(i), &f.text, &config))
+        .unzip();
+    let verilog_texts: Vec<&str> = files
+        .iter()
+        .filter(|f| f.verilog)
+        .map(|f| f.text.as_str())
         .collect();
     let parses: Vec<_> = vhdl
         .iter()
@@ -41,13 +46,17 @@ fuzz_target!(|data: &[u8]| {
         })
         .collect();
     let analysis = Analysis::with_foreign(inputs, foreign);
+    // Verilog files follow the VHDL ones in the analysis.
     let settings: Vec<FileSettings> = parses
         .iter()
+        .map(|parse| (parse.errors(), None))
+        .chain(verilog.iter().map(|parse| (parse.errors(), Some(parse))))
         .enumerate()
-        .map(|(i, parse)| FileSettings {
+        .map(|(i, (syntax_errors, verilog))| FileSettings {
             file: i as _,
-            syntax_errors: parse.errors(),
+            syntax_errors,
             config: &config,
+            verilog,
         })
         .collect();
     let result = lint(&analysis, &settings);
@@ -60,6 +69,25 @@ fuzz_target!(|data: &[u8]| {
         let (fixed, _) = apply_fixes(text, fixes);
         if parses[i].errors().is_empty() {
             let errors = vfl_syntax::parse(&fixed, std).errors().to_vec();
+            assert!(
+                errors.is_empty(),
+                "fixes broke the syntax: {errors:?}\n--- fixed ---\n{fixed}"
+            );
+        }
+    }
+    for (j, text) in verilog_texts.iter().enumerate() {
+        let i = vhdl.len() + j;
+        let fixes = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.file as usize == i)
+            .filter_map(|d| d.fix.as_ref());
+        let (fixed, _) = apply_fixes(text, fixes);
+        if verilog[j].errors().is_empty() {
+            let standard = vfl_verilog_syntax::Standard::Sv2017;
+            let errors = vfl_verilog_syntax::parse(&fixed, standard)
+                .errors()
+                .to_vec();
             assert!(
                 errors.is_empty(),
                 "fixes broke the syntax: {errors:?}\n--- fixed ---\n{fixed}"

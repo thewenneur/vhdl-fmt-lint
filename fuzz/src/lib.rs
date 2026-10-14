@@ -107,7 +107,11 @@ pub fn split(data: &[u8]) -> (Vec<Source>, &[u8]) {
 }
 
 /// A Verilog file as the analysis of VHDL sees it: its modules.
-pub fn foreign(path: PathBuf, text: &str, config: &Config) -> vfl_sema::ForeignInput {
+pub fn foreign(
+    path: PathBuf,
+    text: &str,
+    config: &Config,
+) -> (vfl_sema::ForeignInput, vfl_verilog_syntax::Parse) {
     let file = vfl_project::VerilogFile::new(
         path,
         text.to_owned(),
@@ -116,12 +120,13 @@ pub fn foreign(path: PathBuf, text: &str, config: &Config) -> vfl_sema::ForeignI
         Path::new("/fuzz"),
         vfl_config::VerilogStandard::Sv2017,
     );
-    vfl_sema::ForeignInput {
+    let input = vfl_sema::ForeignInput {
         path: file.path,
         text: file.text,
         libraries: vec!["work".into()],
         modules: file.foreign,
-    }
+    };
+    (input, file.parse)
 }
 
 /// Text edits likely to change meaning rather than just break the syntax.

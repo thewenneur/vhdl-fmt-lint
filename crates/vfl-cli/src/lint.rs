@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail};
 use vfl_config::{Config, Level};
 use vfl_lint::report::{self, Format, Source};
 use vfl_lint::{Diagnostic, FileSettings};
-use vfl_project::{Project, collect_project, collect_sources, encode, find_root};
+use vfl_project::{Project, collect_all_sources, collect_project, encode, find_root};
 
 use crate::ConfigCache;
 
@@ -38,8 +38,10 @@ fn requested(paths: &[PathBuf]) -> Result<Vec<(PathBuf, Vec<PathBuf>)>> {
         let root = find_root(&path);
         let files = if path.is_dir() {
             let config = vfl_config::load_for_dir(&path)?;
-            collect_sources(&path, &config.project)
-                .with_context(|| format!("scanning {}", path.display()))?
+            let (mut vhdl, verilog) = collect_all_sources(&path, &config.project, &config.verilog)
+                .with_context(|| format!("scanning {}", path.display()))?;
+            vhdl.extend(verilog);
+            vhdl
         } else {
             vec![path.clone()]
         };
@@ -110,6 +112,12 @@ pub fn run(options: Options) -> Result<bool> {
                     file_configs.push((i, configs.for_file(&file.path)?.clone()));
                 }
             }
+            // Every Verilog file is linted, for what each declares for the
+            // others; only the requested ones are reported.
+            let mut verilog_configs: Vec<(usize, Config)> = Vec::new();
+            for (i, file) in project.verilog.iter().enumerate() {
+                verilog_configs.push((i, configs.for_file(&file.path)?.clone()));
+            }
             let settings: Vec<FileSettings> = file_configs
                 .iter()
                 .filter_map(|(i, config)| {
@@ -118,10 +126,23 @@ pub fn run(options: Options) -> Result<bool> {
                         file: analysis.file_id(&file.path)?,
                         syntax_errors: file.parse.errors(),
                         config,
+                        verilog: None,
                     })
                 })
+                .chain(verilog_configs.iter().filter_map(|(i, config)| {
+                    let file = &project.verilog[*i];
+                    Some(FileSettings {
+                        file: analysis.file_id(&file.path)?,
+                        syntax_errors: file.parse.errors(),
+                        config,
+                        verilog: Some(&file.parse),
+                    })
+                }))
                 .collect();
-            let result = vfl_lint::lint(&analysis, &settings);
+            let mut result = vfl_lint::lint(&analysis, &settings);
+            result
+                .diagnostics
+                .retain(|d| files.contains(&analysis.files()[d.file as usize].path));
             if passes == 0 {
                 for error in &result.config_errors {
                     eprintln!("warning: {error}");
@@ -150,6 +171,13 @@ pub fn run(options: Options) -> Result<bool> {
                     let encoding = project
                         .file_index(&analyzed.path)
                         .map(|i| project.files[i].encoding)
+                        .or_else(|| {
+                            project
+                                .verilog
+                                .iter()
+                                .find(|f| f.path == analyzed.path)
+                                .map(|f| f.encoding)
+                        })
                         .unwrap_or(vfl_project::Encoding::Utf8);
                     std::fs::write(&analyzed.path, encode(&text, encoding))
                         .with_context(|| format!("writing {}", analyzed.path.display()))?;

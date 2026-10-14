@@ -4,10 +4,12 @@
 //!   rules on that line; on a line of its own, on the next line of code.
 //! - `-- vfl-ignore-file rule-a` anywhere silences them in the whole file.
 //!
+//! Verilog files write them in `//` comments.
+//!
 //! Without rule ids every rule is silenced. A category (`naming`) silences
 //! all its rules.
 
-use vfl_syntax::{LineIndex, SyntaxKind, SyntaxNode, TextSize};
+use vfl_syntax::{LineIndex, SyntaxKind, SyntaxNode, TextRange, TextSize};
 
 #[derive(Debug, Default)]
 pub struct Suppressions {
@@ -18,13 +20,34 @@ pub struct Suppressions {
 
 impl Suppressions {
     pub fn new(root: &SyntaxNode, text: &str, index: &LineIndex) -> Self {
-        let mut out = Suppressions::default();
-        for token in root
+        let comments = root
             .descendants_with_tokens()
             .filter_map(|e| e.into_token())
             .filter(|t| t.kind() == SyntaxKind::LINE_COMMENT)
-        {
-            let body = token.text().trim_start_matches('-').trim();
+            .filter_map(|t| suppression(t.text_range(), t.text().trim_start_matches('-')));
+        Self::from_comments(comments, text, index, "--")
+    }
+
+    /// The suppressions of a Verilog file: `// vfl-ignore rule`.
+    pub fn verilog(root: &vfl_verilog_syntax::SyntaxNode, text: &str, index: &LineIndex) -> Self {
+        let comments = root
+            .descendants_with_tokens()
+            .filter_map(|e| e.into_token())
+            .filter(|t| t.kind() == vfl_verilog_syntax::SyntaxKind::LINE_COMMENT)
+            .filter_map(|t| suppression(t.text_range(), t.text().trim_start_matches('/')));
+        Self::from_comments(comments, text, index, "//")
+    }
+
+    /// The comments, by range, that start with `vfl-ignore`.
+    fn from_comments(
+        comments: impl Iterator<Item = (TextRange, String)>,
+        text: &str,
+        index: &LineIndex,
+        comment: &str,
+    ) -> Self {
+        let mut out = Suppressions::default();
+        for (range, body) in comments {
+            let body = body.trim();
             let (file_wide, rest) = if let Some(rest) = body.strip_prefix("vfl-ignore-file") {
                 (true, rest)
             } else if let Some(rest) = body.strip_prefix("vfl-ignore") {
@@ -40,19 +63,19 @@ impl Suppressions {
                 .split([',', ' ', '\t'])
                 .map(str::trim)
                 .filter(|r| !r.is_empty())
-                .take_while(|r| !r.starts_with("--"))
+                .take_while(|r| !r.starts_with(comment))
                 .map(str::to_owned)
                 .collect();
             if file_wide {
                 out.file.push(rules);
                 continue;
             }
-            let start = token.text_range().start();
+            let start = range.start();
             let line = index.line_col(text, start).line;
             let line_start = line_start(text, start);
             let alone = text[line_start..usize::from(start)].trim().is_empty();
             let target = if alone {
-                next_code_line(text, usize::from(token.text_range().end()), index)
+                next_code_line(text, usize::from(range.end()), index, comment)
             } else {
                 Some(line)
             };
@@ -87,15 +110,22 @@ fn line_start(text: &str, offset: TextSize) -> usize {
     text[..usize::from(offset)].rfind('\n').map_or(0, |i| i + 1)
 }
 
+/// A comment's body, when it is a suppression: only those are copied.
+fn suppression(range: TextRange, body: &str) -> Option<(TextRange, String)> {
+    let body = body.trim();
+    body.starts_with("vfl-ignore")
+        .then(|| (range, body.to_owned()))
+}
+
 /// The first line after the one holding `from` that is not blank or a comment.
-fn next_code_line(text: &str, from: usize, index: &LineIndex) -> Option<u32> {
+fn next_code_line(text: &str, from: usize, index: &LineIndex, comment: &str) -> Option<u32> {
     let mut offset = text[from..].find('\n').map(|i| from + i + 1)?;
     while offset < text.len() {
         let end = text[offset..]
             .find('\n')
             .map_or(text.len(), |i| offset + i + 1);
         let trimmed = text[offset..end].trim();
-        if !trimmed.is_empty() && !trimmed.starts_with("--") {
+        if !trimmed.is_empty() && !trimmed.starts_with(comment) {
             return Some(index.line_col(text, TextSize::from(offset as u32)).line);
         }
         offset = end;

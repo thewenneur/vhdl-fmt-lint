@@ -68,7 +68,8 @@ vfl lint [OPTIONS] [PATHS]...
 Analyzes the whole project around each path, so names, types and overloads are resolved
 across files and libraries, then reports the findings in the given files only. The
 project's Verilog and SystemVerilog modules take part as entities: instances of them are
-checked against their parameters and ports. Which rules
+checked against their parameters and ports. Verilog and SystemVerilog files are linted
+too (see [lints.md](lints.md#verilog-and-systemverilog)). Which rules
 run and at which level comes from `[lint]` ([configuration.md](configuration.md#lint));
 every rule is described in [lints.md](lints.md).
 
@@ -245,7 +246,7 @@ client. It offers:
   workspace symbols;
 - semantic highlighting: signals, ports (with their mode), variables, constants,
   generics, types, subprograms, entities, components, packages and enumeration literals;
-- for Verilog and SystemVerilog files: syntax errors, formatting (document, range and on
+- for Verilog and SystemVerilog files: lint diagnostics with their fixes, formatting (document, range and on
   type), document symbols (modules, parameters, ports, declarations, functions, tasks,
   instances and named generate blocks), folding ranges, and semantic highlighting of the
   names declared in the file;

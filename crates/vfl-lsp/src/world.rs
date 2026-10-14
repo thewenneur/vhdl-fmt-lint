@@ -273,7 +273,13 @@ impl World {
         self.dirty = false;
         self.infer();
         self.analysis = vfl_lint::reanalyze(&self.project, &self.analysis);
-        let paths: Vec<PathBuf> = self.project.files.iter().map(|f| f.path.clone()).collect();
+        let paths: Vec<PathBuf> = self
+            .project
+            .files
+            .iter()
+            .map(|f| f.path.clone())
+            .chain(self.project.verilog.iter().map(|f| f.path.clone()))
+            .collect();
         for path in &paths {
             self.config(path);
         }
@@ -281,16 +287,25 @@ impl World {
             .iter()
             .map(|p| &self.configs[&config_dir(p)])
             .collect();
+        // Verilog files follow the VHDL ones in the analysis.
         let settings: Vec<FileSettings> = self
             .project
             .files
             .iter()
+            .map(|file| (file.parse.errors(), None))
+            .chain(
+                self.project
+                    .verilog
+                    .iter()
+                    .map(|file| (file.parse.errors(), Some(&file.parse))),
+            )
             .zip(&configs)
             .enumerate()
-            .map(|(i, (file, config))| FileSettings {
+            .map(|(i, ((syntax_errors, verilog), config))| FileSettings {
                 file: i as FileId,
-                syntax_errors: file.parse.errors(),
+                syntax_errors,
                 config,
+                verilog,
             })
             .collect();
         let result = vfl_lint::lint_cached(&self.analysis, &settings, &mut self.lint_cache);
@@ -362,6 +377,16 @@ impl World {
             .foreign_modules(file)
             .is_none()
             .then_some(file)
+    }
+
+    /// The analyzed file at `path`, VHDL or Verilog.
+    pub fn any_file_id(&self, path: &Path) -> Option<FileId> {
+        self.analysis.file_id(path)
+    }
+
+    /// Whether an analyzed file is a VHDL one.
+    pub fn is_vhdl(&self, file: FileId) -> bool {
+        self.analysis.foreign_modules(file).is_none()
     }
 
     /// The text and line index of an analyzed file.

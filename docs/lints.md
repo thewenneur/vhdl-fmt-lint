@@ -1,6 +1,7 @@
 # Lint rules
 
-`vfl lint` and the language server report findings from the rules below. `vfl rules` prints
+`vfl lint` and the language server report findings from the rules below, in VHDL, Verilog
+and SystemVerilog files. `vfl rules` prints
 the same list with each rule's level in each preset. Rules are configured in the `[lint]`
 table of `vfl.toml`; see [configuration.md](configuration.md#lint).
 
@@ -8,8 +9,10 @@ table of `vfl.toml`; see [configuration.md](configuration.md#lint).
 - [Summary](#summary)
 - [`syntax/*`](#syntax): parse errors
 - [`sema/*`](#sema): semantic checks across the whole project
+- [`verilog/*`](#verilog): checks of Verilog and SystemVerilog only
 - [`style/*`](#style): checks on the text and syntax of one file
 - [`naming/*`](#naming): naming conventions
+- [Verilog and SystemVerilog](#verilog-and-systemverilog): which rules apply to them, and how
 
 ## Levels, presets and fixes
 
@@ -45,7 +48,8 @@ silencing it on the line or in the file with a `-- vfl-ignore` comment.
 
 A finding can be silenced in the source with `-- vfl-ignore rule-id` at the end of its line
 (or on the line above), or for a whole file with `-- vfl-ignore-file rule-id`; see
-[In-source comments](configuration.md#in-source-comments).
+[In-source comments](configuration.md#in-source-comments). Verilog files write the same
+comments with `//`: `// vfl-ignore rule-id`.
 
 ## Summary
 
@@ -80,6 +84,13 @@ A finding can be silenced in the source with `-- vfl-ignore rule-id` at the end 
 | [`sema/reset-polarity`](#semareset-polarity) | warn | error | |
 | [`sema/fsm-unreachable-state`](#semafsm-unreachable-state) | warn | warn | |
 | [`sema/fsm-stuck-state`](#semafsm-stuck-state) | info | warn | |
+| [`verilog/blocking-in-clocked`](#verilogblocking-in-clocked) | warn | warn | unsafe |
+| [`verilog/nonblocking-in-combinational`](#verilognonblocking-in-combinational) | warn | warn | unsafe |
+| [`verilog/multiple-drivers`](#verilogmultiple-drivers) | warn | error | |
+| [`verilog/implicit-net`](#verilogimplicit-net) | warn | error | |
+| [`verilog/unconnected-input`](#verilogunconnected-input) | off | warn | |
+| [`verilog/default-nettype`](#verilogdefault-nettype) | off | warn | |
+| [`verilog/case-default`](#verilogcase-default) | off | warn | |
 | [`style/no-buffer-ports`](#styleno-buffer-ports) | warn | warn | unsafe |
 | [`style/no-std-logic-arith`](#styleno-std-logic-arith) | warn | warn | unsafe |
 | [`style/line-length`](#styleline-length) | off | warn | |
@@ -488,6 +499,76 @@ State machines are found as for
 state is assigned a literal outside the `case` other than by a reset. A final state that
 waits for a reset is sometimes intended, hence `info` in `recommended`; `warn` in `strict`.
 
+## `verilog`
+
+These rules apply to Verilog and SystemVerilog files only. A block is clocked when its event
+control has an edge (`always @(posedge clk)`, `always_ff`), combinational when it has none
+(`always @*`, `always @(a or b)`, `always_comb`).
+
+### `verilog/blocking-in-clocked`
+
+A clocked block assigns a signal with `=`. Other blocks reading the signal on the same edge
+then see the new value or the old one depending on the order the simulator runs the blocks,
+and simulation stops matching the flip-flops synthesis builds. A temporary is not reported:
+a variable declared in the block, or one nothing outside the block reads.
+
+```verilog
+always @(posedge clk) q = d;    // blocking assignment to `q` in a clocked `always` block; use `<=`
+```
+
+Fix (unsafe): replaces `=` with `<=`. It changes behavior when the block reads the signal
+after assigning it.
+
+### `verilog/nonblocking-in-combinational`
+
+A combinational block assigns with `<=`. The block does not see its own assignments until it
+runs again, so a value read after being assigned is stale, and simulation can loop through
+extra delta cycles.
+
+Fix (unsafe): replaces `<=` with `=`.
+
+### `verilog/multiple-drivers`
+
+A variable is assigned by two `always` blocks, or by a block and a continuous assignment.
+Synthesis cannot build it, and simulation keeps whichever assignment ran last. Only
+assignments to the whole variable count: blocks assigning different bits (`q[0]` in one,
+`q[1]` in another) are not reported. `initial` blocks are not drivers, nor are the
+alternatives of an `if` or `case` generate, which never coexist.
+
+### `verilog/implicit-net`
+
+A name nothing declares is connected to a port (`and g (n, a, b)`, `.y(n)`) or assigned by
+a continuous assignment. Verilog declares it as an implicit 1-bit wire, so a typo or a
+missing declaration of a vector goes unnoticed. Not reported under
+`` `default_nettype none ``, where such a name is an error that
+[`sema/unresolved-name`](#semaunresolved-name) reports.
+
+### `verilog/unconnected-input`
+
+An instance of a module of the project leaves an input port unconnected: the port is not
+named, or is named with nothing (`.en()`). An input port with a default value is not
+reported, nor is an instance connected with `.*`. Verilog allows unconnected inputs, and the
+input floats (`z`), hence `off` in `recommended`.
+
+```verilog
+leaf u2 (.d(d), .q(q2));    // input port `en` of `leaf` is not connected
+```
+
+### `verilog/default-nettype`
+
+A file declares a module without `` `default_nettype none `` in effect, so a name nothing
+declares becomes an implicit wire instead of an error. Each such module is reported, at its
+keyword. The directive is in effect from where it appears to the next `` `default_nettype ``.
+
+### `verilog/case-default`
+
+A `case` in a combinational block has no `default` item and does not list every value of
+its selector. The block keeps the previous value for the missing values, a latch (see
+[`sema/inferred-latch`](#semainferred-latch)), unless everything it assigns is assigned
+before the `case`. A `case` is taken as complete when it is `unique` or `priority`, has a
+`full_case` synthesis directive (`(* full_case *)` or `// synopsys full_case`), lists every
+member of an enumeration, or lists every value of a selector of up to 12 bits.
+
 ## `style`
 
 These rules look at one file's text and syntax tree.
@@ -593,6 +674,9 @@ options turns a rule on at `warn`.
 | `naming/process` | process labels |
 | `naming/instance` | instance labels |
 | `naming/generate` | generate statement labels |
+| `naming/module` | Verilog modules, interfaces and programs |
+| `naming/parameter` | Verilog parameters |
+| `naming/task` | Verilog tasks |
 
 Options, all optional:
 
@@ -628,3 +712,28 @@ convention that applies to it: the prefixes and suffixes added, the rest of the 
 convention's case (`dataValid` becomes `s_data_valid` for `{ prefix = "s_", case =
 "snake" }`). There is none when no such name matches the `pattern`, or when the new name
 would clash with another declaration.
+
+## Verilog and SystemVerilog
+
+Verilog and SystemVerilog files are linted with the [`verilog/*`](#verilog) rules and these
+shared ones:
+
+| Rule | In Verilog |
+|------|-----------|
+| [`syntax/error`](#syntaxerror) | Parse errors, in the standard `[verilog]` sets for the file's extension. |
+| [`sema/unresolved-name`](#semaunresolved-name) | A name no declaration of the module, its file, an imported package or an included file declares, under `` `default_nettype none `` (otherwise see [`verilog/implicit-net`](#verilogimplicit-net)). Also a port or parameter an instance names that the module does not have. Nothing is reported in a module that imports a package or includes a file the project does not have. |
+| [`sema/duplicate-declaration`](#semaduplicate-declaration) | A name declared twice in one scope. `output q; reg q;` declares one port. |
+| [`sema/unused-signal`](#semaunused-signal), [`sema/unread-signal`](#semaunread-signal), [`sema/undriven-signal`](#semaundriven-signal), [`sema/unused-port`](#semaunused-port), [`sema/unused-generic`](#semaunused-generic) | Nets, variables, ports and parameters of a module. A name containing `unused` (any case) is left alone, as Verilator does: `wire unused_ok = &{a, b};`. Not reported in a module that uses a macro as an item or includes a file. |
+| [`sema/sensitivity-list`](#semasensitivity-list), [`sema/unneeded-sensitivity`](#semaunneeded-sensitivity) | The event list of a combinational `always @(...)`. |
+| [`sema/inferred-latch`](#semainferred-latch) | A variable a combinational block assigns on some paths only. A `for` loop is taken to run. An `if` on parameters is decided at elaboration, so either branch counts. A temporary nothing outside the block reads is not reported. |
+| [`sema/width-mismatch`](#semawidth-mismatch) | An assignment, or a port connection, whose sides differ in width, widths being computed from parameters. Not reported when the value uses arithmetic, a shift, a macro or `$signed`/`$unsigned`, when a 1-bit value is extended, when a constant fits, when the target is an `integer` loop index, or for a shift register (`q <= {q, d}`). |
+| [`sema/missing-reset`](#semamissing-reset), [`sema/mixed-reset`](#semamixed-reset), [`sema/reset-polarity`](#semareset-polarity) | Clocked blocks with a reset: asynchronous in the event list, synchronous as the first `if` assigning constants. |
+| [`sema/fsm-unreachable-state`](#semafsm-unreachable-state), [`sema/fsm-stuck-state`](#semafsm-stuck-state) | A `case` on a variable of an enumeration, or on one whose labels are parameters (`localparam IDLE = 0`). |
+| [`style/line-length`](#styleline-length), [`style/trailing-whitespace`](#styletrailing-whitespace), [`style/tabs`](#styletabs) | As in VHDL. |
+| [`style/process-label`](#styleprocess-label) | An `always`, `always_comb`, `always_ff`, `always_latch` or `initial` block whose `begin` has no label. |
+| [`style/positional-association`](#stylepositional-association) | Ports or parameter values connected by position. Gates and primitives are positional by definition and not reported. |
+| [`style/file-name`](#stylefile-name) | Compared with the modules, interfaces, programs and packages of the file. |
+| [`naming/*`](#naming) | Modules (`naming/module`), packages, parameters (`naming/parameter`), `localparam`s (`naming/constant`), ports, nets and variables of a module (`naming/signal`) or of a block or function (`naming/variable`), types, functions, tasks (`naming/task`), instances, labels of blocks (`naming/process`) and of generate blocks (`naming/generate`). |
+
+The other `sema/*` and `style/*` rules are VHDL only.
+
