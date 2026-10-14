@@ -1,0 +1,233 @@
+---
+source: crates/vfl-verilog-syntax/tests/parser.rs
+expression: render(&parsed)
+input_file: crates/vfl-verilog-syntax/tests/data/ok/preprocessor.sv
+---
+SOURCE_FILE@0..670
+  DIRECTIVE@0..15 "`define WIDTH 8"
+  WHITESPACE@15..16 "\n"
+  DIRECTIVE@16..74 "`define FF(q, d, clk) \\\n  always_ff @(posedge clk) q <= d;"
+  WHITESPACE@74..75 "\n"
+  DIRECTIVE@75..134 "`define ASSERT(name, prop) \\\n  name: assert property (prop)"
+  WHITESPACE@134..135 " "
+  LINE_COMMENT@135..163 "// a comment ending the body"
+  WHITESPACE@163..165 "\n\n"
+  DIRECTIVE@165..182 "`ifndef SYNTHESIS"
+  WHITESPACE@182..183 "\n"
+  DIRECTIVE@183..199 "`define SIM_ONLY"
+  WHITESPACE@199..200 "\n"
+  DIRECTIVE@200..206 "`endif"
+  WHITESPACE@206..208 "\n\n"
+  MODULE_DECL@208..656
+    MODULE_KW@208..214 "module"
+    WHITESPACE@214..215 " "
+    NAME@215..221
+      IDENT@215..221 "macros"
+    WHITESPACE@221..222 " "
+    PORT_LIST@222..296
+      LPAREN@222..223 "("
+      PORT@223..238
+        INPUT_KW@223..228 "input"
+        WHITESPACE@228..229 " "
+        DATA_TYPE@229..234
+          LOGIC_KW@229..234 "logic"
+        WHITESPACE@234..235 " "
+        NAME@235..238
+          IDENT@235..238 "clk"
+      COMMA@238..239 ","
+      WHITESPACE@239..240 " "
+      PORT@240..266
+        INPUT_KW@240..245 "input"
+        WHITESPACE@245..246 " "
+        DATA_TYPE@246..264
+          LOGIC_KW@246..251 "logic"
+          WHITESPACE@251..252 " "
+          DIMENSION@252..264
+            LBRACKET@252..253 "["
+            BINARY_EXPR@253..261
+              MACRO_EXPR@253..259
+                MACRO_REF@253..259 "`WIDTH"
+              MINUS@259..260 "-"
+              LITERAL@260..261
+                INT_NUMBER@260..261 "1"
+            COLON@261..262 ":"
+            LITERAL@262..263
+              INT_NUMBER@262..263 "0"
+            RBRACKET@263..264 "]"
+        WHITESPACE@264..265 " "
+        NAME@265..266
+          IDENT@265..266 "d"
+      COMMA@266..267 ","
+      WHITESPACE@267..268 " "
+      PORT@268..295
+        OUTPUT_KW@268..274 "output"
+        WHITESPACE@274..275 " "
+        DATA_TYPE@275..293
+          LOGIC_KW@275..280 "logic"
+          WHITESPACE@280..281 " "
+          DIMENSION@281..293
+            LBRACKET@281..282 "["
+            BINARY_EXPR@282..290
+              MACRO_EXPR@282..288
+                MACRO_REF@282..288 "`WIDTH"
+              MINUS@288..289 "-"
+              LITERAL@289..290
+                INT_NUMBER@289..290 "1"
+            COLON@290..291 ":"
+            LITERAL@291..292
+              INT_NUMBER@291..292 "0"
+            RBRACKET@292..293 "]"
+        WHITESPACE@293..294 " "
+        NAME@294..295
+          IDENT@294..295 "q"
+      RPAREN@295..296 ")"
+    SEMI@296..297 ";"
+    WHITESPACE@297..300 "\n  "
+    MACRO_ITEM@300..314
+      MACRO_CALL@300..303 "`FF"
+      MACRO_ARGS@303..314
+        LPAREN@303..304 "("
+        IDENT@304..305 "q"
+        COMMA@305..306 ","
+        WHITESPACE@306..307 " "
+        IDENT@307..308 "d"
+        COMMA@308..309 ","
+        WHITESPACE@309..310 " "
+        IDENT@310..313 "clk"
+        RPAREN@313..314 ")"
+    WHITESPACE@314..315 "\n"
+    DIRECTIVE@315..330 "`ifdef SIM_ONLY"
+    WHITESPACE@330..333 "\n  "
+    PROCEDURE@333..364
+      INITIAL_KW@333..340 "initial"
+      WHITESPACE@340..341 " "
+      EXPR_STMT@341..364
+        CALL_EXPR@341..363
+          NAME_REF@341..349
+            SYSTEM_IDENT@341..349 "$display"
+          ARG_LIST@349..363
+            LPAREN@349..350 "("
+            LITERAL@350..362
+              STRING_LITERAL@350..362 "\"simulation\""
+            RPAREN@362..363 ")"
+        SEMI@363..364 ";"
+    WHITESPACE@364..365 "\n"
+    DIRECTIVE@365..376 "`elsif FPGA"
+    INACTIVE@376..424 "\n  this is not parsed (\n`else\n  neither is this\n"
+    DIRECTIVE@424..430 "`endif"
+    WHITESPACE@430..433 "\n  "
+    MACRO_ITEM@433..478
+      MACRO_CALL@433..440 "`ASSERT"
+      MACRO_ARGS@440..478
+        LPAREN@440..441 "("
+        IDENT@441..447 "stable"
+        COMMA@447..448 ","
+        WHITESPACE@448..449 " "
+        AT@449..450 "@"
+        LPAREN@450..451 "("
+        POSEDGE_KW@451..458 "posedge"
+        WHITESPACE@458..459 " "
+        IDENT@459..462 "clk"
+        RPAREN@462..463 ")"
+        WHITESPACE@463..464 " "
+        IDENT@464..465 "q"
+        WHITESPACE@465..466 " "
+        EQ2@466..468 "=="
+        WHITESPACE@468..469 " "
+        SYSTEM_IDENT@469..474 "$past"
+        LPAREN@474..475 "("
+        IDENT@475..476 "d"
+        RPAREN@476..477 ")"
+        RPAREN@477..478 ")"
+    WHITESPACE@478..481 "\n  "
+    DATA_DECL@481..503
+      DATA_TYPE@481..497
+        LOGIC_KW@481..486 "logic"
+        WHITESPACE@486..487 " "
+        DIMENSION@487..497
+          LBRACKET@487..488 "["
+          MACRO_EXPR@488..494
+            MACRO_REF@488..494 "`WIDTH"
+          COLON@494..495 ":"
+          LITERAL@495..496
+            INT_NUMBER@495..496 "0"
+          RBRACKET@496..497 "]"
+      WHITESPACE@497..498 " "
+      DECLARATOR@498..502
+        NAME@498..502
+          IDENT@498..502 "wide"
+      SEMI@502..503 ";"
+    WHITESPACE@503..506 "\n  "
+    PROCEDURE@506..646
+      ALWAYS_COMB_KW@506..517 "always_comb"
+      WHITESPACE@517..518 " "
+      BLOCK_STMT@518..646
+        BEGIN_KW@518..523 "begin"
+        WHITESPACE@523..528 "\n    "
+        DIRECTIVE@528..543 "`ifdef SIM_ONLY"
+        WHITESPACE@543..544 " "
+        BLOCKING_ASSIGN@544..561
+          NAME_REF@544..548
+            IDENT@544..548 "wide"
+          WHITESPACE@548..549 " "
+          EQ@549..550 "="
+          WHITESPACE@550..551 " "
+          CONCAT_EXPR@551..560
+            LBRACE@551..552 "{"
+            LITERAL@552..556
+              BASED_NUMBER@552..556 "1'b0"
+            COMMA@556..557 ","
+            WHITESPACE@557..558 " "
+            NAME_REF@558..559
+              IDENT@558..559 "q"
+            RBRACE@559..560 "}"
+          SEMI@560..561 ";"
+        WHITESPACE@561..562 " "
+        DIRECTIVE@562..568 "`endif"
+        WHITESPACE@568..573 "\n    "
+        MACRO_ITEM@573..620
+          MACRO_EXPR@573..620
+            MACRO_CALL@573..582 "`uvm_info"
+            MACRO_ARGS@582..620
+              LPAREN@582..583 "("
+              STRING_LITERAL@583..587 "\"ID\""
+              COMMA@587..588 ","
+              WHITESPACE@588..589 " "
+              SYSTEM_IDENT@589..598 "$sformatf"
+              LPAREN@598..599 "("
+              STRING_LITERAL@599..606 "\"q=%0d\""
+              COMMA@606..607 ","
+              WHITESPACE@607..608 " "
+              IDENT@608..609 "q"
+              RPAREN@609..610 ")"
+              COMMA@610..611 ","
+              WHITESPACE@611..612 " "
+              IDENT@612..619 "UVM_LOW"
+              RPAREN@619..620 ")"
+        WHITESPACE@620..625 "\n    "
+        BLOCKING_ASSIGN@625..640
+          INDEX_EXPR@625..632
+            NAME_REF@625..629
+              IDENT@625..629 "wide"
+            LBRACKET@629..630 "["
+            LITERAL@630..631
+              INT_NUMBER@630..631 "0"
+            RBRACKET@631..632 "]"
+          WHITESPACE@632..633 " "
+          EQ@633..634 "="
+          WHITESPACE@634..635 " "
+          INDEX_EXPR@635..639
+            NAME_REF@635..636
+              IDENT@635..636 "q"
+            LBRACKET@636..637 "["
+            LITERAL@637..638
+              INT_NUMBER@637..638 "0"
+            RBRACKET@638..639 "]"
+          SEMI@639..640 ";"
+        WHITESPACE@640..643 "\n  "
+        END_KW@643..646 "end"
+    WHITESPACE@646..647 "\n"
+    ENDMODULE_KW@647..656 "endmodule"
+  WHITESPACE@656..657 "\n"
+  DIRECTIVE@657..669 "`undef WIDTH"
+  WHITESPACE@669..670 "\n"

@@ -19,7 +19,7 @@ pub use summary::{
 
 use ignore::WalkBuilder;
 use ignore::overrides::OverrideBuilder;
-use vfl_config::{ProjectConfig, config_chain, find_config};
+use vfl_config::{ProjectConfig, VerilogConfig, config_chain, find_config};
 
 /// Directories whose presence marks a version-control root.
 const VCS_MARKERS: [&str; 3] = [".git", ".hg", ".jj"];
@@ -126,6 +126,60 @@ pub fn collect(
     root: &Path,
     config: &ProjectConfig,
 ) -> Result<(Vec<PathBuf>, Vec<PathBuf>), ignore::Error> {
+    walk(root, config, &config.extensions, true)
+}
+
+/// Lists the VHDL sources and the Verilog and SystemVerilog sources under
+/// `root` in one walk, each sorted, honouring `.gitignore`, the project's
+/// `exclude`, its `extensions` and those of `[verilog]`.
+pub fn collect_all_sources(
+    root: &Path,
+    project: &ProjectConfig,
+    verilog: &VerilogConfig,
+) -> Result<(Vec<PathBuf>, Vec<PathBuf>), ignore::Error> {
+    let extensions: Vec<String> = project
+        .extensions
+        .iter()
+        .chain(&verilog.extensions)
+        .chain(&verilog.sv_extensions)
+        .cloned()
+        .collect();
+    let (all, _) = walk(root, project, &extensions, false)?;
+    Ok(all.into_iter().partition(|path| {
+        path.extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|ext| {
+                project
+                    .extensions
+                    .iter()
+                    .any(|e| e.eq_ignore_ascii_case(ext))
+            })
+    }))
+}
+
+/// Lists the Verilog and SystemVerilog sources under `root`, sorted,
+/// honouring `.gitignore`, the project's `exclude` and the extensions of
+/// `[verilog]`.
+pub fn collect_verilog_sources(
+    root: &Path,
+    project: &ProjectConfig,
+    verilog: &VerilogConfig,
+) -> Result<Vec<PathBuf>, ignore::Error> {
+    let extensions: Vec<String> = verilog
+        .extensions
+        .iter()
+        .chain(&verilog.sv_extensions)
+        .cloned()
+        .collect();
+    Ok(walk(root, project, &extensions, false)?.0)
+}
+
+fn walk(
+    root: &Path,
+    config: &ProjectConfig,
+    extensions: &[String],
+    tools: bool,
+) -> Result<(Vec<PathBuf>, Vec<PathBuf>), ignore::Error> {
     let mut overrides = OverrideBuilder::new(root);
     for pattern in &config.exclude {
         overrides.add(&format!("!{pattern}"))?;
@@ -140,19 +194,19 @@ pub fn collect(
     {
         let entry = entry?;
         let path = entry.path();
-        let is_source = entry.file_type().is_some_and(|t| t.is_file())
+        let is_file = entry.file_type().is_some_and(|t| t.is_file());
+        let is_source = is_file
             && path
                 .extension()
                 .and_then(|e| e.to_str())
                 .is_some_and(|ext| {
-                    config
-                        .extensions
+                    extensions
                         .iter()
                         .any(|wanted| wanted.eq_ignore_ascii_case(ext))
                 });
         if is_source {
             sources.push(path.to_owned());
-        } else if entry.file_type().is_some_and(|t| t.is_file()) && import::is_tool_file(path) {
+        } else if tools && is_file && import::is_tool_file(path) {
             tool_files.push(path.to_owned());
         }
     }
@@ -282,6 +336,40 @@ mod tests {
         fs::write(wt.join(".git"), "gitdir: /repo/.git/worktrees/wt\n").unwrap();
 
         assert_eq!(find_root(&wt.join("rtl")).dir, wt);
+    }
+
+    #[test]
+    fn verilog_sources_are_collected_apart() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        touch(&root.join("rtl/a.vhd"));
+        touch(&root.join("rtl/b.v"));
+        touch(&root.join("rtl/c.SV"));
+        touch(&root.join("rtl/defs.svh"));
+        touch(&root.join("gen/d.sv"));
+        let config = ProjectConfig {
+            exclude: vec!["gen/**".into()],
+            ..ProjectConfig::default()
+        };
+        let found: Vec<_> = collect_verilog_sources(root, &config, &VerilogConfig::default())
+            .unwrap()
+            .into_iter()
+            .map(|p| p.strip_prefix(root).unwrap().to_owned())
+            .collect();
+        assert_eq!(
+            found,
+            vec![
+                PathBuf::from("rtl/b.v"),
+                PathBuf::from("rtl/c.SV"),
+                PathBuf::from("rtl/defs.svh"),
+            ]
+        );
+        let vhdl = collect_sources(root, &config).unwrap();
+        assert_eq!(vhdl.len(), 1);
+        let (vhdl_too, verilog) =
+            collect_all_sources(root, &config, &VerilogConfig::default()).unwrap();
+        assert_eq!(vhdl_too, vhdl);
+        assert_eq!(verilog.len(), 3);
     }
 
     #[test]

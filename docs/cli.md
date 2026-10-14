@@ -94,6 +94,12 @@ vfl check [PATHS]...
 Parses the files and reports syntax errors only, without analyzing the project. Faster
 than `vfl lint` when only the syntax matters.
 
+Verilog and SystemVerilog files are checked too: by default `.v` and `.vh` files as
+Verilog-2005 and `.sv` and `.svh` files as SystemVerilog-2017 (see
+[`[verilog]`](configuration.md#verilog)). `` `ifdef `` branches are chosen from the
+configured `defines` and the macros defined in the file and in the files it includes;
+the branches not compiled are not checked.
+
 ## `vfl rules`
 
 ```sh

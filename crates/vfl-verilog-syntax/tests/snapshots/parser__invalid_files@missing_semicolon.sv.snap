@@ -1,0 +1,70 @@
+---
+source: crates/vfl-verilog-syntax/tests/parser.rs
+expression: render(&parsed)
+input_file: crates/vfl-verilog-syntax/tests/data/err/missing_semicolon.sv
+---
+SOURCE_FILE@0..103
+  MODULE_DECL@0..102
+    MODULE_KW@0..6 "module"
+    WHITESPACE@6..7 " "
+    NAME@7..8
+      IDENT@7..8 "m"
+    WHITESPACE@8..9 " "
+    PORT_LIST@9..40
+      LPAREN@9..10 "("
+      PORT@10..23
+        INPUT_KW@10..15 "input"
+        WHITESPACE@15..16 " "
+        DATA_TYPE@16..21
+          LOGIC_KW@16..21 "logic"
+        WHITESPACE@21..22 " "
+        NAME@22..23
+          IDENT@22..23 "a"
+      COMMA@23..24 ","
+      WHITESPACE@24..25 " "
+      PORT@25..39
+        OUTPUT_KW@25..31 "output"
+        WHITESPACE@31..32 " "
+        DATA_TYPE@32..37
+          LOGIC_KW@32..37 "logic"
+        WHITESPACE@37..38 " "
+        NAME@38..39
+          IDENT@38..39 "b"
+      RPAREN@39..40 ")"
+    SEMI@40..41 ";"
+    WHITESPACE@41..44 "\n  "
+    CONTINUOUS_ASSIGN@44..56
+      ASSIGN_KW@44..50 "assign"
+      WHITESPACE@50..51 " "
+      ASSIGN_EXPR@51..56
+        NAME_REF@51..52
+          IDENT@51..52 "b"
+        WHITESPACE@52..53 " "
+        EQ@53..54 "="
+        WHITESPACE@54..55 " "
+        NAME_REF@55..56
+          IDENT@55..56 "a"
+    WHITESPACE@56..59 "\n  "
+    PROCEDURE@59..92
+      ALWAYS_COMB_KW@59..70 "always_comb"
+      WHITESPACE@70..71 " "
+      BLOCK_STMT@71..92
+        BEGIN_KW@71..76 "begin"
+        WHITESPACE@76..81 "\n    "
+        BLOCKING_ASSIGN@81..86
+          NAME_REF@81..82
+            IDENT@81..82 "b"
+          WHITESPACE@82..83 " "
+          EQ@83..84 "="
+          WHITESPACE@84..85 " "
+          NAME_REF@85..86
+            IDENT@85..86 "a"
+        WHITESPACE@86..89 "\n  "
+        END_KW@89..92 "end"
+    WHITESPACE@92..93 "\n"
+    ENDMODULE_KW@93..102 "endmodule"
+  WHITESPACE@102..103 "\n"
+
+errors:
+  56..56: expected `;`, found `always_comb`
+  86..86: expected `;`, found `end`

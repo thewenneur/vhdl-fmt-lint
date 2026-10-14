@@ -1,0 +1,43 @@
+---
+source: crates/vfl-verilog-syntax/tests/parser.rs
+expression: render(&parsed)
+input_file: crates/vfl-verilog-syntax/tests/data/err/unclosed.sv
+---
+SOURCE_FILE@0..68
+  MODULE_DECL@0..48
+    MODULE_KW@0..6 "module"
+    WHITESPACE@6..7 " "
+    NAME@7..8
+      IDENT@7..8 "m"
+    SEMI@8..9 ";"
+    WHITESPACE@9..12 "\n  "
+    PROCEDURE@12..48
+      INITIAL_KW@12..19 "initial"
+      WHITESPACE@19..20 " "
+      BLOCK_STMT@20..48
+        BEGIN_KW@20..25 "begin"
+        WHITESPACE@25..30 "\n    "
+        IF_STMT@30..48
+          IF_KW@30..32 "if"
+          WHITESPACE@32..33 " "
+          LPAREN@33..34 "("
+          NAME_REF@34..35
+            IDENT@34..35 "a"
+          WHITESPACE@35..42 "\n      "
+          BLOCKING_ASSIGN@42..48
+            NAME_REF@42..43
+              IDENT@42..43 "x"
+            WHITESPACE@43..44 " "
+            EQ@44..45 "="
+            WHITESPACE@45..46 " "
+            LITERAL@46..47
+              INT_NUMBER@46..47 "1"
+            SEMI@47..48 ";"
+  WHITESPACE@48..49 "\n"
+  DIRECTIVE@49..57 "`ifdef X"
+  INACTIVE@57..68 "\nendmodule\n"
+
+errors:
+  35..35: expected `)`, found `x`
+  48..48: expected `end`, found end of file
+  49..50: `ifdef without `endif

@@ -11,6 +11,7 @@ repository = "https://github.com/thewenneur/vhdl-fmt-lint"
 
 [workspace.dependencies]
 vfl-syntax = { path = "crates/vfl-syntax" }
+vfl-verilog-syntax = { path = "crates/vfl-verilog-syntax" }
 vfl-config = { path = "crates/vfl-config" }
 vfl-project = { path = "crates/vfl-project" }
 vfl-sema = { path = "crates/vfl-sema" }

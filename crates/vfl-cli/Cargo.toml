@@ -23,6 +23,7 @@ vfl-lint.workspace = true
 vfl-lsp.workspace = true
 vfl-project.workspace = true
 vfl-syntax.workspace = true
+vfl-verilog-syntax.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 toml.workspace = true
