@@ -14,7 +14,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use vfl_config::Config;
 use vfl_fmt::FormatError;
 use vfl_lint::report::Format;
-use vfl_project::{Project, collect_sources, decode, encode, find_root};
+use vfl_project::{Project, collect_all_sources, collect_sources, decode, encode, find_root};
 
 #[derive(Parser)]
 #[command(name = "vfl", version, about = "VHDL formatter and linter")]
@@ -64,7 +64,7 @@ enum Command {
     },
     /// List the lint rules and their levels in each preset.
     Rules,
-    /// Parse VHDL files and report syntax errors.
+    /// Parse VHDL, Verilog and SystemVerilog files and report syntax errors.
     Check {
         /// Files or directories (default: the project around the current directory).
         paths: Vec<PathBuf>,
@@ -359,17 +359,30 @@ fn check(paths: &[PathBuf], tree: bool) -> Result<()> {
     let mut error_count = 0usize;
     let mut file_count = 0usize;
     let mut configs = ConfigCache::default();
-    for file in source_files(paths)? {
+    for file in all_source_files(paths)? {
         let config = configs.for_file(&file)?;
         file_count += 1;
         let bytes = std::fs::read(&file).with_context(|| format!("reading {}", file.display()))?;
         let (text, _) = decode(bytes);
-        let parsed = vfl_syntax::parse(&text, config.standard());
-        if tree {
-            print!("{}", parsed.debug_tree());
+        let verilog = file
+            .extension()
+            .and_then(|e| e.to_str())
+            .and_then(|e| config.verilog.standard_for_extension(e));
+        let (dump, errors) = match verilog {
+            Some(standard) => {
+                let parsed = parse_verilog(&file, &text, config, standard);
+                (tree.then(|| parsed.debug_tree()), parsed.errors().to_vec())
+            }
+            None => {
+                let parsed = vfl_syntax::parse(&text, config.standard());
+                (tree.then(|| parsed.debug_tree()), parsed.errors().to_vec())
+            }
+        };
+        if let Some(dump) = dump {
+            print!("{dump}");
         }
         let index = vfl_syntax::LineIndex::new(&text);
-        for error in parsed.errors() {
+        for error in &errors {
             let at = index.line_col(&text, error.range.start());
             println!(
                 "{}:{}:{}: error: {}",
@@ -379,13 +392,73 @@ fn check(paths: &[PathBuf], tree: bool) -> Result<()> {
                 error.message
             );
         }
-        error_count += parsed.errors().len();
+        error_count += errors.len();
     }
     if error_count > 0 {
         bail!("{error_count} syntax errors in {file_count} files");
     }
     eprintln!("{file_count} files checked, no syntax errors");
     Ok(())
+}
+
+/// The VHDL, Verilog and SystemVerilog sources under `paths` (the current
+/// directory if empty).
+fn all_source_files(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    let default = [PathBuf::from(".")];
+    let paths = if paths.is_empty() {
+        &default[..]
+    } else {
+        paths
+    };
+    let mut files = Vec::new();
+    for path in paths {
+        if path.is_dir() {
+            let root = find_root(path);
+            let config = vfl_config::load_for_dir(&root.dir)?;
+            let (vhdl, verilog) = collect_all_sources(path, &config.project, &config.verilog)
+                .with_context(|| format!("scanning {}", path.display()))?;
+            files.extend(vhdl);
+            files.extend(verilog);
+        } else {
+            files.push(path.clone());
+        }
+    }
+    Ok(files)
+}
+
+/// Parses a Verilog or SystemVerilog file, reading the files it includes
+/// from its directory and the configured include directories.
+fn parse_verilog(
+    file: &Path,
+    text: &str,
+    config: &Config,
+    standard: vfl_config::VerilogStandard,
+) -> vfl_verilog_syntax::Parse {
+    let standard = standard
+        .as_str()
+        .parse()
+        .expect("config standards are parser standards");
+    let dir = file.parent().unwrap_or(Path::new(".")).to_owned();
+    let root = find_root(&dir).dir;
+    let search: Vec<PathBuf> = std::iter::once(dir)
+        .chain(config.verilog.include_dirs.iter().map(|d| root.join(d)))
+        .collect();
+    let read = |name: &str| -> Option<String> {
+        search
+            .iter()
+            .map(|d| d.join(name))
+            .find(|p| p.is_file())
+            .and_then(|p| std::fs::read(p).ok())
+            .map(|bytes| decode(bytes).0)
+    };
+    vfl_verilog_syntax::parse_with(
+        text,
+        &vfl_verilog_syntax::Options {
+            standard,
+            defines: &config.verilog.defines,
+            include: Some(&read),
+        },
+    )
 }
 
 fn parse_lines(arg: &str) -> Result<(usize, usize), String> {

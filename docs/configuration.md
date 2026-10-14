@@ -406,6 +406,29 @@ clock input, and a stimulus process that holds the resets, waits, and ends the s
 (`std.env.finish` from VHDL-2008; with VHDL-93 the clocks stop and the simulation runs out
 of events).
 
+## `[verilog]`
+
+Verilog and SystemVerilog sources. `vfl check` parses them; the other commands only
+handle VHDL so far. The extension of a file decides how it is parsed: files with
+`sv_extensions` as SystemVerilog, files with `extensions` as Verilog. A
+`` `begin_keywords `` directive in a file still changes the reserved words for the part
+of the file it covers.
+
+Compiler directives are not run as a separate pass: `` `ifdef `` / `` `ifndef `` /
+`` `elsif `` / `` `else `` pick the branch that is parsed, from the macros defined by
+`defines`, by `` `define `` in the file and in the files it includes. Included files are
+looked up in the including file's directory, then in `include_dirs`. Macro uses are not
+expanded.
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `extensions` | array of strings | `["v", "vh"]` | File extensions, without the dot, of Verilog sources. |
+| `standard` | string | `"1364-2005"` | The Verilog standard of those files: `"1364-1995"`, `"1364-2001"`, `"1364-2005"` (or `"1995"`, `"2001"`, `"2005"`), or a SystemVerilog one to parse `.v` files as SystemVerilog. |
+| `sv_extensions` | array of strings | `["sv", "svh"]` | File extensions, without the dot, of SystemVerilog sources. |
+| `sv_standard` | string | `"1800-2017"` | The SystemVerilog standard of those files: `"1800-2005"`, `"1800-2009"`, `"1800-2012"`, `"1800-2017"`, `"1800-2023"` (or `"sv2005"` ... `"sv2023"`). |
+| `include_dirs` | array of strings | `[]` | Directories, relative to the project root, searched for `` `include `` files. |
+| `defines` | array of strings | `[]` | Macros defined before every file, as `"NAME"` or `"NAME=value"` (only whether a macro is defined matters so far). |
+
 ## In-source comments
 
 These are not config keys, but they adjust settings for part of a file.
@@ -524,6 +547,14 @@ testbench_instance = "dut"
 clock_period = "10 ns"
 reset_cycles = 5
 # clock_pattern, reset_pattern, active_low_pattern: see above
+
+[verilog]
+extensions = ["v", "vh"]
+standard = "1364-2005"
+sv_extensions = ["sv", "svh"]
+sv_standard = "1800-2017"
+include_dirs = []
+defines = []
 ```
 
 Editor settings (the path to `vfl`, tracing) belong to the editor integration, not to

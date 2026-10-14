@@ -1,0 +1,18 @@
+[package]
+name = "vfl-verilog-syntax"
+description = "Lossless, error-tolerant Verilog and SystemVerilog lexer and parser"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+rowan = "0.16"
+vfl-syntax.workspace = true
+
+[dev-dependencies]
+insta = { version = "1", features = ["glob"] }

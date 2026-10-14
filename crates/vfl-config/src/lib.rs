@@ -47,6 +47,7 @@ pub struct Config {
     pub lint: LintConfig,
     pub doc: DocConfig,
     pub generate: GenerateConfig,
+    pub verilog: VerilogConfig,
 }
 
 impl Config {
@@ -116,6 +117,91 @@ impl From<StandardSetting> for Standard {
             StandardSetting::Vhdl1993 => Standard::Vhdl1993,
             StandardSetting::Vhdl2008 => Standard::Vhdl2008,
             StandardSetting::Vhdl2019 => Standard::Vhdl2019,
+        }
+    }
+}
+
+/// `[verilog]`: Verilog and SystemVerilog sources.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct VerilogConfig {
+    /// File extensions of Verilog sources, parsed with `standard`.
+    pub extensions: Vec<String>,
+    /// The Verilog standard (keyword set) of files with `extensions`.
+    pub standard: VerilogStandard,
+    /// File extensions of SystemVerilog sources, parsed with `sv_standard`.
+    pub sv_extensions: Vec<String>,
+    /// The SystemVerilog standard of files with `sv_extensions`.
+    pub sv_standard: VerilogStandard,
+    /// Directories searched for `` `include `` files, relative to the
+    /// project root, after the including file's directory.
+    pub include_dirs: Vec<String>,
+    /// Macros defined before every file, as `NAME` or `NAME=value`.
+    pub defines: Vec<String>,
+}
+
+impl Default for VerilogConfig {
+    fn default() -> Self {
+        VerilogConfig {
+            extensions: vec!["v".into(), "vh".into()],
+            standard: VerilogStandard::Verilog2005,
+            sv_extensions: vec!["sv".into(), "svh".into()],
+            sv_standard: VerilogStandard::Sv2017,
+            include_dirs: Vec::new(),
+            defines: Vec::new(),
+        }
+    }
+}
+
+impl VerilogConfig {
+    /// The standard to parse a file with this extension with, if it is a
+    /// Verilog or SystemVerilog source.
+    pub fn standard_for_extension(&self, ext: &str) -> Option<VerilogStandard> {
+        let has = |list: &[String]| list.iter().any(|e| e.eq_ignore_ascii_case(ext));
+        if has(&self.sv_extensions) {
+            Some(self.sv_standard)
+        } else if has(&self.extensions) {
+            Some(self.standard)
+        } else {
+            None
+        }
+    }
+}
+
+/// A Verilog or SystemVerilog standard, spelled as `` `begin_keywords ``
+/// spells it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VerilogStandard {
+    #[serde(rename = "1364-1995", alias = "1995")]
+    Verilog1995,
+    #[serde(rename = "1364-2001", alias = "2001")]
+    Verilog2001,
+    #[serde(rename = "1364-2005", alias = "2005")]
+    Verilog2005,
+    #[serde(rename = "1800-2005", alias = "sv2005")]
+    Sv2005,
+    #[serde(rename = "1800-2009", alias = "sv2009")]
+    Sv2009,
+    #[serde(rename = "1800-2012", alias = "sv2012")]
+    Sv2012,
+    #[serde(rename = "1800-2017", alias = "sv2017")]
+    Sv2017,
+    #[serde(rename = "1800-2023", alias = "sv2023")]
+    Sv2023,
+}
+
+impl VerilogStandard {
+    /// The name used in config files, which the parser's `Standard` also parses.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            VerilogStandard::Verilog1995 => "1364-1995",
+            VerilogStandard::Verilog2001 => "1364-2001",
+            VerilogStandard::Verilog2005 => "1364-2005",
+            VerilogStandard::Sv2005 => "1800-2005",
+            VerilogStandard::Sv2009 => "1800-2009",
+            VerilogStandard::Sv2012 => "1800-2012",
+            VerilogStandard::Sv2017 => "1800-2017",
+            VerilogStandard::Sv2023 => "1800-2023",
         }
     }
 }

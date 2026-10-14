@@ -915,6 +915,7 @@ dependencies = [
  "vfl-lsp",
  "vfl-project",
  "vfl-syntax",
+ "vfl-verilog-syntax",
 ]
 
 [[package]]
@@ -1042,6 +1043,15 @@ version = "0.2.1"
 dependencies = [
  "insta",
  "rowan",
+]
+
+[[package]]
+name = "vfl-verilog-syntax"
+version = "0.2.1"
+dependencies = [
+ "insta",
+ "rowan",
+ "vfl-syntax",
 ]
 
 [[package]]

@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Verilog and SystemVerilog parsing** (`vfl-verilog-syntax`): a lossless, error-tolerant
+  parser for Verilog (IEEE 1364-1995/2001/2005) and synthesizable SystemVerilog (IEEE
+  1800-2005 to 2023), with `` `begin_keywords ``. Directives stay in the tree; the
+  `` `ifdef `` branch compiled is chosen from the configured `defines` and the macros
+  defined in the file and its includes. Classes, covergroups, properties and constraints
+  are kept opaque so testbenches still parse. `vfl check` reads `.v`, `.vh`, `.sv` and
+  `.svh` files, configured by the new `[verilog]` section. VHDL-only projects run no
+  Verilog code.
+
 ## [0.2.1] - 2026-10-14
 
 ### Fixed

@@ -1,3 +1,7 @@
 *.vhd text eol=lf
 *.vhdl text eol=lf
 *.snap text eol=lf
+*.v text eol=lf
+*.vh text eol=lf
+*.sv text eol=lf
+*.svh text eol=lf
