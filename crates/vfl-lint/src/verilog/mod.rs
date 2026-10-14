@@ -43,6 +43,9 @@ pub struct Exports {
     instantiated: Vec<String>,
     /// The files it includes.
     includes: Vec<String>,
+    /// Its units with a macro as an item, which may declare ports and
+    /// parameters: `` `NESTED_TEST_SUITE ``.
+    open: Vec<String>,
 }
 
 impl Exports {
@@ -66,6 +69,9 @@ impl Exports {
             out.imports.extend(scope.imports.iter().cloned());
             if unit.kind() == K::PACKAGE_DECL {
                 out.packages.push((name.clone(), names));
+            }
+            if scope.open {
+                out.open.push(name.clone());
             }
             out.units.push(name);
         }
@@ -102,7 +108,9 @@ impl<'a> Project<'a> {
         let mut packages: HashMap<String, Vec<String>> = HashMap::new();
         let mut globals = HashSet::new();
         let mut units = HashSet::new();
+        let mut open = HashSet::new();
         for (_, exports) in &files {
+            open.extend(exports.open.iter().map(String::as_str));
             for (name, names) in &exports.packages {
                 packages
                     .entry(name.clone())
@@ -112,14 +120,16 @@ impl<'a> Project<'a> {
             globals.extend(exports.globals.iter().cloned());
             units.extend(exports.units.iter().cloned());
         }
-        // A module defined twice (two test benches) is not looked up.
+        // A module defined twice (two test benches), or whose macros may
+        // declare more ports and parameters, is not looked up.
         let mut modules: HashMap<&str, Option<&ForeignModule>> = HashMap::new();
         for id in 0..analysis.files().len() {
             for module in analysis.foreign_modules(id as u32).unwrap_or(&[]) {
+                let known = !open.contains(module.name.as_str());
                 modules
                     .entry(module.name.as_str())
                     .and_modify(|m| *m = None)
-                    .or_insert(Some(module));
+                    .or_insert(known.then_some(module));
             }
         }
         let mut sorted_globals: Vec<&String> = globals.iter().collect();
