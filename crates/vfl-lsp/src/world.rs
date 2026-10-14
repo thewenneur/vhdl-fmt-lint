@@ -374,6 +374,24 @@ mod tests {
     }
 
     #[test]
+    fn a_workspace_in_a_submodule_opens_the_superproject() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join(".git/modules/ip")).unwrap();
+        std::fs::write(root.join("vfl.toml"), "[format]\nindent = 3\n").unwrap();
+        std::fs::write(root.join("top.vhd"), "entity top is\nend entity;\n").unwrap();
+        let ip = root.join("ip");
+        std::fs::create_dir(&ip).unwrap();
+        std::fs::write(ip.join(".git"), "gitdir: ../.git/modules/ip\n").unwrap();
+        std::fs::write(ip.join("fifo.vhd"), "entity fifo is\nend entity;\n").unwrap();
+
+        let mut world = World::new(&ip);
+        assert_eq!(world.root.dir, root);
+        assert_eq!(world.project.files.len(), 2);
+        assert_eq!(world.config(&ip.join("fifo.vhd")).format.indent, 3);
+    }
+
+    #[test]
     fn unchanged_files_are_not_analyzed_again() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("a.vhd");

@@ -84,6 +84,10 @@ The project root is found by walking up from the file or directory vfl was start
   the home directory a project.
 - Without a config, the nearest version-control root is the root; failing that, the starting
   directory itself. The language server starts from its first workspace folder.
+- A git submodule is not a version-control root of its own: its files belong to the
+  superproject, so opening the submodule (or a file in it) finds the superproject's root
+  and `vfl.toml`. Put a `vfl.toml` with `root = true` in the submodule to make it a
+  separate project. Linked worktrees stay roots of their own.
 
 To keep two VHDL projects in one repository apart, give each its own `vfl.toml` with
 `root = true`.

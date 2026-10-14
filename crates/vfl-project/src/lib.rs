@@ -54,9 +54,7 @@ pub fn find_root(path: &Path) -> ProjectRoot {
     } else {
         path
     };
-    let vcs = start
-        .ancestors()
-        .find(|dir| VCS_MARKERS.iter().any(|marker| dir.join(marker).exists()));
+    let vcs = start.ancestors().find(|dir| is_vcs_root(dir));
 
     let within_vcs = |dir: &Path| vcs.is_none_or(|vcs| dir.starts_with(vcs));
     let config_dir = match config_chain(start) {
@@ -88,6 +86,31 @@ pub fn find_root(path: &Path) -> ProjectRoot {
         dir: start.to_owned(),
         kind: RootKind::Fallback,
     }
+}
+
+/// Whether `dir` is a version-control root. A git submodule is not one: it
+/// belongs to the enclosing superproject, unless a config with `root = true`
+/// makes it a project of its own.
+fn is_vcs_root(dir: &Path) -> bool {
+    VCS_MARKERS.iter().any(|marker| {
+        let path = dir.join(marker);
+        match path.symlink_metadata() {
+            Ok(meta) if meta.is_file() => !is_submodule_gitlink(&path),
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    })
+}
+
+/// Whether the `.git` file at `path` points into a superproject's
+/// `.git/modules/`, as a submodule's does (a linked worktree's points into
+/// `.git/worktrees/` instead, and is a root of its own).
+fn is_submodule_gitlink(path: &Path) -> bool {
+    std::fs::read_to_string(path).is_ok_and(|text| {
+        text.lines()
+            .find_map(|line| line.strip_prefix("gitdir:"))
+            .is_some_and(|gitdir| gitdir.trim().replace('\\', "/").contains(".git/modules/"))
+    })
 }
 
 /// Lists the VHDL sources under `root`, sorted, honouring `.gitignore` and
@@ -204,6 +227,61 @@ mod tests {
         let found = find_root(&root.join("rtl"));
         assert_eq!(found.dir, root);
         assert_eq!(found.kind, RootKind::Vcs);
+    }
+
+    /// A superproject with an IP as a git submodule, laid out as `git
+    /// submodule add` leaves it: the submodule's `.git` is a file.
+    fn superproject(root: &Path) -> PathBuf {
+        fs::create_dir_all(root.join(".git/modules/ip")).unwrap();
+        touch(&root.join("rtl/top.vhd"));
+        let ip = root.join("third_party/ip");
+        touch(&ip.join("rtl/fifo.vhd"));
+        fs::write(ip.join(".git"), "gitdir: ../../.git/modules/ip\n").unwrap();
+        ip
+    }
+
+    #[test]
+    fn a_submodule_belongs_to_its_superproject() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let ip = superproject(root);
+
+        let found = find_root(&ip.join("rtl/fifo.vhd"));
+        assert_eq!(found.dir, root);
+        assert_eq!(found.kind, RootKind::Vcs);
+
+        touch(&root.join("vfl.toml"));
+        let found = find_root(&ip.join("rtl/fifo.vhd"));
+        assert_eq!(found.dir, root);
+        assert_eq!(found.kind, RootKind::Config);
+
+        let sources = collect_sources(root, &ProjectConfig::default()).unwrap();
+        assert!(sources.contains(&ip.join("rtl/fifo.vhd")));
+    }
+
+    #[test]
+    fn root_true_makes_a_submodule_its_own_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let ip = superproject(root);
+        touch(&root.join("vfl.toml"));
+        fs::write(ip.join("vfl.toml"), "root = true\n").unwrap();
+
+        let found = find_root(&ip.join("rtl/fifo.vhd"));
+        assert_eq!(found.dir, ip);
+        assert_eq!(found.kind, RootKind::Config);
+    }
+
+    #[test]
+    fn a_linked_worktree_is_its_own_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join(".git/worktrees/wt")).unwrap();
+        let wt = root.join("wt");
+        touch(&wt.join("rtl/top.vhd"));
+        fs::write(wt.join(".git"), "gitdir: /repo/.git/worktrees/wt\n").unwrap();
+
+        assert_eq!(find_root(&wt.join("rtl")).dir, wt);
     }
 
     #[test]

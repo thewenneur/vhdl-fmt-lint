@@ -5,7 +5,8 @@ prints the same.
 
 Commands that take paths default to the project around the current directory. Its root
 is the outermost directory holding a `vfl.toml`, without going past one with `root = true`
-or above the nearest version-control root; without a config, the nearest version-control
+or above the nearest version-control root (a git submodule counts as part of its
+superproject); without a config, the nearest version-control
 root; failing that, the current directory. Settings come from the `vfl.toml` files that
 apply to each file ([configuration.md](configuration.md#lookup)).
 
