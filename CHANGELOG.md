@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Fuzz testing** (`fuzz/`): cargo-fuzz targets for the parser (lossless round trip), the
+  formatter (idempotence, range formatting agreeing with whole-file formatting), the
+  linter and its fixes, incremental re-analysis (equal to a full analysis) and the
+  language server under `didChange` edits. CI runs each target briefly.
+
+### Fixed
+
+- **Completion after a non-ASCII character**: the language server panicked when the word
+  before the cursor followed a multi-byte character.
+- **Range formatting and `-- vfl: on`**: formatting a range indented the `-- vfl: on` line,
+  which `vfl fmt` keeps as written, so the two disagreed.
+
 ## [0.2.1] - 2026-10-14
 
 ### Fixed

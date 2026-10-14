@@ -1001,3 +1001,16 @@ fn quick_fixes_for_rules() {
     let named = fix(&fixes, "Name the formals");
     assert!(apply(FIXES_TOP, &named["edit"], &top).contains("port map (clk => clk, q => o);"));
 }
+
+/// Found by fuzzing: a word start after a multi-byte character.
+#[test]
+fn completion_after_a_non_ascii_character() {
+    let mut world = vfl_lsp::World::detached();
+    let path = std::env::temp_dir().join("vfl_completion_non_ascii.vhd");
+    world.set_text(path.clone(), "entity e is end;\n--\u{93}x".into());
+    let uri = lsp_types::Url::from_file_path(&path).unwrap().to_string();
+    let completion = vfl_lsp::handle(&mut world, "textDocument/completion", at(&uri, 1, 4));
+    assert!(completion.is_some());
+    let completion = vfl_lsp::editor::completion(&mut world, &path, 21).unwrap();
+    assert_eq!(completion.start, 21);
+}

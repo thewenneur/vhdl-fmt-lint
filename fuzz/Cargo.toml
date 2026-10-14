@@ -1,0 +1,64 @@
+[package]
+name = "vfl-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Its own workspace: the fuzz targets need nightly and libFuzzer, so they
+# stay out of the main build, tests and clippy runs.
+[workspace]
+members = ["."]
+
+[dependencies]
+arbitrary = { version = "1", features = ["derive"] }
+libfuzzer-sys = "0.4"
+lsp-types = "0.95"
+serde_json = "1"
+vfl-config = { path = "../crates/vfl-config" }
+vfl-fmt = { path = "../crates/vfl-fmt" }
+vfl-lint = { path = "../crates/vfl-lint" }
+vfl-lsp = { path = "../crates/vfl-lsp" }
+vfl-sema = { path = "../crates/vfl-sema" }
+vfl-syntax = { path = "../crates/vfl-syntax" }
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "parse"
+path = "fuzz_targets/parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "format"
+path = "fuzz_targets/format.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lint"
+path = "fuzz_targets/lint.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "reanalyze"
+path = "fuzz_targets/reanalyze.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lsp"
+path = "fuzz_targets/lsp.rs"
+test = false
+doc = false
+bench = false

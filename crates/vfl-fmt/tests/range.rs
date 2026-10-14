@@ -120,7 +120,12 @@ fn protected_lines_are_left_alone() {
     let all = 0..text.len();
     assert_eq!(
         fmt_range(text, all),
-        "architecture a of e is\nbegin\n  -- vfl: off\nx<=a;\n  -- vfl: on\n  y <= b;\nend;\n"
+        "architecture a of e is\nbegin\n  -- vfl: off\nx<=a;\n-- vfl: on\n  y <= b;\nend;\n"
+    );
+    // As `vfl fmt` gives: the `-- vfl: on` line is kept as written too.
+    assert_eq!(
+        fmt_range(text, 0..text.len()),
+        format(text, &FormatConfig::default(), Standard::Vhdl2008).unwrap()
     );
     assert!(edits(text, line(text, 4)).is_empty());
 }
