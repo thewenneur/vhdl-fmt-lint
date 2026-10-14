@@ -552,7 +552,8 @@ impl<'a> Lexer<'a> {
                 if self.peek() == b'"' {
                     let s = self.pos;
                     self.string();
-                    let version = self.text[s + 1..self.pos.saturating_sub(1).max(s + 1)].trim();
+                    let quoted = &self.text[s + 1..self.pos];
+                    let version = quoted.strip_suffix('"').unwrap_or(quoted).trim();
                     match version.parse::<Standard>() {
                         Ok(std) => self.standards.push(std),
                         Err(_) => {
@@ -999,12 +1000,14 @@ mod tests {
         out
     }
 
-    /// Found by fuzzing: an unterminated file name ending in a multi-byte
-    /// character panicked.
+    /// Found by fuzzing: an unterminated file name (or keyword version)
+    /// ending in a multi-byte character panicked.
     #[test]
-    fn unterminated_include_name() {
+    fn unterminated_quoted_names() {
         let lexed = lex("`include \"a®", &Options::default());
         assert_eq!(lexed.includes, ["a®"]);
+        let lexed = lex("`begin_keywords \"1364-2005®", &Options::default());
+        assert!(!lexed.errors.is_empty());
     }
 
     /// Found by fuzzing: a file that includes itself twice took
