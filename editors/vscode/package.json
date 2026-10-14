@@ -1,7 +1,7 @@
 {
   "name": "vfl",
-  "displayName": "vfl: VHDL formatter and linter",
-  "description": "Formatting, linting, navigation and syntax highlighting for VHDL, powered by the vfl language server.",
+  "displayName": "vfl: VHDL and Verilog formatter and linter",
+  "description": "Formatting, linting, navigation and syntax highlighting for VHDL, Verilog and SystemVerilog, powered by the vfl language server.",
   "version": "0.2.1",
   "publisher": "thewenneur",
   "license": "MIT OR Apache-2.0",
@@ -20,6 +20,8 @@
   ],
   "keywords": [
     "vhdl",
+    "verilog",
+    "systemverilog",
     "fpga",
     "hdl",
     "formatter",
@@ -47,6 +49,30 @@
           ".vht"
         ],
         "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "verilog",
+        "aliases": [
+          "Verilog",
+          "verilog"
+        ],
+        "extensions": [
+          ".v",
+          ".vh"
+        ],
+        "configuration": "./language-configuration-verilog.json"
+      },
+      {
+        "id": "systemverilog",
+        "aliases": [
+          "SystemVerilog",
+          "systemverilog"
+        ],
+        "extensions": [
+          ".sv",
+          ".svh"
+        ],
+        "configuration": "./language-configuration-verilog.json"
       }
     ],
     "grammars": [
@@ -54,6 +80,16 @@
         "language": "vhdl",
         "scopeName": "source.vhdl",
         "path": "./syntaxes/vhdl.tmLanguage.json"
+      },
+      {
+        "language": "systemverilog",
+        "scopeName": "source.systemverilog",
+        "path": "./syntaxes/systemverilog.tmLanguage.json"
+      },
+      {
+        "language": "verilog",
+        "scopeName": "source.verilog",
+        "path": "./syntaxes/verilog.tmLanguage.json"
       }
     ],
     "semanticTokenTypes": [
@@ -65,26 +101,26 @@
       {
         "id": "signal",
         "superType": "variable",
-        "description": "A VHDL signal."
+        "description": "A VHDL signal, or a Verilog net or module-level variable."
       },
       {
         "id": "port",
         "superType": "parameter",
-        "description": "A VHDL port; modifiers give its mode."
+        "description": "A port; modifiers give its mode or direction."
       },
       {
         "id": "constant",
         "superType": "variable",
-        "description": "A VHDL constant."
+        "description": "A VHDL constant, or a Verilog localparam."
       },
       {
         "id": "generic",
         "superType": "parameter",
-        "description": "A VHDL generic constant."
+        "description": "A VHDL generic constant, or a Verilog parameter."
       },
       {
         "id": "label",
-        "description": "A VHDL statement label."
+        "description": "A statement label, or a Verilog instance or block name."
       },
       {
         "id": "unit",
@@ -175,6 +211,118 @@
             "entity.other.attribute-name.vhdl"
           ]
         }
+      },
+      {
+        "language": "verilog",
+        "scopes": {
+          "namespace": [
+            "entity.name.namespace.systemverilog"
+          ],
+          "type": [
+            "entity.name.type.systemverilog"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter.systemverilog"
+          ],
+          "class": [
+            "entity.name.type.entity.systemverilog"
+          ],
+          "interface": [
+            "entity.name.type.component.systemverilog"
+          ],
+          "function": [
+            "entity.name.function.systemverilog"
+          ],
+          "procedure": [
+            "entity.name.function.procedure.systemverilog"
+          ],
+          "enumMember": [
+            "variable.other.enummember.systemverilog"
+          ],
+          "variable": [
+            "variable.other.systemverilog"
+          ],
+          "parameter": [
+            "variable.parameter.systemverilog"
+          ],
+          "signal": [
+            "variable.other.signal.systemverilog"
+          ],
+          "port": [
+            "variable.parameter.port.systemverilog"
+          ],
+          "constant": [
+            "variable.other.constant.systemverilog"
+          ],
+          "generic": [
+            "variable.other.constant.generic.systemverilog"
+          ],
+          "label": [
+            "entity.name.label.systemverilog"
+          ],
+          "unit": [
+            "keyword.other.unit.systemverilog"
+          ],
+          "attribute": [
+            "entity.other.attribute-name.systemverilog"
+          ]
+        }
+      },
+      {
+        "language": "systemverilog",
+        "scopes": {
+          "namespace": [
+            "entity.name.namespace.systemverilog"
+          ],
+          "type": [
+            "entity.name.type.systemverilog"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter.systemverilog"
+          ],
+          "class": [
+            "entity.name.type.entity.systemverilog"
+          ],
+          "interface": [
+            "entity.name.type.component.systemverilog"
+          ],
+          "function": [
+            "entity.name.function.systemverilog"
+          ],
+          "procedure": [
+            "entity.name.function.procedure.systemverilog"
+          ],
+          "enumMember": [
+            "variable.other.enummember.systemverilog"
+          ],
+          "variable": [
+            "variable.other.systemverilog"
+          ],
+          "parameter": [
+            "variable.parameter.systemverilog"
+          ],
+          "signal": [
+            "variable.other.signal.systemverilog"
+          ],
+          "port": [
+            "variable.parameter.port.systemverilog"
+          ],
+          "constant": [
+            "variable.other.constant.systemverilog"
+          ],
+          "generic": [
+            "variable.other.constant.generic.systemverilog"
+          ],
+          "label": [
+            "entity.name.label.systemverilog"
+          ],
+          "unit": [
+            "keyword.other.unit.systemverilog"
+          ],
+          "attribute": [
+            "entity.other.attribute-name.systemverilog"
+          ]
+        }
       }
     ],
     "configuration": {
@@ -216,6 +364,14 @@
     },
     "configurationDefaults": {
       "[vhdl]": {
+        "editor.defaultFormatter": "thewenneur.vfl",
+        "editor.formatOnType": true
+      },
+      "[verilog]": {
+        "editor.defaultFormatter": "thewenneur.vfl",
+        "editor.formatOnType": true
+      },
+      "[systemverilog]": {
         "editor.defaultFormatter": "thewenneur.vfl",
         "editor.formatOnType": true
       }

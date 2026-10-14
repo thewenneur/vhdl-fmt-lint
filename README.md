@@ -32,10 +32,12 @@ A fast, fully configurable VHDL formatter, linter and language server, in pure R
 - **VHDL-2008**, **VHDL-93** and **VHDL-2019**.
 - **Verilog and SystemVerilog** (in progress): `vfl check` parses Verilog-1995 to 2005 and
   SystemVerilog-2005 to 2023 files with a lossless, error-tolerant parser that follows
-  `` `ifdef `` branches. In mixed projects, VHDL instantiates Verilog modules like
+  `` `ifdef `` branches, and `vfl fmt` formats them with the same settings and alignment
+  as VHDL. In the editor they get syntax errors, formatting, an outline, folding and
+  semantic highlighting. In mixed projects, VHDL instantiates Verilog modules like
   entities: port maps are checked, hover and go to definition cross languages, and the
-  generated documentation and diagrams include the modules. Formatting and linting of
-  Verilog itself come next.
+  generated documentation and diagrams include the modules. Linting of Verilog itself
+  comes next.
 
 Status: early development; see the [changelog](CHANGELOG.md) for what each release brings.
 
@@ -98,14 +100,15 @@ The plugin's README covers building it and its commands.
 
 ### Other editors
 
-Any editor with LSP support can use `vfl lsp` (over stdio) as the VHDL language server.
+Any editor with LSP support can use `vfl lsp` (over stdio) as the VHDL language server, and
+for Verilog and SystemVerilog files too.
 
 Neovim 0.11+:
 
 ```lua
 vim.lsp.config("vfl", {
   cmd = { "vfl", "lsp" },
-  filetypes = { "vhdl" },
+  filetypes = { "vhdl", "verilog", "systemverilog" },
   root_markers = { "vfl.toml", ".git" },
 })
 vim.lsp.enable("vfl")
@@ -120,6 +123,10 @@ args = ["lsp"]
 
 [[language]]
 name = "vhdl"
+language-servers = ["vfl"]
+
+[[language]]
+name = "verilog"
 language-servers = ["vfl"]
 ```
 

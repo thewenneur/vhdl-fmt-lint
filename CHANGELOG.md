@@ -23,11 +23,26 @@
   doc` documents each module (parameters, ports, comments, instances) and draws it in
   the hierarchy, block and symbol diagrams. `vfl project` lists the Verilog files with
   their libraries.
+- **Verilog and SystemVerilog formatting**: `vfl fmt` formats `.v` and `.sv` files with the
+  `[format]` settings that apply to them (indentation, list layouts, line width) and the
+  same alignment as VHDL: port and parameter types, names and defaults, declarations,
+  assignment operators, named connections and case items. `begin` stays where it is
+  written, directives keep their indentation, code in `` `ifdef `` branches that are not
+  compiled is kept as written, and `// vfl: off` regions are left alone. Like VHDL, the
+  output must parse to the same tokens and comments, and formatting it again changes
+  nothing. `vfl fmt - --stdin-filename top.sv` formats standard input as the named file.
+- **Verilog in the editor**: the language server reports the syntax errors of Verilog and
+  SystemVerilog files, formats them (document, range, on type), lists their modules,
+  parameters, ports, declarations, functions, tasks and instances as document symbols,
+  folds their blocks, lists and comments, and colors their names by declaration. The VS
+  Code extension registers the `verilog` and `systemverilog` languages with a grammar;
+  the Notepad++ plugin formats, checks, outlines and colors Verilog buffers.
 - **Fuzz testing** (`fuzz/`): cargo-fuzz targets for the VHDL and Verilog parsers
   (lossless round trip; Verilog with macros and include cycles), the formatter
   (idempotence, range formatting agreeing with whole-file formatting), the linter and its
   fixes, incremental re-analysis of mixed VHDL and Verilog projects (equal to a full
-  analysis) and the language server under `didChange` edits. CI runs each target briefly.
+  analysis) and the language server under `didChange` edits, and the Verilog formatter.
+  CI runs each target briefly.
 
 ### Fixed
 
@@ -37,7 +52,7 @@
   which `vfl fmt` keeps as written, so the two disagreed.
 - **Editor requests in a Verilog file**: hover, completion and the other requests made in
   an open Verilog file panicked the language server, which analyzes Verilog files only
-  for their modules. They now get no answer, until the editor supports Verilog.
+  for their modules. They no longer reach the VHDL handlers.
 - **Unterminated string at the end of a file**: the type checker panicked when the string
   ended in a multi-byte character.
 - **Unterminated Verilog include name**: `` `include "name `` with no closing quote,
@@ -45,6 +60,11 @@
 - **Verilog include cycles**: a file including itself more than once on each level of a
   cycle took exponential time to parse (50 s for 175 bytes). At most 1024 included files
   are now read per file.
+- **Range formatting and lone carriage returns**: in a file that breaks lines with a lone
+  `\r` (old Mac line endings), formatting a range dropped the blank lines before it. Such
+  a file is now formatted whole.
+- **Verilog lexer**: a block comment left open in a `` `define `` body and protected text
+  with no end are now syntax errors, as an open block comment elsewhere is.
 
 ## [0.2.1] - 2026-10-14
 

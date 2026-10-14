@@ -36,24 +36,27 @@ on standard error.
 vfl fmt [OPTIONS] [PATHS]...
 ```
 
-Formats VHDL files in place with the `[format]` settings
+Formats VHDL, Verilog and SystemVerilog files in place with the `[format]` settings
 ([configuration.md](configuration.md#format)). Paths are files or directories; `-` reads
-standard input and writes the result to standard output.
+standard input and writes the result to standard output. A file is formatted as Verilog
+or SystemVerilog by its extension (see [`[verilog]`](configuration.md#verilog)).
 
 | Option | |
 |--------|---|
 | `--check` | Do not write anything; list the files that would change and exit with `1` if any would. |
+| `--stdin-filename PATH` | With `-`: the path of the text read, which decides its language and the `vfl.toml` that applies. Standard input is VHDL otherwise. |
 | `--lines FIRST:LAST` | Format only lines `FIRST` to `LAST` (1-based, inclusive), and the whole statements and aligned lines they are part of. Repeatable. Takes a single file or `-`. |
 
 Formatting is idempotent and keeps every token and comment. Regions between
-`-- vfl: off` and `-- vfl: on`, and the statement after `-- vfl: skip`, are left as they
-are.
+`-- vfl: off` and `-- vfl: on` (`// vfl: off` and `// vfl: on` in Verilog), and the
+statement after `-- vfl: skip`, are left as they are.
 
 ```sh
 vfl fmt                       # the whole project
 vfl fmt --check src/          # in CI
 vfl fmt - < top.vhd           # from an editor
 vfl fmt --lines 40:52 top.vhd # one block
+vfl fmt - --stdin-filename fifo.sv < fifo.sv
 ```
 
 ## `vfl lint`
@@ -242,6 +245,10 @@ client. It offers:
   workspace symbols;
 - semantic highlighting: signals, ports (with their mode), variables, constants,
   generics, types, subprograms, entities, components, packages and enumeration literals;
+- for Verilog and SystemVerilog files: syntax errors, formatting (document, range and on
+  type), document symbols (modules, parameters, ports, declarations, functions, tasks,
+  instances and named generate blocks), folding ranges, and semantic highlighting of the
+  names declared in the file;
 - code actions that insert an instantiation or a component declaration, or generate a
   testbench, from an entity.
 

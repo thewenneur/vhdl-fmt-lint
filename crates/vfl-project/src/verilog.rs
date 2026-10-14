@@ -87,6 +87,22 @@ pub fn parse_verilog(
     root: &Path,
     standard: VerilogStandard,
 ) -> vfl_verilog_syntax::Parse {
+    with_verilog_options(path, config, root, standard, |options| {
+        vfl_verilog_syntax::parse_with(text, options)
+    })
+}
+
+/// Calls `f` with the options a Verilog or SystemVerilog file is parsed
+/// with: the configured standard and defines, and included files read from
+/// the file's directory and the configured include directories, relative
+/// to `root`.
+pub fn with_verilog_options<R>(
+    path: &Path,
+    config: &Config,
+    root: &Path,
+    standard: VerilogStandard,
+    f: impl FnOnce(&vfl_verilog_syntax::Options) -> R,
+) -> R {
     let standard = standard
         .as_str()
         .parse()
@@ -103,14 +119,11 @@ pub fn parse_verilog(
             .and_then(|p| std::fs::read(p).ok())
             .map(|bytes| decode(bytes).0)
     };
-    vfl_verilog_syntax::parse_with(
-        text,
-        &vfl_verilog_syntax::Options {
-            standard,
-            defines: &config.verilog.defines,
-            include: Some(&read),
-        },
-    )
+    f(&vfl_verilog_syntax::Options {
+        standard,
+        defines: &config.verilog.defines,
+        include: Some(&read),
+    })
 }
 
 /// The modules as entities, and the modules they instantiate as implied

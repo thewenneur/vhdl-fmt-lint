@@ -25,6 +25,7 @@ for target in parse format; do
   seed "$target" '' "${vhdl[@]}"
 done
 seed verilog '' "${verilog[@]}"
+seed format_verilog '' "${verilog[@]}"
 # Files of one project start with \x01 (VHDL) or \x02 (Verilog); a \0
 # starts the edit script (see src/lib.rs): 5 bytes per edit.
 for target in lint reanalyze lsp; do

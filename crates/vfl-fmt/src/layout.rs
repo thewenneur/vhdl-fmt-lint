@@ -2,14 +2,12 @@
 
 use std::collections::HashMap;
 
-use rowan::NodeOrToken;
+use rowan::{NodeOrToken, TextSize};
 use vfl_config::{CaseAlternative, CloseParen, FormatConfig, ListLayout};
-use vfl_syntax::SyntaxKind::{self, *};
-use vfl_syntax::{SyntaxNode, TextSize};
 
 use crate::elems::Elem;
-use crate::kinds::{is_container, is_item, is_item_kind, is_list, is_section_keyword};
-use crate::spacing::space_between;
+use crate::kinds::is_item;
+use crate::lang::{Lang, Node};
 
 /// A parenthesized list that can be laid out one element per line.
 #[derive(Debug)]
@@ -24,11 +22,13 @@ pub(crate) struct List {
 }
 
 /// Facts about each element that do not depend on the line breaks.
-pub(crate) struct Analysis {
+pub(crate) struct Analysis<L: Lang> {
     /// First token of a statement, declaration, clause or design unit.
     pub item_start: Vec<bool>,
     /// `begin`, `end`, `else`, `elsif` of a construct.
     pub section: Vec<bool>,
+    /// Keywords at their construct's indentation when they start a line.
+    pub flush: Vec<bool>,
     /// The `when` starting a case alternative.
     pub alternative_start: Vec<bool>,
     /// First token of a case alternative's statement, when it is the only
@@ -51,13 +51,15 @@ pub(crate) struct Analysis {
     pub lists: Vec<List>,
     /// Source offset of each element to its index.
     pub index: HashMap<TextSize, usize>,
+    _lang: std::marker::PhantomData<L>,
 }
 
-pub(crate) fn analyze(elems: &[Elem], config: &FormatConfig) -> Analysis {
+pub(crate) fn analyze<L: Lang>(elems: &[Elem<L>], config: &FormatConfig) -> Analysis<L> {
     let n = elems.len();
     let mut an = Analysis {
         item_start: vec![false; n],
         section: vec![false; n],
+        flush: vec![false; n],
         alternative_start: vec![false; n],
         alternative_body: vec![false; n],
         after_label: vec![false; n],
@@ -68,19 +70,17 @@ pub(crate) fn analyze(elems: &[Elem], config: &FormatConfig) -> Analysis {
         opens: vec![None; n],
         lists: Vec::new(),
         index: HashMap::with_capacity(n),
+        _lang: std::marker::PhantomData,
     };
-    let mut list_of_node: HashMap<SyntaxNode, usize> = HashMap::new();
-    let mut shifted: Vec<(usize, SyntaxNode)> = Vec::new();
+    let mut list_of_node: HashMap<Node<L>, usize> = HashMap::new();
+    let mut shifted: Vec<(usize, Node<L>)> = Vec::new();
     let mut prev_code: Option<usize> = None;
     for (i, elem) in elems.iter().enumerate() {
         if i > 0 {
-            an.space[i] = space_between(&elems[i - 1], elem, config);
+            an.space[i] = L::space_between(&elems[i - 1], elem, config);
         }
         if let Some(p) = prev_code {
-            let label = elems[p].parent.as_ref().filter(|l| l.kind() == LABEL);
-            an.after_label[i] = elems[p].is_token(COLON)
-                && label
-                    .is_some_and(|l| l.parent().and_then(|s| s.first_child()).as_ref() == Some(l));
+            an.after_label[i] = L::ends_label(&elems[p]);
         }
         if !elem.is_comment() {
             prev_code = Some(i);
@@ -102,15 +102,15 @@ pub(crate) fn analyze(elems: &[Elem], config: &FormatConfig) -> Analysis {
             }
             if is_item(&n) {
                 an.item_start[i] = true;
-                if let Some(parent) = n.parent().filter(|p| p.kind() == CASE_ALTERNATIVE) {
-                    let mut statements = parent.children().filter(|c| is_item_kind(c.kind()));
+                if let Some(parent) = n.parent().filter(|p| L::is_alternative(p.kind())) {
+                    let mut statements = parent.children().filter(|c| L::is_item_kind(c.kind()));
                     let only = statements.next().filter(|_| statements.next().is_none());
-                    if only.as_ref() == Some(&n) && is_simple_statement(n.kind()) {
+                    if only.as_ref() == Some(&n) && L::is_simple_statement(n.kind()) {
                         an.alternative_body[i] = true;
                     }
                 }
             }
-            if n.kind() == CASE_ALTERNATIVE {
+            if L::is_alternative(n.kind()) {
                 an.alternative_start[i] = true;
             }
             node = n.parent();
@@ -121,9 +121,9 @@ pub(crate) fn analyze(elems: &[Elem], config: &FormatConfig) -> Analysis {
         let mut child = syntax.clone();
         let mut ancestor = child.parent();
         while let Some(a) = ancestor {
-            if is_container(a.kind())
+            if L::is_container(a.kind())
                 && let NodeOrToken::Node(c) = &child
-                && is_item_kind(c.kind())
+                && L::is_item_kind(c.kind())
             {
                 level += 1;
             }
@@ -138,14 +138,13 @@ pub(crate) fn analyze(elems: &[Elem], config: &FormatConfig) -> Analysis {
         let Some(parent) = token.parent() else {
             continue;
         };
-        an.section[i] = is_section_keyword(token.kind(), parent.kind());
+        an.section[i] = L::is_section_keyword(token.kind(), parent.kind());
+        an.flush[i] = an.section[i] || L::is_flush_keyword(token.kind(), parent.kind());
         if config.align.conditional_continuation && !elem.is_comment() {
-            let waveform = parent.ancestors().take_while(|n| !is_item(n)).find(|n| {
-                matches!(
-                    n.kind(),
-                    CONDITIONAL_WAVEFORMS | SELECTED_WAVEFORMS | CONDITIONAL_EXPR
-                )
-            });
+            let waveform = parent
+                .ancestors()
+                .take_while(|n| !is_item(n))
+                .find(|n| L::is_hanging(n.kind()));
             if let Some(w) = waveform {
                 let first = w.text_range().start();
                 if first != start {
@@ -153,30 +152,13 @@ pub(crate) fn analyze(elems: &[Elem], config: &FormatConfig) -> Analysis {
                 }
             }
         }
-        let opens_body = match token.kind() {
-            RECORD_KW | PROTECTED_KW => {
-                matches!(
-                    parent.kind(),
-                    RECORD_TYPE_DEF | PROTECTED_TYPE_DEF | PROTECTED_TYPE_BODY
-                ) && parent.first_token().as_ref() == Some(token)
-            }
-            UNITS_KW => {
-                parent.kind() == PHYSICAL_TYPE_DEF
-                    && parent
-                        .children_with_tokens()
-                        .find(|e| e.kind() == UNITS_KW)
-                        .and_then(NodeOrToken::into_token)
-                        .as_ref()
-                        == Some(token)
-            }
-            _ => false,
-        };
+        let opens_body = L::opens_body(token, &parent);
         if opens_body {
             shifted.push((i, parent.clone()));
         }
-        match token.kind() {
-            LPAREN if is_list(parent.kind()) && parent.first_token().as_ref() == Some(token) => {
-                let layout = list_layout(&parent, config);
+        let kind = token.kind();
+        if kind == L::LPAREN {
+            if let Some(layout) = L::opens_list(token, &parent, config) {
                 an.opens[i] = Some(an.lists.len());
                 list_of_node.insert(parent, an.lists.len());
                 an.lists.push(List {
@@ -187,19 +169,15 @@ pub(crate) fn analyze(elems: &[Elem], config: &FormatConfig) -> Analysis {
                     src_multiline: false,
                 });
             }
-            COMMA | SEMI => {
-                if let Some(&id) = list_of_node.get(&parent) {
-                    an.lists[id].seps.push(i);
-                }
+        } else if L::is_separator(kind) {
+            if let Some(&id) = list_of_node.get(&parent) {
+                an.lists[id].seps.push(i);
             }
-            RPAREN => {
-                if let Some(&id) = list_of_node.get(&parent)
-                    && parent.last_token().as_ref() == Some(token)
-                {
-                    an.lists[id].close = Some(i);
-                }
-            }
-            _ => {}
+        } else if kind == L::RPAREN
+            && let Some(&id) = list_of_node.get(&parent)
+            && parent.last_token().as_ref() == Some(token)
+        {
+            an.lists[id].close = Some(i);
         }
     }
     for (i, node) in shifted {
@@ -222,41 +200,8 @@ pub(crate) fn analyze(elems: &[Elem], config: &FormatConfig) -> Analysis {
     an
 }
 
-fn is_simple_statement(kind: SyntaxKind) -> bool {
-    matches!(
-        kind,
-        SIGNAL_ASSIGN_STMT
-            | VARIABLE_ASSIGN_STMT
-            | PROCEDURE_CALL_STMT
-            | NULL_STMT
-            | NEXT_STMT
-            | EXIT_STMT
-            | RETURN_STMT
-            | REPORT_STMT
-            | ASSERT_STMT
-            | WAIT_STMT
-    )
-}
-
-fn list_layout(list: &SyntaxNode, config: &FormatConfig) -> ListLayout {
-    let parent = list.parent();
-    let parent_kind = parent.as_ref().map(SyntaxNode::kind);
-    let grandparent_kind = parent.as_ref().and_then(|p| p.parent()).map(|g| g.kind());
-    match (list.kind(), parent_kind) {
-        (INTERFACE_LIST, Some(PORT_CLAUSE | GENERIC_CLAUSE))
-            if !matches!(grandparent_kind, Some(FUNCTION_SPEC | PROCEDURE_SPEC)) =>
-        {
-            config.interface_list
-        }
-        (ASSOCIATION_LIST, Some(GENERIC_MAP_ASPECT | PORT_MAP_ASPECT | PARAMETER_MAP_ASPECT)) => {
-            config.association_list
-        }
-        _ => ListLayout::Preserve,
-    }
-}
-
 /// Which lists start out laid out one element per line.
-pub(crate) fn initially_expanded(an: &Analysis) -> Vec<bool> {
+pub(crate) fn initially_expanded<L: Lang>(an: &Analysis<L>) -> Vec<bool> {
     an.lists
         .iter()
         .map(|list| match list.layout {
@@ -269,9 +214,9 @@ pub(crate) fn initially_expanded(an: &Analysis) -> Vec<bool> {
 
 /// The number of line breaks before each element: 0 keeps it on the
 /// previous element's line, 2 or more leaves blank lines.
-pub(crate) fn breaks(
-    elems: &[Elem],
-    an: &Analysis,
+pub(crate) fn breaks<L: Lang>(
+    elems: &[Elem<L>],
+    an: &Analysis<L>,
     expanded: &[bool],
     config: &FormatConfig,
 ) -> Vec<u32> {
@@ -282,7 +227,9 @@ pub(crate) fn breaks(
         let keep_on_when_line = config.case_alternative == CaseAlternative::Preserve
             && an.alternative_body[i]
             && elems[i].src_newlines == 0;
-        if (an.item_start[i] || an.section[i]) && !keep_on_when_line {
+        if (an.item_start[i] || an.section[i] || L::starts_line(elems[i].kind))
+            && !keep_on_when_line
+        {
             forced[i] = true;
         }
     }
@@ -294,7 +241,10 @@ pub(crate) fn breaks(
             forced[j] = true;
         }
         for &sep in &list.seps {
-            if let Some(j) = next(sep).filter(|&j| Some(j) != list.close) {
+            if let Some(j) = next(sep).filter(|&j| {
+                Some(j) != list.close
+                    && !(elems[j].src_newlines == 0 && L::joins_previous_element(&elems[j]))
+            }) {
                 forced[j] = true;
             }
         }
@@ -307,9 +257,13 @@ pub(crate) fn breaks(
     let mut nl = Vec::with_capacity(n);
     for (i, elem) in elems.iter().enumerate() {
         let mut count = elem.src_newlines.min(max);
-        if i == 0 {
+        if i == 0 || L::stays_on_line(elems, i) {
             count = 0;
-        } else if forced[i] || matches!(elems[i - 1].kind, LINE_COMMENT | TOOL_DIRECTIVE) {
+        } else if forced[i]
+            || L::ends_line(elems[i - 1].kind)
+                // A comment after a directive stays on its line.
+                && !(L::keeps_column(elems[i - 1].kind) && count == 0 && elem.is_comment())
+        {
             count = count.max(1);
         }
         nl.push(count);
@@ -338,9 +292,9 @@ pub(crate) struct Line {
 }
 
 /// Splits the elements into lines and indents each line.
-pub(crate) fn lines(
-    elems: &[Elem],
-    an: &Analysis,
+pub(crate) fn lines<L: Lang>(
+    elems: &[Elem<L>],
+    an: &Analysis<L>,
     nl: &[u32],
     config: &FormatConfig,
 ) -> (Vec<Line>, Vec<usize>) {
@@ -384,13 +338,19 @@ pub(crate) fn lines(
         while shifts.last().is_some_and(|&end| end < i) {
             shifts.pop();
         }
-        let closes = elem.is_token(RPAREN);
+        let closes = elem.is_token(L::RPAREN);
         would[i] = match open.last() {
             Some(&ol) if closes => lines[ol].indent,
             Some(&ol) => lines[ol].indent + indent,
             None => {
-                let starts_construct = an.item_start[i] || an.section[i] || an.after_label[i];
-                an.level[i] * indent
+                let (nested, starts_body) = if L::NESTS_BODIES && !indented[li] {
+                    body_nesting(elem, an, &line_of)
+                } else {
+                    (0, false)
+                };
+                let starts_construct =
+                    an.item_start[i] || an.flush[i] || an.after_label[i] || starts_body;
+                (an.level[i] + nested) * indent
                     + if starts_construct { 0 } else { continuation }
                     + shifts.len() as u32 * continuation
             }
@@ -408,7 +368,7 @@ pub(crate) fn lines(
         {
             shifts.push(end);
         }
-        if elem.is_token(LPAREN) {
+        if elem.is_token(L::LPAREN) {
             open.push(li);
         } else if closes {
             open.pop();
@@ -423,10 +383,15 @@ pub(crate) fn lines(
         }
         let next = (lines[li].end..n).find(|&k| !elems[k].is_comment());
         lines[li].follows = next.map(|k| line_of[k]);
+        let first = &elems[lines[li].start];
+        if L::keeps_column(first.kind) {
+            lines[li].indent = first.src_col;
+            continue;
+        }
         lines[li].indent = match next {
             Some(k) => {
                 let closes_block =
-                    an.section[k] || an.alternative_start[k] || elems[k].is_token(RPAREN);
+                    an.section[k] || an.alternative_start[k] || elems[k].is_token(L::RPAREN);
                 if closes_block && elems[lines[li].start].src_col > elems[k].src_col {
                     would[k] + indent
                 } else {
@@ -439,8 +404,46 @@ pub(crate) fn lines(
     (lines, line_of)
 }
 
+/// For an element starting a line: how many statement bodies it is in
+/// that start on another line than their statement (`if (a)` then
+/// `x = 1;`), and whether it starts one.
+fn body_nesting<L: Lang>(elem: &Elem<L>, an: &Analysis<L>, line_of: &[usize]) -> (u32, bool) {
+    let Some(syntax) = &elem.syntax else {
+        return (0, false);
+    };
+    let start = syntax.text_range().start();
+    let mut child = match syntax {
+        NodeOrToken::Node(n) => Some(n.clone()),
+        NodeOrToken::Token(t) => t.parent(),
+    };
+    let (mut nested, mut starts_body) = (0, false);
+    while let Some(c) = child {
+        let Some(parent) = c.parent() else {
+            break;
+        };
+        if L::nests_body(parent.kind(), c.kind()) {
+            let body = c.text_range().start();
+            starts_body |= body == start;
+            let line = |at| an.index.get(&at).map(|&k| line_of[k]);
+            if let (Some(a), Some(b)) = (line(parent.text_range().start()), line(body))
+                && a != b
+            {
+                nested += 1;
+            }
+        }
+        child = Some(parent);
+    }
+    (nested, starts_body)
+}
+
 /// The column where element `e` of `line` starts.
-pub(crate) fn column(line: &Line, e: usize, elems: &[Elem], an: &Analysis, pads: &[u32]) -> usize {
+pub(crate) fn column<L: Lang>(
+    line: &Line,
+    e: usize,
+    elems: &[Elem<L>],
+    an: &Analysis<L>,
+    pads: &[u32],
+) -> usize {
     let mut col = line.indent as usize;
     for j in line.start..=e {
         if j > line.start {
@@ -454,7 +457,7 @@ pub(crate) fn column(line: &Line, e: usize, elems: &[Elem], an: &Analysis, pads:
 }
 
 /// The width of a line, not counting a trailing comment.
-pub(crate) fn code_width(line: &Line, elems: &[Elem], an: &Analysis) -> usize {
+pub(crate) fn code_width<L: Lang>(line: &Line, elems: &[Elem<L>], an: &Analysis<L>) -> usize {
     let mut end = line.end;
     while end > line.start + 1 && elems[end - 1].is_comment() {
         end -= 1;
@@ -471,9 +474,9 @@ pub(crate) fn code_width(line: &Line, elems: &[Elem], an: &Analysis) -> usize {
 
 /// For each line that is too wide, picks a list on it to lay out one
 /// element per line. Returns whether anything changed.
-pub(crate) fn expand_long_lines(
-    elems: &[Elem],
-    an: &Analysis,
+pub(crate) fn expand_long_lines<L: Lang>(
+    elems: &[Elem<L>],
+    an: &Analysis<L>,
     lines: &[Line],
     expanded: &mut [bool],
     config: &FormatConfig,
@@ -501,9 +504,9 @@ pub(crate) fn expand_long_lines(
 }
 
 /// Writes the lines out. Also returns where each element landed.
-pub(crate) fn render(
-    elems: &[Elem],
-    an: &Analysis,
+pub(crate) fn render<L: Lang>(
+    elems: &[Elem<L>],
+    an: &Analysis<L>,
     lines: &[Line],
     pads: &[u32],
     config: &FormatConfig,

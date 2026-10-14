@@ -11,14 +11,15 @@ use std::collections::BTreeMap;
 
 use rowan::NodeOrToken;
 use vfl_config::{AlignConfig, BlockBoundary};
-use vfl_syntax::SyntaxKind::{self, *};
-use vfl_syntax::SyntaxNode;
 
 use crate::elems::Elem;
+use crate::lang::{Lang, Node};
 use crate::layout::{Analysis, Line, column};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Kind {
+pub(crate) enum Kind {
+    /// A Verilog port's type, after its direction.
+    PortType,
     InterfaceColon,
     DeclColon,
     DeclIs,
@@ -27,6 +28,8 @@ enum Kind {
     CaseArrow,
     InterfaceType,
     AlternativeAssign,
+    /// The name declared by a Verilog port, parameter or declaration.
+    Name,
     InterfaceDefault,
     DeclDefault,
     When,
@@ -37,13 +40,14 @@ impl Kind {
     /// Anchors of a lower rank sit further left on their lines.
     fn rank(self) -> u8 {
         match self {
-            Kind::InterfaceColon
+            Kind::PortType
+            | Kind::InterfaceColon
             | Kind::DeclColon
             | Kind::DeclIs
             | Kind::Assign
             | Kind::Arrow
             | Kind::CaseArrow => 0,
-            Kind::InterfaceType | Kind::AlternativeAssign => 1,
+            Kind::InterfaceType | Kind::AlternativeAssign | Kind::Name => 1,
             Kind::InterfaceDefault | Kind::DeclDefault | Kind::When => 2,
             Kind::Comment => 3,
         }
@@ -51,17 +55,20 @@ impl Kind {
 }
 
 /// Identifies the construct an anchor belongs to.
-type Context = (u32, u16);
+pub(crate) type Context = (u32, u16);
 
-fn context(node: &SyntaxNode) -> Context {
-    (node.text_range().start().into(), node.kind() as u16)
+pub(crate) fn context<L: Lang>(node: &Node<L>) -> Context {
+    (
+        node.text_range().start().into(),
+        L::kind_to_raw(node.kind()).0,
+    )
 }
 
 /// The padding to add before each element, and the first and last line of
 /// each run of lines aligned together.
-pub(crate) fn align(
-    elems: &[Elem],
-    an: &Analysis,
+pub(crate) fn align<L: Lang>(
+    elems: &[Elem<L>],
+    an: &Analysis<L>,
     lines: &mut [Line],
     line_of: &[usize],
     config: &AlignConfig,
@@ -82,16 +89,8 @@ pub(crate) fn align(
         }
         line_anchors(elems, an, line, config, &mut add);
         for (i, elem) in (line.start + 1..line.end).zip(&elems[line.start + 1..line.end]) {
-            if config.when_clause
-                && elem.is_token(WHEN_KW)
-                && let Some(parent) = elem.parent.as_ref().filter(|p| {
-                    matches!(
-                        p.kind(),
-                        CONDITIONAL_WAVEFORMS | SELECTED_WAVEFORMS | CONDITIONAL_EXPR
-                    )
-                })
-            {
-                add(Kind::When, context(parent), i);
+            if let Some((kind, node)) = L::inline_anchor(elem, config) {
+                add(kind, context(&node), i);
             }
         }
         let last = line.end - 1;
@@ -134,7 +133,13 @@ pub(crate) fn align(
 
 /// Re-indents the lines that hang under a conditional assignment's first
 /// value, and the lines that follow their indentation.
-fn hang(elems: &[Elem], an: &Analysis, lines: &mut [Line], line_of: &[usize], pads: &[u32]) {
+fn hang<L: Lang>(
+    elems: &[Elem<L>],
+    an: &Analysis<L>,
+    lines: &mut [Line],
+    line_of: &[usize],
+    pads: &[u32],
+) {
     let mut delta = vec![0i64; lines.len()];
     for li in 0..lines.len() {
         if lines[li].comment_only {
@@ -151,6 +156,9 @@ fn hang(elems: &[Elem], an: &Analysis, lines: &mut [Line], line_of: &[usize], pa
         lines[li].indent = (i64::from(lines[li].indent) + d).max(0) as u32;
     }
     for line in lines.iter_mut() {
+        if L::keeps_column(elems[line.start].kind) {
+            continue;
+        }
         if let (true, Some(p)) = (line.comment_only, line.follows) {
             line.indent = (i64::from(line.indent) + delta[p]).max(0) as u32;
         }
@@ -186,9 +194,9 @@ fn runs<'a>(
 }
 
 /// The anchors of the construct that begins `line`.
-fn line_anchors(
-    elems: &[Elem],
-    an: &Analysis,
+fn line_anchors<L: Lang>(
+    elems: &[Elem<L>],
+    an: &Analysis<L>,
     line: &Line,
     config: &AlignConfig,
     add: &mut impl FnMut(Kind, Context, usize),
@@ -206,141 +214,22 @@ fn line_anchors(
         NodeOrToken::Token(t) => t.parent(),
     };
     while let Some(n) = node.filter(|n| n.text_range().start() == start) {
-        if anchors_of(&n, elems, an, line, config, add) {
+        if L::anchors_of(&n, elems, an, line, config, add) {
             return;
         }
         node = n.parent();
     }
 }
 
-/// The element index of `node`'s first direct child token of kind `kind`.
-fn child_token(node: &SyntaxNode, an: &Analysis, kinds: &[SyntaxKind]) -> Option<usize> {
+/// The element index of `node`'s first direct child token of a kind in
+/// `kinds`.
+pub(crate) fn child_token<L: Lang>(
+    node: &Node<L>,
+    an: &Analysis<L>,
+    kinds: &[L::Kind],
+) -> Option<usize> {
     node.children_with_tokens()
         .filter_map(NodeOrToken::into_token)
         .find(|t| kinds.contains(&t.kind()))
         .and_then(|t| an.index.get(&t.text_range().start()).copied())
-}
-
-/// Adds the anchors of `node` if it is a construct that has any. Returns
-/// whether it was one.
-fn anchors_of(
-    node: &SyntaxNode,
-    elems: &[Elem],
-    an: &Analysis,
-    line: &Line,
-    config: &AlignConfig,
-    add: &mut impl FnMut(Kind, Context, usize),
-) -> bool {
-    let parent = node.parent();
-    let Some(parent) = parent else {
-        return false;
-    };
-    let ctx = context(&parent);
-    match node.kind() {
-        INTERFACE_OBJECT_DECL => {
-            let generic = parent
-                .parent()
-                .is_some_and(|clause| clause.kind() == GENERIC_CLAUSE);
-            let colon = child_token(node, an, &[COLON]);
-            if let Some(colon) = colon {
-                if (generic && config.generic_colon) || (!generic && config.port_colon) {
-                    add(Kind::InterfaceColon, ctx, colon);
-                }
-                if !generic && config.port_mode {
-                    let mode =
-                        child_token(node, an, &[IN_KW, OUT_KW, INOUT_KW, BUFFER_KW, LINKAGE_KW]);
-                    let before_type = mode.unwrap_or(colon);
-                    if before_type + 1 < line.end && !elems[before_type + 1].is_comment() {
-                        add(Kind::InterfaceType, ctx, before_type + 1);
-                    }
-                }
-            }
-            if config.interface_default
-                && let Some(default) = child_token(node, an, &[COLON_EQ])
-            {
-                add(Kind::InterfaceDefault, ctx, default);
-            }
-            true
-        }
-        SIGNAL_DECL | CONSTANT_DECL | VARIABLE_DECL | FILE_DECL | ELEMENT_DECL | ATTRIBUTE_DECL
-        | MODE_VIEW_ELEMENT => {
-            if config.declaration {
-                if let Some(colon) = child_token(node, an, &[COLON]) {
-                    add(Kind::DeclColon, ctx, colon);
-                }
-                if let Some(default) = child_token(node, an, &[COLON_EQ]) {
-                    add(Kind::DeclDefault, ctx, default);
-                }
-            }
-            true
-        }
-        ALIAS_DECL => {
-            if config.declaration {
-                match child_token(node, an, &[COLON]) {
-                    Some(colon) => add(Kind::DeclColon, ctx, colon),
-                    None => {
-                        if let Some(is) = child_token(node, an, &[IS_KW]) {
-                            add(Kind::DeclIs, ctx, is);
-                        }
-                    }
-                }
-            }
-            true
-        }
-        TYPE_DECL | SUBTYPE_DECL => {
-            if config.declaration
-                && let Some(is) = child_token(node, an, &[IS_KW])
-            {
-                add(Kind::DeclIs, ctx, is);
-            }
-            true
-        }
-        SIGNAL_ASSIGN_STMT | VARIABLE_ASSIGN_STMT => {
-            if config.assignment
-                && let Some(op) = child_token(node, an, &[LTE, COLON_EQ])
-            {
-                add(Kind::Assign, ctx, op);
-            }
-            true
-        }
-        ASSOCIATION_ELEMENT | ELEMENT_ASSOCIATION => {
-            if config.association
-                && let Some(arrow) = child_token(node, an, &[ARROW])
-            {
-                add(Kind::Arrow, ctx, arrow);
-            }
-            true
-        }
-        CASE_ALTERNATIVE => {
-            // Only when a statement follows on the same line.
-            let Some(arrow) = child_token(node, an, &[ARROW])
-                .filter(|&a| a + 1 < line.end && !elems[a + 1].is_comment())
-            else {
-                return true;
-            };
-            if config.case_choice {
-                add(Kind::CaseArrow, ctx, arrow);
-            }
-            // Aligning the statements only makes sense when the choices are.
-            if config.case_choice
-                && config.assignment
-                && let Some(op) = statement_assignment(&elems[arrow + 1], an)
-            {
-                add(Kind::AlternativeAssign, ctx, op);
-            }
-            true
-        }
-        _ => false,
-    }
-}
-
-/// The `<=` or `:=` of the assignment statement starting at `elem`.
-fn statement_assignment(elem: &Elem, an: &Analysis) -> Option<usize> {
-    let token = elem.syntax.as_ref()?.as_token()?.clone();
-    let start = token.text_range().start();
-    token
-        .parent_ancestors()
-        .take_while(|n| n.text_range().start() == start)
-        .find(|n| matches!(n.kind(), SIGNAL_ASSIGN_STMT | VARIABLE_ASSIGN_STMT))
-        .and_then(|stmt| child_token(&stmt, an, &[LTE, COLON_EQ]))
 }

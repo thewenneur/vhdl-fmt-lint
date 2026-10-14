@@ -94,10 +94,14 @@ async function start(): Promise<void> {
   const serverOptions: ServerOptions = { run, debug: run };
   const clientOptions: LanguageClientOptions = {
     // The server reads files from disk by path, so only real files.
-    documentSelector: [{ scheme: "file", language: "vhdl" }],
+    documentSelector: ["vhdl", "verilog", "systemverilog"].map((language) => ({
+      scheme: "file",
+      language,
+    })),
     outputChannel: output,
     middleware: {
-      // `editor.formatOnType` is on for VHDL by default; this setting decides.
+      // `editor.formatOnType` is on for VHDL and Verilog by default; this
+      // setting decides.
       provideOnTypeFormattingEdits: (document, position, ch, options, token, next) =>
         vscode.workspace.getConfiguration("vfl", document).get<boolean>("format.onType", false)
           ? next(document, position, ch, options, token)

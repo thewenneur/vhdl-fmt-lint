@@ -187,8 +187,8 @@ impl Engine {
         text: &str,
     ) -> Result<Option<String>, FormatFailure> {
         let config = self.config(path);
-        let out =
-            vfl_fmt::format(text, &config.format, config.standard()).map_err(format_failure)?;
+        let out = vfl_lsp::format::document(path, text, config, || root_of(path))
+            .map_err(format_failure)?;
         Ok((out != text).then_some(out))
     }
 
@@ -202,7 +202,7 @@ impl Engine {
         range: Range<usize>,
     ) -> Result<Option<String>, FormatFailure> {
         let config = self.config(path);
-        let edits = vfl_fmt::format_range(text, range, &config.format, config.standard())
+        let edits = vfl_lsp::format::range(path, text, range, config, || root_of(path))
             .map_err(format_failure)?;
         Ok((!edits.is_empty()).then(|| vfl_fmt::apply_edits(text, &edits)))
     }
@@ -220,7 +220,7 @@ impl Engine {
     ) -> Option<String> {
         let config = self.config(path);
         let edits =
-            vfl_fmt::format_typed(text, cursor, ch, &config.format, config.standard()).ok()?;
+            vfl_lsp::format::typed(path, text, cursor, ch, config, || root_of(path)).ok()?;
         (!edits.is_empty()).then(|| vfl_fmt::apply_edits(text, &edits))
     }
 
@@ -248,6 +248,17 @@ impl Engine {
                     },
                     rule: d.rule,
                     message: d.message.clone(),
+                })
+                .collect();
+        } else {
+            output.findings = editor::verilog_syntax_errors(world, &file_path)
+                .into_iter()
+                .map(|(range, message)| Finding {
+                    start: range.start,
+                    end: range.end,
+                    severity: Severity::Error,
+                    rule: "syntax/error",
+                    message,
                 })
                 .collect();
         }
@@ -644,6 +655,23 @@ pub fn in_code(text: &str, offset: usize) -> bool {
     !in_string
 }
 
+/// The directory of the project `path` is in, which Verilog include
+/// directories are relative to.
+fn root_of(path: Option<&Path>) -> PathBuf {
+    let dir = path.and_then(Path::parent).unwrap_or(Path::new("."));
+    find_root(dir).dir
+}
+
+/// Whether a file name looks like Verilog or SystemVerilog, by the
+/// extensions vfl reads as such unless configured otherwise.
+pub fn is_verilog_path(path: &Path) -> bool {
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+        vfl_config::VerilogConfig::default()
+            .standard_for_extension(e)
+            .is_some()
+    })
+}
+
 /// Whether a file name looks like VHDL.
 pub fn is_vhdl_path(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
@@ -772,6 +800,28 @@ end architecture;
             .expect("formats");
         assert!(out.is_some_and(|t| t.contains("entity e is")));
         assert_eq!(engine.format(None, "entity e is\nend entity;\n"), Ok(None));
+    }
+
+    #[test]
+    fn verilog_buffers() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("top.sv");
+        let mut engine = Engine::default();
+        let out = engine
+            .format(Some(&path), "module top;assign a=b;endmodule\n")
+            .expect("formats");
+        assert_eq!(
+            out.as_deref(),
+            Some("module top;\n  assign a = b;\nendmodule\n")
+        );
+        let text = "module top;\n  assign a = ;\nendmodule\n";
+        let findings = engine.lint(Some(&path), text).findings;
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].rule, "syntax/error");
+        assert_eq!(&text[..findings[0].start].matches('\n').count(), &1);
+        let outline = engine.outline(Some(&path), "module top(input a);\nendmodule\n");
+        let names: Vec<&str> = outline.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["top", "a"]);
     }
 
     #[test]
@@ -1268,6 +1318,9 @@ end architecture;
         assert!(is_vhdl_path(Path::new("a/top.VHD")));
         assert!(is_vhdl_path(Path::new("tb.vhdl")));
         assert!(!is_vhdl_path(Path::new("top.v")));
+        assert!(is_verilog_path(Path::new("top.v")));
+        assert!(is_verilog_path(Path::new("pkg.SV")));
+        assert!(!is_verilog_path(Path::new("top.vhd")));
         assert!(is_project_file(Path::new("x/vfl.toml")));
         assert!(is_project_file(Path::new("x/sim/run.py")));
     }

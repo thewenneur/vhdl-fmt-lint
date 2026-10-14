@@ -15,7 +15,8 @@ use vfl_config::Config;
 use vfl_fmt::FormatError;
 use vfl_lint::report::Format;
 use vfl_project::{
-    Project, collect_all_sources, collect_sources, decode, encode, find_root, parse_verilog,
+    Project, collect_all_sources, decode, encode, find_root, parse_verilog, verilog_standard,
+    with_verilog_options,
 };
 
 #[derive(Parser)]
@@ -27,11 +28,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Format VHDL files in place.
+    /// Format VHDL, Verilog and SystemVerilog files in place.
     Fmt {
         /// Files or directories (default: the project around the current
         /// directory). `-` formats standard input to standard output.
         paths: Vec<PathBuf>,
+        /// With `-`: the name of the file read from standard input, which
+        /// decides its language and settings.
+        #[arg(long, value_name = "PATH")]
+        stdin_filename: Option<PathBuf>,
         /// Report files that would change instead of rewriting them.
         #[arg(long)]
         check: bool,
@@ -216,9 +221,10 @@ fn run(cli: Cli) -> Result<bool> {
     match cli.command {
         Command::Fmt {
             paths,
+            stdin_filename,
             check,
             lines,
-        } => fmt(&paths, check, &lines).map(|()| true),
+        } => fmt(&paths, stdin_filename.as_deref(), check, &lines).map(|()| true),
         Command::Lint {
             paths,
             fix,
@@ -315,30 +321,6 @@ fn config_dir(path: &Path) -> &Path {
     } else {
         path
     }
-}
-
-/// The source files under `paths` (the current directory if empty).
-fn source_files(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
-    let default = [PathBuf::from(".")];
-    let paths = if paths.is_empty() {
-        &default[..]
-    } else {
-        paths
-    };
-    let mut files = Vec::new();
-    for path in paths {
-        if path.is_dir() {
-            let root = find_root(path);
-            let config = vfl_config::load_for_dir(&root.dir)?;
-            files.extend(
-                collect_sources(path, &config.project)
-                    .with_context(|| format!("scanning {}", path.display()))?,
-            );
-        } else {
-            files.push(path.clone());
-        }
-    }
-    Ok(files)
 }
 
 /// Loads each directory's effective config once.
@@ -442,47 +424,70 @@ fn parse_lines(arg: &str) -> Result<(usize, usize), String> {
     Ok((first, last))
 }
 
-/// Formats `text`, or only `lines` of it when there are some.
+/// Formats `text`, the text of `path`, or only `lines` of it when there
+/// are some.
 fn format_text(
+    path: &Path,
     text: &str,
     config: &Config,
     lines: &[(usize, usize)],
 ) -> Result<String, FormatError> {
+    if let Some(standard) = verilog_standard(config, path) {
+        let root = find_root(path.parent().unwrap_or(Path::new("."))).dir;
+        return with_verilog_options(path, config, &root, standard, |options| {
+            if lines.is_empty() {
+                return vfl_fmt::format_verilog(text, &config.format, options);
+            }
+            let ranges = line_ranges(text, lines);
+            let edits = vfl_fmt::format_ranges_verilog(text, &ranges, &config.format, options)?;
+            Ok(vfl_fmt::apply_edits(text, &edits))
+        });
+    }
     if lines.is_empty() {
         return vfl_fmt::format(text, &config.format, config.standard());
     }
+    let ranges = line_ranges(text, lines);
+    let edits = vfl_fmt::format_ranges(text, &ranges, &config.format, config.standard())?;
+    Ok(vfl_fmt::apply_edits(text, &edits))
+}
+
+/// The byte ranges of `lines` (1-based, inclusive) in `text`.
+fn line_ranges(text: &str, lines: &[(usize, usize)]) -> Vec<std::ops::Range<usize>> {
     let starts: Vec<usize> = std::iter::once(0)
         .chain(text.match_indices('\n').map(|(i, _)| i + 1))
         .collect();
     let line_start = |n: usize| starts.get(n - 1).copied().unwrap_or(text.len());
-    let ranges: Vec<_> = lines
+    lines
         .iter()
         .map(|&(first, last)| {
             let end = starts.get(last).map_or(text.len(), |&next| next - 1);
             line_start(first)..end.max(line_start(first))
         })
-        .collect();
-    let edits = vfl_fmt::format_ranges(text, &ranges, &config.format, config.standard())?;
-    Ok(vfl_fmt::apply_edits(text, &edits))
+        .collect()
 }
 
 /// Formats files in place, or reports which would change with `check`.
-fn fmt(paths: &[PathBuf], check: bool, lines: &[(usize, usize)]) -> Result<()> {
+fn fmt(
+    paths: &[PathBuf],
+    stdin_filename: Option<&Path>,
+    check: bool,
+    lines: &[(usize, usize)],
+) -> Result<()> {
     if !lines.is_empty() && (paths.len() != 1 || paths[0].is_dir()) {
         bail!("--lines takes a single file");
     }
     if paths.len() == 1 && paths[0] == Path::new("-") {
-        return fmt_stdin(lines);
+        return fmt_stdin(stdin_filename, lines);
     }
     let mut configs = ConfigCache::default();
     let mut changed = 0usize;
     let mut unchanged = 0usize;
     let mut failed = 0usize;
-    for file in source_files(paths)? {
+    for file in all_source_files(paths)? {
         let config = configs.for_file(&file)?;
         let bytes = std::fs::read(&file).with_context(|| format!("reading {}", file.display()))?;
         let (text, encoding) = decode(bytes);
-        match format_text(&text, config, lines) {
+        match format_text(&file, &text, config, lines) {
             Ok(out) if out == text => unchanged += 1,
             Ok(out) => {
                 changed += 1;
@@ -527,12 +532,14 @@ fn fmt(paths: &[PathBuf], check: bool, lines: &[(usize, usize)]) -> Result<()> {
     Ok(())
 }
 
-fn fmt_stdin(lines: &[(usize, usize)]) -> Result<()> {
+fn fmt_stdin(filename: Option<&Path>, lines: &[(usize, usize)]) -> Result<()> {
     let mut bytes = Vec::new();
     std::io::stdin().read_to_end(&mut bytes)?;
     let (text, encoding) = decode(bytes);
-    let config = vfl_config::load_for_dir(Path::new("."))?;
-    let out = format_text(&text, &config, lines)?;
+    let path = filename.unwrap_or(Path::new("stdin.vhd"));
+    let dir = path.parent().filter(|d| !d.as_os_str().is_empty());
+    let config = vfl_config::load_for_dir(dir.unwrap_or(Path::new(".")))?;
+    let out = format_text(path, &text, &config, lines)?;
     std::io::stdout().write_all(&encode(&out, encoding))?;
     Ok(())
 }

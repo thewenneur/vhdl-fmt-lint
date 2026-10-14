@@ -46,18 +46,27 @@ mod align;
 mod elems;
 mod escape;
 mod kinds;
+mod lang;
 mod layout;
 mod range;
 mod spacing;
 mod verify;
+mod verilog;
+mod vhdl;
 
 use std::fmt;
 use std::ops::Range;
 
 use vfl_config::{FormatConfig, LineEnding};
-use vfl_syntax::{Standard, SyntaxError, SyntaxNode, parse};
+use vfl_syntax::{Standard, SyntaxError, Vhdl};
+use vfl_verilog_syntax::Verilog;
 
-pub use range::{Edit, apply_edits, format_range, format_ranges, format_ranges_in, format_typed};
+use crate::lang::{Lang, Node};
+
+pub use range::{
+    Edit, apply_edits, format_range, format_ranges, format_ranges_in, format_ranges_verilog,
+    format_ranges_verilog_in, format_typed, format_typed_verilog,
+};
 
 /// Why a file could not be formatted. The file should be left as it is.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,8 +96,30 @@ impl std::error::Error for FormatError {}
 
 /// Formats a whole VHDL file.
 pub fn format(text: &str, config: &FormatConfig, std: Standard) -> Result<String, FormatError> {
+    format_with::<Vhdl>(text, config, std)
+}
+
+/// Formats a whole Verilog or SystemVerilog file. `options` are those it
+/// is parsed with (macros defined beforehand, included files), which
+/// decide how macro uses parse.
+///
+/// Verilog is case sensitive: `keyword_case` and `identifier_case` do not
+/// apply, nor do `end_label` and `end_keyword`.
+pub fn format_verilog(
+    text: &str,
+    config: &FormatConfig,
+    options: &vfl_verilog_syntax::Options,
+) -> Result<String, FormatError> {
+    format_with::<Verilog>(text, config, *options)
+}
+
+pub(crate) fn format_with<L: Lang>(
+    text: &str,
+    config: &FormatConfig,
+    std: L::Std<'_>,
+) -> Result<String, FormatError> {
     let source = Source::new(text);
-    let root = parse_valid(&source.text, std)?;
+    let root = parse_valid::<L>(&source.text, std)?;
     let Some(laid) = lay_out(&source.text, &root, config, std, None)? else {
         return Ok(String::new());
     };
@@ -129,8 +160,8 @@ impl<'a> Source<'a> {
 }
 
 /// The whole file laid out, and how the output relates to the source.
-pub(crate) struct Laid {
-    pub elems: Vec<elems::Elem>,
+pub(crate) struct Laid<L: Lang> {
+    pub elems: Vec<elems::Elem<L>>,
     pub lines: Vec<layout::Line>,
     pub line_of: Vec<usize>,
     /// Where each element landed in the output before the protected regions
@@ -145,12 +176,12 @@ pub(crate) struct Laid {
 }
 
 /// The syntax tree of `source`, which must have no syntax errors.
-pub(crate) fn parse_valid(source: &str, std: Standard) -> Result<SyntaxNode, FormatError> {
-    let parsed = parse(source, std);
-    if !parsed.errors().is_empty() {
-        return Err(FormatError::Syntax(parsed.errors().to_vec()));
+pub(crate) fn parse_valid<L: Lang>(source: &str, std: L::Std<'_>) -> Result<Node<L>, FormatError> {
+    let (root, errors) = L::parse(source, std);
+    if !errors.is_empty() {
+        return Err(FormatError::Syntax(errors));
     }
-    Ok(parsed.syntax())
+    Ok(root)
 }
 
 /// Formats `source` (with `\n` line ends), whose tree is `root`. `None`
@@ -160,16 +191,16 @@ pub(crate) fn parse_valid(source: &str, std: Standard) -> Result<SyntaxNode, For
 /// parsed again, it must hold the same tokens and comments. With it, only
 /// the bytes `window` of the source are laid out, and the output is not
 /// put together.
-pub(crate) fn lay_out(
+pub(crate) fn lay_out<L: Lang>(
     source: &str,
-    root: &SyntaxNode,
+    root: &Node<L>,
     config: &FormatConfig,
-    std: Standard,
+    std: L::Std<'_>,
     window: Option<Range<usize>>,
-) -> Result<Option<Laid>, FormatError> {
+) -> Result<Option<Laid<L>>, FormatError> {
     let whole = window.is_none();
     let elems = elems::collect(root, config, window);
-    let elems = elems::edit_end_clauses(elems, config);
+    let elems = L::edit_end_clauses(elems, config);
     if elems.is_empty() {
         return Ok(None);
     }
@@ -192,15 +223,15 @@ pub(crate) fn lay_out(
     let mut out = String::new();
     if whole {
         out = escape::restore_verbatim(source, raw.clone(), &elems, &positions, &regions);
-        let reparsed = parse(&out, std);
-        if let Some(error) = reparsed.errors().first() {
+        let (reparsed, errors) = L::parse(&out, std);
+        if let Some(error) = errors.first() {
             return Err(FormatError::Internal(format!(
                 "the output does not parse: {}",
                 error.message
             )));
         }
         let before = verify::fingerprint(root);
-        let after = verify::fingerprint(&reparsed.syntax());
+        let after = verify::fingerprint(&reparsed);
         if before != after {
             return Err(FormatError::Internal(verify::first_difference(
                 &before, &after,

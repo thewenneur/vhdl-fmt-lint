@@ -1,25 +1,28 @@
-//! Whether two elements on the same line are separated by a space.
+//! Whether two VHDL elements on the same line are separated by a space.
 
 use vfl_config::FormatConfig;
 use vfl_syntax::SyntaxKind::{self, *};
+use vfl_syntax::Vhdl;
 
 use crate::elems::Elem;
 
-fn grandparent_kind(elem: &Elem) -> Option<SyntaxKind> {
+fn grandparent_kind(elem: &Elem<Vhdl>) -> Option<SyntaxKind> {
     elem.parent.as_ref()?.parent().map(|n| n.kind())
 }
 
 /// `+`, `-` used as a sign: no space after it.
-fn is_sign(elem: &Elem) -> bool {
+fn is_sign(elem: &Elem<Vhdl>) -> bool {
     matches!(elem.kind, PLUS | MINUS) && elem.parent_kind() == Some(UNARY_EXPR)
 }
 
-fn in_external_path(elem: &Elem) -> bool {
+#[inline]
+fn in_external_path(elem: &Elem<Vhdl>) -> bool {
     elem.parent_kind() == Some(EXTERNAL_PATH)
 }
 
 /// Whether a space goes between `prev` and `cur` when they share a line.
-pub(crate) fn space_between(prev: &Elem, cur: &Elem, config: &FormatConfig) -> bool {
+#[inline]
+pub(crate) fn space_between(prev: &Elem<Vhdl>, cur: &Elem<Vhdl>, config: &FormatConfig) -> bool {
     if prev.is_comment() || cur.is_comment() {
         return true;
     }

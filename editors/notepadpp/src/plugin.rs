@@ -26,7 +26,8 @@ use vfl_lsp::generate::Kind;
 
 use crate::engine::{
     BufferText, Engine, FormatFailure, NameColor, Severity, completes_after_dot, completion_list,
-    is_library_copy, is_project_file, is_vhdl_path, minimal_edit, plain_text, signature_tip,
+    is_library_copy, is_project_file, is_verilog_path, is_vhdl_path, minimal_edit, plain_text,
+    signature_tip,
 };
 use crate::tools;
 use crate::win::*;
@@ -594,7 +595,7 @@ fn on_notification(n: &ScNotification) {
         SCN_FOCUSIN if n.nmhdr.hwnd_from == current_scintilla().0 => rescan(true),
         NPPN_FILEBEFORESAVE if from_npp => {
             let id = n.nmhdr.id_from;
-            if with(|s| s.settings.get().format_on_save) && id == current_buffer() && is_vhdl(id) {
+            if with(|s| s.settings.get().format_on_save) && id == current_buffer() && is_hdl(id) {
                 format_current(Trigger::Auto);
             }
         }
@@ -912,6 +913,14 @@ pub(crate) fn buffer_path(id: usize) -> Option<PathBuf> {
     Some(PathBuf::from(OsString::from_wide(&buf)))
 }
 
+/// Whether a buffer is VHDL, Verilog or SystemVerilog, which vfl formats
+/// and checks.
+pub(crate) fn is_hdl(id: usize) -> bool {
+    is_vhdl(id)
+        || send(npp(), NPPM_GETBUFFERLANGTYPE, id, 0) == L_VERILOG
+        || buffer_path(id).is_some_and(|p| is_verilog_path(&p))
+}
+
 pub(crate) fn is_vhdl(id: usize) -> bool {
     send(npp(), NPPM_GETBUFFERLANGTYPE, id, 0) == L_VHDL
         || buffer_path(id).is_some_and(|p| is_vhdl_path(&p))
@@ -981,7 +990,7 @@ fn format_selection() {
 fn format_typed(ch: char) {
     let (sci, _) = current_scintilla();
     let id = current_buffer();
-    if !is_vhdl(id) {
+    if !is_hdl(id) {
         return;
     }
     let path = buffer_path(id);
@@ -1056,10 +1065,10 @@ pub(crate) fn lint_current(trigger: Trigger) {
     // Library sources opened by go to definition are not the user's.
     let library = path.as_deref().is_some_and(is_library_copy);
     let wanted = match trigger {
-        Trigger::Auto => auto && is_vhdl(id) && !library,
+        Trigger::Auto => auto && is_hdl(id) && !library,
         Trigger::Command => true,
         Trigger::Refresh => {
-            (is_vhdl(id) && !library) || with(|s| s.problems.borrow().contains_key(&id))
+            (is_hdl(id) && !library) || with(|s| s.problems.borrow().contains_key(&id))
         }
     };
     if !wanted {

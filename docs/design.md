@@ -473,7 +473,13 @@ and far fewer false errors, with zero configuration.
        bindings. A Verilog edit re-analyzes the module, and the VHDL units that use it
        only when its interface changed. Hover, go to definition and `vfl doc` (module
        pages, hierarchy, block diagrams) cross languages (done).
-    3. Formatter (the layout engine made generic over node kinds) and editor features.
+    3. Formatter and editor features. The formatter's engine (elements, layout,
+       alignment, checks) is generic over a `Lang` trait that each language implements
+       with its tables: which nodes are items and containers, which keywords start or
+       end lines, how tokens are spaced, what lines up. It is monomorphized, so VHDL
+       formatting runs the same code as before. The language server answers syntax
+       errors, symbols, folding and semantic tokens of Verilog files from their trees,
+       without the VHDL analysis (done).
     4. Lint rules and semantic checks for the synthesizable subset.
 
     Files are dispatched by extension when the project is collected; a project without

@@ -9,11 +9,13 @@
 
 mod actions;
 pub mod editor;
+pub mod format;
 pub mod generate;
 mod handlers;
 mod refactor;
 mod semantic;
 mod types;
+mod verilog;
 mod world;
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -59,6 +61,7 @@ pub fn capabilities() -> ServerCapabilities {
         references_provider: Some(OneOf::Left(true)),
         hover_provider: Some(lsp_types::HoverProviderCapability::Simple(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
+        folding_range_provider: Some(lsp_types::FoldingRangeProviderCapability::Simple(true)),
         workspace_symbol_provider: Some(OneOf::Left(true)),
         document_highlight_provider: Some(OneOf::Left(true)),
         rename_provider: Some(OneOf::Right(RenameOptions {

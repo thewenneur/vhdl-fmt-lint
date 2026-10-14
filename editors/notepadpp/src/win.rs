@@ -350,6 +350,8 @@ pub const NPPM_ALLOCATEINDICATOR: u32 = NPPMSG + 113;
 
 /// `L_VHDL` in `enum LangType`.
 pub const L_VHDL: isize = 38;
+/// `L_VERILOG` in `enum LangType`.
+pub const L_VERILOG: isize = 43;
 
 const NPPN_FIRST: u32 = 1000;
 pub const NPPN_READY: u32 = NPPN_FIRST + 1;
