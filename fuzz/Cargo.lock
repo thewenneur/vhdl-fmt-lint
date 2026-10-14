@@ -744,7 +744,7 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
 name = "vfl-config"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "serde",
  "thiserror",
@@ -754,7 +754,7 @@ dependencies = [
 
 [[package]]
 name = "vfl-fmt"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "rowan",
  "thiserror",
@@ -783,7 +783,7 @@ dependencies = [
 
 [[package]]
 name = "vfl-gen"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "regex",
  "rowan",
@@ -794,7 +794,7 @@ dependencies = [
 
 [[package]]
 name = "vfl-lint"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "rayon",
  "regex",
@@ -810,7 +810,7 @@ dependencies = [
 
 [[package]]
 name = "vfl-lsp"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "lsp-server",
@@ -830,7 +830,7 @@ dependencies = [
 
 [[package]]
 name = "vfl-project"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "globset",
  "ignore",
@@ -846,7 +846,7 @@ dependencies = [
 
 [[package]]
 name = "vfl-sema"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "rayon",
  "rowan",
@@ -855,14 +855,14 @@ dependencies = [
 
 [[package]]
 name = "vfl-syntax"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "rowan",
 ]
 
 [[package]]
 name = "vfl-verilog-syntax"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "rowan",
  "vfl-syntax",
