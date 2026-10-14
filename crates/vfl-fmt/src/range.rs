@@ -22,16 +22,13 @@
 
 use std::ops::Range;
 
-use rowan::NodeOrToken;
+use rowan::{NodeOrToken, TextSize};
 use vfl_config::{BlockBoundary, FormatConfig};
-use vfl_syntax::SyntaxKind::{
-    LPAREN, PHYSICAL_TYPE_DEF, PROTECTED_TYPE_BODY, PROTECTED_TYPE_DEF, RECORD_TYPE_DEF, RPAREN,
-    TYPE_DECL, UNITS_KW, WHITESPACE,
-};
-use vfl_syntax::{Standard, SyntaxNode, SyntaxToken, TextSize};
+use vfl_syntax::{Standard, Vhdl};
+use vfl_verilog_syntax::{Options, Verilog};
 
-use crate::kinds::is_flat_container;
-use crate::kinds::{is_container, is_item};
+use crate::kinds::is_item;
+use crate::lang::{Element, Lang, Node, Token};
 use crate::verify::{first_difference, lexical};
 use crate::{FormatError, Laid, Source, lay_out, parse_valid};
 
@@ -81,15 +78,48 @@ pub fn format_typed(
     config: &FormatConfig,
     std: Standard,
 ) -> Result<Vec<Edit>, FormatError> {
+    typed::<Vhdl>(text, cursor, ch, config, std)
+}
+
+/// [`format_typed`] for a Verilog or SystemVerilog file.
+pub fn format_typed_verilog(
+    text: &str,
+    cursor: usize,
+    ch: char,
+    config: &FormatConfig,
+    options: &Options,
+) -> Result<Vec<Edit>, FormatError> {
+    typed::<Verilog>(text, cursor, ch, config, *options)
+}
+
+fn typed<L: Lang>(
+    text: &str,
+    cursor: usize,
+    ch: char,
+    config: &FormatConfig,
+    std: L::Std<'_>,
+) -> Result<Vec<Edit>, FormatError> {
     if !config.on_type || cursor > text.len() || !text.is_char_boundary(cursor) {
         return Ok(Vec::new());
     }
     let line_start = text[..cursor].rfind('\n').map_or(0, |i| i + 1);
     match ch {
-        ';' => format_range(text, cursor..cursor, config, std),
+        ';' => ranges_with::<L>(
+            text,
+            std::slice::from_ref(&(cursor..cursor)),
+            config,
+            std,
+            true,
+        ),
         '\n' if line_start > 0 => {
             let above = line_start - 1;
-            let mut edits = format_range(text, above..above, config, std)?;
+            let mut edits = ranges_with::<L>(
+                text,
+                std::slice::from_ref(&(above..above)),
+                config,
+                std,
+                true,
+            )?;
             let line_end = text[cursor..].find('\n').map_or(text.len(), |i| cursor + i);
             edits.retain(|e| e.range.end < line_start || e.range.start > line_end);
             Ok(edits)
@@ -123,9 +153,42 @@ pub fn format_ranges_in(
     std: Standard,
     incremental: bool,
 ) -> Result<Vec<Edit>, FormatError> {
+    ranges_with::<Vhdl>(text, ranges, config, std, incremental)
+}
+
+/// [`format_ranges`] for a Verilog or SystemVerilog file.
+pub fn format_ranges_verilog(
+    text: &str,
+    ranges: &[Range<usize>],
+    config: &FormatConfig,
+    options: &Options,
+) -> Result<Vec<Edit>, FormatError> {
+    format_ranges_verilog_in(text, ranges, config, options, true)
+}
+
+/// [`format_ranges_verilog`], laying out the whole file when
+/// `!incremental`. For tests.
+#[doc(hidden)]
+pub fn format_ranges_verilog_in(
+    text: &str,
+    ranges: &[Range<usize>],
+    config: &FormatConfig,
+    options: &Options,
+    incremental: bool,
+) -> Result<Vec<Edit>, FormatError> {
+    ranges_with::<Verilog>(text, ranges, config, *options, incremental)
+}
+
+fn ranges_with<L: Lang>(
+    text: &str,
+    ranges: &[Range<usize>],
+    config: &FormatConfig,
+    std: L::Std<'_>,
+    incremental: bool,
+) -> Result<Vec<Edit>, FormatError> {
     let source = Source::new(text);
     let src = source.text.as_str();
-    let root = parse_valid(src, std)?;
+    let root = parse_valid::<L>(src, std)?;
     let offsets = Offsets::new(text, &source);
     let whole = 0..src.len();
     let window = ranges
@@ -166,8 +229,8 @@ pub fn format_ranges_in(
         .collect();
     // Only layout, case and the words after `end` may change.
     for edit in &edits {
-        let before = lexical(&src[edit.range.clone()], std);
-        let after = lexical(&edit.text, std);
+        let before = lexical::<L>(&src[edit.range.clone()], std);
+        let after = lexical::<L>(&edit.text, std);
         if before != after {
             return Err(FormatError::Internal(first_difference(&before, &after)));
         }
@@ -189,8 +252,8 @@ pub fn format_ranges_in(
 /// around the lines of bytes `a..b`: whole lines between blank lines, which
 /// end alignment runs, cut between the items of a construct. `None` when the
 /// file has to be laid out whole.
-fn window(
-    root: &SyntaxNode,
+fn window<L: Lang>(
+    root: &Node<L>,
     src: &str,
     a: usize,
     b: usize,
@@ -222,7 +285,7 @@ fn window(
         if blank(prev)
             && !blank(start)
             && cuts_between_items(root, src, start)
-            && last_token_before(root, start).is_none_or(|t| !crate::kinds::is_comment(t.kind()))
+            && last_token_before(root, start).is_none_or(|t| !L::is_comment(t.kind()))
         {
             break;
         }
@@ -241,7 +304,7 @@ fn window(
             && !blank(line_start(end))
             && cuts_between_items(root, src, next)
             && first_token_after(root, src, line_start(end))
-                .is_some_and(|t| !crate::kinds::is_comment(t.kind()))
+                .is_some_and(|t| !L::is_comment(t.kind()))
         {
             break;
         }
@@ -254,8 +317,8 @@ fn window(
 /// tokens, and outside everything but constructs holding items (and not in
 /// the body of a record, physical or protected type that is shifted in
 /// because its keyword starts a line).
-fn cuts_between_items(root: &SyntaxNode, src: &str, at: usize) -> bool {
-    let starts_line = |token: Option<SyntaxToken>| {
+fn cuts_between_items<L: Lang>(root: &Node<L>, src: &str, at: usize) -> bool {
+    let starts_line = |token: Option<Token<L>>| {
         token.is_some_and(|t| {
             let start = usize::from(t.text_range().start());
             src[..start]
@@ -263,15 +326,6 @@ fn cuts_between_items(root: &SyntaxNode, src: &str, at: usize) -> bool {
                 .next()
                 .is_some_and(|before| before.trim().is_empty())
         })
-    };
-    let shifted = |n: &SyntaxNode| match n.kind() {
-        RECORD_TYPE_DEF | PROTECTED_TYPE_DEF | PROTECTED_TYPE_BODY => starts_line(n.first_token()),
-        PHYSICAL_TYPE_DEF => starts_line(
-            n.children_with_tokens()
-                .filter_map(NodeOrToken::into_token)
-                .find(|t| t.kind() == UNITS_KW),
-        ),
-        _ => false,
     };
     let Some(next) = first_token_after(root, src, at) else {
         return true;
@@ -282,39 +336,77 @@ fn cuts_between_items(root: &SyntaxNode, src: &str, at: usize) -> bool {
     }
     next.parent_ancestors()
         .filter(|n| n.text_range().start() < start)
-        .all(|n| {
-            // A type's declaration holds its record or protected body.
-            (crate::kinds::is_container(n.kind())
-                || is_flat_container(n.kind())
-                || n.kind() == TYPE_DECL)
-                && !shifted(&n)
-        })
+        .all(|n| L::cuts_inside(&n, &starts_line))
 }
 
 /// The first token that is not whitespace at or after `at`, or the one
 /// running over it.
-fn first_token_after(root: &SyntaxNode, src: &str, at: usize) -> Option<SyntaxToken> {
+fn first_token_after<L: Lang>(root: &Node<L>, src: &str, at: usize) -> Option<Token<L>> {
     if at >= src.len() {
         return None;
     }
     let mut token = root
         .token_at_offset(TextSize::from(at as u32))
         .right_biased()?;
-    while token.kind() == WHITESPACE {
-        token = token.next_token()?;
+    while token.kind() == L::WHITESPACE {
+        token = next_token(&token)?;
     }
     Some(token)
 }
 
 /// The last token that is not whitespace before `at`.
-fn last_token_before(root: &SyntaxNode, at: usize) -> Option<SyntaxToken> {
+fn last_token_before<L: Lang>(root: &Node<L>, at: usize) -> Option<Token<L>> {
     let mut token = root
         .token_at_offset(TextSize::from(at as u32))
         .left_biased()?;
-    while token.kind() == WHITESPACE || usize::from(token.text_range().end()) > at {
-        token = token.prev_token()?;
+    while token.kind() == L::WHITESPACE || usize::from(token.text_range().end()) > at {
+        token = prev_token(&token)?;
     }
     Some(token)
+}
+
+/// The token after `token`, past empty nodes (an empty Verilog connection,
+/// `.a(a), )`), which `SyntaxToken::next_token` stops at.
+fn next_token<L: Lang>(token: &Token<L>) -> Option<Token<L>> {
+    let mut element: Element<L> = token.clone().into();
+    loop {
+        let mut sibling = element.next_sibling_or_token();
+        while let Some(s) = sibling {
+            let found = match &s {
+                NodeOrToken::Token(t) => Some(t.clone()),
+                NodeOrToken::Node(n) => n
+                    .descendants_with_tokens()
+                    .find_map(NodeOrToken::into_token),
+            };
+            if found.is_some() {
+                return found;
+            }
+            sibling = s.next_sibling_or_token();
+        }
+        element = element.parent()?.into();
+    }
+}
+
+/// The token before `token`, past empty nodes.
+fn prev_token<L: Lang>(token: &Token<L>) -> Option<Token<L>> {
+    let mut element: Element<L> = token.clone().into();
+    loop {
+        let mut sibling = element.prev_sibling_or_token();
+        while let Some(s) = sibling {
+            let found = match &s {
+                NodeOrToken::Token(t) => Some(t.clone()),
+                NodeOrToken::Node(n) => n
+                    .descendants_with_tokens()
+                    .filter_map(NodeOrToken::into_token)
+                    .last(),
+            };
+            if found.is_some() {
+                return found;
+            }
+            sibling = s.prev_sibling_or_token();
+        }
+        element = element.parent()?.into();
+    }
 }
 
 /// Converts between offsets in the original text and in the normalized one
@@ -359,21 +451,21 @@ impl Offsets {
     }
 }
 
-struct View<'a> {
-    laid: &'a Laid,
+struct View<'a, L: Lang> {
+    laid: &'a Laid<L>,
     src: &'a str,
     /// For each parenthesis, the element of the one matching it.
     partner: Vec<Option<usize>>,
 }
 
-impl<'a> View<'a> {
-    fn new(laid: &'a Laid, src: &'a str) -> Self {
+impl<'a, L: Lang> View<'a, L> {
+    fn new(laid: &'a Laid<L>, src: &'a str) -> Self {
         let mut partner = vec![None; laid.elems.len()];
         let mut open = Vec::new();
         for (i, elem) in laid.elems.iter().enumerate() {
-            if elem.is_token(LPAREN) {
+            if elem.is_token(L::LPAREN) {
                 open.push(i);
-            } else if elem.is_token(RPAREN)
+            } else if elem.is_token(L::RPAREN)
                 && let Some(o) = open.pop()
             {
                 partner[o] = Some(i);
@@ -495,18 +587,18 @@ impl<'a> View<'a> {
             return None;
         }
         let syntax = laid.elems[e].syntax.as_ref()?;
-        let mut node: Option<SyntaxNode> = match syntax {
+        let mut node: Option<Node<L>> = match syntax {
             NodeOrToken::Node(n) => Some(n.clone()),
             NodeOrToken::Token(t) => t.parent(),
         };
         while let Some(n) = node {
-            if is_container(n.kind()) {
+            if L::is_container(n.kind()) {
                 return None;
             }
             if is_item(&n) {
                 // A type declaration holding a record or protected body is
                 // a construct too.
-                if n.children().any(|c| is_container(c.kind())) {
+                if n.children().any(|c| L::is_container(c.kind())) {
                     return None;
                 }
                 let range = n.text_range();

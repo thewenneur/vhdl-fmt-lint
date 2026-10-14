@@ -951,6 +951,7 @@ dependencies = [
  "toml",
  "vfl-config",
  "vfl-syntax",
+ "vfl-verilog-syntax",
 ]
 
 [[package]]
@@ -985,6 +986,7 @@ dependencies = [
  "anyhow",
  "lsp-server",
  "lsp-types",
+ "rowan",
  "serde",
  "serde_json",
  "tempfile",
@@ -995,6 +997,7 @@ dependencies = [
  "vfl-project",
  "vfl-sema",
  "vfl-syntax",
+ "vfl-verilog-syntax",
 ]
 
 [[package]]

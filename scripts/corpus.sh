@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Parses pinned open-source VHDL projects and fails on any syntax error or
-# round-trip mismatch. Does the same for Verilog and SystemVerilog projects. Then formats them, with the default config and a very
+# round-trip mismatch. Then formats them, with the default config and a very
 # different one, and fails on any formatter error or output that changes
 # when formatted again, also when only single lines are formatted. Then
-# lints them and fails on more semantic errors than the known ones. Last, checks that re-analysis after edits, reusing the
-# previous analysis, matches a full analysis. Usage: scripts/corpus.sh [CACHE_DIR]
+# lints them and fails on more semantic errors than the known ones, and
+# checks that re-analysis after edits, reusing the previous analysis,
+# matches a full analysis. Last, parses and formats Verilog and
+# SystemVerilog projects the same way. Usage: scripts/corpus.sh [CACHE_DIR]
 set -euo pipefail
 
 cache=${1:-.corpus}
@@ -150,5 +152,13 @@ $vrun --quiet "$cache/picorv32" "$cache/verilog-ethernet/rtl" "$cache/verilog-et
   "$cache/cva6/core" "$cache/cva6/vendor" || status=1
 $vrun --quiet --allow-errors --prefixes 10 "$cache/ibex" "$cache/cva6" || status=1
 "$vfl" check "$cache/picorv32" "$cache/common_cells" >/dev/null || status=1
+# Formatting Verilog and SystemVerilog, as for VHDL above: whole files and
+# single lines, with both configs. Files with syntax errors are skipped.
+for config in "" "--config $alt_config"; do
+  # shellcheck disable=SC2086 # $config is meant to split.
+  $fmt --quiet --ranges --verilog $config "$cache/sv-tests/tests" "$cache/picorv32" \
+    "$cache/verilog-ethernet/rtl" "$cache/verilog-ethernet/lib" "$cache/common_cells" \
+    "$cache/ibex" "$cache/cva6" || status=1
+done
 
 exit $status

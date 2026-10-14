@@ -1,0 +1,25 @@
+module counter(clk, reset, q);
+input clk, reset;
+output [3:0] q;
+reg [3:0] q;
+always @(posedge clk)
+  if (reset)
+    q <= 4'b0;
+  else
+    q <= q + 1;
+function [3:0] inc;
+input [3:0] v;
+begin
+inc = v + 1;
+end
+endfunction
+task automatic show; input integer n; begin $display("%0d", n); end endtask
+initial begin
+#10 q = 0;
+repeat (3) @(posedge clk);
+fork
+#1 a = 1;
+#2 b = 2;
+join
+end
+endmodule

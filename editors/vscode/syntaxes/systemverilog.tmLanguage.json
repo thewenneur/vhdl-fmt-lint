@@ -1,0 +1,310 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "SystemVerilog",
+  "scopeName": "source.systemverilog",
+  "fileTypes": [
+    "sv",
+    "svh",
+    "v",
+    "vh"
+  ],
+  "patterns": [
+    {
+      "include": "#main"
+    }
+  ],
+  "repository": {
+    "main": {
+      "patterns": [
+        {
+          "include": "#comments"
+        },
+        {
+          "include": "#strings"
+        },
+        {
+          "include": "#attributes"
+        },
+        {
+          "include": "#directives"
+        },
+        {
+          "include": "#declarations"
+        },
+        {
+          "include": "#numbers"
+        },
+        {
+          "include": "#system"
+        },
+        {
+          "include": "#escaped"
+        },
+        {
+          "include": "#types"
+        },
+        {
+          "include": "#keywords"
+        },
+        {
+          "include": "#instantiations"
+        },
+        {
+          "include": "#operators"
+        },
+        {
+          "include": "#punctuation"
+        }
+      ]
+    },
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.systemverilog",
+          "begin": "//",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.systemverilog"
+            }
+          },
+          "end": "$"
+        },
+        {
+          "name": "comment.block.systemverilog",
+          "begin": "/\\*",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.systemverilog"
+            }
+          },
+          "end": "\\*/",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.systemverilog"
+            }
+          }
+        }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.systemverilog",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.systemverilog",
+          "match": "\\\\(?:[nt\\\\\\\"vfa]|[0-7]{1,3}|x[0-9a-fA-F]{1,2}|$)"
+        },
+        {
+          "name": "constant.other.placeholder.systemverilog",
+          "match": "%[-0-9]*[bBoOdDhHxXeEfFgGcCsStTmMlLvVuUzZpP%]"
+        }
+      ]
+    },
+    "attributes": {
+      "name": "meta.attribute.systemverilog",
+      "begin": "\\(\\*(?!\\))",
+      "end": "\\*\\)",
+      "patterns": [
+        {
+          "include": "#strings"
+        },
+        {
+          "include": "#numbers"
+        }
+      ]
+    },
+    "directives": {
+      "patterns": [
+        {
+          "match": "(`include)\\s*(\\\"[^\\\"]*\\\"|<[^>]*>)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.directive.include.systemverilog"
+            },
+            "2": {
+              "name": "string.quoted.other.systemverilog"
+            }
+          }
+        },
+        {
+          "match": "(`define)\\s+([a-zA-Z_][a-zA-Z0-9_$]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.directive.define.systemverilog"
+            },
+            "2": {
+              "name": "entity.name.function.preprocessor.systemverilog"
+            }
+          }
+        },
+        {
+          "match": "(`(?:ifdef|ifndef|elsif|undef))\\s+([a-zA-Z_][a-zA-Z0-9_$]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.directive.conditional.systemverilog"
+            },
+            "2": {
+              "name": "entity.name.function.preprocessor.systemverilog"
+            }
+          }
+        },
+        {
+          "name": "keyword.control.directive.systemverilog",
+          "match": "`(?:else|endif|timescale|default_nettype|resetall|celldefine|endcelldefine|unconnected_drive|nounconnected_drive|pragma|line|begin_keywords|end_keywords|undefineall|__FILE__|__LINE__)\\b"
+        },
+        {
+          "name": "entity.name.function.preprocessor.systemverilog",
+          "match": "`[a-zA-Z_][a-zA-Z0-9_$]*"
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(module|macromodule|interface|program|package|class|checker|primitive|config|covergroup|property|sequence|clocking)\\s+(?:(static|automatic)\\s+)?([a-zA-Z_][a-zA-Z0-9_$]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.systemverilog"
+            },
+            "2": {
+              "name": "storage.modifier.systemverilog"
+            },
+            "3": {
+              "name": "entity.name.type.systemverilog"
+            }
+          }
+        },
+        {
+          "match": "\\b(typedef)\\b",
+          "captures": {
+            "1": {
+              "name": "storage.type.systemverilog"
+            }
+          }
+        },
+        {
+          "match": "\\b(function|task)\\s+(?:(static|automatic)\\s+)?(?:(?:[a-zA-Z_][a-zA-Z0-9_$]*(?:\\s*::\\s*[a-zA-Z_][a-zA-Z0-9_$]*)?|\\[[^\\]]*\\])\\s+)*?([a-zA-Z_][a-zA-Z0-9_$]*)\\s*(?=\\(|;)",
+          "captures": {
+            "1": {
+              "name": "storage.type.systemverilog"
+            },
+            "2": {
+              "name": "storage.modifier.systemverilog"
+            },
+            "3": {
+              "name": "entity.name.function.systemverilog"
+            }
+          }
+        },
+        {
+          "match": "\\b(end(?:module|interface|program|package|class|checker|primitive|config|group|property|sequence|clocking|function|task)|end|join|join_any|join_none)\\s*(:)\\s*([a-zA-Z_][a-zA-Z0-9_$]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.systemverilog"
+            },
+            "2": {
+              "name": "punctuation.separator.systemverilog"
+            },
+            "3": {
+              "name": "entity.name.label.systemverilog"
+            }
+          }
+        },
+        {
+          "match": "\\b(begin|fork)\\s*(:)\\s*([a-zA-Z_][a-zA-Z0-9_$]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.systemverilog"
+            },
+            "2": {
+              "name": "punctuation.separator.systemverilog"
+            },
+            "3": {
+              "name": "entity.name.label.systemverilog"
+            }
+          }
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.systemverilog",
+          "match": "(?:\\b[0-9][0-9_]*\\s*)?'[sS]?[bB]\\s*[01xXzZ?_]+"
+        },
+        {
+          "name": "constant.numeric.systemverilog",
+          "match": "(?:\\b[0-9][0-9_]*\\s*)?'[sS]?[oO]\\s*[0-7xXzZ?_]+"
+        },
+        {
+          "name": "constant.numeric.systemverilog",
+          "match": "(?:\\b[0-9][0-9_]*\\s*)?'[sS]?[dD]\\s*(?:[0-9_]+|[xXzZ?]_*)"
+        },
+        {
+          "name": "constant.numeric.systemverilog",
+          "match": "(?:\\b[0-9][0-9_]*\\s*)?'[sS]?[hH]\\s*[0-9a-fA-FxXzZ?_]+"
+        },
+        {
+          "name": "constant.numeric.systemverilog",
+          "match": "'[01xXzZ]\\b"
+        },
+        {
+          "name": "constant.numeric.systemverilog",
+          "match": "\\b[0-9][0-9_]*(?:\\.[0-9_]+)?(?:[eE][+-]?[0-9_]+)?(?:fs|ps|ns|us|ms|s)?\\b"
+        }
+      ]
+    },
+    "system": {
+      "name": "support.function.systemverilog",
+      "match": "\\$[a-zA-Z0-9_$]+"
+    },
+    "escaped": {
+      "name": "variable.other.systemverilog",
+      "match": "\\\\\\S+"
+    },
+    "types": {
+      "name": "storage.type.systemverilog",
+      "match": "\\b(?:interconnect|shortreal|realtime|shortint|unsigned|chandle|integer|longint|supply0|supply1|genvar|packed|signed|string|struct|triand|trireg|event|logic|trior|union|uwire|byte|enum|real|time|tri0|tri1|void|wand|wire|bit|int|reg|tri|var|wor)\\b"
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.systemverilog",
+          "match": "\\b(?:join_none|continue|join_any|priority|default|disable|endcase|foreach|forever|unique0|repeat|return|unique|begin|break|casex|casez|while|case|else|fork|join|wait|end|for|do|if)\\b"
+        },
+        {
+          "name": "keyword.other.systemverilog",
+          "match": "\\b(?:pulsestyle_ondetect|pulsestyle_onevent|noshowcancelled|sync_accept_on|sync_reject_on|showcancelled|timeprecision|always_latch|endinterface|endprimitive|illegal_bins|randsequence|s_eventually|s_until_with|always_comb|endclocking|endfunction|endgenerate|endproperty|endsequence|first_match|ignore_bins|macromodule|constraint|covergroup|coverpoint|endchecker|endpackage|endprogram|endspecify|eventually|implements|localparam|s_nexttime|throughout|until_with|wait_order|accept_on|always_ff|automatic|endconfig|endmodule|interface|intersect|parameter|primitive|protected|reject_on|specparam|clocking|deassign|defparam|endclass|endgroup|endtable|forkjoin|function|generate|instance|nexttime|property|pulldown|randcase|restrict|rtranif0|rtranif1|s_always|scalared|sequence|timeunit|vectored|wildcard|checker|context|endtask|extends|implies|include|initial|liblist|library|matches|modport|negedge|nettype|package|posedge|program|release|s_until|specify|strong0|strong1|tranif0|tranif1|typedef|untyped|virtual|always|assert|assign|assume|before|binsof|bufif0|bufif1|config|design|expect|export|extern|global|highz0|highz1|ifnone|import|incdir|inside|medium|module|notif0|notif1|output|pullup|static|strong|tagged|within|alias|class|const|cover|cross|final|force|inout|input|large|local|pull0|pull1|randc|rcmos|rnmos|rpmos|rtran|small|solve|super|table|until|weak0|weak1|bind|bins|cell|cmos|dist|edge|nand|nmos|null|pmos|pure|rand|soft|task|this|tran|type|weak|with|xnor|and|buf|iff|let|new|nor|not|ref|use|xor|or)\\b"
+        }
+      ]
+    },
+    "instantiations": {
+      "match": "^\\s*(?!(?:pulsestyle_ondetect|pulsestyle_onevent|noshowcancelled|sync_accept_on|sync_reject_on|showcancelled|timeprecision|always_latch|endinterface|endprimitive|illegal_bins|interconnect|randsequence|s_eventually|s_until_with|always_comb|endclocking|endfunction|endgenerate|endproperty|endsequence|first_match|ignore_bins|macromodule|constraint|covergroup|coverpoint|endchecker|endpackage|endprogram|endspecify|eventually|implements|localparam|s_nexttime|throughout|until_with|wait_order|accept_on|always_ff|automatic|endconfig|endmodule|interface|intersect|join_none|parameter|primitive|protected|reject_on|shortreal|specparam|clocking|continue|deassign|defparam|endclass|endgroup|endtable|forkjoin|function|generate|instance|join_any|nexttime|priority|property|pulldown|randcase|realtime|restrict|rtranif0|rtranif1|s_always|scalared|sequence|shortint|timeunit|unsigned|vectored|wildcard|chandle|checker|context|default|disable|endcase|endtask|extends|foreach|forever|implies|include|initial|integer|liblist|library|longint|matches|modport|negedge|nettype|package|posedge|program|release|s_until|specify|strong0|strong1|supply0|supply1|tranif0|tranif1|typedef|unique0|untyped|virtual|always|assert|assign|assume|before|binsof|bufif0|bufif1|config|design|expect|export|extern|genvar|global|highz0|highz1|ifnone|import|incdir|inside|medium|module|notif0|notif1|output|packed|pullup|repeat|return|signed|static|string|strong|struct|tagged|triand|trireg|unique|within|alias|begin|break|casex|casez|class|const|cover|cross|event|final|force|inout|input|large|local|logic|pull0|pull1|randc|rcmos|rnmos|rpmos|rtran|small|solve|super|table|trior|union|until|uwire|weak0|weak1|while|bind|bins|byte|case|cell|cmos|dist|edge|else|enum|fork|join|nand|nmos|null|pmos|pure|rand|real|soft|task|this|time|tran|tri0|tri1|type|void|wait|wand|weak|wire|with|xnor|and|bit|buf|end|for|iff|int|let|new|nor|not|ref|reg|tri|use|var|wor|xor|do|if|or)\\b)([a-zA-Z_][a-zA-Z0-9_$]*)\\s+(?:#\\s*\\(.*?\\)\\s*)?(?!(?:pulsestyle_ondetect|pulsestyle_onevent|noshowcancelled|sync_accept_on|sync_reject_on|showcancelled|timeprecision|always_latch|endinterface|endprimitive|illegal_bins|interconnect|randsequence|s_eventually|s_until_with|always_comb|endclocking|endfunction|endgenerate|endproperty|endsequence|first_match|ignore_bins|macromodule|constraint|covergroup|coverpoint|endchecker|endpackage|endprogram|endspecify|eventually|implements|localparam|s_nexttime|throughout|until_with|wait_order|accept_on|always_ff|automatic|endconfig|endmodule|interface|intersect|join_none|parameter|primitive|protected|reject_on|shortreal|specparam|clocking|continue|deassign|defparam|endclass|endgroup|endtable|forkjoin|function|generate|instance|join_any|nexttime|priority|property|pulldown|randcase|realtime|restrict|rtranif0|rtranif1|s_always|scalared|sequence|shortint|timeunit|unsigned|vectored|wildcard|chandle|checker|context|default|disable|endcase|endtask|extends|foreach|forever|implies|include|initial|integer|liblist|library|longint|matches|modport|negedge|nettype|package|posedge|program|release|s_until|specify|strong0|strong1|supply0|supply1|tranif0|tranif1|typedef|unique0|untyped|virtual|always|assert|assign|assume|before|binsof|bufif0|bufif1|config|design|expect|export|extern|genvar|global|highz0|highz1|ifnone|import|incdir|inside|medium|module|notif0|notif1|output|packed|pullup|repeat|return|signed|static|string|strong|struct|tagged|triand|trireg|unique|within|alias|begin|break|casex|casez|class|const|cover|cross|event|final|force|inout|input|large|local|logic|pull0|pull1|randc|rcmos|rnmos|rpmos|rtran|small|solve|super|table|trior|union|until|uwire|weak0|weak1|while|bind|bins|byte|case|cell|cmos|dist|edge|else|enum|fork|join|nand|nmos|null|pmos|pure|rand|real|soft|task|this|time|tran|tri0|tri1|type|void|wait|wand|weak|wire|with|xnor|and|bit|buf|end|for|iff|int|let|new|nor|not|ref|reg|tri|use|var|wor|xor|do|if|or)\\b)([a-zA-Z_][a-zA-Z0-9_$]*)\\s*(?=\\()",
+      "captures": {
+        "1": {
+          "name": "entity.name.type.module.systemverilog"
+        },
+        "2": {
+          "name": "entity.name.label.systemverilog"
+        }
+      }
+    },
+    "operators": {
+      "name": "keyword.operator.systemverilog",
+      "match": "<<<=|>>>=|<<=|>>=|===|!==|==\\?|!=\\?|<->|->>|\\|->|\\|=>|##|<<<|>>>|<=|>=|==|!=|&&|\\|\\||\\*\\*|<<|>>|\\+\\+|--|\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|->|::|[-+*/%<>=!~&|^?@#]"
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.terminator.systemverilog",
+          "match": ";"
+        },
+        {
+          "name": "punctuation.separator.systemverilog",
+          "match": "[,:.]"
+        }
+      ]
+    }
+  }
+}

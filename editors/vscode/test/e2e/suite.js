@@ -144,6 +144,29 @@ async function run() {
   await until("the diagrams view", () => webviewTab("e2e_top"));
   await vscode.commands.executeCommand("vfl.openDocPage", "index.html");
   await until("the index in the diagrams view", () => webviewTab("Documentation"));
+
+  // SystemVerilog: formatting, the outline and folding.
+  const svUri = vscode.Uri.file(path.join(folder, "e2e_counter.sv"));
+  const sv = await vscode.workspace.openTextDocument(svUri);
+  await vscode.window.showTextDocument(sv);
+  assert.equal(sv.languageId, "systemverilog");
+  const svEdits = await until("SystemVerilog formatting", () =>
+    vscode.commands.executeCommand("vscode.executeFormatDocumentProvider", svUri, {
+      tabSize: 2,
+      insertSpaces: true,
+    }),
+  );
+  assert.ok(svEdits.length > 0, "SystemVerilog formatting returned no edits");
+  const symbols = await vscode.commands.executeCommand(
+    "vscode.executeDocumentSymbolProvider",
+    svUri,
+  );
+  assert.equal(symbols?.[0]?.name, "e2e_counter", JSON.stringify(symbols));
+  const folds = await vscode.commands.executeCommand("vscode.executeFoldingRangeProvider", svUri);
+  assert.ok(
+    folds?.some((f) => f.start === 0),
+    `no fold for the module in ${JSON.stringify(folds)}`,
+  );
 }
 
 module.exports = { run };

@@ -86,3 +86,39 @@ fn fmt_lines_formats_only_those_lines() {
     let many = vfl(dir.path(), &["fmt", "--lines", "1", "."]);
     assert!(!many.status.success());
 }
+
+#[test]
+fn fmt_formats_verilog_by_extension() {
+    let dir = tempfile::tempdir().unwrap();
+    let sv = dir.path().join("top.sv");
+    std::fs::write(&sv, "module top;assign a=b;endmodule\n").unwrap();
+    // A VHDL file of the same project, formatted in the same run.
+    std::fs::write(dir.path().join("e.vhd"), "ENTITY e IS END;\n").unwrap();
+    assert!(vfl(dir.path(), &["fmt"]).status.success());
+    assert_eq!(
+        std::fs::read_to_string(&sv).unwrap(),
+        "module top;\n  assign a = b;\nendmodule\n"
+    );
+
+    // Standard input, named so that it is read as SystemVerilog.
+    let mut child = Command::new(env!("CARGO_BIN_EXE_vfl"))
+        .args(["fmt", "-", "--stdin-filename", "x.sv"])
+        .current_dir(dir.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    use std::io::Write;
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"module m;wire  a;endmodule\n")
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "module m;\n  wire a;\nendmodule\n"
+    );
+}

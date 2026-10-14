@@ -63,6 +63,12 @@ are ready, and are dropped if the file changed in the meantime.
   of the current file's entity, with its symbol, block diagram, port maps, state machines
   and hierarchy, in the browser.
 
+- **Verilog and SystemVerilog**: `.v`, `.sv` and their header files are formatted (as a
+  whole, a selection, on save or as you type), their syntax errors are shown as you type,
+  their names are colored by meaning and **Go to symbol in file** lists their modules,
+  ports, parameters, declarations and instances. VHDL that instantiates their modules
+  resolves their ports and parameters.
+
 ## Commands
 
 All under **Plugins > vfl**. To give them keyboard shortcuts, use **Settings > Shortcut
@@ -83,6 +89,7 @@ Mapper > Plugin commands**.
 | Find references | Lists every use of the name at the caret, in the whole project. |
 | Rename symbol | Asks for a new name and renames the name at the caret everywhere. Files that change on disk since they were analyzed are skipped. |
 | Go to symbol in file | Lists the declarations of the current file. |
+| Fold code | Notepad++ folds VHDL and Verilog itself, from the fold margin or the **View** menu; the language server's folding is for editors that have none. |
 | Go to symbol in project | Searches the declarations of the project by name, starting from the word at the caret. |
 | Insert entity instantiation, Insert component instantiation, Insert component declaration | Lists the entities of the project, those of the current file first, and inserts the code for the one picked at the caret. |
 | Generate testbench | Lists the entities of the project and writes a testbench for the one picked next to it (`<entity>_tb.vhd`, see `[generate]` in `vfl.toml`), then opens it. |
@@ -92,8 +99,8 @@ Mapper > Plugin commands**.
 | Show parameters | Shows the parameter hints of the call around the caret. |
 | Complete word | Lists the completions at the caret. Notepad++ keeps **Ctrl+Space** for its own completion, so map this to another key if you use it often. |
 | Format on type | Formats the line of a `;` just typed, or the line above a new line (off by default). `on_type = false` under `[format]` in `vfl.toml` turns it off for a project. |
-| Format on save | Formats VHDL files when they are saved (off by default). With **Save All**, only the file in front is formatted. |
-| Lint automatically | Lints VHDL files as described above (on by default). |
+| Format on save | Formats VHDL and Verilog files when they are saved (off by default). With **Save All**, only the file in front is formatted. |
+| Lint automatically | Lints VHDL and Verilog files as described above (on by default). |
 | Show messages under lines | Shows each message under its line (on by default); with it off, hover or use Next problem. |
 | Code assistance | Types on hover, parameter hints and completion after a dot (on by default). The three commands above work either way. |
 | Highlight uses | Highlights the uses of the name at the caret (on by default). |
@@ -107,7 +114,8 @@ The documentation is made from the files on disk, so save the file first; it is 
 written by the two commands above, never as you type.
 
 A file is VHDL when Notepad++ shows it as VHDL, or its extension is `.vhd`, `.vhdl`, `.vho`
-or `.vht`.
+or `.vht`. It is Verilog when Notepad++ shows it as Verilog, or its extension is `.v`, `.vh`,
+`.sv` or `.svh`; hover, parameter hints, completion, references and rename are for VHDL only.
 
 ## Install
 

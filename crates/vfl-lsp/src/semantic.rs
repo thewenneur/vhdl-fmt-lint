@@ -11,9 +11,9 @@ use lsp_types::{
     SemanticTokensRangeResult, SemanticTokensResult,
 };
 use vfl_sema::{Decl, DeclKind, FileId, Mode, Target};
-use vfl_syntax::{TextRange, TextSize};
+use vfl_syntax::{LineIndex, TextRange, TextSize};
 
-use crate::world::World;
+use crate::world::{Doc, World};
 
 /// What a name is, as colored. The order is the legend's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -272,8 +272,7 @@ pub fn tokens(world: &World, file: FileId, within: Option<TextRange>) -> Vec<Tok
 }
 
 /// The tokens in LSP's relative encoding: lines and UTF-16 columns.
-fn encode(world: &World, file: FileId, tokens: &[Token]) -> Vec<SemanticToken> {
-    let doc = world.doc(file);
+fn encode(doc: Doc, tokens: &[Token]) -> Vec<SemanticToken> {
     let mut out = Vec::with_capacity(tokens.len());
     let (mut line, mut column) = (0, 0);
     for token in tokens {
@@ -318,18 +317,36 @@ impl Sent {
     }
 }
 
-fn file_tokens(
-    world: &World,
-    uri: &lsp_types::Url,
-) -> Option<(PathBuf, FileId, Vec<SemanticToken>)> {
+fn file_tokens(world: &World, uri: &lsp_types::Url) -> Option<(PathBuf, Vec<SemanticToken>)> {
     let path = uri.to_file_path().ok()?;
-    let file = world.file_id(&path)?;
-    let data = encode(world, file, &tokens(world, file, None));
-    Some((path, file, data))
+    let data = encoded(world, &path, None)?;
+    Some((path, data))
+}
+
+/// The encoded tokens of the file at `path`, within a range of positions
+/// when given.
+fn encoded(
+    world: &World,
+    path: &std::path::Path,
+    within: Option<lsp_types::Range>,
+) -> Option<Vec<SemanticToken>> {
+    let range = |doc: Doc| within.map(|r| TextRange::new(doc.offset(r.start), doc.offset(r.end)));
+    if let Some(file) = world.file_id(path) {
+        let doc = world.doc(file);
+        return Some(encode(doc, &tokens(world, file, range(doc))));
+    }
+    let file = crate::verilog::file(world, path)?;
+    let index = LineIndex::new(&file.text);
+    let doc = Doc {
+        text: &file.text,
+        index: &index,
+    };
+    let tokens = crate::verilog::tokens(&file.parse.syntax(), range(doc));
+    Some(encode(doc, &tokens))
 }
 
 pub fn full(world: &mut World, params: SemanticTokensParams) -> Option<SemanticTokensResult> {
-    let (path, _, data) = file_tokens(world, &params.text_document.uri)?;
+    let (path, data) = file_tokens(world, &params.text_document.uri)?;
     let result_id = world.semantic.remember(path, data.clone());
     Some(SemanticTokensResult::Tokens(SemanticTokens {
         result_id: Some(result_id),
@@ -341,7 +358,7 @@ pub fn delta(
     world: &mut World,
     params: SemanticTokensDeltaParams,
 ) -> Option<SemanticTokensFullDeltaResult> {
-    let (path, _, data) = file_tokens(world, &params.text_document.uri)?;
+    let (path, data) = file_tokens(world, &params.text_document.uri)?;
     let previous = world
         .semantic
         .files
@@ -386,10 +403,7 @@ pub fn range(
     params: SemanticTokensRangeParams,
 ) -> Option<SemanticTokensRangeResult> {
     let path = params.text_document.uri.to_file_path().ok()?;
-    let file = world.file_id(&path)?;
-    let doc = world.doc(file);
-    let within = TextRange::new(doc.offset(params.range.start), doc.offset(params.range.end));
-    let data = encode(world, file, &tokens(world, file, Some(within)));
+    let data = encoded(world, &path, Some(params.range))?;
     Some(SemanticTokensRangeResult::Tokens(SemanticTokens {
         result_id: None,
         data,

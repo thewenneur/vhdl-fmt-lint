@@ -1,0 +1,81 @@
+{
+  "comments": {
+    "lineComment": "//",
+    "blockComment": [
+      "/*",
+      "*/"
+    ]
+  },
+  "brackets": [
+    [
+      "(",
+      ")"
+    ],
+    [
+      "[",
+      "]"
+    ],
+    [
+      "{",
+      "}"
+    ]
+  ],
+  "autoClosingPairs": [
+    {
+      "open": "(",
+      "close": ")"
+    },
+    {
+      "open": "[",
+      "close": "]"
+    },
+    {
+      "open": "{",
+      "close": "}"
+    },
+    {
+      "open": "\"",
+      "close": "\"",
+      "notIn": [
+        "string",
+        "comment"
+      ]
+    },
+    {
+      "open": "/*",
+      "close": " */",
+      "notIn": [
+        "string"
+      ]
+    }
+  ],
+  "surroundingPairs": [
+    [
+      "(",
+      ")"
+    ],
+    [
+      "[",
+      "]"
+    ],
+    [
+      "{",
+      "}"
+    ],
+    [
+      "\"",
+      "\""
+    ]
+  ],
+  "wordPattern": "(\\\\\\S+)|(`?[a-zA-Z_][a-zA-Z0-9_$]*)|(\\$[a-zA-Z0-9_$]+)",
+  "indentationRules": {
+    "increaseIndentPattern": "^((?!//).)*(\\b(begin|fork|case|casex|casez|randcase|generate|module|interface|program|package|class|function|task|specify|covergroup|clocking|property|sequence|checker)\\b((?!\\bend\\w*\\b).)*|[({\\[]\\s*)(//.*)?$",
+    "decreaseIndentPattern": "^\\s*(end\\w*|join\\w*|`else|`elsif|`endif|[)}\\]])"
+  },
+  "folding": {
+    "markers": {
+      "start": "^\\s*//\\s*#?region\\b",
+      "end": "^\\s*//\\s*#?endregion\\b"
+    }
+  }
+}

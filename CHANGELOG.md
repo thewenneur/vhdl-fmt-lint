@@ -23,6 +23,20 @@
   doc` documents each module (parameters, ports, comments, instances) and draws it in
   the hierarchy, block and symbol diagrams. `vfl project` lists the Verilog files with
   their libraries.
+- **Verilog and SystemVerilog formatting**: `vfl fmt` formats `.v` and `.sv` files with the
+  `[format]` settings that apply to them (indentation, list layouts, line width) and the
+  same alignment as VHDL: port and parameter types, names and defaults, declarations,
+  assignment operators, named connections and case items. `begin` stays where it is
+  written, directives keep their indentation, code in `` `ifdef `` branches that are not
+  compiled is kept as written, and `// vfl: off` regions are left alone. Like VHDL, the
+  output must parse to the same tokens and comments, and formatting it again changes
+  nothing. `vfl fmt - --stdin-filename top.sv` formats standard input as the named file.
+- **Verilog in the editor**: the language server reports the syntax errors of Verilog and
+  SystemVerilog files, formats them (document, range, on type), lists their modules,
+  parameters, ports, declarations, functions, tasks and instances as document symbols,
+  folds their blocks, lists and comments, and colors their names by declaration. The VS
+  Code extension registers the `verilog` and `systemverilog` languages with a grammar;
+  the Notepad++ plugin formats, checks, outlines and colors Verilog buffers.
 
 ## [0.2.1] - 2026-10-14
 

@@ -163,6 +163,26 @@ contexts, configurations, components, subprogram bodies, processes, blocks, `if`
 loops, generate statements, records, physical types and protected types. A clause holding
 a comment is left alone.
 
+### Verilog and SystemVerilog
+
+The same settings format Verilog and SystemVerilog files, where they have a meaning:
+
+- `max_width`, `indent`, `continuation_indent`, `use_tabs`, `max_blank_lines`,
+  `line_ending` and `on_type` apply as for VHDL.
+- `interface_list` lays out port lists and `#(...)` parameter lists, `association_list`
+  the connections of an instance and its `#(...)` parameter values, and `close_paren`
+  places their `)`.
+- `space_after_keyword` puts a space between `(` and `if`, `for`, `foreach`, `while`,
+  `case`, `repeat` and `wait`.
+- `keyword_case` and `identifier_case` do not apply: Verilog is case-sensitive. Nor do
+  `end_label`, `end_keyword`, `space_before_label_colon` and `case_alternative`.
+
+`begin` and `else` stay where they are written: on the line of the `if` or `always`, or
+on a line of their own. A statement that is the body of an `if`, a loop or an `always`
+without `begin` is indented one level when it starts a line. Compiler directives keep the
+indentation they have, and code in an `` `ifdef `` branch that is not compiled is kept as
+written. `// vfl: off` and `// vfl: on` leave the lines between them alone.
+
 ### List layouts
 
 `interface_list` and `association_list` take:
@@ -226,6 +246,13 @@ by default.
 | `conditional_continuation` | boolean | `true` | Continuation lines of conditional and selected assignments start under the first value instead of one indentation level in. |
 | `trailing_comment` | boolean | `true` | Comments at the end of consecutive lines. |
 | `block_boundary` | string | `"blank-line"` | What ends a run of aligned lines; see below. |
+
+In Verilog and SystemVerilog files, `port_mode`, `port_colon`/`generic_colon` and
+`interface_default` line up the types, names and default values of ports and
+parameters; `declaration` those of net, variable, port and parameter declarations (each
+kind among themselves) and of struct members; `assignment` the `=`, `<=` and compound
+operators of consecutive assignments; `association` the `(` of named connections
+(`.clk  (clk)`); and `case_choice` the statements after the `:` of case items.
 
 `block_boundary` takes:
 
@@ -413,7 +440,9 @@ and the language server, their modules are entities VHDL can instantiate (`entit
 work.fifo`, or through a component): the generic and port maps of an entity
 instantiation are checked against the module's parameters and ports, and a module goes in the libraries of the units that
 instantiate it, as an entity would (`[project.libraries]` patterns apply to Verilog
-files too). Verilog files are not linted themselves yet. The extension of a file decides how it is parsed: files with
+files too). `vfl fmt` formats them (see [Verilog and SystemVerilog](#verilog-and-systemverilog)
+under `[format]`), and the language server reports their syntax errors; they are not
+linted themselves yet. The extension of a file decides how it is parsed: files with
 `sv_extensions` as SystemVerilog, files with `extensions` as Verilog. A
 `` `begin_keywords `` directive in a file still changes the reserved words for the part
 of the file it covers.

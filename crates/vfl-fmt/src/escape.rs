@@ -1,11 +1,10 @@
 //! `-- vfl: off`, `-- vfl: on` and `-- vfl: skip`: regions left as written.
 
-use rowan::NodeOrToken;
-use vfl_syntax::SyntaxKind::*;
-use vfl_syntax::TextSize;
+use rowan::{NodeOrToken, TextSize};
 
 use crate::elems::Elem;
 use crate::kinds::is_item;
+use crate::lang::Lang;
 
 #[derive(Debug, PartialEq, Eq)]
 enum Directive {
@@ -14,11 +13,8 @@ enum Directive {
     Skip,
 }
 
-fn directive(elem: &Elem) -> Option<Directive> {
-    if elem.kind != LINE_COMMENT {
-        return None;
-    }
-    let body = elem.text.strip_prefix("--")?.trim().to_ascii_lowercase();
+fn directive<L: Lang>(elem: &Elem<L>) -> Option<Directive> {
+    let body = L::comment_body(elem)?.trim().to_ascii_lowercase();
     let word = body.strip_prefix("vfl:")?.trim();
     match word {
         "off" => Some(Directive::Off),
@@ -42,7 +38,7 @@ pub(crate) struct Region {
 }
 
 /// Finds the regions protected by `-- vfl: off`/`on` and `-- vfl: skip`.
-pub(crate) fn regions(elems: &[Elem], src_len: usize) -> Vec<Region> {
+pub(crate) fn regions<L: Lang>(elems: &[Elem<L>], src_len: usize) -> Vec<Region> {
     let mut regions = Vec::new();
     let mut i = 0;
     while i < elems.len() {
@@ -98,7 +94,7 @@ pub(crate) fn regions(elems: &[Elem], src_len: usize) -> Vec<Region> {
 }
 
 /// Marks the elements inside protected regions.
-pub(crate) fn protected(elems: &[Elem], regions: &[Region]) -> Vec<bool> {
+pub(crate) fn protected<L: Lang>(elems: &[Elem<L>], regions: &[Region]) -> Vec<bool> {
     let mut marks = vec![false; elems.len()];
     for region in regions {
         let last = region.last.unwrap_or(elems.len() - 1);
@@ -111,10 +107,10 @@ pub(crate) fn protected(elems: &[Elem], regions: &[Region]) -> Vec<bool> {
 }
 
 /// Puts the source text back into the protected regions.
-pub(crate) fn restore_verbatim(
+pub(crate) fn restore_verbatim<L: Lang>(
     src: &str,
     out: String,
-    elems: &[Elem],
+    elems: &[Elem<L>],
     positions: &[(usize, usize)],
     regions: &[Region],
 ) -> String {
@@ -145,7 +141,7 @@ pub(crate) fn restore_verbatim(
 }
 
 /// Where the statement or declaration starting at `elem` ends.
-fn item_end(elem: &Elem) -> Option<TextSize> {
+fn item_end<L: Lang>(elem: &Elem<L>) -> Option<TextSize> {
     let syntax = elem.syntax.as_ref()?;
     let start = syntax.text_range().start();
     let mut node = match syntax {

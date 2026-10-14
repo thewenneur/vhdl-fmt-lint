@@ -1,6 +1,6 @@
 # vfl for VS Code
 
-VHDL support for VS Code, powered by the [vfl](https://github.com/thewenneur/vhdl-fmt-lint)
+VHDL, Verilog and SystemVerilog support for VS Code, powered by the [vfl](https://github.com/thewenneur/vhdl-fmt-lint)
 language server:
 
 - **Diagnostics** as you type: syntax errors, cross-file semantic checks and lint rules.
@@ -32,6 +32,13 @@ language server:
   `editor.semanticTokenColorCustomizations`, for example
   `"rules": { "signal": "#c586c0", "port.out": { "bold": true } }`.
 
+**Verilog and SystemVerilog** files (`.v`, `.vh`, `.sv`, `.svh`) get syntax errors as you
+type, formatting (whole file, selection and on type), syntax and semantic highlighting, an
+outline of their modules, parameters, ports, declarations and instances, and folding. VHDL
+that instantiates their modules resolves their ports and parameters, with hover and go to
+definition. If another extension also handles Verilog, pick vfl as the formatter with
+**Format Document With...**.
+
 The project root, sources and libraries are discovered from the code, so there is nothing to
 set up. Configuration lives in `vfl.toml`, shared with the `vfl` command line; see the
 [main README](https://github.com/thewenneur/vhdl-fmt-lint#configuration).
@@ -57,7 +64,8 @@ It is looked up in `vfl.server.path`, then on `PATH`, then in `~/.cargo/bin`.
 | `vfl.format.onType` | `false` | Format the line you just finished as you type (`;` or Enter). |
 | `vfl.trace.server` | `"off"` | Log LSP traffic (`messages` or `verbose`). |
 
-The extension makes itself the default formatter for VHDL. To format and fix on save:
+The extension makes itself the default formatter for VHDL, Verilog and SystemVerilog. To
+format and fix on save:
 
 ```json
 "[vhdl]": {

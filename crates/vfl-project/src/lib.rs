@@ -17,7 +17,7 @@ pub use load::{Encoding, LibrarySources, LoadError, Project, SourceFile, decode,
 pub use summary::{
     FileSummary, UnitKind, UnitRef, UnitSummary, name_token, simple_name, summarize,
 };
-pub use verilog::{VerilogFile, module_key, parse_verilog, verilog_standard};
+pub use verilog::{VerilogFile, module_key, parse_verilog, verilog_standard, with_verilog_options};
 
 use ignore::WalkBuilder;
 use ignore::overrides::OverrideBuilder;

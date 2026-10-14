@@ -8,11 +8,11 @@ use lsp_types::{
     CompletionItemKind, CompletionParams, CompletionResponse, DocumentFormattingParams,
     DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams,
     DocumentOnTypeFormattingParams, DocumentRangeFormattingParams, DocumentSymbol,
-    DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse,
-    Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind, NumberOrString,
-    PrepareRenameResponse, ReferenceParams, RenameParams, SymbolInformation, SymbolKind,
-    TextDocumentPositionParams, TextEdit, Url, WorkspaceEdit, WorkspaceSymbolParams,
-    WorkspaceSymbolResponse,
+    DocumentSymbolParams, DocumentSymbolResponse, FoldingRange, FoldingRangeKind,
+    FoldingRangeParams, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
+    HoverParams, Location, MarkupContent, MarkupKind, NumberOrString, PrepareRenameResponse,
+    ReferenceParams, RenameParams, SymbolInformation, SymbolKind, TextDocumentPositionParams,
+    TextEdit, Url, WorkspaceEdit, WorkspaceSymbolParams, WorkspaceSymbolResponse,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -46,6 +46,7 @@ pub fn needs_analysis(method: &str) -> bool {
         "textDocument/formatting"
             | "textDocument/rangeFormatting"
             | "textDocument/onTypeFormatting"
+            | "textDocument/foldingRange"
     )
 }
 
@@ -59,6 +60,7 @@ pub fn request(world: &mut World, method: &str, params: Value) -> Result<Value, 
         "textDocument/documentHighlight" => json(highlight(world, parse(params)?)),
         "textDocument/hover" => json(hover(world, parse(params)?)),
         "textDocument/documentSymbol" => json(document_symbols(world, parse(params)?)),
+        "textDocument/foldingRange" => json(folding_ranges(world, parse(params)?)),
         "workspace/symbol" => json(workspace_symbols(world, parse(params)?)),
         "textDocument/prepareRename" => json(prepare_rename(world, parse(params)?)?),
         "textDocument/rename" => json(rename(world, parse(params)?)?),
@@ -136,6 +138,32 @@ pub fn diagnostics(world: &World) -> Vec<(Url, Vec<lsp_types::Diagnostic>)> {
             ))
         })
         .collect();
+    for file in &world.project.verilog {
+        let errors = file.parse.errors();
+        if errors.is_empty() {
+            continue;
+        }
+        let Some(url) = uri(&file.path) else {
+            continue;
+        };
+        let index = LineIndex::new(&file.text);
+        let doc = Doc {
+            text: &file.text,
+            index: &index,
+        };
+        let diagnostics = errors
+            .iter()
+            .map(|e| lsp_types::Diagnostic {
+                range: doc.range(e.range),
+                severity: Some(lsp_types::DiagnosticSeverity::ERROR),
+                code: Some(NumberOrString::String("syntax/error".into())),
+                source: Some("vfl".into()),
+                message: e.message.clone(),
+                ..Default::default()
+            })
+            .collect();
+        out.push((url, diagnostics));
+    }
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out
 }
@@ -146,7 +174,10 @@ fn latest(world: &mut World, path: &Path) -> Option<(vfl_config::Config, String)
     let config = world.config(path).clone();
     let text = match world.overlays.get(path) {
         Some(text) => text.clone(),
-        None => world.doc(world.file_id(path)?).text.to_owned(),
+        None => match crate::verilog::file(world, path) {
+            Some(file) => file.text.to_string(),
+            None => world.doc(world.file_id(path)?).text.to_owned(),
+        },
     };
     Some((config, text))
 }
@@ -159,7 +190,8 @@ fn formatting(world: &mut World, params: DocumentFormattingParams) -> Option<Vec
         text: &text,
         index: &index,
     };
-    let formatted = vfl_fmt::format(doc.text, &config.format, config.standard()).ok()?;
+    let root = || world.root.dir.clone();
+    let formatted = crate::format::document(Some(&path), doc.text, &config, root).ok()?;
     if formatted == doc.text {
         return Some(Vec::new());
     }
@@ -212,7 +244,8 @@ fn on_type_formatting(
     };
     let cursor = usize::from(doc.offset(position.position));
     let ch = params.ch.chars().next()?;
-    let edits = vfl_fmt::format_typed(&text, cursor, ch, &config.format, config.standard()).ok()?;
+    let root = || world.root.dir.clone();
+    let edits = crate::format::typed(Some(&path), &text, cursor, ch, &config, root).ok()?;
     Some(text_edits(doc, edits))
 }
 
@@ -229,7 +262,8 @@ fn range_formatting(
     };
     let range =
         usize::from(doc.offset(params.range.start))..usize::from(doc.offset(params.range.end));
-    let edits = vfl_fmt::format_range(&text, range, &config.format, config.standard()).ok()?;
+    let root = || world.root.dir.clone();
+    let edits = crate::format::range(Some(&path), &text, range, &config, root).ok()?;
     Some(text_edits(doc, edits))
 }
 
@@ -637,7 +671,9 @@ fn document_symbols(
     world: &mut World,
     params: DocumentSymbolParams,
 ) -> Option<DocumentSymbolResponse> {
-    let file = file_of(world, &params.text_document.uri)?;
+    let Some(file) = file_of(world, &params.text_document.uri) else {
+        return verilog_symbols(world, &params.text_document.uri);
+    };
     let doc = world.doc(file);
     let (decls, roots, children) = outline(world, file);
     fn build(
@@ -673,6 +709,72 @@ fn document_symbols(
             .map(|i| build(i, &decls, &children, doc))
             .collect(),
     ))
+}
+
+/// The outline of a Verilog file.
+#[allow(deprecated)]
+fn verilog_symbols(world: &World, uri: &Url) -> Option<DocumentSymbolResponse> {
+    let file = crate::verilog::file(world, &uri.to_file_path().ok()?)?;
+    let index = LineIndex::new(&file.text);
+    let doc = Doc {
+        text: &file.text,
+        index: &index,
+    };
+    fn build(symbol: crate::verilog::Symbol, doc: Doc) -> DocumentSymbol {
+        DocumentSymbol {
+            name: symbol.name,
+            detail: Some(symbol.detail),
+            kind: symbol.kind,
+            tags: None,
+            deprecated: None,
+            range: doc.range(symbol.range),
+            selection_range: doc.range(symbol.selection),
+            children: Some(symbol.children.into_iter().map(|c| build(c, doc)).collect()),
+        }
+    }
+    Some(DocumentSymbolResponse::Nested(
+        crate::verilog::symbols(&file.parse.syntax())
+            .into_iter()
+            .map(|s| build(s, doc))
+            .collect(),
+    ))
+}
+
+/// The regions of a Verilog file that can be folded. VHDL files keep the
+/// editor's folding by indentation.
+fn folding_ranges(world: &mut World, params: FoldingRangeParams) -> Option<Vec<FoldingRange>> {
+    let path = params.text_document.uri.to_file_path().ok()?;
+    let file = crate::verilog::file(world, &path)?;
+    let text = &*file.text;
+    let index = LineIndex::new(text);
+    let line = |offset: TextSize| index.line_col(text, offset).line;
+    let mut out = Vec::new();
+    for (range, fold) in crate::verilog::folds(&file.parse.syntax()) {
+        let start = line(range.start());
+        let mut end = line(range.end());
+        // Keep a closing line (`end`, `);`) visible under the fold.
+        let closing = fold == crate::verilog::Fold::Code
+            && text[..usize::from(range.end())]
+                .rsplit('\n')
+                .next()
+                .is_some_and(|before| before.trim().is_empty());
+        if closing {
+            end = end.saturating_sub(1);
+        }
+        if end > start {
+            out.push(FoldingRange {
+                start_line: start,
+                end_line: end,
+                kind: match fold {
+                    crate::verilog::Fold::Code => None,
+                    crate::verilog::Fold::Comment => Some(FoldingRangeKind::Comment),
+                    crate::verilog::Fold::Region => Some(FoldingRangeKind::Region),
+                },
+                ..Default::default()
+            });
+        }
+    }
+    Some(out)
 }
 
 /// A file's outline: its listed declarations, the indexes of the top-level

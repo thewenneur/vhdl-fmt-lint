@@ -1,0 +1,32 @@
+// A module written without care for layout.
+`timescale 1ns/1ps
+`define WIDTH 8
+module   fifo#(parameter int W=`WIDTH,parameter DEPTH = 16,localparam AW=$clog2(DEPTH))(
+input logic clk,input logic rst_n,
+input logic[W-1:0] din, input  logic wr,
+output logic [W-1:0]dout,output logic full,empty, input rd);
+logic [W-1:0] mem [DEPTH];
+logic [AW:0] wptr,rptr;   // pointers
+wire  x=wptr[AW]^rptr[AW];
+assign full=(wptr[AW-1:0]==rptr[AW-1:0])&&x;
+assign empty = wptr==rptr;
+always_ff@(posedge clk or negedge rst_n)
+if(!rst_n)begin wptr<='0;rptr<='0; end
+else begin
+if (wr&&!full) begin mem[wptr[AW-1:0]]<=din; wptr<=wptr+1; end
+if(rd && !empty) rptr <= rptr + 1;
+end
+assign dout=mem[rptr[AW-1:0]];
+always_comb begin
+unique case(wptr[1:0])
+2'b00:x_q=1'b0;
+2'b01,2'b10: x_q = ~x;
+default:;
+endcase
+end
+genvar i;
+for(genvar g=0;g<W;g++)begin:gen_bits
+assign y[g]={{4{din[g]}},din[g+:2]};
+end
+sub #(.N(4),.M(W)) u_sub(.clk(clk),.d(din[0]),.q());
+endmodule:fifo

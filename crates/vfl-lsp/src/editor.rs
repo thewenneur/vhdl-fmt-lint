@@ -108,10 +108,14 @@ pub struct SemanticToken {
 
 /// The names of the file at `path` with what they resolve to, in order.
 pub fn semantic_tokens(world: &mut World, path: &Path) -> Vec<SemanticToken> {
-    let Some((file, _)) = locate(world, path, 0) else {
-        return Vec::new();
+    let tokens = match locate(world, path, 0) {
+        Some((file, _)) => crate::semantic::tokens(world, file, None),
+        None => match crate::verilog::file(world, path) {
+            Some(file) => crate::verilog::tokens(&file.parse.syntax(), None),
+            None => return Vec::new(),
+        },
     };
-    crate::semantic::tokens(world, file, None)
+    tokens
         .into_iter()
         .map(|t| SemanticToken {
             range: t.range.into(),
@@ -232,18 +236,21 @@ pub struct Location {
 
 fn location(world: &World, file: FileId, range: vfl_syntax::TextRange) -> Option<Location> {
     let path = crate::handlers::openable_path(world, file)?;
-    let doc = world.doc(file);
+    Some(location_in(path, world.doc(file), range))
+}
+
+fn location_in(path: PathBuf, doc: crate::world::Doc, range: vfl_syntax::TextRange) -> Location {
     let line = doc.index.line_col(doc.text, range.start()).line;
     let start = usize::from(doc.index.line_start(line).unwrap_or_default());
     let end = doc.text[start..]
         .find('\n')
         .map_or(doc.text.len(), |i| start + i);
-    Some(Location {
+    Location {
         path,
         range: range.into(),
         line: line + 1,
         line_text: doc.text[start..end].trim().to_owned(),
-    })
+    }
 }
 
 /// Where what is named at byte `offset` is declared.
@@ -345,10 +352,42 @@ pub fn problems(world: &mut World) -> Vec<ProjectProblem> {
             })
         })
         .collect();
+    for file in &world.project.verilog {
+        if file.parse.errors().is_empty() {
+            continue;
+        }
+        let index = vfl_syntax::LineIndex::new(&file.text);
+        let doc = crate::world::Doc {
+            text: &file.text,
+            index: &index,
+        };
+        for error in file.parse.errors() {
+            out.push(ProjectProblem {
+                location: location_in(file.path.clone(), doc, error.range),
+                level: vfl_config::Level::Error,
+                rule: "syntax/error",
+                message: error.message.clone(),
+            });
+        }
+    }
     out.sort_by(|a, b| {
         (&a.location.path, a.location.range.start).cmp(&(&b.location.path, b.location.range.start))
     });
     out
+}
+
+/// The syntax errors of the Verilog file at `path`, with their byte
+/// ranges.
+pub fn verilog_syntax_errors(world: &World, path: &Path) -> Vec<(Range<usize>, String)> {
+    crate::verilog::file(world, path)
+        .map(|file| {
+            file.parse
+                .errors()
+                .iter()
+                .map(|e| (e.range.into(), e.message.clone()))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// The declarations of the file at `path`, in order, nested as in the
@@ -356,7 +395,7 @@ pub fn problems(world: &mut World) -> Vec<ProjectProblem> {
 pub fn outline(world: &mut World, path: &Path) -> Vec<Symbol> {
     world.refresh();
     let Some(file) = world.file_id(path) else {
-        return Vec::new();
+        return verilog_outline(world, path);
     };
     let (decls, roots, children) = crate::handlers::outline(world, file);
     let mut out = Vec::new();
@@ -370,6 +409,25 @@ pub fn outline(world: &mut World, path: &Path) -> Vec<Symbol> {
             range: decl.range.into(),
         });
         stack.extend(children[i].iter().rev().map(|&c| (c, depth + 1)));
+    }
+    out
+}
+
+fn verilog_outline(world: &World, path: &Path) -> Vec<Symbol> {
+    fn add(symbols: Vec<crate::verilog::Symbol>, depth: usize, out: &mut Vec<Symbol>) {
+        for symbol in symbols {
+            out.push(Symbol {
+                name: symbol.name,
+                kind: symbol.what,
+                depth,
+                range: symbol.selection.into(),
+            });
+            add(symbol.children, depth + 1, out);
+        }
+    }
+    let mut out = Vec::new();
+    if let Some(file) = crate::verilog::file(world, path) {
+        add(crate::verilog::symbols(&file.parse.syntax()), 0, &mut out);
     }
     out
 }

@@ -1,0 +1,20 @@
+module m (
+  input  logic a,
+`ifdef EXTRA
+	input  logic   b,
+`endif
+  output logic y
+);
+    `ifdef FOO
+  assign y = a;
+    `else
+      assign   y   =   ~a;
+    `endif
+  // vfl: off
+  assign   z   =   a;
+  // vfl: on
+  (* keep *) logic k;
+  `MY_MACRO(a,   b)
+  wire \bus[0] ;
+  assign \bus[0] = a;
+endmodule
