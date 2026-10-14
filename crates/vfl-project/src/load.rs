@@ -12,7 +12,8 @@ use vfl_syntax::{Parse, Standard};
 use crate::explicit::{LibraryGlobs, VHDL_LS_FILES, path_to_slash, vhdl_ls_libraries};
 use crate::infer::{Inference, Reason, infer_libraries};
 use crate::summary::{FileSummary, summarize};
-use crate::{ProjectRoot, collect};
+use crate::verilog::{VerilogFile, verilog_standard};
+use crate::{ProjectRoot, collect_project};
 
 /// How a source file was encoded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,6 +76,11 @@ impl SourceFile {
     }
 }
 
+enum Loaded {
+    Vhdl(SourceFile),
+    Verilog(VerilogFile),
+}
+
 /// A loaded project: its root, config, files and their libraries.
 #[derive(Debug, Clone)]
 pub struct Project {
@@ -83,6 +89,12 @@ pub struct Project {
     pub files: Vec<SourceFile>,
     /// Libraries of each file, parallel to `files`.
     pub libraries: Vec<Vec<(String, Reason)>>,
+    /// The Verilog and SystemVerilog files, whose modules VHDL can
+    /// instantiate.
+    pub verilog: Vec<VerilogFile>,
+    /// Libraries of each Verilog file, parallel to `verilog`: those of the
+    /// units that instantiate its modules, as for VHDL files.
+    pub verilog_libraries: Vec<Vec<(String, Reason)>>,
     /// Files that could not be read, and why.
     pub unreadable: Vec<(PathBuf, String)>,
     /// Inference ambiguities and other things worth telling the user.
@@ -137,20 +149,22 @@ impl Project {
     pub fn load(root: ProjectRoot) -> Result<Project, LoadError> {
         let config = vfl_config::load_for_dir(&root.dir)?;
         let (paths, tool_files) =
-            collect(&root.dir, &config.project).map_err(|source| LoadError::Walk {
+            collect_project(&root.dir, &config).map_err(|source| LoadError::Walk {
                 path: root.dir.clone(),
                 source,
             })?;
         Self::from_parts(root, config, paths, tool_files)
     }
 
-    /// Loads the given files as a project rooted at `root`.
+    /// Loads the given files as a project rooted at `root`. Verilog and
+    /// SystemVerilog files among them (by the `[verilog]` extensions) are
+    /// loaded as such.
     pub fn from_paths(
         root: ProjectRoot,
         config: Config,
         paths: Vec<PathBuf>,
     ) -> Result<Project, LoadError> {
-        let tool_files = collect(&root.dir, &config.project)
+        let tool_files = collect_project(&root.dir, &config)
             .map(|(_, tools)| tools)
             .unwrap_or_default();
         Self::from_parts(root, config, paths, tool_files)
@@ -165,16 +179,22 @@ impl Project {
         let standard = config.standard();
         let results: Vec<_> = paths
             .into_par_iter()
-            .map(|path| match SourceFile::read(path.clone(), standard) {
-                Ok(file) => Ok(file),
-                Err(err) => Err((path, err.to_string())),
+            .map(|path| {
+                let read = match verilog_standard(&config, &path) {
+                    Some(std) => VerilogFile::read(path.clone(), &config, &root.dir, std)
+                        .map(Loaded::Verilog),
+                    None => SourceFile::read(path.clone(), standard).map(Loaded::Vhdl),
+                };
+                read.map_err(|err| (path, err.to_string()))
             })
             .collect();
         let mut files = Vec::new();
+        let mut verilog = Vec::new();
         let mut unreadable = Vec::new();
         for result in results {
             match result {
-                Ok(file) => files.push(file),
+                Ok(Loaded::Vhdl(file)) => files.push(file),
+                Ok(Loaded::Verilog(file)) => verilog.push(file),
                 Err(err) => unreadable.push(err),
             }
         }
@@ -183,6 +203,8 @@ impl Project {
             config,
             files,
             libraries: Vec::new(),
+            verilog,
+            verilog_libraries: Vec::new(),
             unreadable,
             notes: Vec::new(),
             tool_files,
@@ -246,23 +268,41 @@ impl Project {
     /// declare and refer to.
     pub fn infer_with(&mut self, sources: &LibrarySources) {
         let root = &self.root.dir;
-        let explicit: Vec<Option<Vec<(String, Reason)>>> = self
+        // Verilog files take part like VHDL files, after them.
+        let paths: Vec<PathBuf> = self
             .files
             .iter()
-            .map(|file| {
-                let relative = file
-                    .path
+            .map(|f| f.path.clone())
+            .chain(self.verilog.iter().map(|f| f.path.clone()))
+            .collect();
+        let explicit: Vec<Option<Vec<(String, Reason)>>> = paths
+            .iter()
+            .map(|path| {
+                let relative = path
                     .strip_prefix(root)
                     .map(path_to_slash)
-                    .unwrap_or_else(|_| path_to_slash(&file.path));
+                    .unwrap_or_else(|_| path_to_slash(path));
                 sources.globs.iter().find_map(|s| s.assign(&relative))
             })
             .collect();
-        let paths: Vec<PathBuf> = self.files.iter().map(|f| f.path.clone()).collect();
-        let summaries: Vec<FileSummary> = self.files.iter().map(|f| f.summary.clone()).collect();
-        let Inference { libraries, notes } = infer_libraries(&paths, &summaries, &explicit);
+        let summaries: Vec<FileSummary> = self
+            .files
+            .iter()
+            .map(|f| f.summary.clone())
+            .chain(self.verilog.iter().map(|f| f.summary.clone()))
+            .collect();
+        let Inference {
+            mut libraries,
+            notes,
+        } = infer_libraries(&paths, &summaries, &explicit);
+        self.verilog_libraries = libraries.split_off(self.files.len());
         self.libraries = libraries;
         self.notes = notes;
+    }
+
+    /// The index of the Verilog file at `path`.
+    pub fn verilog_index(&self, path: &Path) -> Option<usize> {
+        self.verilog.iter().position(|f| f.path == path)
     }
 
     /// The index of the file at `path`.
@@ -312,6 +352,55 @@ mod tests {
         let latin = &project.files[project.file_index(&root.join("rtl/latin1.vhd")).unwrap()];
         assert_eq!(latin.encoding, Encoding::Latin1);
         assert!(latin.text.contains('é'));
+    }
+
+    #[test]
+    fn verilog_modules_join_the_libraries_that_use_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("rtl")).unwrap();
+        // `core` is instantiated from `fast`, `leaf` from `core`; `alone` from nothing.
+        fs::write(
+            root.join("rtl/top.vhd"),
+            "library fast; entity top is end;\n\
+             architecture a of top is begin u : entity fast.core; end;",
+        )
+        .unwrap();
+        fs::write(
+            root.join("rtl/core.sv"),
+            "`include \"defs.svh\"\n\
+             module core(input logic clk);\n  leaf u (.clk(clk));\nendmodule\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("rtl/leaf.v"),
+            "module leaf(input clk); endmodule\n",
+        )
+        .unwrap();
+        fs::write(root.join("rtl/alone.v"), "module alone; endmodule\n").unwrap();
+        fs::write(root.join("rtl/defs.svh"), "`define W 8\n").unwrap();
+        let project = Project::load(ProjectRoot {
+            dir: root.to_owned(),
+            kind: RootKind::Vcs,
+        })
+        .unwrap();
+        assert_eq!(project.files.len(), 1);
+        let libs = |name: &str| {
+            let i = project.verilog_index(&root.join(name)).unwrap();
+            project.verilog_libraries[i]
+                .iter()
+                .map(|(l, _)| l.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(libs("rtl/core.sv"), ["fast"]);
+        assert_eq!(libs("rtl/leaf.v"), ["fast"]);
+        assert_eq!(libs("rtl/alone.v"), ["work"]);
+        // A header is parsed too, but has no modules.
+        assert_eq!(libs("rtl/defs.svh"), ["work"]);
+        let core = &project.verilog[project.verilog_index(&root.join("rtl/core.sv")).unwrap()];
+        assert!(core.parse.errors().is_empty(), "{:?}", core.parse.errors());
+        assert_eq!(core.modules[0].ports[0].name, "clk");
+        assert_eq!(core.foreign[0].name, "core");
     }
 
     #[test]

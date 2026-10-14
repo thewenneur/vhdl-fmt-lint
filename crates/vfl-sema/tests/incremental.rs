@@ -150,3 +150,68 @@ fn every_file_of_the_fixtures() {
         }
     }
 }
+
+const MIXED_TOP: &str = "-- file: top.vhd
+entity top is end;
+architecture rtl of top is
+  signal a, b : bit;
+begin
+  u : entity work.leaf port map (a => a, y => b);
+end;
+-- file: other.vhd
+entity other is end;
+architecture rtl of other is begin end;
+";
+
+const LEAF: &str = "module leaf(input a, output y);\nendmodule\n";
+
+fn verilog(text: &str) -> vfl_sema::ForeignInput {
+    let config = vfl_config::Config::default();
+    let file = vfl_project::VerilogFile::new(
+        PathBuf::from("leaf.v"),
+        text.to_owned(),
+        vfl_project::Encoding::Utf8,
+        &config,
+        std::path::Path::new("."),
+        vfl_config::VerilogStandard::Verilog2005,
+    );
+    vfl_sema::ForeignInput {
+        path: file.path,
+        text: file.text,
+        libraries: vec!["work".into()],
+        modules: file.foreign,
+    }
+}
+
+/// Edits the Verilog file and checks the incremental result; returns how
+/// many units were analyzed again.
+fn check_verilog(edit: &str) -> (usize, String) {
+    let files = split(MIXED_TOP);
+    let vhdl = inputs(&files);
+    let previous = Analysis::new(Vec::new()).update_with_foreign(vhdl.clone(), vec![verilog(LEAF)]);
+    let full = Analysis::with_foreign(vhdl.clone(), vec![verilog(edit)]);
+    let incremental = previous.update_with_foreign(vhdl, vec![verilog(edit)]);
+    assert_eq!(incremental.dump(), full.dump());
+    let codes = full
+        .diagnostics()
+        .iter()
+        .map(|d| d.message.clone())
+        .collect::<Vec<_>>()
+        .join("; ");
+    (incremental.reanalyzed_units(), codes)
+}
+
+#[test]
+fn verilog_edits_reanalyze_only_what_sees_the_module() {
+    // The same module: nothing to do.
+    assert_eq!(check_verilog(LEAF).0, 0);
+    // Moved, same ports: only the module itself.
+    assert_eq!(check_verilog(&format!("// Leaf.\n{LEAF}")).0, 1);
+    // A port renamed: the module and the architecture that maps it.
+    let (count, messages) = check_verilog("module leaf(input a, output z);\nendmodule\n");
+    assert_eq!(count, 2);
+    assert!(
+        messages.contains("module `leaf` has no port `y`"),
+        "{messages}"
+    );
+}

@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 use vfl_config::Config;
 use vfl_lint::FileSettings;
 use vfl_project::{
-    Encoding, FileSummary, LibrarySources, Project, ProjectRoot, RootKind, SourceFile,
-    collect_sources, decode, find_root,
+    Encoding, FileSummary, LibrarySources, Project, ProjectRoot, RootKind, SourceFile, VerilogFile,
+    collect_project, collect_sources, decode, find_root, verilog_standard,
 };
 use vfl_sema::{Analysis, FileId};
 use vfl_syntax::{LineIndex, TextSize};
@@ -35,8 +35,8 @@ pub struct World {
     lint_cache: vfl_lint::LintCache,
     /// The library lists the libraries were last inferred from.
     sources: Option<LibrarySources>,
-    /// The path and summary of each file when libraries were last
-    /// inferred.
+    /// The path and summary of each file (VHDL, then Verilog) when
+    /// libraries were last inferred.
     inferred_from: Vec<(PathBuf, FileSummary)>,
     /// Files whose text changed since the last analysis.
     pub dirty: bool,
@@ -125,6 +125,10 @@ impl World {
     /// Sets the text of an open document. Opening a document that matches
     /// the file on disk changes nothing, so it does not analyze again.
     pub fn set_text(&mut self, path: PathBuf, text: String) {
+        if verilog_standard(self.config(&path), &path).is_some() {
+            self.set_verilog_text(path, text);
+            return;
+        }
         if self
             .project
             .file_index(&path)
@@ -146,6 +150,72 @@ impl World {
         self.dirty = true;
     }
 
+    /// Sets the text of an open Verilog document, whose modules VHDL may
+    /// instantiate.
+    fn set_verilog_text(&mut self, path: PathBuf, text: String) {
+        let index = self.project.verilog_index(&path);
+        if index.is_some_and(|i| *self.project.verilog[i].text == *text) {
+            self.overlays.insert(path, text);
+            return;
+        }
+        let file = self.verilog_file(path.clone(), text.clone(), Encoding::Utf8);
+        let Some(file) = file else { return };
+        match index {
+            Some(i) => self.project.verilog[i] = file,
+            None => {
+                self.project.verilog.push(file);
+                self.outside.insert(path.clone());
+            }
+        }
+        self.overlays.insert(path, text);
+        self.dirty = true;
+    }
+
+    /// Parses a Verilog file with the settings that apply to it.
+    fn verilog_file(
+        &mut self,
+        path: PathBuf,
+        text: String,
+        encoding: Encoding,
+    ) -> Option<VerilogFile> {
+        let root = self.root.dir.clone();
+        let config = self.config(&path);
+        let standard = verilog_standard(config, &path)?;
+        Some(VerilogFile::new(
+            path, text, encoding, config, &root, standard,
+        ))
+    }
+
+    /// Re-reads a Verilog file from disk (created, changed or deleted).
+    fn reread_verilog(&mut self, path: &Path) {
+        let index = self.project.verilog_index(path);
+        let known = index.is_some() && !self.outside.remove(path);
+        let read = std::fs::read(path).ok().map(decode);
+        if let (true, Some(i), Some((text, _))) = (known, index, &read)
+            && *self.project.verilog[i].text == **text
+        {
+            return;
+        }
+        let in_project = read.is_some()
+            && (known
+                || path.starts_with(&self.root.dir)
+                    && collect_project(&self.root.dir, &self.project.config)
+                        .is_ok_and(|(paths, _)| paths.iter().any(|p| p == path)));
+        let file = match read.filter(|_| in_project) {
+            Some((text, encoding)) => self.verilog_file(path.to_owned(), text, encoding),
+            None => None,
+        };
+        match (index, file) {
+            (Some(i), Some(file)) => self.project.verilog[i] = file,
+            (None, Some(file)) => self.project.verilog.push(file),
+            (Some(i), None) => {
+                self.project.verilog.remove(i);
+            }
+            (None, None) => return,
+        }
+        self.dirty = true;
+    }
+
     /// A document was closed: back to the file on disk, if any.
     pub fn close(&mut self, path: &Path) {
         self.overlays.remove(path);
@@ -157,6 +227,10 @@ impl World {
     /// whose text did not change is left as it is.
     pub fn reread(&mut self, path: &Path) {
         if self.overlays.contains_key(path) {
+            return;
+        }
+        if verilog_standard(self.config(path), path).is_some() {
+            self.reread_verilog(path);
             return;
         }
         let index = self.project.file_index(path);
@@ -240,17 +314,25 @@ impl World {
                     self.project
                         .libraries
                         .resize(self.project.files.len(), Vec::new());
+                    self.project
+                        .verilog_libraries
+                        .resize(self.project.verilog.len(), Vec::new());
                     return;
                 }
             }
         }
-        let files = &self.project.files;
-        let unchanged = self.inferred_from.len() == files.len()
-            && self.project.libraries.len() == files.len()
+        let project = &self.project;
+        let files = project
+            .files
+            .iter()
+            .map(|f| (&f.path, &f.summary))
+            .chain(project.verilog.iter().map(|f| (&f.path, &f.summary)));
+        let unchanged = self.inferred_from.len() == project.files.len() + project.verilog.len()
+            && project.libraries.len() == project.files.len()
+            && project.verilog_libraries.len() == project.verilog.len()
             && files
-                .iter()
                 .zip(&self.inferred_from)
-                .all(|(file, (path, summary))| file.path == *path && file.summary == *summary);
+                .all(|((p, s), (path, summary))| p == path && s == summary);
         if unchanged {
             return;
         }
@@ -258,11 +340,17 @@ impl World {
             return;
         };
         self.project.infer_with(sources);
-        self.inferred_from = self
-            .project
+        let project = &self.project;
+        self.inferred_from = project
             .files
             .iter()
             .map(|f| (f.path.clone(), f.summary.clone()))
+            .chain(
+                project
+                    .verilog
+                    .iter()
+                    .map(|f| (f.path.clone(), f.summary.clone())),
+            )
             .collect();
     }
 
@@ -312,6 +400,8 @@ fn empty(root: &ProjectRoot, config: Config) -> Project {
         config,
         files: Vec::new(),
         libraries: Vec::new(),
+        verilog: Vec::new(),
+        verilog_libraries: Vec::new(),
         unreadable: Vec::new(),
         notes: Vec::new(),
         tool_files: Vec::new(),

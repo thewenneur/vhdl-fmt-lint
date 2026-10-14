@@ -43,6 +43,9 @@ pub struct Entity {
     pub architectures: Vec<Architecture>,
     /// The packages its context clauses (and its architectures') use.
     pub uses: Vec<Use>,
+    /// A Verilog or SystemVerilog module, whose only architecture (if
+    /// any) holds its instances.
+    pub verilog: bool,
 }
 
 /// A `use library.unit` of a context clause, keyed.
@@ -260,6 +263,8 @@ pub enum InstanceKind {
     Component,
     Entity,
     Configuration,
+    /// An instance in a Verilog module.
+    Module,
 }
 
 /// A package with its body's description merged in.
@@ -300,9 +305,15 @@ pub struct FileInput<'a> {
 }
 
 /// Builds the documentation model of `files`.
-pub fn build(files: &[FileInput], config: &DocConfig, title: String) -> Design {
+pub fn build(
+    files: &[FileInput],
+    verilog: Vec<Entity>,
+    config: &DocConfig,
+    title: String,
+) -> Design {
     let mut design = Design {
         title,
+        entities: verilog,
         ..Design::default()
     };
     // Enumeration types of packages, for state machines whose state type is
@@ -501,6 +512,7 @@ impl Ctx<'_> {
             ports,
             architectures: Vec::new(),
             uses: Vec::new(),
+            verilog: false,
         }
     }
 

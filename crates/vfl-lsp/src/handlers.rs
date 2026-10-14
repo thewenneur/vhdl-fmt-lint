@@ -496,6 +496,23 @@ fn declaration_text(world: &World, decl: &Decl) -> String {
         .join("\n")
 }
 
+/// For a declaration in a Verilog file: what it is (module, parameter,
+/// port) and its declaration as written there.
+fn foreign_declaration(world: &World, decl: &Decl) -> Option<(&'static str, String)> {
+    let modules = world.analysis.foreign_modules(decl.file)?;
+    if decl.kind == DeclKind::Entity {
+        return Some(("module", declaration_text(world, decl)));
+    }
+    let (kind, object) = modules.iter().find_map(|m| {
+        m.generics
+            .iter()
+            .map(|g| ("parameter", g))
+            .chain(m.ports.iter().map(|p| ("port", p)))
+            .find(|(_, o)| o.name_range == decl.range)
+    })?;
+    Some((kind, object.declaration.clone()))
+}
+
 fn hover(world: &mut World, params: HoverParams) -> Option<Hover> {
     let position = &params.text_document_position_params;
     let file = file_of(world, &position.text_document.uri)?;
@@ -535,6 +552,13 @@ pub(crate) fn hover_at(
                 world.analysis.unit_decls(id.unit)[0].spelling
             )
         };
+        if let Some((kind, text)) = foreign_declaration(world, decl) {
+            sections.push(format!(
+                "{kind} `{}` {place}\n\n```systemverilog\n{text}\n```",
+                decl.spelling
+            ));
+            continue;
+        }
         let types = crate::types::hover_lines(&world.analysis, *id)
             .map(|t| format!("\n\n{t}"))
             .unwrap_or_default();
@@ -788,6 +812,12 @@ pub(crate) fn rename_targets_at(
         if world.analysis.files()[decl.file as usize].builtin {
             return Err(format!(
                 "`{}` is declared in a bundled library",
+                decl.spelling
+            ));
+        }
+        if world.analysis.foreign_modules(decl.file).is_some() {
+            return Err(format!(
+                "`{}` is declared in a Verilog file, which renaming does not change",
                 decl.spelling
             ));
         }
@@ -1223,12 +1253,16 @@ pub(crate) fn completion_at(world: &World, file: FileId, offset: TextSize) -> Ve
     // Libraries and their units.
     let mut libraries: Vec<&str> = vec!["work"];
     for unit in analysis.units() {
-        if !analysis.files()[unit.file as usize].builtin && unit.primary.is_none() {
+        let unit_file = &analysis.files()[unit.file as usize];
+        if !unit_file.builtin && unit.primary.is_none() {
             items.push(
-                &analysis.files()[unit.file as usize].text
-                    [std::ops::Range::<usize>::from(unit.name_range)],
+                &unit_file.text[std::ops::Range::<usize>::from(unit.name_range)],
                 completion_kind(unit.kind),
-                unit.kind.describe(),
+                if unit_file.foreign.is_some() {
+                    "module"
+                } else {
+                    unit.kind.describe()
+                },
             );
         }
         if !libraries.contains(&unit.library.as_str()) {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Parses pinned open-source VHDL projects and fails on any syntax error or
-# round-trip mismatch. Then formats them, with the default config and a very
+# round-trip mismatch. Does the same for Verilog and SystemVerilog projects. Then formats them, with the default config and a very
 # different one, and fails on any formatter error or output that changes
 # when formatted again, also when only single lines are formatted. Then
 # lints them and fails on more semantic errors than the known ones. Last, checks that re-analysis after edits, reusing the
@@ -17,6 +17,12 @@ repos=(
   "vunit   https://github.com/VUnit/vunit.git          98063a438c957c5627d0003ca476bd4c4913ff64"
   "neorv32 https://github.com/stnolting/neorv32.git    b2620454ebb2407e81a6a1965ef52e2a860b0432"
   "ghdl    https://github.com/ghdl/ghdl.git            2c451de76b07b73fd338c91d68fd5cefcb152512"
+  "sv-tests         https://github.com/chipsalliance/sv-tests.git       15490e95fd978ada1c1dc59b7c4b53a7edb23b78"
+  "picorv32         https://github.com/YosysHQ/picorv32.git             ef203c2b0a3fb793280f5114941416c425c5b461"
+  "verilog-ethernet https://github.com/alexforencich/verilog-ethernet.git 77320a9471d19c7dd383914bc049e02d9f4f1ffb"
+  "common_cells     https://github.com/pulp-platform/common_cells.git   e73baaec2ca665cd80c3c384e9258e35242b829c"
+  "ibex             https://github.com/lowRISC/ibex.git                 af456e25575013668ab56725268126f6b0feca35"
+  "cva6             https://github.com/openhwgroup/cva6.git             81245a47fad8fe1a5d562d953ef2662e099def76"
 )
 
 for entry in "${repos[@]}"; do
@@ -31,6 +37,7 @@ for entry in "${repos[@]}"; do
 done
 
 cargo build --release -q -p vfl-syntax --example parse_corpus
+cargo build --release -q -p vfl-verilog-syntax --example verilog_corpus
 cargo build --release -q -p vfl-fmt --example fmt_corpus
 cargo build --release -q -p vfl-cli
 cargo build --release -q -p vfl-sema --example sema_corpus
@@ -130,5 +137,18 @@ for project in OSVVM UVVM vunit neorv32 ghdl/testsuite; do
   done
 done
 rm -rf "$doc_out"
+
+# Verilog and SystemVerilog. The sv-tests suite (its `:defines:` honoured,
+# tests that must fail allowed to) and the RTL of real designs parse without
+# errors. The whole of ibex and cva6, testbenches and templates included,
+# and prefixes of every file as typed in an editor, must not panic and must
+# round-trip. verilog-ethernet's example designs hold symlink loops.
+vrun=$target/release/examples/verilog_corpus
+$vrun --quiet --sv-tests "$cache/sv-tests/tests" || status=1
+$vrun --quiet "$cache/picorv32" "$cache/verilog-ethernet/rtl" "$cache/verilog-ethernet/lib" \
+  "$cache/common_cells" "$cache/ibex/rtl" "$cache/ibex/vendor/lowrisc_ip/ip" \
+  "$cache/cva6/core" "$cache/cva6/vendor" || status=1
+$vrun --quiet --allow-errors --prefixes 10 "$cache/ibex" "$cache/cva6" || status=1
+"$vfl" check "$cache/picorv32" "$cache/common_cells" >/dev/null || status=1
 
 exit $status

@@ -915,6 +915,7 @@ dependencies = [
  "vfl-lsp",
  "vfl-project",
  "vfl-syntax",
+ "vfl-verilog-syntax",
 ]
 
 [[package]]
@@ -937,6 +938,7 @@ dependencies = [
  "vfl-config",
  "vfl-project",
  "vfl-syntax",
+ "vfl-verilog-syntax",
 ]
 
 [[package]]
@@ -1019,7 +1021,9 @@ dependencies = [
  "thiserror",
  "toml",
  "vfl-config",
+ "vfl-sema",
  "vfl-syntax",
+ "vfl-verilog-syntax",
  "yaml-rust2",
 ]
 
@@ -1042,6 +1046,15 @@ version = "0.2.1"
 dependencies = [
  "insta",
  "rowan",
+]
+
+[[package]]
+name = "vfl-verilog-syntax"
+version = "0.2.1"
+dependencies = [
+ "insta",
+ "rowan",
+ "vfl-syntax",
 ]
 
 [[package]]

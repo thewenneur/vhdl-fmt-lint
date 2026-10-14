@@ -1002,6 +1002,112 @@ fn quick_fixes_for_rules() {
     assert!(apply(FIXES_TOP, &named["edit"], &top).contains("port map (clk => clk, q => o);"));
 }
 
+const VERILOG_FIFO: &str = "// A small FIFO.
+module fifo #(parameter int DEPTH = 4) (
+  input  logic       clk,
+  input  logic [7:0] din,
+  output logic [7:0] dout
+);
+endmodule
+";
+
+const VHDL_TOP: &str = "library ieee;
+use ieee.std_logic_1164.all;
+entity top is
+  port (clk : in std_logic; q : out std_logic_vector(7 downto 0));
+end entity;
+architecture rtl of top is
+begin
+  u_fifo : entity work.fifo
+    generic map (DEPTH => 8)
+    port map (clk => clk, din => x\"00\", dout => q, full => open);
+end architecture;
+";
+
+#[test]
+fn verilog_modules_across_languages() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("vfl.toml"), "").unwrap();
+    std::fs::write(dir.path().join("fifo.sv"), VERILOG_FIFO).unwrap();
+    std::fs::write(dir.path().join("top.vhd"), VHDL_TOP).unwrap();
+    let fifo = url(&dir.path().join("fifo.sv"));
+    let top = url(&dir.path().join("top.vhd"));
+    let mut client = Client::start(dir.path());
+
+    let messages = |client: &mut Client| -> Vec<String> {
+        client
+            .diagnostics(&top)
+            .iter()
+            .map(|d| d["message"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    assert_eq!(messages(&mut client), ["module `fifo` has no port `full`"]);
+
+    // The module, a parameter and a port, from the VHDL instance.
+    let definition = client.request(
+        "textDocument/definition",
+        find(&top, VHDL_TOP, "work.fifo", 0, 6),
+    );
+    assert_eq!(definition[0]["uri"], fifo);
+    assert_eq!(
+        definition[0]["range"]["start"],
+        json!({ "line": 1, "character": 7 })
+    );
+    let definition = client.request("textDocument/definition", find(&top, VHDL_TOP, "din", 0, 1));
+    assert_eq!(
+        definition[0]["range"]["start"],
+        json!({ "line": 3, "character": 21 })
+    );
+    let position = find(&top, VHDL_TOP, "work.fifo", 0, 6);
+    let text = hover_text(
+        &mut client,
+        &top,
+        position["position"]["line"].as_u64().unwrap() as u32,
+        position["position"]["character"].as_u64().unwrap() as u32,
+    );
+    assert!(
+        text.starts_with("module `fifo` in library `work`"),
+        "{text}"
+    );
+    assert!(text.contains("```systemverilog\nmodule fifo #("), "{text}");
+    assert!(text.contains("output logic [7:0] dout\n);"), "{text}");
+    let position = find(&top, VHDL_TOP, "din", 0, 1);
+    let text = hover_text(
+        &mut client,
+        &top,
+        position["position"]["line"].as_u64().unwrap() as u32,
+        position["position"]["character"].as_u64().unwrap() as u32,
+    );
+    assert!(text.starts_with("port `din` in `work.fifo`"), "{text}");
+    assert!(text.contains("input logic [7:0] din"), "{text}");
+    let position = find(&top, VHDL_TOP, "DEPTH", 0, 1);
+    let text = hover_text(
+        &mut client,
+        &top,
+        position["position"]["line"].as_u64().unwrap() as u32,
+        position["position"]["character"].as_u64().unwrap() as u32,
+    );
+    assert!(text.contains("parameter int DEPTH = 4"), "{text}");
+
+    // Renaming would leave the Verilog side behind.
+    let mut params = find(&top, VHDL_TOP, "din", 0, 1);
+    params["newName"] = json!("data_in");
+    let error = client.request_error("textDocument/rename", params);
+    assert!(error.contains("Verilog"), "{error}");
+
+    // The module gains the port: the error goes away.
+    std::fs::write(
+        dir.path().join("fifo.sv"),
+        VERILOG_FIFO.replace("dout\n", "dout,\n  output logic full\n"),
+    )
+    .unwrap();
+    client.notify(
+        "workspace/didChangeWatchedFiles",
+        json!({ "changes": [{ "uri": fifo, "type": 2 }] }),
+    );
+    assert_eq!(messages(&mut client), Vec::<String>::new());
+}
+
 /// Found by fuzzing: a word start after a multi-byte character.
 #[test]
 fn completion_after_a_non_ascii_character() {

@@ -1,0 +1,1179 @@
+---
+source: crates/vfl-verilog-syntax/tests/parser.rs
+expression: render(&parsed)
+input_file: crates/vfl-verilog-syntax/tests/data/ok/rtl.sv
+---
+SOURCE_FILE@0..2251
+  LINE_COMMENT@0..46 "// A small synthesizable SystemVerilog design."
+  WHITESPACE@46..47 "\n"
+  MODULE_DECL@47..2034
+    MODULE_KW@47..53 "module"
+    WHITESPACE@53..54 " "
+    NAME@54..58
+      IDENT@54..58 "fifo"
+    WHITESPACE@58..61 "\n  "
+    PACKAGE_IMPORT@61..80
+      IMPORT_KW@61..67 "import"
+      WHITESPACE@67..68 " "
+      IMPORT_ITEM@68..79
+        IDENT@68..76 "fifo_pkg"
+        COLON2@76..78 "::"
+        STAR@78..79 "*"
+      SEMI@79..80 ";"
+    WHITESPACE@80..81 "\n"
+    PARAM_PORT_LIST@81..214
+      HASH@81..82 "#"
+      LPAREN@82..83 "("
+      WHITESPACE@83..86 "\n  "
+      PARAM_DECL@86..118
+        PARAMETER_KW@86..95 "parameter"
+        WHITESPACE@95..96 " "
+        DATA_TYPE@96..108
+          INT_KW@96..99 "int"
+          WHITESPACE@99..100 " "
+          UNSIGNED_KW@100..108 "unsigned"
+        WHITESPACE@108..109 " "
+        DECLARATOR@109..118
+          NAME@109..114
+            IDENT@109..114 "Depth"
+          WHITESPACE@114..115 " "
+          EQ@115..116 "="
+          WHITESPACE@116..117 " "
+          LITERAL@117..118
+            INT_NUMBER@117..118 "8"
+      COMMA@118..119 ","
+      WHITESPACE@119..122 "\n  "
+      PARAM_DECL@122..164
+        PARAMETER_KW@122..131 "parameter"
+        WHITESPACE@131..132 " "
+        TYPE_KW@132..136 "type"
+        WHITESPACE@136..145 "         "
+        DECLARATOR@145..164
+          NAME@145..146
+            IDENT@145..146 "T"
+          WHITESPACE@146..151 "     "
+          EQ@151..152 "="
+          WHITESPACE@152..153 " "
+          TYPE_EXPR@153..164
+            DATA_TYPE@153..164
+              LOGIC_KW@153..158 "logic"
+              WHITESPACE@158..159 " "
+              DIMENSION@159..164
+                LBRACKET@159..160 "["
+                LITERAL@160..161
+                  INT_NUMBER@160..161 "7"
+                COLON@161..162 ":"
+                LITERAL@162..163
+                  INT_NUMBER@162..163 "0"
+                RBRACKET@163..164 "]"
+      COMMA@164..165 ","
+      WHITESPACE@165..168 "\n  "
+      PARAM_DECL@168..212
+        LOCALPARAM_KW@168..178 "localparam"
+        WHITESPACE@178..179 " "
+        DATA_TYPE@179..182
+          INT_KW@179..182 "int"
+        WHITESPACE@182..191 "         "
+        DECLARATOR@191..212
+          NAME@191..193
+            IDENT@191..193 "AW"
+          WHITESPACE@193..197 "    "
+          EQ@197..198 "="
+          WHITESPACE@198..199 " "
+          CALL_EXPR@199..212
+            NAME_REF@199..205
+              SYSTEM_IDENT@199..205 "$clog2"
+            ARG_LIST@205..212
+              LPAREN@205..206 "("
+              NAME_REF@206..211
+                IDENT@206..211 "Depth"
+              RPAREN@211..212 ")"
+      WHITESPACE@212..213 "\n"
+      RPAREN@213..214 ")"
+    WHITESPACE@214..215 " "
+    PORT_LIST@215..472
+      LPAREN@215..216 "("
+      WHITESPACE@216..219 "\n  "
+      PORT@219..246
+        INPUT_KW@219..224 "input"
+        WHITESPACE@224..226 "  "
+        DATA_TYPE@226..231
+          LOGIC_KW@226..231 "logic"
+        WHITESPACE@231..241 "          "
+        NAME@241..246
+          IDENT@241..246 "clk_i"
+      COMMA@246..247 ","
+      WHITESPACE@247..250 "\n  "
+      PORT@250..278
+        INPUT_KW@250..255 "input"
+        WHITESPACE@255..257 "  "
+        DATA_TYPE@257..262
+          LOGIC_KW@257..262 "logic"
+        WHITESPACE@262..272 "          "
+        NAME@272..278
+          IDENT@272..278 "rst_ni"
+      COMMA@278..279 ","
+      WHITESPACE@279..282 "\n  "
+      PORT@282..310
+        INPUT_KW@282..287 "input"
+        WHITESPACE@287..289 "  "
+        DATA_TYPE@289..290
+          NAME_REF@289..290
+            IDENT@289..290 "T"
+        WHITESPACE@290..304 "              "
+        NAME@304..310
+          IDENT@304..310 "data_i"
+      COMMA@310..311 ","
+      WHITESPACE@311..314 "\n  "
+      PORT@314..343
+        INPUT_KW@314..319 "input"
+        WHITESPACE@319..321 "  "
+        DATA_TYPE@321..326
+          LOGIC_KW@321..326 "logic"
+        WHITESPACE@326..336 "          "
+        NAME@336..343
+          IDENT@336..343 "valid_i"
+      COMMA@343..344 ","
+      WHITESPACE@344..347 "\n  "
+      PORT@347..376
+        OUTPUT_KW@347..353 "output"
+        WHITESPACE@353..354 " "
+        DATA_TYPE@354..359
+          LOGIC_KW@354..359 "logic"
+        WHITESPACE@359..369 "          "
+        NAME@369..376
+          IDENT@369..376 "ready_o"
+      COMMA@376..377 ","
+      WHITESPACE@377..380 "\n  "
+      PORT@380..408
+        OUTPUT_KW@380..386 "output"
+        WHITESPACE@386..387 " "
+        DATA_TYPE@387..388
+          NAME_REF@387..388
+            IDENT@387..388 "T"
+        WHITESPACE@388..402 "              "
+        NAME@402..408
+          IDENT@402..408 "data_o"
+      COMMA@408..409 ","
+      WHITESPACE@409..412 "\n  "
+      PORT@412..437
+        DATA_TYPE@412..424
+          NAME_REF@412..424
+            IDENT@412..418 "bus_if"
+            DOT@418..419 "."
+            IDENT@419..424 "slave"
+        WHITESPACE@424..434 "          "
+        NAME@434..437
+          IDENT@434..437 "bus"
+      COMMA@437..438 ","
+      WHITESPACE@438..441 "\n  "
+      PORT@441..470
+        OUTPUT_KW@441..447 "output"
+        WHITESPACE@447..448 " "
+        DATA_TYPE@448..460
+          LOGIC_KW@448..453 "logic"
+          WHITESPACE@453..454 " "
+          DIMENSION@454..460
+            LBRACKET@454..455 "["
+            NAME_REF@455..457
+              IDENT@455..457 "AW"
+            COLON@457..458 ":"
+            LITERAL@458..459
+              INT_NUMBER@458..459 "0"
+            RBRACKET@459..460 "]"
+        WHITESPACE@460..463 "   "
+        NAME@463..470
+          IDENT@463..470 "count_o"
+      WHITESPACE@470..471 "\n"
+      RPAREN@471..472 ")"
+    SEMI@472..473 ";"
+    WHITESPACE@473..476 "\n  "
+    TYPEDEF_DECL@476..535
+      TYPEDEF_KW@476..483 "typedef"
+      WHITESPACE@483..484 " "
+      DATA_TYPE@484..526
+        ENUM_TYPE@484..526
+          ENUM_KW@484..488 "enum"
+          WHITESPACE@488..489 " "
+          DATA_TYPE@489..500
+            LOGIC_KW@489..494 "logic"
+            WHITESPACE@494..495 " "
+            DIMENSION@495..500
+              LBRACKET@495..496 "["
+              LITERAL@496..497
+                INT_NUMBER@496..497 "1"
+              COLON@497..498 ":"
+              LITERAL@498..499
+                INT_NUMBER@498..499 "0"
+              RBRACKET@499..500 "]"
+          WHITESPACE@500..501 " "
+          LBRACE@501..502 "{"
+          ENUM_MEMBER@502..506
+            NAME@502..506
+              IDENT@502..506 "Idle"
+          COMMA@506..507 ","
+          WHITESPACE@507..508 " "
+          ENUM_MEMBER@508..519
+            NAME@508..512
+              IDENT@508..512 "Busy"
+            WHITESPACE@512..513 " "
+            EQ@513..514 "="
+            WHITESPACE@514..515 " "
+            LITERAL@515..519
+              BASED_NUMBER@515..519 "2'd2"
+          COMMA@519..520 ","
+          WHITESPACE@520..521 " "
+          ENUM_MEMBER@521..525
+            NAME@521..525
+              IDENT@521..525 "Done"
+          RBRACE@525..526 "}"
+      WHITESPACE@526..527 " "
+      NAME@527..534
+        IDENT@527..534 "state_e"
+      SEMI@534..535 ";"
+    WHITESPACE@535..538 "\n  "
+    TYPEDEF_DECL@538..618
+      TYPEDEF_KW@538..545 "typedef"
+      WHITESPACE@545..546 " "
+      DATA_TYPE@546..609
+        STRUCT_TYPE@546..609
+          STRUCT_KW@546..552 "struct"
+          WHITESPACE@552..553 " "
+          PACKED_KW@553..559 "packed"
+          WHITESPACE@559..560 " "
+          LBRACE@560..561 "{"
+          WHITESPACE@561..566 "\n    "
+          STRUCT_MEMBER@566..584
+            DATA_TYPE@566..571
+              LOGIC_KW@566..571 "logic"
+            WHITESPACE@571..578 "       "
+            DECLARATOR@578..583
+              NAME@578..583
+                IDENT@578..583 "valid"
+            SEMI@583..584 ";"
+          WHITESPACE@584..589 "\n    "
+          STRUCT_MEMBER@589..605
+            DATA_TYPE@589..600
+              LOGIC_KW@589..594 "logic"
+              WHITESPACE@594..595 " "
+              DIMENSION@595..600
+                LBRACKET@595..596 "["
+                LITERAL@596..597
+                  INT_NUMBER@596..597 "3"
+                COLON@597..598 ":"
+                LITERAL@598..599
+                  INT_NUMBER@598..599 "0"
+                RBRACKET@599..600 "]"
+            WHITESPACE@600..601 " "
+            DECLARATOR@601..604
+              NAME@601..604
+                IDENT@601..604 "tag"
+            SEMI@604..605 ";"
+          WHITESPACE@605..608 "\n  "
+          RBRACE@608..609 "}"
+      WHITESPACE@609..610 " "
+      NAME@610..617
+        IDENT@610..617 "entry_t"
+      SEMI@617..618 ";"
+    WHITESPACE@618..622 "\n\n  "
+    DATA_DECL@622..647
+      DATA_TYPE@622..629
+        NAME_REF@622..629
+          IDENT@622..629 "state_e"
+      WHITESPACE@629..630 " "
+      DECLARATOR@630..637
+        NAME@630..637
+          IDENT@630..637 "state_q"
+      COMMA@637..638 ","
+      WHITESPACE@638..639 " "
+      DECLARATOR@639..646
+        NAME@639..646
+          IDENT@639..646 "state_d"
+      SEMI@646..647 ";"
+    WHITESPACE@647..650 "\n  "
+    DATA_DECL@650..666
+      DATA_TYPE@650..651
+        NAME_REF@650..651
+          IDENT@650..651 "T"
+      WHITESPACE@651..652 " "
+      DECLARATOR@652..665
+        NAME@652..657
+          IDENT@652..657 "mem_q"
+        WHITESPACE@657..658 " "
+        DIMENSION@658..665
+          LBRACKET@658..659 "["
+          NAME_REF@659..664
+            IDENT@659..664 "Depth"
+          RBRACKET@664..665 "]"
+      SEMI@665..666 ";"
+    WHITESPACE@666..669 "\n  "
+    DATA_DECL@669..699
+      DATA_TYPE@669..683
+        LOGIC_KW@669..674 "logic"
+        WHITESPACE@674..675 " "
+        DIMENSION@675..683
+          LBRACKET@675..676 "["
+          BINARY_EXPR@676..680
+            NAME_REF@676..678
+              IDENT@676..678 "AW"
+            MINUS@678..679 "-"
+            LITERAL@679..680
+              INT_NUMBER@679..680 "1"
+          COLON@680..681 ":"
+          LITERAL@681..682
+            INT_NUMBER@681..682 "0"
+          RBRACKET@682..683 "]"
+      WHITESPACE@683..684 " "
+      DECLARATOR@684..690
+        NAME@684..690
+          IDENT@684..690 "wptr_q"
+      COMMA@690..691 ","
+      WHITESPACE@691..692 " "
+      DECLARATOR@692..698
+        NAME@692..698
+          IDENT@692..698 "rptr_q"
+      SEMI@698..699 ";"
+    WHITESPACE@699..702 "\n  "
+    DATA_DECL@702..724
+      DATA_TYPE@702..715
+        NAME_REF@702..709
+          IDENT@702..709 "entry_t"
+        WHITESPACE@709..710 " "
+        DIMENSION@710..715
+          LBRACKET@710..711 "["
+          LITERAL@711..712
+            INT_NUMBER@711..712 "1"
+          COLON@712..713 ":"
+          LITERAL@713..714
+            INT_NUMBER@713..714 "0"
+          RBRACKET@714..715 "]"
+      WHITESPACE@715..716 " "
+      DECLARATOR@716..723
+        NAME@716..723
+          IDENT@716..723 "entries"
+      SEMI@723..724 ";"
+    WHITESPACE@724..727 "\n  "
+    NET_DECL@727..756
+      DATA_TYPE@727..731
+        WIRE_KW@727..731 "wire"
+      WHITESPACE@731..732 " "
+      DECLARATOR@732..755
+        NAME@732..736
+          IDENT@732..736 "full"
+        WHITESPACE@736..737 " "
+        EQ@737..738 "="
+        WHITESPACE@738..739 " "
+        BINARY_EXPR@739..755
+          NAME_REF@739..746
+            IDENT@739..746 "count_o"
+          WHITESPACE@746..747 " "
+          EQ2@747..749 "=="
+          WHITESPACE@749..750 " "
+          NAME_REF@750..755
+            IDENT@750..755 "Depth"
+      SEMI@755..756 ";"
+    WHITESPACE@756..760 "\n\n  "
+    CONTINUOUS_ASSIGN@760..783
+      ASSIGN_KW@760..766 "assign"
+      WHITESPACE@766..767 " "
+      ASSIGN_EXPR@767..782
+        NAME_REF@767..774
+          IDENT@767..774 "ready_o"
+        WHITESPACE@774..775 " "
+        EQ@775..776 "="
+        WHITESPACE@776..777 " "
+        UNARY_EXPR@777..782
+          TILDE@777..778 "~"
+          NAME_REF@778..782
+            IDENT@778..782 "full"
+      SEMI@782..783 ";"
+    WHITESPACE@783..786 "\n  "
+    CONTINUOUS_ASSIGN@786..842
+      ASSIGN_KW@786..792 "assign"
+      WHITESPACE@792..793 " "
+      ASSIGN_EXPR@793..841
+        CONCAT_EXPR@793..817
+          LBRACE@793..794 "{"
+          NAME_REF@794..800
+            IDENT@794..800 "data_o"
+          COMMA@800..801 ","
+          WHITESPACE@801..802 " "
+          FIELD_EXPR@802..816
+            INDEX_EXPR@802..812
+              NAME_REF@802..809
+                IDENT@802..809 "entries"
+              LBRACKET@809..810 "["
+              LITERAL@810..811
+                INT_NUMBER@810..811 "0"
+              RBRACKET@811..812 "]"
+            DOT@812..813 "."
+            IDENT@813..816 "tag"
+          RBRACE@816..817 "}"
+        WHITESPACE@817..818 " "
+        EQ@818..819 "="
+        WHITESPACE@819..820 " "
+        CONCAT_EXPR@820..841
+          LBRACE@820..821 "{"
+          INDEX_EXPR@821..834
+            NAME_REF@821..826
+              IDENT@821..826 "mem_q"
+            LBRACKET@826..827 "["
+            NAME_REF@827..833
+              IDENT@827..833 "rptr_q"
+            RBRACKET@833..834 "]"
+          COMMA@834..835 ","
+          WHITESPACE@835..836 " "
+          LITERAL@836..840
+            BASED_NUMBER@836..840 "4'hF"
+          RBRACE@840..841 "}"
+      SEMI@841..842 ";"
+    WHITESPACE@842..846 "\n\n  "
+    PROCEDURE@846..1101
+      ALWAYS_FF_KW@846..855 "always_ff"
+      WHITESPACE@855..856 " "
+      TIMED_STMT@856..1101
+        EVENT_CONTROL@856..890
+          AT@856..857 "@"
+          LPAREN@857..858 "("
+          EVENT_EXPR@858..871
+            POSEDGE_KW@858..865 "posedge"
+            WHITESPACE@865..866 " "
+            NAME_REF@866..871
+              IDENT@866..871 "clk_i"
+          WHITESPACE@871..872 " "
+          OR_KW@872..874 "or"
+          WHITESPACE@874..875 " "
+          EVENT_EXPR@875..889
+            NEGEDGE_KW@875..882 "negedge"
+            WHITESPACE@882..883 " "
+            NAME_REF@883..889
+              IDENT@883..889 "rst_ni"
+          RPAREN@889..890 ")"
+        WHITESPACE@890..891 " "
+        BLOCK_STMT@891..1101
+          BEGIN_KW@891..896 "begin"
+          WHITESPACE@896..897 " "
+          END_LABEL@897..902
+            COLON@897..898 ":"
+            WHITESPACE@898..899 " "
+            IDENT@899..902 "seq"
+          WHITESPACE@902..907 "\n    "
+          IF_STMT@907..1089
+            IF_KW@907..909 "if"
+            WHITESPACE@909..910 " "
+            LPAREN@910..911 "("
+            UNARY_EXPR@911..918
+              BANG@911..912 "!"
+              NAME_REF@912..918
+                IDENT@912..918 "rst_ni"
+            RPAREN@918..919 ")"
+            WHITESPACE@919..920 " "
+            BLOCK_STMT@920..977
+              BEGIN_KW@920..925 "begin"
+              WHITESPACE@925..932 "\n      "
+              NONBLOCKING_ASSIGN@932..946
+                NAME_REF@932..938
+                  IDENT@932..938 "wptr_q"
+                WHITESPACE@938..940 "  "
+                LTE@940..942 "<="
+                WHITESPACE@942..943 " "
+                LITERAL@943..945
+                  UNBASED_UNSIZED@943..945 "'0"
+                SEMI@945..946 ";"
+              WHITESPACE@946..953 "\n      "
+              NONBLOCKING_ASSIGN@953..969
+                NAME_REF@953..960
+                  IDENT@953..960 "state_q"
+                WHITESPACE@960..961 " "
+                LTE@961..963 "<="
+                WHITESPACE@963..964 " "
+                NAME_REF@964..968
+                  IDENT@964..968 "Idle"
+                SEMI@968..969 ";"
+              WHITESPACE@969..974 "\n    "
+              END_KW@974..977 "end"
+            WHITESPACE@977..978 " "
+            ELSE_CLAUSE@978..1089
+              ELSE_KW@978..982 "else"
+              WHITESPACE@982..983 " "
+              IF_STMT@983..1089
+                IF_KW@983..985 "if"
+                WHITESPACE@985..986 " "
+                LPAREN@986..987 "("
+                BINARY_EXPR@987..1005
+                  NAME_REF@987..994
+                    IDENT@987..994 "valid_i"
+                  WHITESPACE@994..995 " "
+                  AMP2@995..997 "&&"
+                  WHITESPACE@997..998 " "
+                  NAME_REF@998..1005
+                    IDENT@998..1005 "ready_o"
+                RPAREN@1005..1006 ")"
+                WHITESPACE@1006..1007 " "
+                BLOCK_STMT@1007..1089
+                  BEGIN_KW@1007..1012 "begin"
+                  WHITESPACE@1012..1019 "\n      "
+                  NONBLOCKING_ASSIGN@1019..1043
+                    INDEX_EXPR@1019..1032
+                      NAME_REF@1019..1024
+                        IDENT@1019..1024 "mem_q"
+                      LBRACKET@1024..1025 "["
+                      NAME_REF@1025..1031
+                        IDENT@1025..1031 "wptr_q"
+                      RBRACKET@1031..1032 "]"
+                    WHITESPACE@1032..1033 " "
+                    LTE@1033..1035 "<="
+                    WHITESPACE@1035..1036 " "
+                    NAME_REF@1036..1042
+                      IDENT@1036..1042 "data_i"
+                    SEMI@1042..1043 ";"
+                  WHITESPACE@1043..1050 "\n      "
+                  NONBLOCKING_ASSIGN@1050..1081
+                    NAME_REF@1050..1056
+                      IDENT@1050..1056 "wptr_q"
+                    WHITESPACE@1056..1064 "        "
+                    LTE@1064..1066 "<="
+                    WHITESPACE@1066..1067 " "
+                    BINARY_EXPR@1067..1080
+                      NAME_REF@1067..1073
+                        IDENT@1067..1073 "wptr_q"
+                      WHITESPACE@1073..1074 " "
+                      PLUS@1074..1075 "+"
+                      WHITESPACE@1075..1076 " "
+                      LITERAL@1076..1080
+                        BASED_NUMBER@1076..1080 "1'b1"
+                    SEMI@1080..1081 ";"
+                  WHITESPACE@1081..1086 "\n    "
+                  END_KW@1086..1089 "end"
+          WHITESPACE@1089..1092 "\n  "
+          END_KW@1092..1095 "end"
+          WHITESPACE@1095..1096 " "
+          END_LABEL@1096..1101
+            COLON@1096..1097 ":"
+            WHITESPACE@1097..1098 " "
+            IDENT@1098..1101 "seq"
+    WHITESPACE@1101..1105 "\n\n  "
+    PROCEDURE@1105..1362
+      ALWAYS_COMB_KW@1105..1116 "always_comb"
+      WHITESPACE@1116..1117 " "
+      BLOCK_STMT@1117..1362
+        BEGIN_KW@1117..1122 "begin"
+        WHITESPACE@1122..1127 "\n    "
+        BLOCKING_ASSIGN@1127..1145
+          NAME_REF@1127..1134
+            IDENT@1127..1134 "state_d"
+          WHITESPACE@1134..1135 " "
+          EQ@1135..1136 "="
+          WHITESPACE@1136..1137 " "
+          NAME_REF@1137..1144
+            IDENT@1137..1144 "state_q"
+          SEMI@1144..1145 ";"
+        WHITESPACE@1145..1150 "\n    "
+        CASE_STMT@1150..1292
+          UNIQUE_KW@1150..1156 "unique"
+          WHITESPACE@1156..1157 " "
+          CASE_KW@1157..1161 "case"
+          WHITESPACE@1161..1162 " "
+          LPAREN@1162..1163 "("
+          NAME_REF@1163..1170
+            IDENT@1163..1170 "state_q"
+          RPAREN@1170..1171 ")"
+          WHITESPACE@1171..1178 "\n      "
+          CASE_ITEM@1178..1205
+            NAME_REF@1178..1182
+              IDENT@1178..1182 "Idle"
+            COLON@1182..1183 ":"
+            WHITESPACE@1183..1190 "       "
+            BLOCKING_ASSIGN@1190..1205
+              NAME_REF@1190..1197
+                IDENT@1190..1197 "state_d"
+              WHITESPACE@1197..1198 " "
+              EQ@1198..1199 "="
+              WHITESPACE@1199..1200 " "
+              NAME_REF@1200..1204
+                IDENT@1200..1204 "Busy"
+              SEMI@1204..1205 ";"
+          WHITESPACE@1205..1212 "\n      "
+          CASE_ITEM@1212..1263
+            NAME_REF@1212..1216
+              IDENT@1212..1216 "Busy"
+            COMMA@1216..1217 ","
+            WHITESPACE@1217..1218 " "
+            NAME_REF@1218..1222
+              IDENT@1218..1222 "Done"
+            COLON@1222..1223 ":"
+            WHITESPACE@1223..1224 " "
+            BLOCK_STMT@1224..1263
+              BEGIN_KW@1224..1229 "begin"
+              WHITESPACE@1229..1238 "\n        "
+              BLOCKING_ASSIGN@1238..1253
+                NAME_REF@1238..1245
+                  IDENT@1238..1245 "state_d"
+                WHITESPACE@1245..1246 " "
+                EQ@1246..1247 "="
+                WHITESPACE@1247..1248 " "
+                NAME_REF@1248..1252
+                  IDENT@1248..1252 "Idle"
+                SEMI@1252..1253 ";"
+              WHITESPACE@1253..1260 "\n      "
+              END_KW@1260..1263 "end"
+          WHITESPACE@1263..1270 "\n      "
+          CASE_ITEM@1270..1280
+            DEFAULT_KW@1270..1277 "default"
+            COLON@1277..1278 ":"
+            WHITESPACE@1278..1279 " "
+            NULL_STMT@1279..1280
+              SEMI@1279..1280 ";"
+          WHITESPACE@1280..1285 "\n    "
+          ENDCASE_KW@1285..1292 "endcase"
+        WHITESPACE@1292..1297 "\n    "
+        IF_STMT@1297..1356
+          PRIORITY_KW@1297..1305 "priority"
+          WHITESPACE@1305..1306 " "
+          IF_KW@1306..1308 "if"
+          WHITESPACE@1308..1309 " "
+          LPAREN@1309..1310 "("
+          INSIDE_EXPR@1310..1339
+            NAME_REF@1310..1317
+              IDENT@1310..1317 "count_o"
+            WHITESPACE@1317..1318 " "
+            INSIDE_KW@1318..1324 "inside"
+            WHITESPACE@1324..1325 " "
+            RANGE_LIST@1325..1339
+              LBRACE@1325..1326 "{"
+              VALUE_RANGE@1326..1331
+                LBRACKET@1326..1327 "["
+                LITERAL@1327..1328
+                  INT_NUMBER@1327..1328 "0"
+                COLON@1328..1329 ":"
+                LITERAL@1329..1330
+                  INT_NUMBER@1329..1330 "2"
+                RBRACKET@1330..1331 "]"
+              COMMA@1331..1332 ","
+              WHITESPACE@1332..1333 " "
+              NAME_REF@1333..1338
+                IDENT@1333..1338 "Depth"
+              RBRACE@1338..1339 "}"
+          RPAREN@1339..1340 ")"
+          WHITESPACE@1340..1341 " "
+          BLOCKING_ASSIGN@1341..1356
+            NAME_REF@1341..1348
+              IDENT@1341..1348 "state_d"
+            WHITESPACE@1348..1349 " "
+            EQ@1349..1350 "="
+            WHITESPACE@1350..1351 " "
+            NAME_REF@1351..1355
+              IDENT@1351..1355 "Idle"
+            SEMI@1355..1356 ";"
+        WHITESPACE@1356..1359 "\n  "
+        END_KW@1359..1362 "end"
+    WHITESPACE@1362..1366 "\n\n  "
+    GENERATE_FOR@1366..1473
+      FOR_KW@1366..1369 "for"
+      WHITESPACE@1369..1370 " "
+      LPAREN@1370..1371 "("
+      GENVAR_KW@1371..1377 "genvar"
+      WHITESPACE@1377..1378 " "
+      ASSIGN_EXPR@1378..1383
+        NAME_REF@1378..1379
+          IDENT@1378..1379 "i"
+        WHITESPACE@1379..1380 " "
+        EQ@1380..1381 "="
+        WHITESPACE@1381..1382 " "
+        LITERAL@1382..1383
+          INT_NUMBER@1382..1383 "0"
+      SEMI@1383..1384 ";"
+      WHITESPACE@1384..1385 " "
+      BINARY_EXPR@1385..1390
+        NAME_REF@1385..1386
+          IDENT@1385..1386 "i"
+        WHITESPACE@1386..1387 " "
+        LT@1387..1388 "<"
+        WHITESPACE@1388..1389 " "
+        LITERAL@1389..1390
+          INT_NUMBER@1389..1390 "2"
+      SEMI@1390..1391 ";"
+      WHITESPACE@1391..1392 " "
+      POSTFIX_EXPR@1392..1395
+        NAME_REF@1392..1393
+          IDENT@1392..1393 "i"
+        PLUS2@1393..1395 "++"
+      RPAREN@1395..1396 ")"
+      WHITESPACE@1396..1397 " "
+      GENERATE_BLOCK@1397..1473
+        BEGIN_KW@1397..1402 "begin"
+        WHITESPACE@1402..1403 " "
+        END_LABEL@1403..1414
+          COLON@1403..1404 ":"
+          WHITESPACE@1404..1405 " "
+          IDENT@1405..1414 "g_entries"
+        WHITESPACE@1414..1419 "\n    "
+        CONTINUOUS_ASSIGN@1419..1467
+          ASSIGN_KW@1419..1425 "assign"
+          WHITESPACE@1425..1426 " "
+          ASSIGN_EXPR@1426..1466
+            FIELD_EXPR@1426..1442
+              INDEX_EXPR@1426..1436
+                NAME_REF@1426..1433
+                  IDENT@1426..1433 "entries"
+                LBRACKET@1433..1434 "["
+                NAME_REF@1434..1435
+                  IDENT@1434..1435 "i"
+                RBRACKET@1435..1436 "]"
+              DOT@1436..1437 "."
+              IDENT@1437..1442 "valid"
+            WHITESPACE@1442..1443 " "
+            EQ@1443..1444 "="
+            WHITESPACE@1444..1445 " "
+            CONDITIONAL_EXPR@1445..1466
+              INDEX_EXPR@1445..1449
+                NAME_REF@1445..1446
+                  IDENT@1445..1446 "i"
+                LBRACKET@1446..1447 "["
+                LITERAL@1447..1448
+                  INT_NUMBER@1447..1448 "0"
+                RBRACKET@1448..1449 "]"
+              WHITESPACE@1449..1450 " "
+              QUESTION@1450..1451 "?"
+              WHITESPACE@1451..1452 " "
+              NAME_REF@1452..1459
+                IDENT@1452..1459 "valid_i"
+              WHITESPACE@1459..1460 " "
+              COLON@1460..1461 ":"
+              WHITESPACE@1461..1462 " "
+              LITERAL@1462..1466
+                BASED_NUMBER@1462..1466 "1'b0"
+          SEMI@1466..1467 ";"
+        WHITESPACE@1467..1470 "\n  "
+        END_KW@1470..1473 "end"
+    WHITESPACE@1473..1477 "\n\n  "
+    GENERATE_IF@1477..1719
+      IF_KW@1477..1479 "if"
+      WHITESPACE@1479..1480 " "
+      LPAREN@1480..1481 "("
+      BINARY_EXPR@1481..1490
+        NAME_REF@1481..1486
+          IDENT@1481..1486 "Depth"
+        WHITESPACE@1486..1487 " "
+        GT@1487..1488 ">"
+        WHITESPACE@1488..1489 " "
+        LITERAL@1489..1490
+          INT_NUMBER@1489..1490 "4"
+      RPAREN@1490..1491 ")"
+      WHITESPACE@1491..1492 " "
+      GENERATE_BLOCK@1492..1667
+        BEGIN_KW@1492..1497 "begin"
+        WHITESPACE@1497..1498 " "
+        END_LABEL@1498..1505
+          COLON@1498..1499 ":"
+          WHITESPACE@1499..1500 " "
+          IDENT@1500..1505 "g_big"
+        WHITESPACE@1505..1510 "\n    "
+        INSTANTIATION@1510..1661
+          NAME_REF@1510..1517
+            IDENT@1510..1517 "counter"
+          WHITESPACE@1517..1518 " "
+          PARAM_VALUES@1518..1535
+            HASH@1518..1519 "#"
+            LPAREN@1519..1520 "("
+            CONNECTION@1520..1534
+              DOT@1520..1521 "."
+              NAME@1521..1526
+                IDENT@1521..1526 "Width"
+              LPAREN@1526..1527 "("
+              BINARY_EXPR@1527..1533
+                NAME_REF@1527..1529
+                  IDENT@1527..1529 "AW"
+                WHITESPACE@1529..1530 " "
+                PLUS@1530..1531 "+"
+                WHITESPACE@1531..1532 " "
+                LITERAL@1532..1533
+                  INT_NUMBER@1532..1533 "1"
+              RPAREN@1533..1534 ")"
+            RPAREN@1534..1535 ")"
+          WHITESPACE@1535..1536 " "
+          INSTANCE@1536..1660
+            NAME@1536..1543
+              IDENT@1536..1543 "u_count"
+            WHITESPACE@1543..1544 " "
+            LPAREN@1544..1545 "("
+            WHITESPACE@1545..1552 "\n      "
+            CONNECTION@1552..1558
+              DOT@1552..1553 "."
+              NAME@1553..1558
+                IDENT@1553..1558 "clk_i"
+            COMMA@1558..1559 ","
+            WHITESPACE@1559..1566 "\n      "
+            CONNECTION@1566..1573
+              DOT@1566..1567 "."
+              NAME@1567..1573
+                IDENT@1567..1573 "rst_ni"
+            COMMA@1573..1574 ","
+            WHITESPACE@1574..1581 "\n      "
+            CONNECTION@1581..1609
+              DOT@1581..1582 "."
+              NAME@1582..1586
+                IDENT@1582..1586 "en_i"
+              WHITESPACE@1586..1590 "    "
+              LPAREN@1590..1591 "("
+              BINARY_EXPR@1591..1608
+                NAME_REF@1591..1598
+                  IDENT@1591..1598 "valid_i"
+                WHITESPACE@1598..1599 " "
+                AMP@1599..1600 "&"
+                WHITESPACE@1600..1601 " "
+                NAME_REF@1601..1608
+                  IDENT@1601..1608 "ready_o"
+              RPAREN@1608..1609 ")"
+            COMMA@1609..1610 ","
+            WHITESPACE@1610..1617 "\n      "
+            CONNECTION@1617..1635
+              DOT@1617..1618 "."
+              NAME@1618..1625
+                IDENT@1618..1625 "count_o"
+              WHITESPACE@1625..1626 " "
+              LPAREN@1626..1627 "("
+              NAME_REF@1627..1634
+                IDENT@1627..1634 "count_o"
+              RPAREN@1634..1635 ")"
+            COMMA@1635..1636 ","
+            WHITESPACE@1636..1643 "\n      "
+            CONNECTION@1643..1654
+              DOT@1643..1644 "."
+              NAME@1644..1652
+                IDENT@1644..1652 "unused_o"
+              LPAREN@1652..1653 "("
+              RPAREN@1653..1654 ")"
+            WHITESPACE@1654..1659 "\n    "
+            RPAREN@1659..1660 ")"
+          SEMI@1660..1661 ";"
+        WHITESPACE@1661..1664 "\n  "
+        END_KW@1664..1667 "end"
+      WHITESPACE@1667..1668 " "
+      ELSE_CLAUSE@1668..1719
+        ELSE_KW@1668..1672 "else"
+        WHITESPACE@1672..1673 " "
+        GENERATE_BLOCK@1673..1719
+          BEGIN_KW@1673..1678 "begin"
+          WHITESPACE@1678..1679 " "
+          END_LABEL@1679..1688
+            COLON@1679..1680 ":"
+            WHITESPACE@1680..1681 " "
+            IDENT@1681..1688 "g_small"
+          WHITESPACE@1688..1693 "\n    "
+          CONTINUOUS_ASSIGN@1693..1713
+            ASSIGN_KW@1693..1699 "assign"
+            WHITESPACE@1699..1700 " "
+            ASSIGN_EXPR@1700..1712
+              NAME_REF@1700..1707
+                IDENT@1700..1707 "count_o"
+              WHITESPACE@1707..1708 " "
+              EQ@1708..1709 "="
+              WHITESPACE@1709..1710 " "
+              LITERAL@1710..1712
+                UNBASED_UNSIZED@1710..1712 "'0"
+            SEMI@1712..1713 ";"
+          WHITESPACE@1713..1716 "\n  "
+          END_KW@1716..1719 "end"
+    WHITESPACE@1719..1723 "\n\n  "
+    FUNCTION_DECL@1723..1850
+      FUNCTION_KW@1723..1731 "function"
+      WHITESPACE@1731..1732 " "
+      AUTOMATIC_KW@1732..1741 "automatic"
+      WHITESPACE@1741..1742 " "
+      DATA_TYPE@1742..1756
+        LOGIC_KW@1742..1747 "logic"
+        WHITESPACE@1747..1748 " "
+        DIMENSION@1748..1756
+          LBRACKET@1748..1749 "["
+          BINARY_EXPR@1749..1753
+            NAME_REF@1749..1751
+              IDENT@1749..1751 "AW"
+            MINUS@1751..1752 "-"
+            LITERAL@1752..1753
+              INT_NUMBER@1752..1753 "1"
+          COLON@1753..1754 ":"
+          LITERAL@1754..1755
+            INT_NUMBER@1754..1755 "0"
+          RBRACKET@1755..1756 "]"
+      WHITESPACE@1756..1757 " "
+      NAME@1757..1761
+        IDENT@1757..1761 "next"
+      PORT_LIST@1761..1799
+        LPAREN@1761..1762 "("
+        PORT@1762..1784
+          INPUT_KW@1762..1767 "input"
+          WHITESPACE@1767..1768 " "
+          DATA_TYPE@1768..1782
+            LOGIC_KW@1768..1773 "logic"
+            WHITESPACE@1773..1774 " "
+            DIMENSION@1774..1782
+              LBRACKET@1774..1775 "["
+              BINARY_EXPR@1775..1779
+                NAME_REF@1775..1777
+                  IDENT@1775..1777 "AW"
+                MINUS@1777..1778 "-"
+                LITERAL@1778..1779
+                  INT_NUMBER@1778..1779 "1"
+              COLON@1779..1780 ":"
+              LITERAL@1780..1781
+                INT_NUMBER@1780..1781 "0"
+              RBRACKET@1781..1782 "]"
+          WHITESPACE@1782..1783 " "
+          NAME@1783..1784
+            IDENT@1783..1784 "p"
+        COMMA@1784..1785 ","
+        WHITESPACE@1785..1786 " "
+        PORT@1786..1798
+          DATA_TYPE@1786..1789
+            INT_KW@1786..1789 "int"
+          WHITESPACE@1789..1790 " "
+          NAME@1790..1794
+            IDENT@1790..1794 "step"
+          WHITESPACE@1794..1795 " "
+          EQ@1795..1796 "="
+          WHITESPACE@1796..1797 " "
+          LITERAL@1797..1798
+            INT_NUMBER@1797..1798 "1"
+        RPAREN@1798..1799 ")"
+      SEMI@1799..1800 ";"
+      WHITESPACE@1800..1805 "\n    "
+      RETURN_STMT@1805..1829
+        RETURN_KW@1805..1811 "return"
+        WHITESPACE@1811..1812 " "
+        BINARY_EXPR@1812..1828
+          NAME_REF@1812..1813
+            IDENT@1812..1813 "p"
+          WHITESPACE@1813..1814 " "
+          PLUS@1814..1815 "+"
+          WHITESPACE@1815..1816 " "
+          INDEX_EXPR@1816..1828
+            NAME_REF@1816..1820
+              IDENT@1816..1820 "step"
+            LBRACKET@1820..1821 "["
+            BINARY_EXPR@1821..1825
+              NAME_REF@1821..1823
+                IDENT@1821..1823 "AW"
+              MINUS@1823..1824 "-"
+              LITERAL@1824..1825
+                INT_NUMBER@1824..1825 "1"
+            COLON@1825..1826 ":"
+            LITERAL@1826..1827
+              INT_NUMBER@1826..1827 "0"
+            RBRACKET@1827..1828 "]"
+        SEMI@1828..1829 ";"
+      WHITESPACE@1829..1832 "\n  "
+      ENDFUNCTION_KW@1832..1843 "endfunction"
+      WHITESPACE@1843..1844 " "
+      END_LABEL@1844..1850
+        COLON@1844..1845 ":"
+        WHITESPACE@1845..1846 " "
+        IDENT@1846..1850 "next"
+    WHITESPACE@1850..1854 "\n\n  "
+    PROCEDURE@1854..1930
+      INITIAL_KW@1854..1861 "initial"
+      WHITESPACE@1861..1862 " "
+      IMMEDIATE_ASSERT@1862..1930
+        ASSERT_KW@1862..1868 "assert"
+        WHITESPACE@1868..1869 " "
+        LPAREN@1869..1870 "("
+        BINARY_EXPR@1870..1879
+          NAME_REF@1870..1875
+            IDENT@1870..1875 "Depth"
+          WHITESPACE@1875..1876 " "
+          GT@1876..1877 ">"
+          WHITESPACE@1877..1878 " "
+          LITERAL@1878..1879
+            INT_NUMBER@1878..1879 "1"
+        RPAREN@1879..1880 ")"
+        WHITESPACE@1880..1881 " "
+        ELSE_CLAUSE@1881..1930
+          ELSE_KW@1881..1885 "else"
+          WHITESPACE@1885..1886 " "
+          EXPR_STMT@1886..1930
+            CALL_EXPR@1886..1929
+              NAME_REF@1886..1892
+                SYSTEM_IDENT@1886..1892 "$error"
+              ARG_LIST@1892..1929
+                LPAREN@1892..1893 "("
+                LITERAL@1893..1921
+                  STRING_LITERAL@1893..1921 "\"Depth must be > 1, got %0d\""
+                COMMA@1921..1922 ","
+                WHITESPACE@1922..1923 " "
+                NAME_REF@1923..1928
+                  IDENT@1923..1928 "Depth"
+                RPAREN@1928..1929 ")"
+            SEMI@1929..1930 ";"
+    WHITESPACE@1930..1933 "\n  "
+    ASSERTION_ITEM@1933..2017
+      LABEL@1933..1941
+        IDENT@1933..1940 "a_ready"
+        COLON@1940..1941 ":"
+      WHITESPACE@1941..1942 " "
+      ASSERT_KW@1942..1948 "assert"
+      WHITESPACE@1948..1949 " "
+      PROPERTY_KW@1949..1957 "property"
+      WHITESPACE@1957..1958 " "
+      PROPERTY_EXPR@1958..2016
+        LPAREN@1958..1959 "("
+        AT@1959..1960 "@"
+        LPAREN@1960..1961 "("
+        POSEDGE_KW@1961..1968 "posedge"
+        WHITESPACE@1968..1969 " "
+        IDENT@1969..1974 "clk_i"
+        RPAREN@1974..1975 ")"
+        WHITESPACE@1975..1976 " "
+        DISABLE_KW@1976..1983 "disable"
+        WHITESPACE@1983..1984 " "
+        IFF_KW@1984..1987 "iff"
+        WHITESPACE@1987..1988 " "
+        LPAREN@1988..1989 "("
+        BANG@1989..1990 "!"
+        IDENT@1990..1996 "rst_ni"
+        RPAREN@1996..1997 ")"
+        WHITESPACE@1997..1998 " "
+        IDENT@1998..2002 "full"
+        WHITESPACE@2002..2003 " "
+        PIPE_ARROW@2003..2006 "|->"
+        WHITESPACE@2006..2007 " "
+        BANG@2007..2008 "!"
+        IDENT@2008..2015 "ready_o"
+        RPAREN@2015..2016 ")"
+      SEMI@2016..2017 ";"
+    WHITESPACE@2017..2018 "\n"
+    ENDMODULE_KW@2018..2027 "endmodule"
+    WHITESPACE@2027..2028 " "
+    END_LABEL@2028..2034
+      COLON@2028..2029 ":"
+      WHITESPACE@2029..2030 " "
+      IDENT@2030..2034 "fifo"
+  WHITESPACE@2034..2036 "\n\n"
+  INTERFACE_DECL@2036..2250
+    INTERFACE_KW@2036..2045 "interface"
+    WHITESPACE@2045..2046 " "
+    NAME@2046..2052
+      IDENT@2046..2052 "bus_if"
+    WHITESPACE@2052..2053 " "
+    PARAM_PORT_LIST@2053..2071
+      HASH@2053..2054 "#"
+      LPAREN@2054..2055 "("
+      PARAM_DECL@2055..2070
+        PARAMETER_KW@2055..2064 "parameter"
+        WHITESPACE@2064..2065 " "
+        DECLARATOR@2065..2070
+          NAME@2065..2066
+            IDENT@2065..2066 "W"
+          WHITESPACE@2066..2067 " "
+          EQ@2067..2068 "="
+          WHITESPACE@2068..2069 " "
+          LITERAL@2069..2070
+            INT_NUMBER@2069..2070 "8"
+      RPAREN@2070..2071 ")"
+    WHITESPACE@2071..2072 " "
+    PORT_LIST@2072..2089
+      LPAREN@2072..2073 "("
+      PORT@2073..2088
+        INPUT_KW@2073..2078 "input"
+        WHITESPACE@2078..2079 " "
+        DATA_TYPE@2079..2084
+          LOGIC_KW@2079..2084 "logic"
+        WHITESPACE@2084..2085 " "
+        NAME@2085..2088
+          IDENT@2085..2088 "clk"
+      RPAREN@2088..2089 ")"
+    SEMI@2089..2090 ";"
+    WHITESPACE@2090..2093 "\n  "
+    DATA_DECL@2093..2112
+      DATA_TYPE@2093..2106
+        LOGIC_KW@2093..2098 "logic"
+        WHITESPACE@2098..2099 " "
+        DIMENSION@2099..2106
+          LBRACKET@2099..2100 "["
+          BINARY_EXPR@2100..2103
+            NAME_REF@2100..2101
+              IDENT@2100..2101 "W"
+            MINUS@2101..2102 "-"
+            LITERAL@2102..2103
+              INT_NUMBER@2102..2103 "1"
+          COLON@2103..2104 ":"
+          LITERAL@2104..2105
+            INT_NUMBER@2104..2105 "0"
+          RBRACKET@2105..2106 "]"
+      WHITESPACE@2106..2107 " "
+      DECLARATOR@2107..2111
+        NAME@2107..2111
+          IDENT@2107..2111 "data"
+      SEMI@2111..2112 ";"
+    WHITESPACE@2112..2115 "\n  "
+    DATA_DECL@2115..2134
+      DATA_TYPE@2115..2120
+        LOGIC_KW@2115..2120 "logic"
+      WHITESPACE@2120..2121 " "
+      DECLARATOR@2121..2126
+        NAME@2121..2126
+          IDENT@2121..2126 "valid"
+      COMMA@2126..2127 ","
+      WHITESPACE@2127..2128 " "
+      DECLARATOR@2128..2133
+        NAME@2128..2133
+          IDENT@2128..2133 "ready"
+      SEMI@2133..2134 ";"
+    WHITESPACE@2134..2137 "\n  "
+    MODPORT_DECL@2137..2186
+      MODPORT_KW@2137..2144 "modport"
+      WHITESPACE@2144..2145 " "
+      MODPORT_ITEM@2145..2185
+        NAME@2145..2151
+          IDENT@2145..2151 "master"
+        WHITESPACE@2151..2152 " "
+        LPAREN@2152..2153 "("
+        PORT@2153..2164
+          OUTPUT_KW@2153..2159 "output"
+          WHITESPACE@2159..2160 " "
+          NAME@2160..2164
+            IDENT@2160..2164 "data"
+        COMMA@2164..2165 ","
+        WHITESPACE@2165..2166 " "
+        PORT@2166..2171
+          NAME@2166..2171
+            IDENT@2166..2171 "valid"
+        COMMA@2171..2172 ","
+        WHITESPACE@2172..2173 " "
+        PORT@2173..2184
+          INPUT_KW@2173..2178 "input"
+          WHITESPACE@2178..2179 " "
+          NAME@2179..2184
+            IDENT@2179..2184 "ready"
+        RPAREN@2184..2185 ")"
+      SEMI@2185..2186 ";"
+    WHITESPACE@2186..2189 "\n  "
+    MODPORT_DECL@2189..2237
+      MODPORT_KW@2189..2196 "modport"
+      WHITESPACE@2196..2197 " "
+      MODPORT_ITEM@2197..2236
+        NAME@2197..2202
+          IDENT@2197..2202 "slave"
+        WHITESPACE@2202..2203 " "
+        LPAREN@2203..2204 "("
+        PORT@2204..2214
+          INPUT_KW@2204..2209 "input"
+          WHITESPACE@2209..2210 " "
+          NAME@2210..2214
+            IDENT@2210..2214 "data"
+        COMMA@2214..2215 ","
+        WHITESPACE@2215..2216 " "
+        PORT@2216..2221
+          NAME@2216..2221
+            IDENT@2216..2221 "valid"
+        COMMA@2221..2222 ","
+        WHITESPACE@2222..2223 " "
+        PORT@2223..2235
+          OUTPUT_KW@2223..2229 "output"
+          WHITESPACE@2229..2230 " "
+          NAME@2230..2235
+            IDENT@2230..2235 "ready"
+        RPAREN@2235..2236 ")"
+      SEMI@2236..2237 ";"
+    WHITESPACE@2237..2238 "\n"
+    ENDINTERFACE_KW@2238..2250 "endinterface"
+  WHITESPACE@2250..2251 "\n"

@@ -1,0 +1,522 @@
+---
+source: crates/vfl-verilog-syntax/tests/parser.rs
+expression: render(&parsed)
+input_file: crates/vfl-verilog-syntax/tests/data/ok/testbench.sv
+---
+SOURCE_FILE@0..1063
+  DIRECTIVE@0..18 "`timescale 1ns/1ps"
+  WHITESPACE@18..19 "\n"
+  MODULE_DECL@19..1062
+    MODULE_KW@19..25 "module"
+    WHITESPACE@25..26 " "
+    NAME@26..28
+      IDENT@26..28 "tb"
+    SEMI@28..29 ";"
+    WHITESPACE@29..32 "\n  "
+    PACKAGE_IMPORT@32..50
+      IMPORT_KW@32..38 "import"
+      WHITESPACE@38..39 " "
+      IMPORT_ITEM@39..49
+        IDENT@39..46 "uvm_pkg"
+        COLON2@46..48 "::"
+        STAR@48..49 "*"
+      SEMI@49..50 ";"
+    WHITESPACE@50..53 "\n  "
+    DATA_DECL@53..67
+      DATA_TYPE@53..58
+        LOGIC_KW@53..58 "logic"
+      WHITESPACE@58..59 " "
+      DECLARATOR@59..66
+        NAME@59..62
+          IDENT@59..62 "clk"
+        WHITESPACE@62..63 " "
+        EQ@63..64 "="
+        WHITESPACE@64..65 " "
+        LITERAL@65..66
+          INT_NUMBER@65..66 "0"
+      SEMI@66..67 ";"
+    WHITESPACE@67..70 "\n  "
+    DATA_DECL@70..90
+      DATA_TYPE@70..82
+        INT_KW@70..73 "int"
+        WHITESPACE@73..74 " "
+        UNSIGNED_KW@74..82 "unsigned"
+      WHITESPACE@82..83 " "
+      DECLARATOR@83..89
+        NAME@83..89
+          IDENT@83..89 "errors"
+      SEMI@89..90 ";"
+    WHITESPACE@90..93 "\n  "
+    DATA_DECL@93..113
+      DATA_TYPE@93..102
+        BIT_KW@93..96 "bit"
+        WHITESPACE@96..97 " "
+        DIMENSION@97..102
+          LBRACKET@97..98 "["
+          LITERAL@98..99
+            INT_NUMBER@98..99 "7"
+          COLON@99..100 ":"
+          LITERAL@100..101
+            INT_NUMBER@100..101 "0"
+          RBRACKET@101..102 "]"
+      WHITESPACE@102..103 " "
+      DECLARATOR@103..112
+        NAME@103..108
+          IDENT@103..108 "queue"
+        WHITESPACE@108..109 " "
+        DIMENSION@109..112
+          LBRACKET@109..110 "["
+          LITERAL@110..111
+            DOLLAR@110..111 "$"
+          RBRACKET@111..112 "]"
+      SEMI@112..113 ";"
+    WHITESPACE@113..116 "\n  "
+    DATA_DECL@116..138
+      DATA_TYPE@116..122
+        STRING_KW@116..122 "string"
+      WHITESPACE@122..123 " "
+      DECLARATOR@123..137
+        NAME@123..128
+          IDENT@123..128 "names"
+        WHITESPACE@128..129 " "
+        DIMENSION@129..137
+          LBRACKET@129..130 "["
+          TYPE_EXPR@130..136
+            DATA_TYPE@130..136
+              STRING_KW@130..136 "string"
+          RBRACKET@136..137 "]"
+      SEMI@137..138 ";"
+    WHITESPACE@138..141 "\n  "
+    DATA_DECL@141..152
+      DATA_TYPE@141..146
+        EVENT_KW@141..146 "event"
+      WHITESPACE@146..147 " "
+      DECLARATOR@147..151
+        NAME@147..151
+          IDENT@147..151 "done"
+      SEMI@151..152 ";"
+    WHITESPACE@152..156 "\n\n  "
+    CLASS_DECL@156..285
+      CLASS_KW@156..161 "class"
+      WHITESPACE@161..162 " "
+      IDENT@162..168 "packet"
+      SEMI@168..169 ";"
+      WHITESPACE@169..174 "\n    "
+      RAND_KW@174..178 "rand"
+      WHITESPACE@178..179 " "
+      BIT_KW@179..182 "bit"
+      WHITESPACE@182..183 " "
+      LBRACKET@183..184 "["
+      INT_NUMBER@184..185 "7"
+      COLON@185..186 ":"
+      INT_NUMBER@186..187 "0"
+      RBRACKET@187..188 "]"
+      WHITESPACE@188..189 " "
+      IDENT@189..193 "data"
+      SEMI@193..194 ";"
+      WHITESPACE@194..199 "\n    "
+      CONSTRAINT_KW@199..209 "constraint"
+      WHITESPACE@209..210 " "
+      IDENT@210..216 "c_data"
+      WHITESPACE@216..217 " "
+      LBRACE@217..218 "{"
+      WHITESPACE@218..219 " "
+      IDENT@219..223 "data"
+      WHITESPACE@223..224 " "
+      INSIDE_KW@224..230 "inside"
+      WHITESPACE@230..231 " "
+      LBRACE@231..232 "{"
+      LBRACKET@232..233 "["
+      INT_NUMBER@233..234 "1"
+      COLON@234..235 ":"
+      INT_NUMBER@235..237 "10"
+      RBRACKET@237..238 "]"
+      RBRACE@238..239 "}"
+      SEMI@239..240 ";"
+      WHITESPACE@240..241 " "
+      RBRACE@241..242 "}"
+      WHITESPACE@242..247 "\n    "
+      FUNCTION_KW@247..255 "function"
+      WHITESPACE@255..256 " "
+      NEW_KW@256..259 "new"
+      LPAREN@259..260 "("
+      RPAREN@260..261 ")"
+      SEMI@261..262 ";"
+      WHITESPACE@262..263 " "
+      ENDFUNCTION_KW@263..274 "endfunction"
+      WHITESPACE@274..277 "\n  "
+      ENDCLASS_KW@277..285 "endclass"
+    WHITESPACE@285..289 "\n\n  "
+    OPAQUE_DECL@289..352
+      COVERGROUP_KW@289..299 "covergroup"
+      WHITESPACE@299..300 " "
+      IDENT@300..302 "cg"
+      WHITESPACE@302..303 " "
+      AT@303..304 "@"
+      LPAREN@304..305 "("
+      POSEDGE_KW@305..312 "posedge"
+      WHITESPACE@312..313 " "
+      IDENT@313..316 "clk"
+      RPAREN@316..317 ")"
+      SEMI@317..318 ";"
+      WHITESPACE@318..323 "\n    "
+      COVERPOINT_KW@323..333 "coverpoint"
+      WHITESPACE@333..334 " "
+      IDENT@334..340 "errors"
+      SEMI@340..341 ";"
+      WHITESPACE@341..344 "\n  "
+      ENDGROUP_KW@344..352 "endgroup"
+    WHITESPACE@352..356 "\n\n  "
+    OPAQUE_DECL@356..425
+      PROPERTY_KW@356..364 "property"
+      WHITESPACE@364..365 " "
+      IDENT@365..376 "p_handshake"
+      SEMI@376..377 ";"
+      WHITESPACE@377..382 "\n    "
+      AT@382..383 "@"
+      LPAREN@383..384 "("
+      POSEDGE_KW@384..391 "posedge"
+      WHITESPACE@391..392 " "
+      IDENT@392..395 "clk"
+      RPAREN@395..396 ")"
+      WHITESPACE@396..397 " "
+      BASED_NUMBER@397..401 "1'b1"
+      WHITESPACE@401..402 " "
+      PIPE_DARROW@402..405 "|=>"
+      WHITESPACE@405..406 " "
+      BASED_NUMBER@406..410 "1'b1"
+      SEMI@410..411 ";"
+      WHITESPACE@411..414 "\n  "
+      ENDPROPERTY_KW@414..425 "endproperty"
+    WHITESPACE@425..429 "\n\n  "
+    OPAQUE_DECL@429..506
+      CLOCKING_KW@429..437 "clocking"
+      WHITESPACE@437..438 " "
+      IDENT@438..440 "cb"
+      WHITESPACE@440..441 " "
+      AT@441..442 "@"
+      LPAREN@442..443 "("
+      POSEDGE_KW@443..450 "posedge"
+      WHITESPACE@450..451 " "
+      IDENT@451..454 "clk"
+      RPAREN@454..455 ")"
+      SEMI@455..456 ";"
+      WHITESPACE@456..461 "\n    "
+      DEFAULT_KW@461..468 "default"
+      WHITESPACE@468..469 " "
+      INPUT_KW@469..474 "input"
+      WHITESPACE@474..475 " "
+      HASH@475..476 "#"
+      TIME_LITERAL@476..481 "1step"
+      WHITESPACE@481..482 " "
+      OUTPUT_KW@482..488 "output"
+      WHITESPACE@488..489 " "
+      HASH@489..490 "#"
+      INT_NUMBER@490..491 "1"
+      SEMI@491..492 ";"
+      WHITESPACE@492..495 "\n  "
+      ENDCLOCKING_KW@495..506 "endclocking"
+    WHITESPACE@506..510 "\n\n  "
+    PROCEDURE@510..531
+      ALWAYS_KW@510..516 "always"
+      WHITESPACE@516..517 " "
+      TIMED_STMT@517..531
+        DELAY@517..519
+          HASH@517..518 "#"
+          INT_NUMBER@518..519 "5"
+        WHITESPACE@519..520 " "
+        BLOCKING_ASSIGN@520..531
+          NAME_REF@520..523
+            IDENT@520..523 "clk"
+          WHITESPACE@523..524 " "
+          EQ@524..525 "="
+          WHITESPACE@525..526 " "
+          UNARY_EXPR@526..530
+            TILDE@526..527 "~"
+            NAME_REF@527..530
+              IDENT@527..530 "clk"
+          SEMI@530..531 ";"
+    WHITESPACE@531..535 "\n\n  "
+    PROCEDURE@535..1052
+      INITIAL_KW@535..542 "initial"
+      WHITESPACE@542..543 " "
+      BLOCK_STMT@543..1052
+        BEGIN_KW@543..548 "begin"
+        WHITESPACE@548..553 "\n    "
+        LOCAL_DECL@553..570
+          DATA_TYPE@553..559
+            NAME_REF@553..559
+              IDENT@553..559 "packet"
+          WHITESPACE@559..560 " "
+          DECLARATOR@560..569
+            NAME@560..561
+              IDENT@560..561 "p"
+            WHITESPACE@561..562 " "
+            EQ@562..563 "="
+            WHITESPACE@563..564 " "
+            NEW_EXPR@564..569
+              NEW_KW@564..567 "new"
+              ARG_LIST@567..569
+                LPAREN@567..568 "("
+                RPAREN@568..569 ")"
+          SEMI@569..570 ";"
+        WHITESPACE@570..575 "\n    "
+        LOCAL_DECL@575..599
+          AUTOMATIC_KW@575..584 "automatic"
+          WHITESPACE@584..585 " "
+          DATA_TYPE@585..588
+            INT_KW@585..588 "int"
+          WHITESPACE@588..589 " "
+          DECLARATOR@589..598
+            NAME@589..594
+              IDENT@589..594 "count"
+            WHITESPACE@594..595 " "
+            EQ@595..596 "="
+            WHITESPACE@596..597 " "
+            LITERAL@597..598
+              INT_NUMBER@597..598 "0"
+          SEMI@598..599 ";"
+        WHITESPACE@599..604 "\n    "
+        FORK_STMT@604..721
+          FORK_KW@604..608 "fork"
+          WHITESPACE@608..615 "\n      "
+          BLOCK_STMT@615..682
+            BEGIN_KW@615..620 "begin"
+            WHITESPACE@620..629 "\n        "
+            REPEAT_STMT@629..655
+              REPEAT_KW@629..635 "repeat"
+              WHITESPACE@635..636 " "
+              LPAREN@636..637 "("
+              LITERAL@637..638
+                INT_NUMBER@637..638 "3"
+              RPAREN@638..639 ")"
+              WHITESPACE@639..640 " "
+              TIMED_STMT@640..655
+                EVENT_CONTROL@640..654
+                  AT@640..641 "@"
+                  LPAREN@641..642 "("
+                  EVENT_EXPR@642..653
+                    POSEDGE_KW@642..649 "posedge"
+                    WHITESPACE@649..650 " "
+                    NAME_REF@650..653
+                      IDENT@650..653 "clk"
+                  RPAREN@653..654 ")"
+                NULL_STMT@654..655
+                  SEMI@654..655 ";"
+            WHITESPACE@655..664 "\n        "
+            EVENT_TRIGGER@664..672
+              ARROW@664..666 "->"
+              WHITESPACE@666..667 " "
+              NAME_REF@667..671
+                IDENT@667..671 "done"
+              SEMI@671..672 ";"
+            WHITESPACE@672..679 "\n      "
+            END_KW@679..682 "end"
+          WHITESPACE@682..689 "\n      "
+          WAIT_STMT@689..708
+            WAIT_KW@689..693 "wait"
+            WHITESPACE@693..694 " "
+            LPAREN@694..695 "("
+            BINARY_EXPR@695..706
+              NAME_REF@695..701
+                IDENT@695..701 "errors"
+              WHITESPACE@701..702 " "
+              EQ2@702..704 "=="
+              WHITESPACE@704..705 " "
+              LITERAL@705..706
+                INT_NUMBER@705..706 "0"
+            RPAREN@706..707 ")"
+            NULL_STMT@707..708
+              SEMI@707..708 ";"
+          WHITESPACE@708..713 "\n    "
+          JOIN_ANY_KW@713..721 "join_any"
+        WHITESPACE@721..726 "\n    "
+        DISABLE_STMT@726..739
+          DISABLE_KW@726..733 "disable"
+          WHITESPACE@733..734 " "
+          FORK_KW@734..738 "fork"
+          SEMI@738..739 ";"
+        WHITESPACE@739..744 "\n    "
+        EXPR_STMT@744..767
+          CALL_EXPR@744..766
+            FIELD_EXPR@744..759
+              NAME_REF@744..749
+                IDENT@744..749 "queue"
+              DOT@749..750 "."
+              IDENT@750..759 "push_back"
+            ARG_LIST@759..766
+              LPAREN@759..760 "("
+              LITERAL@760..765
+                BASED_NUMBER@760..765 "8'h12"
+              RPAREN@765..766 ")"
+          SEMI@766..767 ";"
+        WHITESPACE@767..772 "\n    "
+        FOREACH_STMT@772..809
+          FOREACH_KW@772..779 "foreach"
+          WHITESPACE@779..780 " "
+          LPAREN@780..781 "("
+          IDENT@781..786 "queue"
+          LBRACKET@786..787 "["
+          IDENT@787..788 "i"
+          RBRACKET@788..789 "]"
+          RPAREN@789..790 ")"
+          WHITESPACE@790..791 " "
+          COMPOUND_ASSIGN@791..809
+            NAME_REF@791..796
+              IDENT@791..796 "count"
+            WHITESPACE@796..797 " "
+            PLUS_EQ@797..799 "+="
+            WHITESPACE@799..800 " "
+            INDEX_EXPR@800..808
+              NAME_REF@800..805
+                IDENT@800..805 "queue"
+              LBRACKET@805..806 "["
+              NAME_REF@806..807
+                IDENT@806..807 "i"
+              RBRACKET@807..808 "]"
+            SEMI@808..809 ";"
+        WHITESPACE@809..814 "\n    "
+        IMMEDIATE_ASSERT@814..891
+          ASSERT_KW@814..820 "assert"
+          WHITESPACE@820..821 " "
+          LPAREN@821..822 "("
+          CALL_EXPR@822..835
+            FIELD_EXPR@822..833
+              NAME_REF@822..823
+                IDENT@822..823 "p"
+              DOT@823..824 "."
+              IDENT@824..833 "randomize"
+            ARG_LIST@833..835
+              LPAREN@833..834 "("
+              RPAREN@834..835 ")"
+          WHITESPACE@835..836 " "
+          WITH_CLAUSE@836..854
+            WITH_KW@836..840 "with"
+            WHITESPACE@840..841 " "
+            LBRACE@841..842 "{"
+            WHITESPACE@842..843 " "
+            IDENT@843..847 "data"
+            WHITESPACE@847..848 " "
+            LT@848..849 "<"
+            WHITESPACE@849..850 " "
+            INT_NUMBER@850..851 "5"
+            SEMI@851..852 ";"
+            WHITESPACE@852..853 " "
+            RBRACE@853..854 "}"
+          RPAREN@854..855 ")"
+          WHITESPACE@855..856 " "
+          ELSE_CLAUSE@856..891
+            ELSE_KW@856..860 "else"
+            WHITESPACE@860..861 " "
+            EXPR_STMT@861..891
+              CALL_EXPR@861..890
+                NAME_REF@861..867
+                  SYSTEM_IDENT@861..867 "$fatal"
+                ARG_LIST@867..890
+                  LPAREN@867..868 "("
+                  LITERAL@868..869
+                    INT_NUMBER@868..869 "1"
+                  COMMA@869..870 ","
+                  WHITESPACE@870..871 " "
+                  LITERAL@871..889
+                    STRING_LITERAL@871..889 "\"randomize failed\""
+                  RPAREN@889..890 ")"
+              SEMI@890..891 ";"
+        WHITESPACE@891..896 "\n    "
+        DO_WHILE_STMT@896..926
+          DO_KW@896..898 "do"
+          WHITESPACE@898..899 " "
+          EXPR_STMT@899..907
+            POSTFIX_EXPR@899..906
+              NAME_REF@899..904
+                IDENT@899..904 "count"
+              MINUS2@904..906 "--"
+            SEMI@906..907 ";"
+          WHITESPACE@907..908 " "
+          WHILE_KW@908..913 "while"
+          WHITESPACE@913..914 " "
+          LPAREN@914..915 "("
+          BINARY_EXPR@915..924
+            NAME_REF@915..920
+              IDENT@915..920 "count"
+            WHITESPACE@920..921 " "
+            GT@921..922 ">"
+            WHITESPACE@922..923 " "
+            LITERAL@923..924
+              INT_NUMBER@923..924 "0"
+          RPAREN@924..925 ")"
+          SEMI@925..926 ";"
+        WHITESPACE@926..931 "\n    "
+        BLOCKING_ASSIGN@931..968
+          INDEX_EXPR@931..941
+            NAME_REF@931..936
+              IDENT@931..936 "names"
+            LBRACKET@936..937 "["
+            LITERAL@937..940
+              STRING_LITERAL@937..940 "\"a\""
+            RBRACKET@940..941 "]"
+          WHITESPACE@941..942 " "
+          EQ@942..943 "="
+          WHITESPACE@943..944 " "
+          CALL_EXPR@944..967
+            NAME_REF@944..953
+              SYSTEM_IDENT@944..953 "$sformatf"
+            ARG_LIST@953..967
+              LPAREN@953..954 "("
+              LITERAL@954..959
+                STRING_LITERAL@954..959 "\"%0d\""
+              COMMA@959..960 ","
+              WHITESPACE@960..961 " "
+              NAME_REF@961..966
+                IDENT@961..966 "count"
+              RPAREN@966..967 ")"
+          SEMI@967..968 ";"
+        WHITESPACE@968..973 "\n    "
+        EXPR_STMT@973..1012
+          CALL_EXPR@973..1011
+            NAME_REF@973..981
+              SYSTEM_IDENT@973..981 "$display"
+            ARG_LIST@981..1011
+              LPAREN@981..982 "("
+              LITERAL@982..991
+                STRING_LITERAL@982..991 "\"%0t: %s\""
+              COMMA@991..992 ","
+              WHITESPACE@992..993 " "
+              NAME_REF@993..998
+                SYSTEM_IDENT@993..998 "$time"
+              COMMA@998..999 ","
+              WHITESPACE@999..1000 " "
+              INDEX_EXPR@1000..1010
+                NAME_REF@1000..1005
+                  IDENT@1000..1005 "names"
+                LBRACKET@1005..1006 "["
+                LITERAL@1006..1009
+                  STRING_LITERAL@1006..1009 "\"a\""
+                RBRACKET@1009..1010 "]"
+              RPAREN@1010..1011 ")"
+          SEMI@1011..1012 ";"
+        WHITESPACE@1012..1017 "\n    "
+        TIMED_STMT@1017..1022
+          DELAY@1017..1021
+            HASH@1017..1018 "#"
+            TIME_LITERAL@1018..1021 "1ns"
+          NULL_STMT@1021..1022
+            SEMI@1021..1022 ";"
+        WHITESPACE@1022..1027 "\n    "
+        TIMED_STMT@1027..1033
+          EVENT_CONTROL@1027..1032
+            AT@1027..1028 "@"
+            NAME_REF@1028..1032
+              IDENT@1028..1032 "done"
+          NULL_STMT@1032..1033
+            SEMI@1032..1033 ";"
+        WHITESPACE@1033..1038 "\n    "
+        EXPR_STMT@1038..1046
+          NAME_REF@1038..1045
+            SYSTEM_IDENT@1038..1045 "$finish"
+          SEMI@1045..1046 ";"
+        WHITESPACE@1046..1049 "\n  "
+        END_KW@1049..1052 "end"
+    WHITESPACE@1052..1053 "\n"
+    ENDMODULE_KW@1053..1062 "endmodule"
+  WHITESPACE@1062..1063 "\n"

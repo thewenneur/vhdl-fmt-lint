@@ -389,13 +389,28 @@ fn name_formals(
 /// Analyzes a loaded project: every readable file with its inferred
 /// libraries.
 pub fn analyze(project: &vfl_project::Project) -> Analysis {
-    Analysis::new(analysis_inputs(project))
+    Analysis::with_foreign(analysis_inputs(project), foreign_inputs(project))
 }
 
 /// Analyzes a new version of a project, reusing what `previous` found for
 /// the units the changes cannot affect.
 pub fn reanalyze(project: &vfl_project::Project, previous: &Analysis) -> Analysis {
-    previous.update(analysis_inputs(project))
+    previous.update_with_foreign(analysis_inputs(project), foreign_inputs(project))
+}
+
+/// The Verilog files of a project, whose modules VHDL instantiates.
+fn foreign_inputs(project: &vfl_project::Project) -> Vec<vfl_sema::ForeignInput> {
+    project
+        .verilog
+        .iter()
+        .zip(&project.verilog_libraries)
+        .map(|(file, libraries)| vfl_sema::ForeignInput {
+            path: file.path.clone(),
+            text: file.text.clone(),
+            libraries: libraries.iter().map(|(l, _)| l.clone()).collect(),
+            modules: file.foreign.clone(),
+        })
+        .collect()
 }
 
 fn analysis_inputs(project: &vfl_project::Project) -> Vec<vfl_sema::FileInput> {

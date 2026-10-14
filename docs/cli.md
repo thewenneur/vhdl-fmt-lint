@@ -63,7 +63,9 @@ vfl lint [OPTIONS] [PATHS]...
 ```
 
 Analyzes the whole project around each path, so names, types and overloads are resolved
-across files and libraries, then reports the findings in the given files only. Which rules
+across files and libraries, then reports the findings in the given files only. The
+project's Verilog and SystemVerilog modules take part as entities: instances of them are
+checked against their parameters and ports. Which rules
 run and at which level comes from `[lint]` ([configuration.md](configuration.md#lint));
 every rule is described in [lints.md](lints.md).
 
@@ -94,6 +96,12 @@ vfl check [PATHS]...
 Parses the files and reports syntax errors only, without analyzing the project. Faster
 than `vfl lint` when only the syntax matters.
 
+Verilog and SystemVerilog files are checked too: by default `.v` and `.vh` files as
+Verilog-2005 and `.sv` and `.svh` files as SystemVerilog-2017 (see
+[`[verilog]`](configuration.md#verilog)). `` `ifdef `` branches are chosen from the
+configured `defines` and the macros defined in the file and in the files it includes;
+the branches not compiled are not checked.
+
 ## `vfl rules`
 
 ```sh
@@ -113,7 +121,8 @@ Shows what vfl discovers for the project around `PATH` (default: the current dir
 its root, the config files that apply, every source file, the library each file is in and
 why (a `[project.libraries]` entry, a `vhdl_ls.toml`, a tool file such as VUnit's `run.py`,
 a FuseSoC `.core`, a Vivado or Quartus project, or inference from `library.unit`
-references).
+references). Verilog and SystemVerilog files are listed apart, with the libraries of the
+units that instantiate their modules.
 
 | Option | |
 |--------|---|
@@ -136,7 +145,8 @@ vfl doc [OPTIONS] [PATH]
 
 Writes the documentation of the design: an index, a page per entity (generics, ports,
 symbol, architectures, instances, processes, state machines and their diagrams) and a page
-per package, as HTML, Markdown or AsciiDoc. Doc comments are the comments directly above a
+per package, as HTML, Markdown or AsciiDoc. Verilog and SystemVerilog modules get a page
+too (parameters, ports, symbol, instances) and appear in the hierarchy. Doc comments are the comments directly above a
 declaration or at the end of its line, or only the `--!` ones if the file has any. What is
 documented and which diagrams are drawn comes from `[doc]` and `[doc.diagrams]`
 ([configuration.md](configuration.md#doc)). See [examples/uart/doc](../examples/uart/doc/index.md)
@@ -225,7 +235,8 @@ client. It offers:
   `format.on_type = false`);
 - hover with types and resolved overloads, signature help, completion (including record
   elements, protected type methods, library units and package declarations);
-- go to definition (also into the bundled `std` and `ieee` sources), find references,
+- go to definition (also into the bundled `std` and `ieee` sources, and into the
+  Verilog modules VHDL instantiates, whose declarations hover shows), find references,
   document highlights, rename (packages with their bodies, subprograms with their bodies,
   entities with their components, record elements; clashes refused), document and
   workspace symbols;

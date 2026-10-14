@@ -15,8 +15,8 @@ the language server work.
 - VHDL-2008 first, then VHDL-93, then VHDL-2019, all behind one parser.
 - Measurably better than rust_hdl (`vhdl_ls`) on speed, memory, correctness and features.
 
-Non-goals for now: simulation, elaboration of generate loops with arbitrary generics,
-Verilog/SystemVerilog, mixed-language projects (designed for, not built).
+Non-goals for now: simulation, elaboration of generate loops with arbitrary generics.
+Verilog and SystemVerilog support is being added in phases (see below).
 
 ## Architecture
 
@@ -456,3 +456,25 @@ and far fewer false errors, with zero configuration.
 15. Range formatting and format on type (done).
 16. Notepad++ parity: the plugin analyzes on a background thread and offers every
     feature of the language server (done).
+17. Verilog and synthesizable SystemVerilog, in four phases:
+    1. `vfl-verilog-syntax`: a lossless lexer and parser in the same style as
+       `vfl-syntax`, with its own rowan language and kinds, so the VHDL crates do not
+       change. Directives are trivia; `` `ifdef `` branches not compiled are one
+       `INACTIVE` trivia token; macros are not expanded but parsed where they stand
+       (an expression, an item or a statement). Classes, covergroups, properties,
+       sequences and constraints are opaque. `vfl check` reads `.v`/`.sv` files
+       (done).
+    2. Mixed-language projects: each module's summary (name, parameters, ports,
+       instances, comments) is read off its tree and given to the VHDL analysis as a
+       unit of a foreign file, whose VHDL tree is empty. The module is an entity, its
+       parameters generics and its ports ports, with no VHDL type, so the type checker
+       leaves their associations alone; literal vector widths are still checked.
+       Library inference treats modules as entities and their instances as default
+       bindings. A Verilog edit re-analyzes the module, and the VHDL units that use it
+       only when its interface changed. Hover, go to definition and `vfl doc` (module
+       pages, hierarchy, block diagrams) cross languages (done).
+    3. Formatter (the layout engine made generic over node kinds) and editor features.
+    4. Lint rules and semantic checks for the synthesizable subset.
+
+    Files are dispatched by extension when the project is collected; a project without
+    Verilog files never runs Verilog code.

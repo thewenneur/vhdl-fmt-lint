@@ -30,6 +30,12 @@ A fast, fully configurable VHDL formatter, linter and language server, in pure R
 - **Zero config**: the project root, sources and libraries are discovered from the code.
   No library list to maintain.
 - **VHDL-2008**, **VHDL-93** and **VHDL-2019**.
+- **Verilog and SystemVerilog** (in progress): `vfl check` parses Verilog-1995 to 2005 and
+  SystemVerilog-2005 to 2023 files with a lossless, error-tolerant parser that follows
+  `` `ifdef `` branches. In mixed projects, VHDL instantiates Verilog modules like
+  entities: port maps are checked, hover and go to definition cross languages, and the
+  generated documentation and diagrams include the modules. Formatting and linting of
+  Verilog itself come next.
 
 Status: early development; see the [changelog](CHANGELOG.md) for what each release brings.
 

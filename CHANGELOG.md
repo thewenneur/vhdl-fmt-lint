@@ -4,6 +4,25 @@
 
 ### Added
 
+- **Verilog and SystemVerilog parsing** (`vfl-verilog-syntax`): a lossless, error-tolerant
+  parser for Verilog (IEEE 1364-1995/2001/2005) and synthesizable SystemVerilog (IEEE
+  1800-2005 to 2023), with `` `begin_keywords ``. Directives stay in the tree; the
+  `` `ifdef `` branch compiled is chosen from the configured `defines` and the macros
+  defined in the file and its includes. Classes, covergroups, properties and constraints
+  are kept opaque so testbenches still parse. `vfl check` reads `.v`, `.vh`, `.sv` and
+  `.svh` files, configured by the new `[verilog]` section. VHDL-only projects run no
+  Verilog code.
+- **Mixed VHDL and Verilog projects**: the project's Verilog and SystemVerilog modules are
+  entities for the VHDL analysis. An instance like `entity work.fifo` has its generic and
+  port maps checked against the module's parameters and ports (unknown formals, inputs
+  left unassociated, literal vector widths), and a module goes in the
+  libraries of the units that instantiate it, like an entity. In the editor, hover shows
+  a module's or a port's Verilog declaration, go to definition opens the Verilog file,
+  and an edit to a Verilog file updates the VHDL diagnostics; VHDL units are analyzed
+  again only when what they see of a module (its ports and parameters) changed. `vfl
+  doc` documents each module (parameters, ports, comments, instances) and draws it in
+  the hierarchy, block and symbol diagrams. `vfl project` lists the Verilog files with
+  their libraries.
 - **Fuzz testing** (`fuzz/`): cargo-fuzz targets for the parser (lossless round trip), the
   formatter (idempotence, range formatting agreeing with whole-file formatting), the
   linter and its fixes, incremental re-analysis (equal to a full analysis) and the

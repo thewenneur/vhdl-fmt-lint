@@ -20,7 +20,7 @@ fn design_with(files: &[(&str, &str)], config: &DocConfig) -> Design {
             library: "work".into(),
         })
         .collect();
-    model::build(&inputs, config, "Test".into())
+    model::build(&inputs, Vec::new(), config, "Test".into())
 }
 
 fn design(files: &[(&str, &str)]) -> Design {
@@ -538,6 +538,72 @@ fn loads_a_project_and_skips_excluded_files() {
     assert_eq!(names, ["counter"]);
     assert_eq!(d.entities[0].file, "rtl/counter.vhd");
     assert_eq!(d.title, dir.path().file_name().unwrap().to_string_lossy());
+}
+
+#[test]
+fn verilog_modules_are_documented_and_in_the_hierarchy() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("vfl.toml"), "").unwrap();
+    std::fs::write(
+        dir.path().join("top.vhd"),
+        "entity top is port (clk : in bit); end;\n\
+         architecture rtl of top is\nbegin\n\
+           u_core : entity work.core port map (clk => clk);\n\
+         end;\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("core.sv"),
+        "// The core.\n\
+         module core #(parameter int W = 8) (\n\
+           input  logic clk, // The clock.\n\
+           output logic [7:0] q\n\
+         );\n\
+           leaf u_leaf (.clk(clk));\n\
+         endmodule\n\
+         module leaf(input clk);\nendmodule\n",
+    )
+    .unwrap();
+    let root = vfl_project::find_root(dir.path());
+    let project = vfl_project::Project::load(root).unwrap();
+    let d = vfl_doc::load(&project, &project.config.doc).unwrap();
+    let names: Vec<(&str, bool)> = d
+        .entities
+        .iter()
+        .map(|e| (e.name.as_str(), e.verilog))
+        .collect();
+    assert_eq!(names, [("core", true), ("leaf", true), ("top", false)]);
+    let core = &d.entities[0];
+    assert_eq!(core.description, "The core.");
+    assert_eq!(core.generics[0].ty, "int");
+    assert_eq!(core.ports[0].description, "The clock.");
+    assert_eq!(core.ports[1].direction(), Direction::Out);
+    assert_eq!(core.ports[1].ty, "logic [7:0]");
+    assert_eq!(
+        core.architectures[0].instances[0].kind,
+        InstanceKind::Module
+    );
+
+    let mut roots = hierarchy::build(&d);
+    hierarchy::collapse_repeats(&mut roots);
+    let mermaid = text::hierarchy_mermaid(&roots);
+    assert!(mermaid.contains("n0 -->|\"u_core\"| n1"), "{mermaid}");
+    assert!(mermaid.contains("n1[\"core\"]"), "{mermaid}");
+    assert!(mermaid.contains("n1 -->|\"u_leaf\"| n2"), "{mermaid}");
+
+    let config = DocConfig {
+        format: DocFormat::Markdown,
+        ..DocConfig::default()
+    };
+    let files = vfl_doc::generate(&d, &config);
+    let page = &files
+        .iter()
+        .find(|f| f.path == "work.core.md")
+        .unwrap()
+        .contents;
+    assert!(page.starts_with("# Module `core`"), "{page}");
+    assert!(page.contains("· Verilog"), "{page}");
+    assert!(!page.contains("## Architecture"), "{page}");
 }
 
 fn transitions(fsm: &vfl_doc::Fsm) -> Vec<String> {

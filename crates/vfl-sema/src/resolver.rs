@@ -1989,10 +1989,13 @@ impl<'a> Resolver<'a> {
                                 if let Some(members) = decl.members.clone()
                                     && expected != DeclKind::Configuration
                                 {
-                                    target = Some((
-                                        members,
-                                        format!("{} `{}`", decl.kind.describe(), decl.spelling),
-                                    ));
+                                    let what =
+                                        if self.ctx.files[decl.file as usize].foreign.is_some() {
+                                            "module"
+                                        } else {
+                                            decl.kind.describe()
+                                        };
+                                    target = Some((members, format!("{what} `{}`", decl.spelling)));
                                 }
                             } else if self.quiet == 0 {
                                 self.error(
