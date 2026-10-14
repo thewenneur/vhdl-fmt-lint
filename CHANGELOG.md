@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.1] - 2026-10-14
+
+### Fixed
+
+- **Git submodules belong to their superproject**: a submodule's `.git` file was taken for a
+  repository root, so running `vfl` inside a submodule, or opening it as an editor
+  workspace, lost the superproject's other sources and its `vfl.toml`. A submodule is now
+  part of the project around it; `root = true` in a `vfl.toml` still makes it a project of
+  its own, and linked worktrees stay roots.
+
 ## [0.2.0] - 2026-10-13
 
 Documentation and diagrams of the design, code generation, design-level checks, semantic
