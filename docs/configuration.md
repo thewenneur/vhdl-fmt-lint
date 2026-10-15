@@ -140,6 +140,7 @@ Settings of `vfl fmt` and of formatting in the language server.
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
+| `style` | string | `"default"` | A named set of defaults for the other keys: `"default"`, `"leading-comma"`, `"compact"` or `"classic"`; see [Styles](#styles). Keys set explicitly win over it. |
 | `max_width` | integer | `100` | Lines longer than this get their parenthesized lists broken up, one element per line. |
 | `indent` | integer | `2` | Columns per indentation level. Also the tab width with `use_tabs`. |
 | `continuation_indent` | integer | `indent` | Columns added for a statement continued on the next line, outside parentheses. |
@@ -154,6 +155,8 @@ Settings of `vfl fmt` and of formatting in the language server.
 | `interface_list` | string | `"expand"` | Layout of `generic (...)` and `port (...)` clauses; see [List layouts](#list-layouts). |
 | `association_list` | string | `"auto"` | Layout of `generic map (...)` and `port map (...)`; see [List layouts](#list-layouts). |
 | `close_paren` | string | `"own-line"` | Where `)` goes in a list laid out one element per line: `"own-line"` (on its own line, at the indentation of the line that opened the list) or `"attached"` (right after the last element). |
+| `interface_separator` | string | `"trailing"` | Where the `;` between the elements of `generic (...)`, `port (...)` and subprogram parameter lists goes when they are on separate lines: `"trailing"` (end of the line) or `"leading"` (start of the next line); see [Separators](#separators). |
+| `association_separator` | string | `"trailing"` | Where the `,` between the elements of `generic map (...)`, `port map (...)`, calls, aggregates and enumeration types goes when they are on separate lines: `"trailing"` or `"leading"`; see [Separators](#separators). |
 | `case_alternative` | string | `"preserve"` | `"preserve"` keeps a first statement written on the `when ... =>` line there; `"break"` starts every statement of a case alternative on its own line. |
 | `line_ending` | string | `"auto"` | `"auto"` keeps the line endings the file uses (LF for new files), `"lf"` or `"crlf"` converts. |
 | `on_type` | boolean | `true` | Lets editors format the line you just finished as you type: the line of a `;`, or the line above a new line. Editors have their own switch as well (`vfl.format.onType` in VS Code, **Format on type** in Notepad++), off by default; `false` here turns it off for everyone working on the project. |
@@ -171,7 +174,8 @@ The same settings format Verilog and SystemVerilog files, where they have a mean
   `line_ending` and `on_type` apply as for VHDL.
 - `interface_list` lays out port lists and `#(...)` parameter lists, `association_list`
   the connections of an instance and its `#(...)` parameter values, and `close_paren`
-  places their `)`.
+  places their `)`. `interface_separator` places the `,` of port and `#(...)` parameter
+  lists, `association_separator` that of connections, parameter values and calls.
 - `space_after_keyword` puts a space between `(` and `if`, `for`, `foreach`, `while`,
   `case`, `repeat` and `wait`.
 - `keyword_case` and `identifier_case` do not apply: Verilog is case-sensitive. Nor do
@@ -226,6 +230,59 @@ end;
       data_in => cnt,
       q       => open);
 ```
+
+### Separators
+
+`interface_separator` and `association_separator` take:
+
+- `"trailing"`: the separator ends the line, as above.
+- `"leading"`: the separator starts the next line. In a list whose first element starts
+  a line, the separator sits left of the elements so that they line up: with `indent = 2`
+  it is under the `(` line's first character, with `indent = 4` two columns further in.
+
+A comment after a separator stays at the end of its line, and the separator moves to the
+start of the next element; formatting with `"trailing"` moves it back. A list kept on one
+line is not changed: `f(a, b)` stays as it is. With `interface_separator = "leading"` and
+`association_separator = "leading"`:
+
+```vhdl
+entity counter is
+  generic (
+    WIDTH     : natural := 8 -- bits
+  ; RESET_VAL : natural := 0
+  );
+  port (
+    clk   : in  std_logic
+  ; count : out unsigned(WIDTH - 1 downto 0)
+  );
+end;
+...
+  u0 : entity work.sub
+    port map (
+      clk     => clk
+    , data_in => cnt
+    , q       => open
+    );
+```
+
+### Styles
+
+`style` picks a set of defaults for the other `[format]` and `[format.align]` keys. Any key
+set explicitly, in the same file or in another config file that applies, wins over the
+style:
+
+```toml
+[format]
+style = "leading-comma"
+association_list = "auto" # wins over the style's "expand"
+```
+
+| Style | Sets |
+|-------|------|
+| `"default"` | Nothing: every key has the default listed above. |
+| `"leading-comma"` | `interface_separator = "leading"`, `association_separator = "leading"`, `association_list = "expand"`. |
+| `"compact"` | `interface_list = "auto"`, `association_list = "auto"`, `close_paren = "attached"`, `max_blank_lines = 1`, and every `[format.align]` key off except `trailing_comment`. |
+| `"classic"` | `indent = 4`, `keyword_case = "upper"`, `end_label = "add"`, `end_keyword = "add"`, `association_list = "expand"`, `case_alternative = "break"`. |
 
 ## `[format.align]`
 
@@ -514,6 +571,7 @@ exclude = []
 [project.libraries]
 
 [format]
+style = "default"
 max_width = 100
 indent = 2
 # continuation_indent = 2   # unset: follows `indent`
@@ -528,6 +586,8 @@ max_blank_lines = 2
 interface_list = "expand"
 association_list = "auto"
 close_paren = "own-line"
+interface_separator = "trailing"
+association_separator = "trailing"
 case_alternative = "preserve"
 line_ending = "auto"
 on_type = true

@@ -201,7 +201,9 @@ fn line_anchors<L: Lang>(
     config: &AlignConfig,
     add: &mut impl FnMut(Kind, Context, usize),
 ) {
-    let first = &elems[line.start];
+    // A leading separator is not part of the element after it.
+    let skip = an.leading_list(line.start).is_some() && line.start + 1 < line.end;
+    let first = &elems[line.start + usize::from(skip)];
     let Some(syntax) = &first.syntax else {
         return;
     };

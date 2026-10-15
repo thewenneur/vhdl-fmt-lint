@@ -49,12 +49,10 @@ pub fn load_layered(files: &[PathBuf]) -> Result<Config, ConfigError> {
     let mut merged = toml::Table::new();
     for path in files {
         let table = resolve_extends(path, &mut Vec::new())?;
-        merge(&mut merged, table);
+        crate::merge_tables(&mut merged, table);
     }
     merged.remove(ROOT_KEY);
-    merged
-        .try_into()
-        .map_err(|e| ConfigError::Invalid(Box::new(e)))
+    Config::try_from(merged).map_err(|e| ConfigError::Invalid(Box::new(e)))
 }
 
 /// Reads `path` with its `extends` base merged underneath it.
@@ -71,7 +69,7 @@ fn resolve_extends(path: &Path, stack: &mut Vec<PathBuf>) -> Result<toml::Table,
             let base_path = path.parent().unwrap_or(Path::new(".")).join(base);
             let mut base = resolve_extends(&base_path, stack)?;
             base.remove(ROOT_KEY);
-            merge(&mut base, table);
+            crate::merge_tables(&mut base, table);
             base
         }
         Some(_) => {
@@ -95,21 +93,6 @@ fn read_table(path: &Path) -> Result<toml::Table, ConfigError> {
         path: path.to_owned(),
         source: Box::new(e),
     })
-}
-
-/// Deep-merges `overlay` into `base`: tables merge key by key, any other
-/// value (including arrays) replaces what was there.
-fn merge(base: &mut toml::Table, overlay: toml::Table) {
-    for (key, value) in overlay {
-        match (base.get_mut(&key), value) {
-            (Some(toml::Value::Table(base_table)), toml::Value::Table(overlay_table)) => {
-                merge(base_table, overlay_table);
-            }
-            (_, value) => {
-                base.insert(key, value);
-            }
-        }
-    }
 }
 
 #[cfg(test)]

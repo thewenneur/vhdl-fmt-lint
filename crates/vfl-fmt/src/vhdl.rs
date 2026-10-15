@@ -1,7 +1,7 @@
 //! The formatter's rules for VHDL.
 
 use rowan::NodeOrToken;
-use vfl_config::{AlignConfig, Case, EndKeyword, EndLabel, FormatConfig, ListLayout};
+use vfl_config::{AlignConfig, Case, EndKeyword, EndLabel, FormatConfig, ListLayout, Separator};
 use vfl_syntax::SyntaxKind::{self, *};
 use vfl_syntax::{Standard, SyntaxError, SyntaxNode, SyntaxToken, Vhdl};
 
@@ -144,6 +144,19 @@ impl Lang for Vhdl {
     #[inline]
     fn is_separator(kind: SyntaxKind) -> bool {
         matches!(kind, COMMA | SEMI)
+    }
+
+    #[inline]
+    fn is_list(kind: SyntaxKind) -> bool {
+        is_list(kind)
+    }
+
+    #[inline]
+    fn separator(list: &SyntaxNode, config: &FormatConfig) -> Separator {
+        match list.kind() {
+            INTERFACE_LIST => config.interface_separator,
+            _ => config.association_separator,
+        }
     }
 
     #[inline]

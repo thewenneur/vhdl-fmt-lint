@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use rowan::{NodeOrToken, TextSize};
-use vfl_config::{CaseAlternative, CloseParen, FormatConfig, ListLayout};
+use vfl_config::{CaseAlternative, CloseParen, FormatConfig, ListLayout, Separator};
 
 use crate::elems::Elem;
 use crate::kinds::is_item;
@@ -19,6 +19,8 @@ pub(crate) struct List {
     pub layout: ListLayout,
     /// Whether the source already spreads it over several lines.
     pub src_multiline: bool,
+    /// Whether its separators start lines rather than end them.
+    pub leading: bool,
 }
 
 /// Facts about each element that do not depend on the line breaks.
@@ -48,10 +50,21 @@ pub(crate) struct Analysis<L: Lang> {
     pub space: Vec<bool>,
     /// The list each `(` opens.
     pub opens: Vec<Option<usize>>,
+    /// For the separators of lists whose separators start lines: the list.
+    /// Empty when no list has them.
+    leading_sep: Vec<Option<usize>>,
     pub lists: Vec<List>,
     /// Source offset of each element to its index.
     pub index: HashMap<TextSize, usize>,
     _lang: std::marker::PhantomData<L>,
+}
+
+impl<L: Lang> Analysis<L> {
+    /// For a separator that starts lines: its list.
+    #[inline]
+    pub fn leading_list(&self, i: usize) -> Option<usize> {
+        self.leading_sep.get(i).copied().flatten()
+    }
 }
 
 pub(crate) fn analyze<L: Lang>(elems: &[Elem<L>], config: &FormatConfig) -> Analysis<L> {
@@ -68,6 +81,13 @@ pub(crate) fn analyze<L: Lang>(elems: &[Elem<L>], config: &FormatConfig) -> Anal
         level: vec![0; n],
         space: vec![false; n],
         opens: vec![None; n],
+        leading_sep: if config.interface_separator == Separator::Leading
+            || config.association_separator == Separator::Leading
+        {
+            vec![None; n]
+        } else {
+            Vec::new()
+        },
         lists: Vec::new(),
         index: HashMap::with_capacity(n),
         _lang: std::marker::PhantomData,
@@ -160,6 +180,8 @@ pub(crate) fn analyze<L: Lang>(elems: &[Elem<L>], config: &FormatConfig) -> Anal
         if kind == L::LPAREN {
             if let Some(layout) = L::opens_list(token, &parent, config) {
                 an.opens[i] = Some(an.lists.len());
+                let leading = !an.leading_sep.is_empty()
+                    && L::separator(&parent, config) == Separator::Leading;
                 list_of_node.insert(parent, an.lists.len());
                 an.lists.push(List {
                     open: i,
@@ -167,11 +189,15 @@ pub(crate) fn analyze<L: Lang>(elems: &[Elem<L>], config: &FormatConfig) -> Anal
                     seps: Vec::new(),
                     layout,
                     src_multiline: false,
+                    leading,
                 });
             }
         } else if L::is_separator(kind) {
             if let Some(&id) = list_of_node.get(&parent) {
                 an.lists[id].seps.push(i);
+                if an.lists[id].leading {
+                    an.leading_sep[i] = Some(id);
+                }
             }
         } else if kind == L::RPAREN
             && let Some(&id) = list_of_node.get(&parent)
@@ -240,7 +266,19 @@ pub(crate) fn breaks<L: Lang>(
         if let Some(j) = next(list.open) {
             forced[j] = true;
         }
-        for &sep in &list.seps {
+        for (k, &sep) in list.seps.iter().enumerate() {
+            if list.leading {
+                // The break goes before the separator, which the element
+                // follows on its line. An empty element (`f(a,, b)`) leaves
+                // two separators together.
+                let joins = elems[sep].src_newlines == 0
+                    && elems
+                        .get(sep + 1)
+                        .is_some_and(|e| L::joins_previous_element(e));
+                let empty = k > 0 && list.seps[k - 1] + 1 == sep;
+                forced[sep] |= !joins && !empty;
+                continue;
+            }
             if let Some(j) = next(sep).filter(|&j| {
                 Some(j) != list.close
                     && !(elems[j].src_newlines == 0 && L::joins_previous_element(&elems[j]))
@@ -278,6 +316,9 @@ pub(crate) struct Line {
     pub end: usize,
     /// Indentation in columns.
     pub indent: u32,
+    /// For a line starting with a leading separator: how far left of the
+    /// elements' indentation it starts.
+    pub hanging: u32,
     pub blank_before: u32,
     /// Holds nothing but comments.
     pub comment_only: bool,
@@ -316,6 +357,7 @@ pub(crate) fn lines<L: Lang>(
                 start: i,
                 end: i,
                 indent: 0,
+                hanging: 0,
                 blank_before: nl[i].saturating_sub(1),
                 comment_only: true,
                 verbatim: false,
@@ -340,8 +382,8 @@ pub(crate) fn lines<L: Lang>(
         }
         let closes = elem.is_token(L::RPAREN);
         would[i] = match open.last() {
-            Some(&ol) if closes => lines[ol].indent,
-            Some(&ol) => lines[ol].indent + indent,
+            Some(&ol) if closes => lines[ol].indent + lines[ol].hanging,
+            Some(&ol) => lines[ol].indent + lines[ol].hanging + indent,
             None => {
                 let (nested, starts_body) = if L::NESTS_BODIES && !indented[li] {
                     body_nesting(elem, an, &line_of)
@@ -356,7 +398,26 @@ pub(crate) fn lines<L: Lang>(
             }
         };
         if !indented[li] {
-            lines[li].indent = would[i];
+            // When the first element of the list starts a line too, a
+            // leading separator hangs left of the elements so that they
+            // line up.
+            let first_starts_line = |id: usize| {
+                let open = an.lists[id].open;
+                (open + 1..i)
+                    .find(|&k| !elems[k].is_comment())
+                    .is_some_and(|k| line_of[k] != line_of[open])
+            };
+            let hanging = if let Some(id) = an.leading_list(i)
+                && lines[li].start == i
+                && i + 1 < n
+                && first_starts_line(id)
+            {
+                (elems[i].width() as u32 + u32::from(an.space[i + 1])).min(would[i])
+            } else {
+                0
+            };
+            lines[li].hanging = hanging;
+            lines[li].indent = would[i] - hanging;
             lines[li].follows = open.last().copied();
             if open.is_empty() && !an.item_start[i] {
                 lines[li].hang = an.waveform_start[i].filter(|&f| line_of[f] < li);

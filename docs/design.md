@@ -290,6 +290,7 @@ exclude  = ["sim/generated/**"]
 osvvm = ["third_party/osvvm/**/*.vhd"]
 
 [format]
+style           = "default"  # "default" | "leading-comma" | "compact" | "classic"
 max_width       = 100
 indent          = 2
 # continuation_indent = 2   # defaults to `indent`
@@ -304,6 +305,8 @@ max_blank_lines  = 2
 interface_list   = "expand"   # port/generic clauses: "expand" | "auto" | "preserve"
 association_list = "auto"     # port/generic maps: "expand" | "auto" | "preserve"
 close_paren      = "own-line" # "own-line" | "attached"
+interface_separator   = "trailing" # `;` of port/generic clauses: "trailing" | "leading"
+association_separator = "trailing" # `,` of maps, calls, aggregates: "trailing" | "leading"
 case_alternative = "preserve" # keep `when x => stmt;` on one line, or "break"
 line_ending      = "auto"     # "auto" | "lf" | "crlf"
 

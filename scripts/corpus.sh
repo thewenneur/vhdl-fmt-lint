@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Parses pinned open-source VHDL projects and fails on any syntax error or
-# round-trip mismatch. Then formats them, with the default config and a very
-# different one, and fails on any formatter error or output that changes
-# when formatted again, also when only single lines are formatted. Then
+# round-trip mismatch. Then formats them, with the default config, a very
+# different one and one with leading separators, and fails on any formatter
+# error or output that changes when formatted again, also when only single
+# lines are formatted. Then
 # lints them and fails on more semantic errors than the known ones, and
 # checks that re-analysis after edits, reusing the previous analysis,
 # matches a full analysis. Last, parses, formats and lints Verilog and
@@ -88,7 +89,15 @@ printf '%s\n' \
   'case_alternative = "break"' \
   '[format.align]' \
   'block_boundary = "never"' >"$alt_config"
-for config in "" "--config $alt_config"; do
+# Leading separators, with lists broken up and laid out as written.
+leading_config=$(mktemp)
+trap 'rm -f "$alt_config" "$leading_config"' EXIT
+printf '%s\n' \
+  '[format]' \
+  'style = "leading-comma"' \
+  'max_width = 60' \
+  'association_list = "preserve"' >"$leading_config"
+for config in "" "--config $alt_config" "--config $leading_config"; do
   # shellcheck disable=SC2086 # $config is meant to split.
   {
     $fmt --quiet --ranges $config --std 2019 --exclude _template "$cache/OSVVM" || status=1
@@ -156,7 +165,7 @@ $vrun --quiet --allow-errors --prefixes 10 "$cache/ibex" "$cache/cva6" || status
 "$vfl" check "$cache/picorv32" "$cache/common_cells" >/dev/null || status=1
 # Formatting Verilog and SystemVerilog, as for VHDL above: whole files and
 # single lines, with both configs. Files with syntax errors are skipped.
-for config in "" "--config $alt_config"; do
+for config in "" "--config $alt_config" "--config $leading_config"; do
   # shellcheck disable=SC2086 # $config is meant to split.
   $fmt --quiet --ranges --verilog $config "$cache/sv-tests/tests" "$cache/picorv32" \
     "$cache/verilog-ethernet/rtl" "$cache/verilog-ethernet/lib" "$cache/common_cells" \

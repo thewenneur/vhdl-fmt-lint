@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Leading separators**: `interface_separator = "leading"` and
+  `association_separator = "leading"` in `[format]` put the `;` of port and generic
+  clauses and the `,` of port maps, generic maps, calls and aggregates at the start of the
+  next line (`, data_in => cnt`), hanging left of the elements so that they and their
+  alignment still line up. Verilog port lists and connections follow the same keys.
+- **Format styles**: `style = "leading-comma"`, `"compact"` or `"classic"` in `[format]`
+  picks a set of defaults; keys set explicitly still win.
+
 ### Changed
 
 - **Verilog and SystemVerilog files are only read for VHDL name resolution by default**,
@@ -12,6 +22,11 @@
   To keep 0.3's behavior, add `mode = "full"` under `[verilog]` in `vfl.toml`.
 - The VS Code extension no longer makes itself the default formatter of Verilog and
   SystemVerilog.
+
+### Fixed
+
+- A list written with leading commas no longer formats to a lone `,` on its own line:
+  with the default trailing separators, the commas move back to the ends of the lines.
 
 ## [0.3.1] - 2026-10-15
 

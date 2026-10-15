@@ -49,6 +49,7 @@ mod kinds;
 mod lang;
 mod layout;
 mod range;
+mod separators;
 mod spacing;
 mod verify;
 mod verilog;
@@ -200,12 +201,13 @@ pub(crate) fn lay_out<L: Lang>(
 ) -> Result<Option<Laid<L>>, FormatError> {
     let whole = window.is_none();
     let elems = elems::collect(root, config, window);
-    let elems = L::edit_end_clauses(elems, config);
+    let mut elems = L::edit_end_clauses(elems, config);
     if elems.is_empty() {
         return Ok(None);
     }
     let regions = escape::regions(&elems, source.len());
     let protected = escape::protected(&elems, &regions);
+    separators::place(&mut elems, config, &protected);
     let an = layout::analyze(&elems, config);
     let mut expanded = layout::initially_expanded(&an);
     let (mut lines, line_of) = loop {

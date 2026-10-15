@@ -53,7 +53,10 @@ pub struct Config {
 impl Config {
     /// Parses a single config file's text, without layering.
     pub fn from_toml_str(text: &str) -> Result<Self, ConfigError> {
-        toml::from_str(text).map_err(|e| ConfigError::Invalid(Box::new(e)))
+        let table: toml::Table = text
+            .parse()
+            .map_err(|e| ConfigError::Invalid(Box::new(e)))?;
+        Config::try_from(table).map_err(|e| ConfigError::Invalid(Box::new(e)))
     }
 
     /// Reads and parses a single config file, without layering.
@@ -62,10 +65,12 @@ impl Config {
             path: path.to_owned(),
             source,
         })?;
-        toml::from_str(&text).map_err(|e| ConfigError::Parse {
+        let parse_error = |e| ConfigError::Parse {
             path: path.to_owned(),
             source: Box::new(e),
-        })
+        };
+        let table: toml::Table = text.parse().map_err(parse_error)?;
+        Config::try_from(table).map_err(parse_error)
     }
 
     /// The configured standard as the parser's type.
@@ -244,6 +249,9 @@ impl VerilogStandard {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct FormatConfig {
+    /// A named set of defaults for the other keys; keys set explicitly
+    /// override it. See [`Style`].
+    pub style: Style,
     /// Lines longer than this get their lists broken up, one element per line.
     pub max_width: u32,
     /// Columns per indentation level (also the tab width with `use_tabs`).
@@ -277,6 +285,13 @@ pub struct FormatConfig {
     pub association_list: ListLayout,
     /// Where `)` goes when a list is laid out one element per line.
     pub close_paren: CloseParen,
+    /// Where the `;` between the elements of `generic (...)`, `port (...)`
+    /// and parameter lists goes when they are on separate lines.
+    pub interface_separator: Separator,
+    /// Where the `,` between the elements of `generic map (...)`,
+    /// `port map (...)`, calls, aggregates and enumerations goes when they
+    /// are on separate lines.
+    pub association_separator: Separator,
     /// Whether `when x => stmt;` may keep its statement on the `when` line.
     pub case_alternative: CaseAlternative,
     pub line_ending: LineEnding,
@@ -289,6 +304,7 @@ pub struct FormatConfig {
 impl Default for FormatConfig {
     fn default() -> Self {
         FormatConfig {
+            style: Style::Default,
             max_width: 100,
             indent: 2,
             continuation_indent: None,
@@ -303,11 +319,141 @@ impl Default for FormatConfig {
             interface_list: ListLayout::Expand,
             association_list: ListLayout::Auto,
             close_paren: CloseParen::OwnLine,
+            interface_separator: Separator::Trailing,
+            association_separator: Separator::Trailing,
             case_alternative: CaseAlternative::Preserve,
             line_ending: LineEnding::Auto,
             on_type: true,
             align: AlignConfig::default(),
         }
+    }
+}
+
+impl FormatConfig {
+    /// The settings of a [`Style`], before any key set explicitly.
+    pub fn preset(style: Style) -> Self {
+        let base = FormatConfig {
+            style,
+            ..FormatConfig::default()
+        };
+        match style {
+            Style::Default => base,
+            Style::LeadingComma => FormatConfig {
+                association_list: ListLayout::Expand,
+                interface_separator: Separator::Leading,
+                association_separator: Separator::Leading,
+                ..base
+            },
+            Style::Compact => FormatConfig {
+                max_blank_lines: 1,
+                interface_list: ListLayout::Auto,
+                association_list: ListLayout::Auto,
+                close_paren: CloseParen::Attached,
+                align: AlignConfig {
+                    port_colon: false,
+                    port_mode: false,
+                    generic_colon: false,
+                    interface_default: false,
+                    assignment: false,
+                    association: false,
+                    declaration: false,
+                    case_choice: false,
+                    when_clause: false,
+                    conditional_continuation: false,
+                    trailing_comment: true,
+                    block_boundary: BlockBoundary::BlankLine,
+                },
+                ..base
+            },
+            Style::Classic => FormatConfig {
+                indent: 4,
+                keyword_case: Case::Upper,
+                end_label: EndLabel::Add,
+                end_keyword: EndKeyword::Add,
+                association_list: ListLayout::Expand,
+                case_alternative: CaseAlternative::Break,
+                ..base
+            },
+        }
+    }
+}
+
+/// A named set of `[format]` defaults, chosen with `style = "..."`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Style {
+    /// The defaults of every key.
+    Default,
+    /// `,` and `;` start the next line instead of ending the line, and port
+    /// and generic maps are laid out one element per line.
+    LeadingComma,
+    /// Lists stay on one line when they fit, `)` follows the last element,
+    /// and only trailing comments are aligned.
+    Compact,
+    /// Upper case keywords, 4-column indentation, `end` repeating the
+    /// construct keyword and name, maps one element per line.
+    Classic,
+}
+
+/// Where the separator between the elements of a list goes when the
+/// elements are on separate lines.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Separator {
+    /// At the end of the line: `a => x,` then `b => y`.
+    Trailing,
+    /// At the start of the next line: `a => x` then `, b => y`. The
+    /// separator sits left of the elements so that they line up.
+    Leading,
+}
+
+/// Replaces `format.style` in a config table by the settings of that style,
+/// under the `[format]` keys the table sets itself.
+fn expand_style(table: &mut toml::Table) {
+    let Some(toml::Value::Table(format)) = table.get_mut("format") else {
+        return;
+    };
+    let Some(style) = format
+        .get("style")
+        .cloned()
+        .and_then(|s| Style::deserialize(s).ok())
+    else {
+        // No style, or an invalid one, which the schema reports.
+        return;
+    };
+    if style == Style::Default {
+        return;
+    }
+    let Ok(toml::Value::Table(mut base)) = toml::Value::try_from(FormatConfig::preset(style))
+    else {
+        return;
+    };
+    merge_tables(&mut base, std::mem::take(format));
+    *format = base;
+}
+
+/// Deep-merges `overlay` into `base`: tables merge key by key, any other
+/// value (including arrays) replaces what was there.
+pub(crate) fn merge_tables(base: &mut toml::Table, overlay: toml::Table) {
+    for (key, value) in overlay {
+        match (base.get_mut(&key), value) {
+            (Some(toml::Value::Table(base_table)), toml::Value::Table(overlay_table)) => {
+                merge_tables(base_table, overlay_table);
+            }
+            (_, value) => {
+                base.insert(key, value);
+            }
+        }
+    }
+}
+
+impl TryFrom<toml::Table> for Config {
+    type Error = toml::de::Error;
+
+    /// Applies the schema to a parsed config file (or several merged).
+    fn try_from(mut table: toml::Table) -> Result<Self, Self::Error> {
+        expand_style(&mut table);
+        table.try_into()
     }
 }
 

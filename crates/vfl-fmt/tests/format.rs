@@ -50,6 +50,12 @@ fn parser_test_files_are_stable() {
                 "end_label = \"remove\"\nend_keyword = \"remove\"\ninterface_list = \"preserve\"",
             ),
             config("[format.align]\nblock_boundary = \"never\"\nconditional_continuation = false"),
+            config("style = \"leading-comma\""),
+            config(
+                "style = \"leading-comma\"\nmax_width = 40\nindent = 4\nclose_paren = \"attached\"",
+            ),
+            config("style = \"compact\""),
+            config("style = \"classic\""),
         ] {
             fmt_with(&text, &config);
         }
@@ -433,4 +439,126 @@ fn verbatim_regions() {
         fmt("entity e is\n-- vfl: off\nport(a:in bit);end;\n"),
         "entity e is\n  -- vfl: off\nport(a:in bit);end;\n"
     );
+}
+
+const INSTANCE: &str = "architecture a of e is begin
+u0 : entity work.sub generic map (W => 8, D => 2)
+port map (clk => clk, -- the clock
+-- the data
+data_in => cnt,
+q => open);
+end;
+";
+
+#[test]
+fn leading_separators() {
+    let text = "entity e is generic (W : natural := 8; -- width
+D : natural := 2); port (clk : in bit; q : out bit); end;";
+    assert_eq!(
+        fmt_with(text, &config("interface_separator = \"leading\"")),
+        "entity e is
+  generic (
+    W : natural := 8 -- width
+  ; D : natural := 2
+  );
+  port (
+    clk : in  bit
+  ; q   : out bit
+  );
+end;
+"
+    );
+    assert_eq!(
+        fmt_with(
+            INSTANCE,
+            &config("association_separator = \"leading\"\nassociation_list = \"expand\"")
+        ),
+        "architecture a of e is
+begin
+  u0 : entity work.sub
+    generic map (
+      W => 8
+    , D => 2
+    )
+    port map (
+      clk     => clk -- the clock
+      -- the data
+    , data_in => cnt
+    , q       => open
+    );
+end;
+"
+    );
+    // Wider indentation: the separator still hangs left of the elements.
+    assert_eq!(
+        fmt_with(
+            INSTANCE,
+            &config("style = \"leading-comma\"\nindent = 4\nclose_paren = \"attached\"")
+        ),
+        "architecture a of e is
+begin
+    u0 : entity work.sub
+        generic map (
+            W => 8
+          , D => 2)
+        port map (
+            clk     => clk -- the clock
+            -- the data
+          , data_in => cnt
+          , q       => open);
+end;
+"
+    );
+}
+
+#[test]
+fn trailing_separators_undo_leading_ones() {
+    let leading = fmt_with(INSTANCE, &config("style = \"leading-comma\""));
+    let config = config("association_list = \"expand\"");
+    assert_eq!(fmt_with(&leading, &config), fmt_with(INSTANCE, &config));
+}
+
+#[test]
+fn leading_separators_stay_inside_one_line_lists() {
+    let config = config("association_separator = \"leading\"");
+    assert_eq!(
+        fmt_with("architecture a of e is begin x <= f(a, b); end;", &config),
+        "architecture a of e is\nbegin\n  x <= f(a, b);\nend;\n"
+    );
+    // A list kept as written gets its separators moved, not hung.
+    assert_eq!(
+        fmt_with("architecture a of e is begin x <= f(a,\nb); end;", &config),
+        "architecture a of e is\nbegin\n  x <= f(a\n    , b);\nend;\n"
+    );
+}
+
+#[test]
+fn separators_do_not_cross_directives() {
+    let text = "architecture a of e is begin
+u0 : entity work.sub port map (a => b, -- vfl: skip
+c => d);
+end;
+";
+    fmt_with(text, &config("style = \"leading-comma\""));
+}
+
+#[test]
+fn style_presets() {
+    assert_eq!(config("style = \"default\""), FormatConfig::default());
+    let leading = config("style = \"leading-comma\"");
+    assert_eq!(
+        leading.association_separator,
+        vfl_config::Separator::Leading
+    );
+    assert_eq!(leading.interface_separator, vfl_config::Separator::Leading);
+    // Keys set next to the style win over it.
+    let classic = config("style = \"classic\"\nindent = 3\n[format.align]\nassignment = false");
+    assert_eq!(classic.indent, 3);
+    assert_eq!(classic.keyword_case, vfl_config::Case::Upper);
+    assert!(!classic.align.assignment);
+    assert!(classic.align.port_colon);
+    let compact = config("style = \"compact\"\n[format.align]\nport_colon = true");
+    assert!(compact.align.port_colon);
+    assert!(!compact.align.assignment);
+    assert!(Config::from_toml_str("[format]\nstyle = \"nope\"").is_err());
 }

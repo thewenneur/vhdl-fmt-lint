@@ -474,6 +474,10 @@ struct View<'a, L: Lang> {
     src: &'a str,
     /// For each parenthesis, the element of the one matching it.
     partner: Vec<Option<usize>>,
+    /// Lines to replace together because a separator moved between them:
+    /// from the line of the element before it in the source to the line of
+    /// the one after it.
+    moved: Vec<(usize, usize)>,
 }
 
 impl<'a, L: Lang> View<'a, L> {
@@ -490,7 +494,35 @@ impl<'a, L: Lang> View<'a, L> {
                 partner[i] = Some(o);
             }
         }
-        View { laid, src, partner }
+        let src_start = |k: usize| laid.elems.get(k)?.src.map(|r| usize::from(r.start()));
+        let mut moved = Vec::new();
+        for (e, elem) in laid.elems.iter().enumerate() {
+            let Some(r) = elem.src else {
+                continue;
+            };
+            let (start, end) = (usize::from(r.start()), usize::from(r.end()));
+            let out_of_order = (e > 0 && src_start(e - 1).is_some_and(|s| s > start))
+                || src_start(e + 1).is_some_and(|s| s < start);
+            if !out_of_order {
+                continue;
+            }
+            let before = (0..e).rev().find(|&k| {
+                laid.elems[k]
+                    .src
+                    .is_some_and(|q| usize::from(q.end()) <= start)
+            });
+            let after = (e + 1..laid.elems.len()).find(|&k| src_start(k).is_some_and(|s| s >= end));
+            moved.push((
+                before.map_or(0, |k| laid.line_of[k]),
+                after.map_or(laid.lines.len() - 1, |k| laid.line_of[k]),
+            ));
+        }
+        View {
+            laid,
+            src,
+            partner,
+            moved,
+        }
     }
 
     fn src_range(&self, e: usize) -> Option<Range<usize>> {
@@ -557,7 +589,7 @@ impl<'a, L: Lang> View<'a, L> {
                 l0 = l0.min(a);
                 l1 = l1.max(b);
             }
-            for &(a, b) in &laid.runs {
+            for &(a, b) in laid.runs.iter().chain(&self.moved) {
                 if a <= l1 && b >= l0 {
                     l0 = l0.min(a);
                     l1 = l1.max(b);
@@ -645,7 +677,11 @@ impl<'a, L: Lang> View<'a, L> {
             return false;
         };
         match (0..e).rev().find_map(|k| self.src_range(k)) {
-            Some(prev) => self.src[prev.end..range.start].contains('\n'),
+            // A separator moved past comments is out of source order.
+            Some(prev) => self
+                .src
+                .get(prev.end..range.start)
+                .is_some_and(|between| between.contains('\n')),
             None => true,
         }
     }
@@ -656,7 +692,10 @@ impl<'a, L: Lang> View<'a, L> {
             return false;
         };
         match (e + 1..self.laid.elems.len()).find_map(|k| self.src_range(k)) {
-            Some(next) => self.src[end..next.start].contains('\n'),
+            Some(next) => self
+                .src
+                .get(end..next.start)
+                .is_some_and(|between| between.contains('\n')),
             None => true,
         }
     }
