@@ -1,0 +1,27 @@
+---
+source: crates/vfl-sema/tests/sema.rs
+expression: analyze(&text)
+input_file: crates/vfl-sema/tests/data/cases.vhd
+---
+pkg.vhd: work
+cases.vhd: work
+cases.vhd:11:5: sema/unused-port: port `u` is never used
+cases.vhd:19:10: sema/undriven-signal: signal `state` is read but never assigned
+cases.vhd:20:10: sema/undriven-signal: signal `n` is read but never assigned
+cases.vhd:21:10: sema/undriven-signal: signal `nib` is read but never assigned
+cases.vhd:22:10: sema/undriven-signal: signal `k` is read but never assigned
+cases.vhd:23:10: sema/undriven-signal: signal `v` is read but never assigned
+cases.vhd:28:10: sema/undriven-signal: signal `ctrl` is read but never assigned
+cases.vhd:38:5: sema/incomplete-case: the choices do not cover `done` [fix: Add a `when done` alternative]
+cases.vhd:41:12: sema/duplicate-choice: `load` is already covered by the choice at line 40
+cases.vhd:49:5: sema/incomplete-case: the choices do not cover `3` [fix: Add a `when 3` alternative]
+cases.vhd:52:12: sema/duplicate-choice: `2` is already covered by the choice at line 51
+cases.vhd:55:5: sema/incomplete-case: the choices do not cover `4 to 15` [fix: Add a `when 4 to 15` alternative]
+cases.vhd:63:5: sema/incomplete-case: the choices do not cover `'U'`, `'X'`, `'Z'`, `'W'`, `'L'` and 2 more [fix: Add `when others => null;`]
+cases.vhd:68:5: sema/incomplete-case: the choices do not cover every value of this 2-element selector, whose elements have 9 values; add `when others` [fix: Add `when others => null;`]
+cases.vhd:71:12: sema/duplicate-choice: `b"01"` is already covered by the choice at line 70
+cases.vhd:82:12: sema/duplicate-choice: `"1010"` is already covered by the choice at line 81
+cases.vhd:86:5: sema/incomplete-case: the choices do not cover `done` [fix: Add a `when done` alternative]
+cases.vhd:89:5: sema/incomplete-case: the choices do not cover `15` [fix: Add a `when 15` alternative]
+cases.vhd:99:3: sema/incomplete-case: the choices do not cover `done`
+cases.vhd:99:21: sema/multiple-drivers: `q` is also driven by the statement at line 34; its type is resolved, but two drivers are rarely intended outside a tri-state bus
