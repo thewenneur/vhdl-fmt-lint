@@ -143,7 +143,14 @@ fn typing_in_a_large_block_aligns_with_the_lines_near_it() {
     assert!(edits[0].range.start > text.len() - 40, "{edits:?}");
     // A selection is formatted as in the whole file.
     let r = cursor - 5..cursor;
-    let exact = format_ranges_in(&text, &[r.clone()], &config, Standard::Vhdl2019, true).unwrap();
+    let exact = format_ranges_in(
+        &text,
+        std::slice::from_ref(&r),
+        &config,
+        Standard::Vhdl2019,
+        true,
+    )
+    .unwrap();
     assert_eq!(
         exact,
         format_ranges_in(&text, &[r], &config, Standard::Vhdl2019, false).unwrap()
