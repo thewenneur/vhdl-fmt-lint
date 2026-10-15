@@ -185,6 +185,13 @@ pub const RULES: &[Rule] = &[
         false,
     ),
     rule(
+        codes::MISSING_BRANCH_ASSIGNMENT,
+        "A branch of an `if` or `case` in a process does not assign a signal another branch assigns, and nothing before it does.",
+        Off,
+        Warn,
+        false,
+    ),
+    rule(
         codes::CLOCK_DOMAIN_CROSSING,
         "A signal registered on one clock is used in logic clocked by another without a synchronizer.",
         Info,
@@ -460,6 +467,21 @@ pub fn undeclared(config: &LintConfig) -> Result<Undeclared, String> {
     }
 }
 
+/// The `clocked` option of `sema/missing-branch-assignment`: whether the
+/// clocked branch of clocked processes is checked too.
+pub fn clocked_branches(config: &LintConfig) -> Result<bool, String> {
+    let value = options(config, codes::MISSING_BRANCH_ASSIGNMENT).and_then(|o| o.get("clocked"));
+    match value {
+        None => Ok(false),
+        Some(v) => v.as_bool().ok_or_else(|| {
+            format!(
+                "`clocked` of `{}` must be true or false",
+                codes::MISSING_BRANCH_ASSIGNMENT
+            )
+        }),
+    }
+}
+
 /// Rule ids in `config` that do not exist.
 pub fn unknown_rules(config: &LintConfig) -> Vec<String> {
     config
@@ -484,6 +506,17 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn the_clocked_option_is_checked() {
+        let config = |toml: &str| -> LintConfig { toml::from_str(toml).unwrap() };
+        assert_eq!(clocked_branches(&config("")), Ok(false));
+        let on = config("[rules]\n\"sema/missing-branch-assignment\" = { clocked = true }");
+        assert_eq!(clocked_branches(&on), Ok(true));
+        assert_eq!(level(&on, codes::MISSING_BRANCH_ASSIGNMENT), Warn);
+        let bad = config("[rules]\n\"sema/missing-branch-assignment\" = { clocked = 1 }");
+        assert!(clocked_branches(&bad).is_err());
+    }
 
     #[test]
     fn levels_follow_presets_and_overrides() {

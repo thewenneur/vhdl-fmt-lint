@@ -17,3 +17,4 @@ resets.vhd:56:8: sema/reset-polarity: `rst` resets when low here but when high a
 resets.vhd:67:10: sema/reset-polarity: `rst_n` is named as active low but resets when high here
 fsm.vhd:39:12: sema/fsm-stuck-state: `state` never leaves state `DONE` once there, except by a reset
 fsm.vhd:40:12: sema/fsm-unreachable-state: no transition of `state` reaches state `ORPHAN` of `state_t`
+fsm.vhd:66:9: sema/missing-branch-assignment#clocked: this `when` alternative does not assign `free`, which another branch of the `case` assigns

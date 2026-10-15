@@ -126,6 +126,11 @@ Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
     signal on some paths but not all. Paths follow `if` (an `else` is needed), `case`
     (every alternative), conditional assignments without a final `else`, and loops
     (assumed to run). Signals assigned in part (`s(3) <=`) are left alone.
+  - `sema/missing-branch-assignment`: the same paths, reported per branch: a branch of
+    an `if` or `case` that leaves out a signal another branch assigns and nothing before
+    the statement assigns, or an `if` without `else` that assigns one. Clocked processes
+    (their clocked branch, resets left out) are checked with the `clocked` option; sema
+    reports them under an internal code that the linter drops unless the option is on.
   - `sema/clock-domain-crossing` (info): in an architecture, a signal registered by a
     process clocked on one clock and read by a process clocked on another. A plain copy
     into a register (`sync_1 <= s;`, the first stage of a synchronizer), memories (arrays

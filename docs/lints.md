@@ -77,6 +77,7 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`sema/unneeded-sensitivity`](#semaunneeded-sensitivity) | off | warn | unsafe |
 | [`sema/width-mismatch`](#semawidth-mismatch) | warn | error | |
 | [`sema/inferred-latch`](#semainferred-latch) | warn | error | |
+| [`sema/missing-branch-assignment`](#semamissing-branch-assignment) | off | warn | |
 | [`sema/clock-domain-crossing`](#semaclock-domain-crossing) | info | warn | |
 | [`sema/open-input`](#semaopen-input) | warn | error | |
 | [`sema/inout-port`](#semainout-port) | info | warn | |
@@ -363,6 +364,45 @@ To fix it, assign a default at the top of the process or add the missing `else` 
 others`. Not reported: signals only assigned in part (an element or a slice), processes
 with `after` delays (simulation models), other `wait` statements, and processes that do not
 parse. `warn` in `recommended`, `error` in `strict`.
+
+### `sema/missing-branch-assignment`
+
+Every signal a process assigns in a branch of an `if` or `case` must be assigned in every
+branch of that statement, unless the process assigns it before the statement (a default).
+An `if` that assigns such a signal must have an `else`. Each branch that leaves a signal out
+is reported at its `if`, `elsif`, `else` or `when`, with the signals it misses; a gap in a
+nested statement is reported there and not again on the branches around it.
+
+```vhdl
+comb : process (all)
+begin
+  ready <= '0';                 -- a default: branches may leave `ready` out
+  if start = '1' then
+    load <= '1';
+    count <= 0;
+  elsif stop = '1' then         -- this `elsif` branch does not assign `count`
+    load <= '0';
+  else                          -- this `else` branch does not assign `load` and `count`
+    ready <= '1';
+  end if;
+end process;
+```
+
+In a combinational process (as defined for
+[`sema/inferred-latch`](#semainferred-latch)), each finding points at the branch behind a
+latch. With the `clocked` option, the clocked branch of clocked processes is checked too,
+where a missing assignment means the register keeps its value (a clock enable); the reset
+branch is left out, as it only sets the registers that have a reset value:
+
+```toml
+[lint.rules]
+"sema/missing-branch-assignment" = { clocked = true }   # also turns the rule on at warn
+```
+
+A `case` without `when others` is complete by the language's rules, so only its
+alternatives are compared. Not reported: signals assigned only in part (an element or a
+slice), processes with `wait` (other than one trailing `wait on`) or `after` delays, and
+processes that do not parse. `off` in `recommended`, `warn` in `strict`.
 
 ### `sema/clock-domain-crossing`
 

@@ -1,8 +1,10 @@
 //! Hardware checks on resolved units: width mismatches in assignments and
-//! associations, latches inferred by combinational processes, signals
+//! associations, latches inferred by combinational processes, branches
+//! that leave out a signal the others assign, signals
 //! that cross clock domains, input ports left open, resets, and state
 //! machines.
 
+mod branches;
 mod fsm;
 mod reset;
 
@@ -747,6 +749,7 @@ impl<'a> Checker<'a> {
                     && let Some(clock) = self.clock_of(&edge)
                 {
                     self.resets(process, &edge, clock);
+                    self.clocked_branches(process, &edge);
                     self.clocked.push((clock, process.clone()));
                 }
             }
@@ -790,6 +793,7 @@ impl<'a> Checker<'a> {
             .map(|(id, range)| (*id, *range))
             .collect();
         latched.sort_by_key(|(_, r)| r.start());
+        self.combinational_branches(&body);
         for (id, range) in latched {
             let name = self
                 .decl(id)

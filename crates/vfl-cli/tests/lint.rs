@@ -148,3 +148,24 @@ fn project_shows_inferred_libraries() {
     assert!(ok);
     assert!(stdout.contains("sema/unresolved-name"));
 }
+
+#[test]
+fn branch_assignments_in_clocked_processes_are_an_option() {
+    let source = "entity r is\n  port (clk, en, d : in bit; q : out bit);\nend;\n\
+                  architecture rtl of r is\nbegin\n  process (clk)\n  begin\n    \
+                  if clk'event and clk = '1' then\n      if en = '1' then\n        \
+                  q <= d;\n      end if;\n    end if;\n  end process;\nend;\n";
+    let rule = "\"sema/missing-branch-assignment\"";
+    let on = format!("[lint.rules]\n{rule} = \"warn\"\n");
+    let clocked = format!("[lint.rules]\n{rule} = {{ clocked = true }}\n");
+    for (config, expected) in [(on.as_str(), false), (clocked.as_str(), true)] {
+        let dir = project(&[("vfl.toml", config), ("r.vhd", source)]);
+        let (_, stdout, _) = vfl(dir.path(), &["lint", "--output-format", "concise"]);
+        assert_eq!(
+            stdout.contains("r.vhd:9:7: warning[sema/missing-branch-assignment] this `if` has no `else`, so `q` is not assigned"),
+            expected,
+            "{config}{stdout}"
+        );
+        assert!(!stdout.contains("#clocked"), "{stdout}");
+    }
+}

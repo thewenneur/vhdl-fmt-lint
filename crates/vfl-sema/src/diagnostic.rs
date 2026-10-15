@@ -75,6 +75,10 @@ pub mod codes {
     pub const NO_MATCHING_OVERLOAD: &str = "sema/no-matching-overload";
     pub const WIDTH_MISMATCH: &str = "sema/width-mismatch";
     pub const INFERRED_LATCH: &str = "sema/inferred-latch";
+    pub const MISSING_BRANCH_ASSIGNMENT: &str = "sema/missing-branch-assignment";
+    /// [`MISSING_BRANCH_ASSIGNMENT`] in a clocked process, reported only
+    /// when the rule's `clocked` option is on.
+    pub const MISSING_BRANCH_ASSIGNMENT_CLOCKED: &str = "sema/missing-branch-assignment#clocked";
     pub const CLOCK_DOMAIN_CROSSING: &str = "sema/clock-domain-crossing";
     pub const OPEN_INPUT: &str = "sema/open-input";
     pub const INOUT_PORT: &str = "sema/inout-port";

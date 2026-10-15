@@ -308,8 +308,20 @@ fn lint_file(
             error.message.clone(),
         ));
     }
+    let clocked_branches = rules::clocked_branches(lint_config).unwrap_or_else(|error| {
+        errors.push(error);
+        false
+    });
     for d in sema {
-        let mut finding = Finding::new(d.code, d.range, d.message.clone());
+        let code = if d.code == vfl_sema::codes::MISSING_BRANCH_ASSIGNMENT_CLOCKED {
+            if !clocked_branches {
+                continue;
+            }
+            vfl_sema::codes::MISSING_BRANCH_ASSIGNMENT
+        } else {
+            d.code
+        };
+        let mut finding = Finding::new(code, d.range, d.message.clone());
         finding.fix = d.fix.clone();
         findings.push(finding);
     }
