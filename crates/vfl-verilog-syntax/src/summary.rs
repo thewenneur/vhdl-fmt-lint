@@ -6,9 +6,10 @@
 //! whether they are in the port list (`input logic [7:0] a`) or in the
 //! module body (`module m(a); input [7:0] a;`).
 
-use std::collections::HashMap;
-
 use crate::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange};
+use vfl_syntax::green_walk::ChildTokens;
+
+use rustc_hash::FxHashMap;
 
 /// The direction of a port.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -262,9 +263,7 @@ fn body_items(module: &SyntaxNode) -> impl Iterator<Item = SyntaxNode> {
 }
 
 fn param_decl(decl: &SyntaxNode, ty: Option<&SyntaxNode>) -> Vec<Parameter> {
-    let is_type = decl
-        .children_with_tokens()
-        .any(|e| e.kind() == SyntaxKind::TYPE_KW);
+    let is_type = decl.has_child(|k| k == SyntaxKind::TYPE_KW);
     let ty = if is_type {
         "type".to_owned()
     } else {
@@ -332,7 +331,7 @@ fn ansi_ports(items: &[SyntaxNode], ports: &mut Vec<Port>) {
 /// Ports whose directions are declared in the module body.
 fn body_ports(module: &SyntaxNode, items: &[SyntaxNode], ports: &mut Vec<Port>) {
     // Name -> (direction, type, declarator, declaration).
-    let mut declared: HashMap<
+    let mut declared: FxHashMap<
         String,
         (
             Option<Direction>,
@@ -340,10 +339,10 @@ fn body_ports(module: &SyntaxNode, items: &[SyntaxNode], ports: &mut Vec<Port>) 
             SyntaxNode,
             SyntaxNode,
         ),
-    > = HashMap::new();
+    > = FxHashMap::default();
     // Types given by a separate net or variable declaration: `output c;
     // reg [3:0] c;`.
-    let mut types: HashMap<String, SyntaxNode> = HashMap::new();
+    let mut types: FxHashMap<String, SyntaxNode> = FxHashMap::default();
     for item in body_items(module) {
         let kind = item.kind();
         if !matches!(
@@ -430,11 +429,8 @@ fn instantiation(node: &SyntaxNode, out: &mut Vec<Instance>) {
     let Some(module) = child(node, SyntaxKind::NAME_REF) else {
         return;
     };
-    let Some(module_name) = module
-        .children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .filter(|t| matches!(t.kind(), SyntaxKind::IDENT | SyntaxKind::ESC_IDENT))
-        .last()
+    let Some(module_name) =
+        module.last_child_token(|k| matches!(k, SyntaxKind::IDENT | SyntaxKind::ESC_IDENT))
     else {
         return;
     };
@@ -460,18 +456,14 @@ fn connections(node: &SyntaxNode) -> Vec<(String, String)> {
     node.children()
         .filter(|n| n.kind() == SyntaxKind::CONNECTION)
         .map(|c| {
-            let star = c
-                .children_with_tokens()
-                .any(|e| e.kind() == SyntaxKind::DOT_STAR || e.kind() == SyntaxKind::STAR);
+            let star = c.has_child(|k| k == SyntaxKind::DOT_STAR || k == SyntaxKind::STAR);
             let name = child(&c, SyntaxKind::NAME).and_then(|n| name_token(&n));
             let value = c
                 .children()
                 .find(|n| n.kind() != SyntaxKind::NAME)
                 .map(|n| collapsed(&n))
                 .unwrap_or_default();
-            let parens = c
-                .children_with_tokens()
-                .any(|e| e.kind() == SyntaxKind::LPAREN);
+            let parens = c.has_child(|k| k == SyntaxKind::LPAREN);
             match name {
                 // `.clk`: connected to `clk`.
                 Some(name) if !parens => (name.text().to_owned(), name.text().to_owned()),
@@ -490,9 +482,7 @@ fn child(node: &SyntaxNode, kind: SyntaxKind) -> Option<SyntaxNode> {
 }
 
 fn name_token(name: &SyntaxNode) -> Option<SyntaxToken> {
-    name.children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| matches!(t.kind(), SyntaxKind::IDENT | SyntaxKind::ESC_IDENT))
+    name.child_token(|k| matches!(k, SyntaxKind::IDENT | SyntaxKind::ESC_IDENT))
 }
 
 fn first_keyword(node: &SyntaxNode) -> Option<SyntaxKind> {
@@ -518,14 +508,10 @@ fn has_dimension(ty: &SyntaxNode) -> bool {
 }
 
 fn is_interface_type(ty: &SyntaxNode) -> bool {
-    let interface_kw = ty
-        .children_with_tokens()
-        .any(|e| e.kind() == SyntaxKind::INTERFACE_KW);
+    let interface_kw = ty.has_child(|k| k == SyntaxKind::INTERFACE_KW);
     // `axi_if.master`: a modport of an interface.
-    let modport = child(ty, SyntaxKind::NAME_REF).is_some_and(|n| {
-        n.children_with_tokens()
-            .any(|e| e.kind() == SyntaxKind::DOT)
-    });
+    let modport =
+        child(ty, SyntaxKind::NAME_REF).is_some_and(|n| n.has_child(|k| k == SyntaxKind::DOT));
     interface_kw || modport
 }
 
@@ -566,9 +552,9 @@ fn packed_width(ty: &SyntaxNode) -> Option<u32> {
     }) {
         return None;
     }
-    let non_vector = ty.children_with_tokens().any(|e| {
+    let non_vector = ty.has_child(|k| {
         matches!(
-            e.kind(),
+            k,
             SyntaxKind::INTEGER_KW
                 | SyntaxKind::INT_KW
                 | SyntaxKind::SHORTINT_KW
@@ -590,9 +576,7 @@ fn packed_width(ty: &SyntaxNode) -> Option<u32> {
     let mut any = false;
     for dim in ty.children().filter(|n| n.kind() == SyntaxKind::DIMENSION) {
         let bounds: Vec<SyntaxNode> = dim.children().collect();
-        let colon = dim
-            .children_with_tokens()
-            .any(|e| e.kind() == SyntaxKind::COLON);
+        let colon = dim.has_child(|k| k == SyntaxKind::COLON);
         let [msb, lsb] = bounds.as_slice() else {
             return None;
         };

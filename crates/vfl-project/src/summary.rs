@@ -1,8 +1,8 @@
 //! What a file declares and which library units it refers to: the input to
 //! library inference, read straight off the syntax tree.
 
-use std::collections::HashSet;
-
+use rustc_hash::FxHashSet;
+use vfl_syntax::green_walk::{ChildTokens, descendants_where};
 use vfl_syntax::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange, identifier_key};
 
 /// The kind of a design unit.
@@ -86,9 +86,7 @@ pub struct FileSummary {
 
 /// The first identifier token directly under `node`.
 pub fn name_token(node: &SyntaxNode) -> Option<SyntaxToken> {
-    node.children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| matches!(t.kind(), SyntaxKind::IDENT | SyntaxKind::EXT_IDENT))
+    node.child_token(|k| matches!(k, SyntaxKind::IDENT | SyntaxKind::EXT_IDENT))
 }
 
 /// The identifier of a simple `NAME` node.
@@ -104,11 +102,8 @@ pub fn simple_name(node: &SyntaxNode) -> Option<SyntaxToken> {
 pub fn summarize(root: &SyntaxNode) -> FileSummary {
     let mut summary = FileSummary::default();
 
-    let mut libraries: HashSet<String> = HashSet::from(["work".to_owned()]);
-    for clause in root
-        .descendants()
-        .filter(|n| n.kind() == SyntaxKind::LIBRARY_CLAUSE)
-    {
+    let mut libraries: FxHashSet<String> = ["work".to_owned()].into_iter().collect();
+    for clause in descendants_where(root, |k| k == SyntaxKind::LIBRARY_CLAUSE) {
         for list in clause.children() {
             for token in list.children_with_tokens().filter_map(|e| e.into_token()) {
                 if matches!(token.kind(), SyntaxKind::IDENT | SyntaxKind::EXT_IDENT) {
@@ -153,7 +148,14 @@ pub fn summarize(root: &SyntaxNode) -> FileSummary {
         });
     }
 
-    for node in root.descendants() {
+    // The kinds the arms below look at: only these become syntax nodes.
+    let wanted = |k| {
+        matches!(
+            k,
+            SyntaxKind::SELECTED_NAME | SyntaxKind::COMPONENT_INSTANTIATION_STMT
+        )
+    };
+    for node in descendants_where(root, wanted) {
         match node.kind() {
             SyntaxKind::SELECTED_NAME => {
                 let mut children = node.children_with_tokens();
@@ -179,11 +181,8 @@ pub fn summarize(root: &SyntaxNode) -> FileSummary {
             }
             SyntaxKind::COMPONENT_INSTANTIATION_STMT => {
                 // `u : comp port map (...)` binds to entity `work.comp` by default.
-                let is_component = !node.children_with_tokens().any(|e| {
-                    matches!(
-                        e.kind(),
-                        SyntaxKind::ENTITY_KW | SyntaxKind::CONFIGURATION_KW
-                    )
+                let is_component = !node.has_child(|k| {
+                    matches!(k, SyntaxKind::ENTITY_KW | SyntaxKind::CONFIGURATION_KW)
                 });
                 let name = node
                     .children()

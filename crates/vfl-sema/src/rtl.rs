@@ -6,15 +6,14 @@
 mod fsm;
 mod reset;
 
-use std::collections::{HashMap, HashSet};
-
+use rustc_hash::{FxHashMap, FxHashSet};
+use vfl_syntax::green_walk::ChildTokens;
 use vfl_syntax::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange};
 
 use crate::analysis::{Ctx, UnitResult};
 use crate::decl::{Decl, DeclId, DeclKind, Target, TypeDef, UnitId};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::resolver::{is_clock_edge, mark_token};
-use crate::typeck::FxMap;
 
 // ---- Static values ---------------------------------------------------------
 
@@ -90,10 +89,7 @@ fn static_int_at(
 
 /// The operator token of a unary or binary expression.
 fn operator(expr: &SyntaxNode) -> Option<SyntaxKind> {
-    expr.children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| !t.kind().is_trivia())
-        .map(|t| t.kind())
+    expr.child_token(|k| !k.is_trivia()).map(|t| t.kind())
 }
 
 /// The number of values in `left to right` or `left downto right`.
@@ -107,9 +103,7 @@ pub(crate) fn range_width(
     let mut bounds = range.children();
     let left = static_int(&bounds.next()?, name)?;
     let right = static_int(&bounds.next()?, name)?;
-    let ascending = range
-        .children_with_tokens()
-        .any(|e| e.kind() == SyntaxKind::TO_KW);
+    let ascending = range.has_child(|k| k == SyntaxKind::TO_KW);
     let count = if ascending {
         right - left
     } else {
@@ -176,8 +170,8 @@ pub(crate) fn check_unit(
     unit: UnitId,
     design_unit: &SyntaxNode,
     result: &UnitResult,
-    refs_at: &FxMap<TextRange, usize>,
-    decls_at: &FxMap<TextRange, DeclId>,
+    refs_at: &FxHashMap<TextRange, usize>,
+    decls_at: &FxHashMap<TextRange, DeclId>,
 ) -> Vec<Diagnostic> {
     let file = ctx.units[unit as usize].file;
     let mut checker = Checker {
@@ -206,9 +200,9 @@ struct Checker<'a> {
     unit: UnitId,
     file: u32,
     result: &'a UnitResult,
-    refs_at: &'a FxMap<TextRange, usize>,
+    refs_at: &'a FxHashMap<TextRange, usize>,
     /// This unit's declarations by name range.
-    decls_at: &'a FxMap<TextRange, DeclId>,
+    decls_at: &'a FxHashMap<TextRange, DeclId>,
     /// Reference indexes in source order, built when needed.
     by_start: std::cell::OnceCell<Vec<usize>>,
     /// Clocked processes without `wait`, with their clock.
@@ -462,7 +456,7 @@ impl<'a> Checker<'a> {
                 for element in node.children().filter(|n| n.kind() == WAVEFORM_ELEMENT) {
                     // `value after delay`: the first expression.
                     if let Some(value) = element.children().next()
-                        && !element.children_with_tokens().any(|e| e.kind() == NULL_KW)
+                        && !element.has_child(|k| k == NULL_KW)
                     {
                         out.push(value);
                     }
@@ -562,9 +556,7 @@ impl<'a> Checker<'a> {
             .filter(|n| n.kind() == SyntaxKind::ASSOCIATION_ELEMENT)
             .enumerate()
         {
-            let named = element
-                .children_with_tokens()
-                .any(|e| e.kind() == SyntaxKind::ARROW);
+            let named = element.has_child(|k| k == SyntaxKind::ARROW);
             let mut parts = element.children();
             let (formal, actual) = if named {
                 let formal = parts.next();
@@ -574,11 +566,7 @@ impl<'a> Checker<'a> {
             };
             let Some(actual) = actual else {
                 // `p => open`.
-                if ports
-                    && element
-                        .children_with_tokens()
-                        .any(|e| e.kind() == SyntaxKind::OPEN_KW)
-                {
+                if ports && element.has_child(|k| k == SyntaxKind::OPEN_KW) {
                     self.open_input(&element, formal.as_ref(), interface.get(position));
                 }
                 continue;
@@ -739,9 +727,7 @@ impl<'a> Checker<'a> {
                 SyntaxKind::WAIT_STMT => waits += 1,
                 SyntaxKind::ERROR => error = true,
                 SyntaxKind::WAVEFORM_ELEMENT => {
-                    delayed |= n
-                        .children_with_tokens()
-                        .any(|e| e.kind() == SyntaxKind::AFTER_KW)
+                    delayed |= n.has_child(|k| k == SyntaxKind::AFTER_KW)
                 }
                 SyntaxKind::CALL_EXPR | SyntaxKind::ATTRIBUTE_NAME
                     if edge.is_none() && is_clock_edge(&n) =>
@@ -783,7 +769,7 @@ impl<'a> Checker<'a> {
         let trailing_wait_on = waits == 1
             && body.last().is_some_and(|last| {
                 last.kind() == SyntaxKind::WAIT_STMT && {
-                    let has = |k| last.children_with_tokens().any(|e| e.kind() == k);
+                    let has = |kind| last.has_child(|k| k == kind);
                     has(SyntaxKind::ON_KW) && !has(SyntaxKind::UNTIL_KW) && !has(SyntaxKind::FOR_KW)
                 }
             });
@@ -822,15 +808,15 @@ impl<'a> Checker<'a> {
     }
 
     /// The signals a sequence of statements assigns on every path.
-    fn sequence(&self, statements: &[SyntaxNode], paths: &mut Paths) -> HashSet<DeclId> {
-        let mut always = HashSet::new();
+    fn sequence(&self, statements: &[SyntaxNode], paths: &mut Paths) -> FxHashSet<DeclId> {
+        let mut always = FxHashSet::default();
         for statement in statements {
             always.extend(self.statement(statement, paths));
         }
         always
     }
 
-    fn statement(&self, node: &SyntaxNode, paths: &mut Paths) -> HashSet<DeclId> {
+    fn statement(&self, node: &SyntaxNode, paths: &mut Paths) -> FxHashSet<DeclId> {
         use SyntaxKind::*;
         match node.kind() {
             SIGNAL_ASSIGN_STMT | SELECTED_ASSIGN_STMT => {
@@ -841,7 +827,7 @@ impl<'a> Checker<'a> {
                     .filter_map(|e| e.into_node())
                     .find(|n| n.kind() != LABEL);
                 let Some(target) = target else {
-                    return HashSet::new();
+                    return FxHashSet::default();
                 };
                 // `s <= a when c;` without a final `else` may not assign.
                 let complete = node
@@ -857,7 +843,7 @@ impl<'a> Checker<'a> {
                 // Signals passed whole to `out` parameters count as
                 // assigned, but are never reported on their own: the
                 // parameter modes of overloads are not always known.
-                let mut always = HashSet::new();
+                let mut always = FxHashSet::default();
                 for name in node
                     .descendants()
                     .filter(|n| n.kind() == ASSOCIATION_ELEMENT)
@@ -899,16 +885,16 @@ impl<'a> Checker<'a> {
                         }
                     }
                 }
-                let sets: Vec<HashSet<DeclId>> =
+                let sets: Vec<FxHashSet<DeclId>> =
                     branches.iter().map(|b| self.sequence(b, paths)).collect();
                 if has_else {
                     intersection(sets)
                 } else {
-                    HashSet::new()
+                    FxHashSet::default()
                 }
             }
             CASE_STMT => {
-                let sets: Vec<HashSet<DeclId>> = node
+                let sets: Vec<FxHashSet<DeclId>> = node
                     .children()
                     .filter(|n| n.kind() == CASE_ALTERNATIVE)
                     .map(|alternative| {
@@ -930,15 +916,20 @@ impl<'a> Checker<'a> {
                     .collect();
                 self.sequence(&body, paths)
             }
-            _ => HashSet::new(),
+            _ => FxHashSet::default(),
         }
     }
 
     /// Records an assignment to `target`; returns the signals it assigns
     /// whole when `complete`.
-    fn assigned(&self, target: &SyntaxNode, complete: bool, paths: &mut Paths) -> HashSet<DeclId> {
+    fn assigned(
+        &self,
+        target: &SyntaxNode,
+        complete: bool,
+        paths: &mut Paths,
+    ) -> FxHashSet<DeclId> {
         use SyntaxKind::*;
-        let mut always = HashSet::new();
+        let mut always = FxHashSet::default();
         match target.kind() {
             NAME => {
                 if let Some(token) = mark_token(target)
@@ -992,7 +983,7 @@ impl<'a> Checker<'a> {
             return;
         }
         // The clock each signal is registered on; `None` when several.
-        let mut domain: HashMap<DeclId, Option<DeclId>> = HashMap::new();
+        let mut domain: FxHashMap<DeclId, Option<DeclId>> = FxHashMap::default();
         for p in &processes {
             for r in self.refs_in(p.range) {
                 if !r.access.writes() {
@@ -1011,7 +1002,7 @@ impl<'a> Checker<'a> {
             }
         }
         for p in &processes {
-            let mut reported: HashSet<DeclId> = HashSet::new();
+            let mut reported: FxHashSet<DeclId> = FxHashSet::default();
             let refs: Vec<&crate::decl::Reference> = self.refs_in(p.range).collect();
             for r in refs {
                 if !r.access.reads() {
@@ -1100,14 +1091,14 @@ impl<'a> Checker<'a> {
 /// and signals assigned only in part.
 #[derive(Default)]
 struct Paths {
-    first: HashMap<DeclId, TextRange>,
-    partial: HashSet<DeclId>,
+    first: FxHashMap<DeclId, TextRange>,
+    partial: FxHashSet<DeclId>,
 }
 
-fn intersection(sets: Vec<HashSet<DeclId>>) -> HashSet<DeclId> {
+fn intersection(sets: Vec<FxHashSet<DeclId>>) -> FxHashSet<DeclId> {
     let mut sets = sets.into_iter();
     let Some(first) = sets.next() else {
-        return HashSet::new();
+        return FxHashSet::default();
     };
     sets.fold(first, |acc, s| acc.intersection(&s).copied().collect())
 }

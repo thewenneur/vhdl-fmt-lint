@@ -2,8 +2,7 @@
 //! declared twice, signals never used, read or driven, and naming
 //! conventions.
 
-use std::collections::{HashMap, HashSet};
-
+use rustc_hash::{FxHashMap, FxHashSet};
 use vfl_sema::{Edit, Fix, codes};
 use vfl_verilog_syntax::summary::Direction;
 use vfl_verilog_syntax::{SyntaxKind as K, SyntaxNode, TextRange, TextSize};
@@ -31,7 +30,7 @@ pub fn check(unit: &mut Unit, enabled: &impl Fn(&str) -> bool, out: &mut Vec<Fin
 /// compilation unit, a package, an included file or another unit.
 struct Visible<'a> {
     unit: &'a Unit<'a>,
-    file: HashSet<String>,
+    file: FxHashSet<String>,
     /// Some names may come from where the rules cannot see.
     open: bool,
 }
@@ -39,7 +38,7 @@ struct Visible<'a> {
 impl<'a> Visible<'a> {
     fn new(unit: &'a Unit<'a>) -> Visible<'a> {
         let project = unit.ctx.project;
-        let mut file = HashSet::new();
+        let mut file = FxHashSet::default();
         let mut open = unit.scope.open;
         let file_scope = scope::Scope::collect(unit.ctx.root);
         file.extend(file_scope.decls.iter().map(|d| d.name.clone()));
@@ -139,7 +138,7 @@ fn unresolved(unit: &Unit, out: &mut Vec<Finding>) {
 }
 
 fn duplicates(unit: &Unit, out: &mut Vec<Finding>) {
-    let mut groups: HashMap<(&SyntaxNode, &str), Vec<&Decl>> = HashMap::new();
+    let mut groups: FxHashMap<(&SyntaxNode, &str), Vec<&Decl>> = FxHashMap::default();
     for decl in &unit.scope.decls {
         if matches!(
             decl.kind,
@@ -227,7 +226,7 @@ fn usage(unit: &Unit, enabled: &impl Fn(&str) -> bool, out: &mut Vec<Finding>) {
     if includes {
         return;
     }
-    let mut usage: HashMap<&str, Usage> = HashMap::new();
+    let mut usage: FxHashMap<&str, Usage> = FxHashMap::default();
     let mut all = false;
     for u in &unit.uses {
         let entry = usage.entry(u.name.as_str()).or_default();
@@ -278,8 +277,8 @@ fn usage(unit: &Unit, enabled: &impl Fn(&str) -> bool, out: &mut Vec<Finding>) {
     if all {
         return;
     }
-    let names: HashSet<&str> = unit.scope.decls.iter().map(|d| d.name.as_str()).collect();
-    let mut reported: HashSet<&str> = HashSet::new();
+    let names: FxHashSet<&str> = unit.scope.decls.iter().map(|d| d.name.as_str()).collect();
+    let mut reported: FxHashSet<&str> = FxHashSet::default();
     for decl in &unit.scope.decls {
         // `unused_x = x;` marks a signal left unused on purpose, as
         // Verilator's `--unused-regexp` does.

@@ -19,13 +19,14 @@ mod style;
 mod suppress;
 mod verilog;
 
-use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use rayon::prelude::*;
+use rustc_hash::{FxHashMap, FxHashSet};
 use vfl_config::{Config, Level};
 use vfl_sema::{Analysis, FileId};
+use vfl_syntax::green_walk::ChildTokens;
 use vfl_syntax::{GreenNode, SyntaxError, TextRange};
 
 pub use rules::{NAMING_KINDS, RULES, Rule};
@@ -102,9 +103,9 @@ pub fn lint(analysis: &Analysis, files: &[FileSettings]) -> LintResult {
 /// The findings of a previous lint run, per file.
 #[derive(Default)]
 pub struct LintCache {
-    files: HashMap<PathBuf, CachedFile>,
+    files: FxHashMap<PathBuf, CachedFile>,
     /// What each Verilog file declares for the others, by its tree.
-    exports: HashMap<PathBuf, (GreenNode, Arc<verilog::Exports>)>,
+    exports: FxHashMap<PathBuf, (GreenNode, Arc<verilog::Exports>)>,
 }
 
 struct CachedFile {
@@ -126,7 +127,7 @@ pub fn lint_cached(
     files: &[FileSettings],
     cache: &mut LintCache,
 ) -> LintResult {
-    let mut sema: HashMap<FileId, Vec<&vfl_sema::Diagnostic>> = HashMap::new();
+    let mut sema: FxHashMap<FileId, Vec<&vfl_sema::Diagnostic>> = FxHashMap::default();
     for d in analysis.diagnostics() {
         sema.entry(d.file).or_default().push(d);
     }
@@ -161,14 +162,14 @@ pub fn lint_cached(
     }
     let project = any_verilog.then(|| verilog::Project::new(analysis, exports.clone()));
     // What each Verilog file sees of the others, for reuse.
-    let dependencies: HashMap<FileId, u64> = match &project {
+    let dependencies: FxHashMap<FileId, u64> = match &project {
         Some(project) => files
             .iter()
             .filter(|s| s.verilog.is_some())
             .zip(&exports)
             .map(|(s, (_, e))| (s.file, project.dependencies(e)))
             .collect(),
-        None => HashMap::new(),
+        None => FxHashMap::default(),
     };
     let verilog_key = |settings: &FileSettings| {
         settings
@@ -199,13 +200,13 @@ pub fn lint_cached(
         })
         .collect();
     // The declarations of the files to lint again.
-    let relint: HashSet<FileId> = files
+    let relint: FxHashSet<FileId> = files
         .iter()
         .zip(&reuse)
         .filter(|(_, reuse)| !**reuse)
         .map(|(settings, _)| settings.file)
         .collect();
-    let decls: HashMap<FileId, Vec<&vfl_sema::Decl>> = relint
+    let decls: FxHashMap<FileId, Vec<&vfl_sema::Decl>> = relint
         .iter()
         .map(|&file| {
             let decls = analysis
@@ -248,7 +249,7 @@ pub fn lint_cached(
         })
         .collect();
     let mut out = LintResult::default();
-    let mut kept: HashMap<PathBuf, CachedFile> = HashMap::new();
+    let mut kept: FxHashMap<PathBuf, CachedFile> = FxHashMap::default();
     for ((diagnostics, errors, cached), settings) in results.into_iter().zip(files) {
         let path = &analysis.files()[settings.file as usize].path;
         match cached {
@@ -287,13 +288,13 @@ fn lint_file(
         .into_iter()
         .map(|id| format!("unknown lint rule `{id}`"))
         .collect();
-    let mut levels: HashMap<&str, Level> = HashMap::new();
+    let mut levels: FxHashMap<&str, Level> = FxHashMap::default();
     let mut level = |id: &str| -> Level {
         *levels
             .entry(rules::find(id).map_or("naming", |r| r.id))
             .or_insert_with(|| rules::level(lint_config, id))
     };
-    let enabled_cache: HashMap<&'static str, bool> = RULES
+    let enabled_cache: FxHashMap<&'static str, bool> = RULES
         .iter()
         .map(|r| (r.id, rules::level(lint_config, r.id) != Level::Off))
         .collect();
@@ -451,10 +452,7 @@ fn name_formals(
         .collect();
     let mut edits = Vec::new();
     for (i, element) in elements.iter().enumerate() {
-        if element
-            .children_with_tokens()
-            .any(|e| e.kind() == SyntaxKind::ARROW)
-        {
+        if element.has_child(|k| k == SyntaxKind::ARROW) {
             continue;
         }
         let formal = formals.get(i)?;

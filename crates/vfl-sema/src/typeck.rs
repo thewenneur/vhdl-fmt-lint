@@ -14,10 +14,9 @@
 //! so valid code gets no false errors. Errors are only reported where every
 //! candidate is rejected for a definite reason.
 
-use std::collections::HashMap;
-use std::hash::{BuildHasherDefault, Hasher};
-
 use rowan::NodeOrToken;
+use rustc_hash::{FxHashMap, FxHashSet};
+use vfl_syntax::green_walk::ChildTokens;
 use vfl_syntax::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange, identifier_key};
 
 use crate::analysis::{Ctx, UnitResult};
@@ -27,39 +26,6 @@ use crate::decl::{
 use crate::diagnostic::{Diagnostic, codes};
 use crate::resolver::{mark_token, operator_token};
 use crate::syntax::{designator, has_token, is_designator};
-
-/// A fast hasher for small keys (ranges, ids); the default SipHash is
-/// noticeably slower here, and nothing hashes untrusted keys.
-#[derive(Default)]
-pub(crate) struct FxHasher(u64);
-
-impl Hasher for FxHasher {
-    fn write(&mut self, bytes: &[u8]) {
-        for &b in bytes {
-            self.write_u64(u64::from(b));
-        }
-    }
-    fn write_u8(&mut self, n: u8) {
-        self.write_u64(u64::from(n));
-    }
-    fn write_u16(&mut self, n: u16) {
-        self.write_u64(u64::from(n));
-    }
-    fn write_u32(&mut self, n: u32) {
-        self.write_u64(u64::from(n));
-    }
-    fn write_u64(&mut self, n: u64) {
-        self.0 = (self.0.rotate_left(5) ^ n).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
-    }
-    fn write_usize(&mut self, n: usize) {
-        self.write_u64(n as u64);
-    }
-    fn finish(&self) -> u64 {
-        self.0
-    }
-}
-
-pub(crate) type FxMap<K, V> = HashMap<K, V, BuildHasherDefault<FxHasher>>;
 
 /// A type: a base type declaration, or the type of a numeric literal.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -209,7 +175,7 @@ impl Outcome {
         }
         if !self.dropped.is_empty() {
             let mut index = 0;
-            let dropped: std::collections::HashSet<usize> = self.dropped.into_iter().collect();
+            let dropped: FxHashSet<usize> = self.dropped.into_iter().collect();
             result.refs.retain(|_| {
                 index += 1;
                 !dropped.contains(&(index - 1))
@@ -265,13 +231,13 @@ struct Checker<'a> {
     unit: UnitId,
     file: u32,
     result: &'a UnitResult,
-    refs_at: FxMap<TextRange, usize>,
+    refs_at: FxHashMap<TextRange, usize>,
     /// This unit's declarations by name range.
-    decls_at: FxMap<TextRange, DeclId>,
+    decls_at: FxHashMap<TextRange, DeclId>,
     std: Std,
-    cache: FxMap<(TextRange, SyntaxKind), Val>,
+    cache: FxHashMap<(TextRange, SyntaxKind), Val>,
     /// Types the walk learns: loop and generate parameters.
-    local_types: FxMap<DeclId, TyS>,
+    local_types: FxHashMap<DeclId, TyS>,
     /// The return types of the enclosing subprograms (`None` in procedures).
     returns: Vec<Option<TyS>>,
     narrowed: Vec<(usize, Targets)>,
@@ -291,7 +257,7 @@ const MAX_DEPTH: u32 = 200;
 
 impl<'a> Checker<'a> {
     fn new(ctx: &'a Ctx<'a>, unit: UnitId, result: &'a UnitResult) -> Self {
-        let mut refs_at = FxMap::default();
+        let mut refs_at = FxHashMap::default();
         for (i, r) in result.refs.iter().enumerate() {
             refs_at.entry(r.range).or_insert(i);
         }
@@ -330,8 +296,8 @@ impl<'a> Checker<'a> {
             refs_at,
             decls_at,
             std,
-            cache: FxMap::default(),
-            local_types: FxMap::default(),
+            cache: FxHashMap::default(),
+            local_types: FxHashMap::default(),
             returns: Vec::new(),
             narrowed: Vec::new(),
             dropped: Vec::new(),
@@ -3070,11 +3036,7 @@ impl<'a> Checker<'a> {
 
 /// A numeric, character, string, bit string or null literal.
 fn literal(node: &SyntaxNode) -> Val {
-    let Some(token) = node
-        .children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| !t.kind().is_trivia())
-    else {
+    let Some(token) = node.child_token(|k| !k.is_trivia()) else {
         return Val::Unknown;
     };
     match token.kind() {
@@ -3126,10 +3088,7 @@ fn unique_sig(sigs: &[OpSig]) -> Option<&OpSig> {
 
 /// The suffix of a selected name: a designator or `all`.
 fn selected_suffix(node: &SyntaxNode) -> Option<SyntaxToken> {
-    node.children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .filter(|t| is_designator(t.kind()) || t.kind() == SyntaxKind::ALL_KW)
-        .last()
+    node.last_child_token(|k| is_designator(k) || k == SyntaxKind::ALL_KW)
 }
 
 /// The attribute of an attribute name, lower case.

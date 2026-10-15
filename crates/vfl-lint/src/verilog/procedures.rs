@@ -2,8 +2,7 @@
 //! sensitivity lists, `case` statements without a `default`, resets and
 //! variables with more than one driver.
 
-use std::collections::{HashMap, HashSet};
-
+use rustc_hash::{FxHashMap, FxHashSet};
 use vfl_sema::{Edit, Fix, codes};
 use vfl_verilog_syntax::{SyntaxKind as K, SyntaxNode, SyntaxToken, TextRange, TextSize};
 
@@ -99,7 +98,7 @@ impl Procedure {
     }
 
     /// The names declared in the block itself: its local variables.
-    pub fn locals(&self, unit: &Unit) -> HashSet<String> {
+    pub fn locals(&self, unit: &Unit) -> FxHashSet<String> {
         unit.scope
             .decls
             .iter()
@@ -187,7 +186,7 @@ pub fn assignment_targets(statement: &SyntaxNode) -> Vec<(SyntaxNode, bool)> {
 }
 
 /// The names `statement` writes on every path through it.
-fn definitely(unit: &Unit, statement: &SyntaxNode) -> HashSet<String> {
+fn definitely(unit: &Unit, statement: &SyntaxNode) -> FxHashSet<String> {
     match statement.kind() {
         K::BLOCKING_ASSIGN | K::NONBLOCKING_ASSIGN | K::COMPOUND_ASSIGN => {
             assignment_targets(statement)
@@ -213,11 +212,11 @@ fn definitely(unit: &Unit, statement: &SyntaxNode) -> HashSet<String> {
                 let otherwise = definitely(unit, &otherwise);
                 then.intersection(&otherwise).cloned().collect()
             }
-            _ => HashSet::new(),
+            _ => FxHashSet::default(),
         },
         K::CASE_STMT => {
             if !full_case(unit, statement) {
-                return HashSet::new();
+                return FxHashSet::default();
             }
             let mut sets = statement
                 .children()
@@ -229,7 +228,7 @@ fn definitely(unit: &Unit, statement: &SyntaxNode) -> HashSet<String> {
                         .unwrap_or_default()
                 });
             let Some(first) = sets.next() else {
-                return HashSet::new();
+                return FxHashSet::default();
             };
             sets.fold(first, |acc, s| acc.intersection(&s).cloned().collect())
         }
@@ -246,7 +245,7 @@ fn definitely(unit: &Unit, statement: &SyntaxNode) -> HashSet<String> {
             .last()
             .map(|s| definitely(unit, &s))
             .unwrap_or_default(),
-        _ => HashSet::new(),
+        _ => FxHashSet::default(),
     }
 }
 
@@ -321,7 +320,7 @@ pub fn full_case(unit: &Unit, case: &SyntaxNode) -> bool {
         .flat_map(|i| case_item(&i).0)
         .collect();
     if let Some(members) = super::fsm::enum_members(unit, &selector) {
-        let listed: HashSet<String> = labels
+        let listed: FxHashSet<String> = labels
             .iter()
             .filter(|l| l.kind() == K::NAME_REF)
             .filter_map(scope::ref_name)
@@ -331,7 +330,7 @@ pub fn full_case(unit: &Unit, case: &SyntaxNode) -> bool {
     }
     // A selector of a width set by parameters takes the labels' size
     // when they all have the same: `3'd0` to `3'd7`.
-    let sizes: HashSet<Option<u32>> = labels
+    let sizes: FxHashSet<Option<u32>> = labels
         .iter()
         .map(|l| width::literal_size(l).and_then(|s| u32::try_from(s).ok()))
         .collect();
@@ -345,7 +344,7 @@ pub fn full_case(unit: &Unit, case: &SyntaxNode) -> bool {
     else {
         return false;
     };
-    let values: HashSet<u64> = labels.iter().filter_map(width::literal_value).collect();
+    let values: FxHashSet<u64> = labels.iter().filter_map(width::literal_value).collect();
     values.len() as u64 >= 1 << bits
 }
 
@@ -443,7 +442,7 @@ fn blocking(
     unit: &Unit,
     procedure: &Procedure,
     body: &SyntaxNode,
-    locals: &HashSet<String>,
+    locals: &FxHashSet<String>,
     out: &mut Vec<Finding>,
 ) {
     for assign in assignments_of(body, K::BLOCKING_ASSIGN) {
@@ -490,7 +489,7 @@ fn latches(unit: &Unit, procedure: &Procedure, body: &SyntaxNode, out: &mut Vec<
     }
     let locals = procedure.locals(unit);
     let definite = definitely(unit, body);
-    let mut reported = HashSet::new();
+    let mut reported = FxHashSet::default();
     for assign in body.descendants().filter(|n| {
         matches!(
             n.kind(),
@@ -547,13 +546,13 @@ fn sensitivity(
         return;
     };
     let locals = procedure.locals(unit);
-    let written: HashSet<String> = body
+    let written: FxHashSet<String> = body
         .descendants()
         .flat_map(|n| assignment_targets(&n))
         .filter_map(|(n, _)| scope::ref_name(&n))
         .map(|t| ident(&t))
         .collect();
-    let listed: HashSet<&str> = procedure.events.iter().map(|(n, ..)| n.as_str()).collect();
+    let listed: FxHashSet<&str> = procedure.events.iter().map(|(n, ..)| n.as_str()).collect();
     let mut read: Vec<String> = Vec::new();
     for u in super::reads_in(&unit.uses, body.text_range()) {
         if read.contains(&u.name) || locals.contains(&u.name) {
@@ -813,14 +812,14 @@ fn reset(
     }
     if enabled(codes::MISSING_RESET) {
         let locals = procedure.locals(unit);
-        let reset_targets: HashSet<String> = then
+        let reset_targets: FxHashSet<String> = then
             .iter()
             .flat_map(|s| s.descendants())
             .flat_map(|n| assignment_targets(&n))
             .filter_map(|(n, _)| scope::ref_name(&n))
             .map(|t| ident(&t))
             .collect();
-        let mut reported = HashSet::new();
+        let mut reported = FxHashSet::default();
         for assign in otherwise.iter().flat_map(|s| s.descendants()) {
             for (target, _) in assignment_targets(&assign) {
                 let Some(target_name) = scope::ref_name(&target).map(|t| ident(&t)) else {
@@ -952,7 +951,7 @@ fn reset_consistency(
 /// continuous assignment.
 fn drivers(unit: &Unit, procedures: &[Procedure], out: &mut Vec<Finding>) {
     // Per variable: each driver's node and the first assignment in it.
-    let mut drivers: HashMap<String, Vec<(SyntaxNode, TextRange)>> = HashMap::new();
+    let mut drivers: FxHashMap<String, Vec<(SyntaxNode, TextRange)>> = FxHashMap::default();
     let mut add = |name: String, driver: &SyntaxNode, range: TextRange| {
         let list = drivers.entry(name).or_default();
         if !list.iter().any(|(d, _)| d == driver) {

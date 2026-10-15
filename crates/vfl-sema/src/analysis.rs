@@ -6,11 +6,12 @@
 //! [`Analysis::update`] analyzes a new version of the same project and
 //! reuses the results of every unit an edit cannot have affected.
 
-use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 use rayon::prelude::*;
+use rustc_hash::{FxHashMap, FxHashSet};
+use vfl_syntax::green_walk::{ChildTokens, descendants_where};
 use vfl_syntax::{GreenNode, LineIndex, Standard, SyntaxKind, SyntaxNode, TextRange, TextSize};
 
 use crate::checks;
@@ -101,13 +102,13 @@ impl UnitResult {
 }
 
 /// Library name -> unit name -> primary units.
-type LibraryIndex = HashMap<String, HashMap<String, Vec<UnitId>>>;
+type LibraryIndex = FxHashMap<String, FxHashMap<String, Vec<UnitId>>>;
 
 pub(crate) struct Ctx<'a> {
     pub files: &'a [AnalyzedFile],
     pub units: &'a [UnitInfo],
     pub libraries: &'a LibraryIndex,
-    pub architectures: &'a HashMap<(String, String, String), UnitId>,
+    pub architectures: &'a FxHashMap<(String, String, String), UnitId>,
     pub results: &'a [OnceLock<Arc<UnitResult>>],
     pub standard: Option<UnitId>,
 }
@@ -434,8 +435,8 @@ impl Analysis {
             }
         }
 
-        let mut libraries: LibraryIndex = HashMap::new();
-        let mut architectures = HashMap::new();
+        let mut libraries: LibraryIndex = FxHashMap::default();
+        let mut architectures = FxHashMap::default();
         for (id, unit) in units.iter().enumerate() {
             match unit.kind {
                 DeclKind::Architecture | DeclKind::PackageBody => {
@@ -658,7 +659,7 @@ impl Analysis {
                     affected[u] = true;
                 }
             }
-            let ready: HashSet<UnitId> = ready.into_iter().collect();
+            let ready: FxHashSet<UnitId> = ready.into_iter().collect();
             remaining.retain(|u| !ready.contains(u));
         }
 
@@ -979,11 +980,9 @@ fn file_units(file_id: FileId, file: &AnalyzedFile) -> Vec<UnitWithDeps> {
 
 /// The `library.unit` names a design unit mentions.
 fn unit_dependencies(design_unit: &SyntaxNode) -> Vec<(String, String)> {
-    let mut libraries: HashSet<String> = HashSet::from(["work".to_owned(), "std".to_owned()]);
-    for clause in design_unit
-        .descendants()
-        .filter(|n| n.kind() == SyntaxKind::LIBRARY_CLAUSE)
-    {
+    let mut libraries: FxHashSet<String> =
+        ["work".to_owned(), "std".to_owned()].into_iter().collect();
+    for clause in descendants_where(design_unit, |k| k == SyntaxKind::LIBRARY_CLAUSE) {
         for list in clause.children() {
             for token in crate::syntax::idents(&list) {
                 libraries.insert(vfl_syntax::identifier_key(token.text()));
@@ -991,10 +990,7 @@ fn unit_dependencies(design_unit: &SyntaxNode) -> Vec<(String, String)> {
         }
     }
     let mut deps = Vec::new();
-    for node in design_unit
-        .descendants()
-        .filter(|n| n.kind() == SyntaxKind::SELECTED_NAME)
-    {
+    for node in descendants_where(design_unit, |k| k == SyntaxKind::SELECTED_NAME) {
         let Some(prefix) = node.children().next() else {
             continue;
         };
@@ -1006,10 +1002,8 @@ fn unit_dependencies(design_unit: &SyntaxNode) -> Vec<(String, String)> {
         if !libraries.contains(&library) {
             continue;
         }
-        if let Some(suffix) = node
-            .children_with_tokens()
-            .filter_map(|e| e.into_token())
-            .find(|t| matches!(t.kind(), SyntaxKind::IDENT | SyntaxKind::EXT_IDENT))
+        if let Some(suffix) =
+            node.child_token(|k| matches!(k, SyntaxKind::IDENT | SyntaxKind::EXT_IDENT))
         {
             deps.push((library, vfl_syntax::identifier_key(suffix.text())));
         }

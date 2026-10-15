@@ -17,6 +17,7 @@
 //! ```
 
 mod grammar;
+pub mod green_walk;
 mod lexer;
 mod line_index;
 mod parser;

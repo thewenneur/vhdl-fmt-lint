@@ -7,9 +7,9 @@
 //! The analysis then reuses the results of every design unit the edit
 //! cannot have affected.
 
-use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use rustc_hash::{FxHashMap, FxHashSet};
 use vfl_config::Config;
 use vfl_lint::FileSettings;
 use vfl_project::{
@@ -23,15 +23,15 @@ pub struct World {
     pub root: ProjectRoot,
     pub project: Project,
     /// Open documents, by path.
-    pub overlays: HashMap<PathBuf, String>,
+    pub overlays: FxHashMap<PathBuf, String>,
     /// Open documents that are not files of the project.
-    outside: HashSet<PathBuf>,
+    outside: FxHashSet<PathBuf>,
     pub analysis: Analysis,
     pub lint: Vec<vfl_lint::Diagnostic>,
     pub config_errors: Vec<String>,
     /// Why the project could not be loaded as configured.
     load_error: Option<String>,
-    configs: HashMap<PathBuf, Config>,
+    configs: FxHashMap<PathBuf, Config>,
     lint_cache: vfl_lint::LintCache,
     /// The library lists the libraries were last inferred from.
     sources: Option<LibrarySources>,
@@ -53,11 +53,11 @@ impl World {
             root,
             analysis: Analysis::empty(),
             project,
-            overlays: HashMap::new(),
-            outside: HashSet::new(),
+            overlays: FxHashMap::default(),
+            outside: FxHashSet::default(),
             lint: Vec::new(),
             config_errors: Vec::new(),
-            configs: HashMap::new(),
+            configs: FxHashMap::default(),
             lint_cache: vfl_lint::LintCache::default(),
             sources: None,
             inferred_from: Vec::new(),
@@ -80,11 +80,11 @@ impl World {
             load_error: None,
             root,
             analysis: Analysis::empty(),
-            overlays: HashMap::new(),
-            outside: HashSet::new(),
+            overlays: FxHashMap::default(),
+            outside: FxHashSet::default(),
             lint: Vec::new(),
             config_errors: Vec::new(),
-            configs: HashMap::new(),
+            configs: FxHashMap::default(),
             lint_cache: vfl_lint::LintCache::default(),
             sources: None,
             inferred_from: Vec::new(),

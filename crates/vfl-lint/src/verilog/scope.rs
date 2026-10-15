@@ -8,9 +8,9 @@
 //! writes the same way, by name; a local that shadows a signal makes the
 //! signal look used, which only ever hides a finding.
 
-use std::collections::{HashMap, HashSet};
-
 use rowan::WalkEvent;
+use rustc_hash::{FxHashMap, FxHashSet};
+use vfl_syntax::green_walk::ChildTokens;
 use vfl_verilog_syntax::summary::Direction;
 use vfl_verilog_syntax::{SyntaxKind as K, SyntaxNode, SyntaxToken, TextRange};
 
@@ -97,9 +97,9 @@ impl Decl {
             Kind::Port(Some(Direction::Output)) => {
                 self.net_keyword().is_none()
                     && self.data_type.as_ref().is_some_and(|t| {
-                        t.children_with_tokens().any(|e| {
-                            !e.kind().is_trivia()
-                                && !matches!(e.kind(), K::DIMENSION | K::SIGNED_KW | K::UNSIGNED_KW)
+                        t.has_child(|k| {
+                            !k.is_trivia()
+                                && !matches!(k, K::DIMENSION | K::SIGNED_KW | K::UNSIGNED_KW)
                         })
                     })
             }
@@ -198,9 +198,7 @@ pub fn is_ident(kind: K) -> bool {
 pub fn name_token(node: &SyntaxNode) -> Option<SyntaxToken> {
     node.children()
         .find(|n| n.kind() == K::NAME)?
-        .children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| is_ident(t.kind()))
+        .child_token(is_ident)
 }
 
 /// The tokens of `node` itself, without trivia.
@@ -226,7 +224,7 @@ pub fn words(text: &str) -> impl Iterator<Item = &str> {
 #[derive(Debug, Default)]
 pub struct Scope {
     pub decls: Vec<Decl>,
-    pub by_name: HashMap<String, Vec<usize>>,
+    pub by_name: FxHashMap<String, Vec<usize>>,
     /// Packages imported (`import p::*;` or `import p::x;`).
     pub imports: Vec<String>,
     /// Whether a macro used as an item may declare names this scope
@@ -234,7 +232,7 @@ pub struct Scope {
     pub open: bool,
     /// Names in constructs kept as tokens and in code `` `ifdef `` leaves
     /// out: taken as declared and as used.
-    pub hidden: HashSet<String>,
+    pub hidden: FxHashSet<String>,
 }
 
 impl Scope {
@@ -390,11 +388,7 @@ impl Scope {
 
     fn name(&mut self, name: &SyntaxNode, scope: &SyntaxNode) {
         let Some(parent) = name.parent() else { return };
-        let Some(token) = name
-            .children_with_tokens()
-            .filter_map(|e| e.into_token())
-            .find(|t| is_ident(t.kind()))
-        else {
+        let Some(token) = name.child_token(is_ident) else {
             return;
         };
         let data_type = |n: &SyntaxNode| n.children().find(|c| c.kind() == K::DATA_TYPE);
@@ -588,9 +582,7 @@ pub fn targets(target: &SyntaxNode, out: &mut Vec<(SyntaxNode, bool)>) {
 /// The name of a `NAME_REF`: its first identifier, or `None` for a
 /// system name or a macro.
 pub fn ref_name(node: &SyntaxNode) -> Option<SyntaxToken> {
-    node.children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| !t.kind().is_trivia())
+    node.child_token(|k| !k.is_trivia())
         .filter(|t| is_ident(t.kind()))
 }
 

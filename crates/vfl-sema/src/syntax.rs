@@ -1,5 +1,6 @@
 //! Small helpers over the untyped syntax tree.
 
+use vfl_syntax::green_walk::ChildTokens;
 use vfl_syntax::{SyntaxKind, SyntaxNode, SyntaxToken, identifier_key};
 
 /// Tokens that can name something: identifiers, operator symbols and
@@ -17,14 +18,12 @@ pub fn is_designator(kind: SyntaxKind) -> bool {
 /// The first identifier or operator symbol directly under `node`: the name
 /// a declaration introduces.
 pub fn designator(node: &SyntaxNode) -> Option<SyntaxToken> {
-    node.children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| {
-            matches!(
-                t.kind(),
-                SyntaxKind::IDENT | SyntaxKind::EXT_IDENT | SyntaxKind::STRING_LITERAL
-            )
-        })
+    node.child_token(|k| {
+        matches!(
+            k,
+            SyntaxKind::IDENT | SyntaxKind::EXT_IDENT | SyntaxKind::STRING_LITERAL
+        )
+    })
 }
 
 /// The lookup key of a designator. Operator symbols keep their quotes and
@@ -50,17 +49,13 @@ pub fn simple_name_token(node: &SyntaxNode) -> Option<SyntaxToken> {
     if node.kind() != SyntaxKind::NAME {
         return None;
     }
-    node.children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| matches!(t.kind(), SyntaxKind::IDENT | SyntaxKind::EXT_IDENT))
+    node.child_token(|k| matches!(k, SyntaxKind::IDENT | SyntaxKind::EXT_IDENT))
 }
 
 pub fn has_token(node: &SyntaxNode, kind: SyntaxKind) -> bool {
-    node.children_with_tokens().any(|e| e.kind() == kind)
+    node.has_child(|k| k == kind)
 }
 
 pub fn first_token(node: &SyntaxNode, kind: SyntaxKind) -> Option<SyntaxToken> {
-    node.children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| t.kind() == kind)
+    node.child_token(|k| k == kind)
 }

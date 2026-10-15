@@ -18,7 +18,7 @@ mod types;
 mod verilog;
 mod world;
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::mpsc;
 
@@ -31,6 +31,7 @@ use lsp_types::{
     OneOf, Registration, RegistrationParams, RenameOptions, ServerCapabilities, ServerInfo,
     TextDocumentSyncCapability, TextDocumentSyncKind, Url, notification as n, request::Shutdown,
 };
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::de::DeserializeOwned;
 
 pub use world::World;
@@ -174,9 +175,9 @@ pub fn run(connection: &Connection) -> Result<()> {
         connection,
         inbox,
         queue: VecDeque::new(),
-        cancelled: HashSet::new(),
+        cancelled: FxHashSet::default(),
         world: World::new(&root),
-        published: HashMap::new(),
+        published: FxHashMap::default(),
         shown_errors: Vec::new(),
         next_request: 0,
     };
@@ -194,10 +195,10 @@ struct Server<'a> {
     /// Messages received but not handled yet.
     queue: VecDeque<Message>,
     /// Queued requests the client cancelled.
-    cancelled: HashSet<RequestId>,
+    cancelled: FxHashSet<RequestId>,
     world: World,
     /// The diagnostics shown in the client, by file.
-    published: HashMap<Url, Vec<lsp_types::Diagnostic>>,
+    published: FxHashMap<Url, Vec<lsp_types::Diagnostic>>,
     /// Configuration errors already shown.
     shown_errors: Vec<String>,
     next_request: i32,
@@ -497,9 +498,9 @@ mod tests {
             connection: &server,
             inbox,
             queue: VecDeque::new(),
-            cancelled: HashSet::new(),
+            cancelled: FxHashSet::default(),
             world: World::new(dir.path()),
-            published: HashMap::new(),
+            published: FxHashMap::default(),
             shown_errors: Vec::new(),
             next_request: 0,
         };

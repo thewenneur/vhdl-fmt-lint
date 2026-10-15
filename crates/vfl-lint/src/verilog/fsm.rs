@@ -3,8 +3,7 @@
 //! `case` label (`localparam IDLE = 0;`). States no transition reaches,
 //! and states nothing but a reset leaves, are reported.
 
-use std::collections::{HashMap, HashSet};
-
+use rustc_hash::{FxHashMap, FxHashSet};
 use vfl_sema::codes;
 use vfl_verilog_syntax::{SyntaxKind as K, SyntaxNode, TextRange};
 
@@ -74,7 +73,7 @@ fn simple_name(expr: &SyntaxNode) -> Option<String> {
 fn state_values(
     expr: &SyntaxNode,
     states: &[String],
-    variables: &HashSet<String>,
+    variables: &FxHashSet<String>,
 ) -> Option<Vec<String>> {
     match expr.kind() {
         K::PAREN_EXPR => state_values(&expr.first_child()?, states, variables),
@@ -100,7 +99,7 @@ fn state_values(
 
 struct Machine {
     /// The state variable and the variables holding its next value.
-    variables: HashSet<String>,
+    variables: FxHashSet<String>,
     states: Vec<String>,
     /// The enumeration's type name, for messages.
     type_name: Option<String>,
@@ -177,7 +176,7 @@ pub fn check(unit: &Unit, enabled: &impl Fn(&str) -> bool, out: &mut Vec<Finding
                 (labels, None)
             }
         };
-        let mut variables: HashSet<String> = HashSet::from([variable.clone()]);
+        let mut variables: FxHashSet<String> = [variable.clone()].into_iter().collect();
         for (target, value) in &copies {
             if *target == variable {
                 variables.insert(value.clone());
@@ -190,7 +189,7 @@ pub fn check(unit: &Unit, enabled: &impl Fn(&str) -> bool, out: &mut Vec<Finding
             cases: vec![case],
         });
     }
-    let mut reported: HashSet<TextRange> = HashSet::new();
+    let mut reported: FxHashSet<TextRange> = FxHashSet::default();
     for machine in machines {
         analyze(unit, &procedures, &machine, enabled, &mut reported, out);
     }
@@ -201,7 +200,7 @@ fn analyze(
     procedures: &[SyntaxNode],
     machine: &Machine,
     enabled: &impl Fn(&str) -> bool,
-    reported: &mut HashSet<TextRange>,
+    reported: &mut FxHashSet<TextRange>,
     out: &mut Vec<Finding>,
 ) {
     let states = &machine.states;
@@ -267,7 +266,7 @@ fn analyze(
         }
     }
     // The items naming each state, and the `default` items.
-    let mut by_state: HashMap<&str, Vec<&SyntaxNode>> = HashMap::new();
+    let mut by_state: FxHashMap<&str, Vec<&SyntaxNode>> = FxHashMap::default();
     let mut defaults: Vec<&SyntaxNode> = Vec::new();
     for item in &items {
         let (labels, _) = case_item(item);
@@ -282,12 +281,12 @@ fn analyze(
             }
         }
     }
-    let next = |state: &str| -> HashSet<String> {
+    let next = |state: &str| -> FxHashSet<String> {
         let items = by_state
             .get(state)
             .cloned()
             .unwrap_or_else(|| defaults.clone());
-        let mut out: HashSet<String> = always.iter().cloned().collect();
+        let mut out: FxHashSet<String> = always.iter().cloned().collect();
         for (assign, values) in &transitions {
             if items
                 .iter()
@@ -316,7 +315,7 @@ fn analyze(
         .map(|t| format!(" of `{t}`"))
         .unwrap_or_default();
     if enabled(codes::FSM_UNREACHABLE_STATE) && (!resets.is_empty() || !always.is_empty()) {
-        let mut reached: HashSet<String> = resets.iter().chain(&always).cloned().collect();
+        let mut reached: FxHashSet<String> = resets.iter().chain(&always).cloned().collect();
         let mut queue: Vec<String> = reached.iter().cloned().collect();
         while let Some(state) = queue.pop() {
             for n in next(&state) {

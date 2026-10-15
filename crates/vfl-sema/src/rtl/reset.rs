@@ -2,8 +2,7 @@
 //! signals used both synchronously and asynchronously, and reset signals
 //! tested with both polarities.
 
-use std::collections::HashMap;
-
+use rustc_hash::{FxHashMap, FxHashSet};
 use vfl_syntax::{SyntaxKind, SyntaxNode, TextRange};
 
 use super::Checker;
@@ -270,7 +269,7 @@ impl Checker<'_> {
     fn unreset(&mut self, signal: DeclId, reset: &[SyntaxNode], clocked: &[SyntaxNode]) {
         self.reset_ranges
             .extend(reset.iter().map(|s| s.text_range()));
-        let mut reset_signals = std::collections::HashSet::new();
+        let mut reset_signals = FxHashSet::default();
         for statement in reset {
             for r in self.refs_in(statement.text_range()) {
                 if r.access.writes() {
@@ -278,7 +277,7 @@ impl Checker<'_> {
                 }
             }
         }
-        let mut reported = std::collections::HashSet::new();
+        let mut reported = FxHashSet::default();
         let mut found = Vec::new();
         for statement in clocked {
             for r in self.refs_in(statement.text_range()) {
@@ -322,7 +321,7 @@ impl Checker<'_> {
     /// with both polarities, within the unit.
     pub(super) fn reset_consistency(&mut self) {
         let uses = std::mem::take(&mut self.reset_uses);
-        let mut by_signal: HashMap<DeclId, Vec<&ResetUse>> = HashMap::new();
+        let mut by_signal: FxHashMap<DeclId, Vec<&ResetUse>> = FxHashMap::default();
         for u in uses.iter().filter(|u| !u.in_generate) {
             by_signal.entry(u.signal).or_default().push(u);
         }

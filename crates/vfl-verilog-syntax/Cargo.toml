@@ -11,6 +11,7 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+rustc-hash.workspace = true
 rowan = "0.16"
 vfl-syntax.workspace = true
 

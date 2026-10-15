@@ -125,3 +125,55 @@ fn deeply_nested_input_does_not_overflow() {
     let parsed = check_round_trip(&text, Standard::Vhdl2008);
     assert!(!parsed.errors().is_empty());
 }
+
+/// The green-tree walks find what rowan's own traversals find, on every
+/// fixture, broken ones included.
+#[test]
+fn green_walks_match_rowan_traversals() {
+    use vfl_syntax::SyntaxKind;
+    use vfl_syntax::green_walk::{descendants_where, for_each_token};
+
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data");
+    for sub in ["ok", "err"] {
+        for entry in std::fs::read_dir(dir.join(sub)).unwrap() {
+            let path = entry.unwrap().path();
+            let root = parse(&read(&path), standard_for(&path)).syntax();
+
+            let mut tokens = Vec::new();
+            for_each_token(&root, |kind, range, text| {
+                tokens.push((kind, range, text.to_owned()))
+            });
+            let expected: Vec<_> = root
+                .descendants_with_tokens()
+                .filter_map(|e| e.into_token())
+                .map(|t| (t.kind(), t.text_range(), t.text().to_owned()))
+                .collect();
+            assert_eq!(tokens, expected, "{}", path.display());
+
+            let mut kinds: Vec<SyntaxKind> = root.descendants().map(|n| n.kind()).collect();
+            kinds.sort_unstable_by_key(|k| *k as u16);
+            kinds.dedup();
+            // Each kind alone, every other kind, and all kinds at once.
+            let mut sets: Vec<Vec<SyntaxKind>> = kinds.iter().map(|&k| vec![k]).collect();
+            sets.push(kinds.iter().copied().step_by(2).collect());
+            sets.push(kinds.clone());
+            for set in sets {
+                let found = descendants_where(&root, |k| set.contains(&k));
+                let expected: Vec<_> = root
+                    .descendants()
+                    .filter(|n| set.contains(&n.kind()))
+                    .collect();
+                assert_eq!(found, expected, "{} {set:?}", path.display());
+                // Under an inner node too.
+                if let Some(inner) = root.descendants().nth(3) {
+                    let found = descendants_where(&inner, |k| set.contains(&k));
+                    let expected: Vec<_> = inner
+                        .descendants()
+                        .filter(|n| set.contains(&n.kind()))
+                        .collect();
+                    assert_eq!(found, expected, "{} {set:?}", path.display());
+                }
+            }
+        }
+    }
+}

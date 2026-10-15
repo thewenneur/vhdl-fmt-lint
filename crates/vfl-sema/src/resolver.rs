@@ -8,10 +8,11 @@
 //! is not part of the project, ...) resolves to "unknown" and is never
 //! reported: false errors are worse than missed ones.
 
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::smallvec;
+use vfl_syntax::green_walk::ChildTokens;
 use vfl_syntax::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange, identifier_key};
 
 use crate::analysis::{Ctx, UnitResult};
@@ -136,7 +137,7 @@ pub(crate) struct Resolver<'a> {
     refs: Vec<Reference>,
     diags: Vec<Diagnostic>,
     use_items: Vec<UseItem>,
-    used_imports: HashSet<ImportId>,
+    used_imports: FxHashSet<ImportId>,
     /// Inside an `ERROR` node, or a builtin file: no name errors.
     quiet: u32,
     /// Inside aggregate choices: a name may be a record element.
@@ -179,7 +180,7 @@ impl<'a> Resolver<'a> {
             refs: Vec::new(),
             diags: Vec::new(),
             use_items: Vec::new(),
-            used_imports: HashSet::new(),
+            used_imports: FxHashSet::default(),
             quiet: u32::from(ctx.files[file as usize].builtin),
             soft: 0,
             implicit: Vec::new(),
@@ -1029,10 +1030,7 @@ impl<'a> Resolver<'a> {
         match self.name_expr(item, Access::Other) {
             Lookup::Found(targets) => {
                 let name = item
-                    .children_with_tokens()
-                    .filter_map(|e| e.into_token())
-                    .filter(|t| is_designator(t.kind()))
-                    .last()
+                    .last_child_token(is_designator)
                     .map(|t| designator_key(&t))
                     .unwrap_or_default();
                 // Using a type also makes its literals or units visible.
@@ -1509,11 +1507,7 @@ impl<'a> Resolver<'a> {
     }
 
     fn simple_name(&mut self, node: &SyntaxNode, access: Access) -> Lookup {
-        let Some(token) = node
-            .children_with_tokens()
-            .filter_map(|e| e.into_token())
-            .find(|t| is_designator(t.kind()))
-        else {
+        let Some(token) = node.child_token(is_designator) else {
             self.visit_children(node);
             return Lookup::Unknown;
         };
@@ -1542,10 +1536,7 @@ impl<'a> Resolver<'a> {
         let Some(prefix) = node.children().next() else {
             return Lookup::Unknown;
         };
-        let suffix = node
-            .children_with_tokens()
-            .filter_map(|e| e.into_token())
-            .find(|t| is_designator(t.kind()) || t.kind() == SyntaxKind::ALL_KW);
+        let suffix = node.child_token(|k| is_designator(k) || k == SyntaxKind::ALL_KW);
         let prefix_result = self.name_expr(&prefix, access);
         let Some(suffix) = suffix else {
             return Lookup::Unknown;
@@ -2042,7 +2033,7 @@ impl<'a> Resolver<'a> {
                 (SyntaxKind::PORT_MAP_ASPECT, Interface::Port),
             ] {
                 if !node.children().any(|n| n.kind() == aspect) {
-                    self.check_unassociated(node, target, interface, &HashSet::new());
+                    self.check_unassociated(node, target, interface, &FxHashSet::default());
                 }
             }
         }
@@ -2150,7 +2141,7 @@ impl<'a> Resolver<'a> {
         let formals = target
             .map(|(region, _)| self.interface_decls(region, interface))
             .unwrap_or_default();
-        let mut associated: HashSet<DeclId> = HashSet::new();
+        let mut associated: FxHashSet<DeclId> = FxHashSet::default();
         let mut position = 0usize;
         for element in list.children() {
             if element.kind() != SyntaxKind::ASSOCIATION_ELEMENT {
@@ -2313,7 +2304,7 @@ impl<'a> Resolver<'a> {
         at: &SyntaxNode,
         target: &(Arc<Region>, String),
         interface: Interface,
-        associated: &HashSet<DeclId>,
+        associated: &FxHashSet<DeclId>,
     ) {
         if target.0.opaque {
             return;
@@ -2377,7 +2368,7 @@ impl<'a> Resolver<'a> {
                 _ => None,
             })
         };
-        let mut listed: HashMap<DeclId, TextRange> = HashMap::new();
+        let mut listed: FxHashMap<DeclId, TextRange> = FxHashMap::default();
         for r in &self.refs[sens_refs.clone()] {
             if let Some(id) = signal_of(r, self) {
                 listed.insert(id, r.range);
@@ -2391,7 +2382,7 @@ impl<'a> Resolver<'a> {
             .collect();
         let required = required_ranges(process);
         let mut missing: Vec<(DeclId, String)> = Vec::new();
-        let mut read: HashSet<DeclId> = HashSet::new();
+        let mut read: FxHashSet<DeclId> = FxHashSet::default();
         for r in &body {
             if !r.access.reads() {
                 continue;
@@ -2415,10 +2406,7 @@ impl<'a> Resolver<'a> {
         if !missing.is_empty() {
             let names: Vec<String> = missing.iter().map(|(_, n)| n.clone()).collect();
             let quoted: Vec<String> = names.iter().map(|n| format!("`{n}`")).collect();
-            let close = list
-                .children_with_tokens()
-                .filter_map(|e| e.into_token())
-                .find(|t| t.kind() == SyntaxKind::RPAREN);
+            let close = list.child_token(|k| k == SyntaxKind::RPAREN);
             let fix = close.map(|close| Fix {
                 title: format!("Add {} to the sensitivity list", quoted.join(", ")),
                 edits: vec![Edit {
@@ -2893,15 +2881,8 @@ pub(crate) fn is_clock_edge(node: &SyntaxNode) -> bool {
 /// name, the suffix of a selected name, the prefix of a constrained mark.
 pub(crate) fn mark_token(mark: &SyntaxNode) -> Option<SyntaxToken> {
     match mark.kind() {
-        SyntaxKind::NAME => mark
-            .children_with_tokens()
-            .filter_map(|e| e.into_token())
-            .find(|t| is_designator(t.kind())),
-        SyntaxKind::SELECTED_NAME => mark
-            .children_with_tokens()
-            .filter_map(|e| e.into_token())
-            .filter(|t| is_designator(t.kind()))
-            .last(),
+        SyntaxKind::NAME => mark.child_token(is_designator),
+        SyntaxKind::SELECTED_NAME => mark.last_child_token(is_designator),
         SyntaxKind::CALL_EXPR => mark_token(&mark.children().next()?),
         _ => None,
     }
@@ -2909,7 +2890,5 @@ pub(crate) fn mark_token(mark: &SyntaxNode) -> Option<SyntaxToken> {
 
 /// The operator of a binary or unary expression.
 pub(crate) fn operator_token(node: &SyntaxNode) -> Option<SyntaxToken> {
-    node.children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| !t.kind().is_trivia())
+    node.child_token(|k| !k.is_trivia())
 }
