@@ -1,6 +1,7 @@
 //! Rules that only look at the text and the syntax tree of one file.
 
 use vfl_sema::{Edit, Fix};
+use vfl_syntax::green_walk::{ChildTokens, descendants_where};
 use vfl_syntax::{Standard, SyntaxKind, SyntaxNode, TextRange, TextSize};
 
 use crate::Finding;
@@ -22,14 +23,22 @@ pub fn check(ctx: &StyleContext, enabled: impl Fn(&str) -> bool, out: &mut Vec<F
     {
         lines(ctx.text, ctx.max_line_length, ctx.indent, &enabled, out);
     }
-    for node in ctx.root.descendants() {
+    // The kinds the arms below look at: only these become syntax nodes.
+    let wanted = |kind| {
+        matches!(
+            kind,
+            SyntaxKind::INTERFACE_OBJECT_DECL
+                | SyntaxKind::USE_CLAUSE
+                | SyntaxKind::PROCESS_STMT
+                | SyntaxKind::GENERIC_MAP_ASPECT
+                | SyntaxKind::PORT_MAP_ASPECT
+                | SyntaxKind::BINARY_EXPR
+        )
+    };
+    for node in descendants_where(ctx.root, wanted) {
         match node.kind() {
             SyntaxKind::INTERFACE_OBJECT_DECL if enabled("style/no-buffer-ports") => {
-                if let Some(token) = node
-                    .children_with_tokens()
-                    .filter_map(|e| e.into_token())
-                    .find(|t| t.kind() == SyntaxKind::BUFFER_KW)
-                {
+                if let Some(token) = node.child_token(|k| k == SyntaxKind::BUFFER_KW) {
                     let mut finding = Finding::new(
                         "style/no-buffer-ports",
                         token.text_range(),
@@ -109,10 +118,7 @@ pub fn check(ctx: &StyleContext, enabled: impl Fn(&str) -> bool, out: &mut Vec<F
                     .descendants()
                     .filter(|n| n.kind() == SyntaxKind::ASSOCIATION_ELEMENT)
                     .filter(|n| n.parent().and_then(|p| p.parent()).as_ref() == Some(&node))
-                    .any(|n| {
-                        !n.children_with_tokens()
-                            .any(|e| e.kind() == SyntaxKind::ARROW)
-                    });
+                    .any(|n| !n.has_child(|k| k == SyntaxKind::ARROW));
                 if positional {
                     let what = if node.kind() == SyntaxKind::PORT_MAP_ASPECT {
                         "port"
@@ -136,9 +142,7 @@ pub fn check(ctx: &StyleContext, enabled: impl Fn(&str) -> bool, out: &mut Vec<F
 }
 
 fn first_token(node: &SyntaxNode, kind: SyntaxKind) -> Option<vfl_syntax::SyntaxToken> {
-    node.children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| t.kind() == kind)
+    node.child_token(|k| k == kind)
 }
 
 /// `style/line-length`, `style/trailing-whitespace` and `style/tabs`,
@@ -221,10 +225,7 @@ fn range(start: usize, end: usize) -> TextRange {
 
 /// `clk'event and clk = '1'` (either order), suggesting `rising_edge(clk)`.
 fn clock_edge(ctx: &StyleContext, node: &SyntaxNode, out: &mut Vec<Finding>) {
-    let operator = node
-        .children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| !t.kind().is_trivia());
+    let operator = node.child_token(|k| !k.is_trivia());
     if operator.map(|t| t.kind()) != Some(SyntaxKind::AND_KW) {
         return;
     }
@@ -301,10 +302,7 @@ fn compared_value(node: &SyntaxNode, signal: &str) -> Option<String> {
     if node.kind() != SyntaxKind::BINARY_EXPR {
         return None;
     }
-    let operator = node
-        .children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| !t.kind().is_trivia())?;
+    let operator = node.child_token(|k| !k.is_trivia())?;
     if operator.kind() != SyntaxKind::EQ {
         return None;
     }
@@ -337,9 +335,7 @@ fn file_name(ctx: &StyleContext, out: &mut Vec<Finding>) {
             )
         })
         .filter_map(|n| {
-            n.children_with_tokens()
-                .filter_map(|e| e.into_token())
-                .find(|t| t.kind() == SyntaxKind::IDENT)
+            n.child_token(|k| k == SyntaxKind::IDENT)
                 .map(|t| (t.text().to_ascii_lowercase(), t.text_range()))
         })
         .collect();

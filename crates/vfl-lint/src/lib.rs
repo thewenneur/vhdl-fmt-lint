@@ -26,6 +26,7 @@ use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use vfl_config::{Config, Level};
 use vfl_sema::{Analysis, FileId};
+use vfl_syntax::green_walk::ChildTokens;
 use vfl_syntax::{GreenNode, SyntaxError, TextRange};
 
 pub use rules::{NAMING_KINDS, RULES, Rule};
@@ -451,10 +452,7 @@ fn name_formals(
         .collect();
     let mut edits = Vec::new();
     for (i, element) in elements.iter().enumerate() {
-        if element
-            .children_with_tokens()
-            .any(|e| e.kind() == SyntaxKind::ARROW)
-        {
+        if element.has_child(|k| k == SyntaxKind::ARROW) {
             continue;
         }
         let formal = formals.get(i)?;

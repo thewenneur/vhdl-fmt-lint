@@ -6,6 +6,7 @@
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use vfl_sema::{Access, Decl, DeclId, DeclKind, FileId, Target, TypeDef};
+use vfl_syntax::green_walk::ChildTokens;
 use vfl_syntax::{SyntaxKind, TextRange, TextSize, identifier_key};
 
 use crate::handlers::{Hit, hit_at};
@@ -73,10 +74,7 @@ fn element_decl_at(world: &World, file: FileId, offset: TextSize) -> Option<(Tex
         .parent_ancestors()
         .find(|n| n.kind() == SyntaxKind::ELEMENT_DECL)?;
     // The element's names come before its colon.
-    let colon = element
-        .children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| t.kind() == SyntaxKind::COLON)?;
+    let colon = element.child_token(|k| k == SyntaxKind::COLON)?;
     if token.text_range().start() > colon.text_range().start() {
         return None;
     }

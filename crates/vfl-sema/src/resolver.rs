@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::smallvec;
+use vfl_syntax::green_walk::ChildTokens;
 use vfl_syntax::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange, identifier_key};
 
 use crate::analysis::{Ctx, UnitResult};
@@ -1029,10 +1030,7 @@ impl<'a> Resolver<'a> {
         match self.name_expr(item, Access::Other) {
             Lookup::Found(targets) => {
                 let name = item
-                    .children_with_tokens()
-                    .filter_map(|e| e.into_token())
-                    .filter(|t| is_designator(t.kind()))
-                    .last()
+                    .last_child_token(is_designator)
                     .map(|t| designator_key(&t))
                     .unwrap_or_default();
                 // Using a type also makes its literals or units visible.
@@ -1509,11 +1507,7 @@ impl<'a> Resolver<'a> {
     }
 
     fn simple_name(&mut self, node: &SyntaxNode, access: Access) -> Lookup {
-        let Some(token) = node
-            .children_with_tokens()
-            .filter_map(|e| e.into_token())
-            .find(|t| is_designator(t.kind()))
-        else {
+        let Some(token) = node.child_token(is_designator) else {
             self.visit_children(node);
             return Lookup::Unknown;
         };
@@ -1542,10 +1536,7 @@ impl<'a> Resolver<'a> {
         let Some(prefix) = node.children().next() else {
             return Lookup::Unknown;
         };
-        let suffix = node
-            .children_with_tokens()
-            .filter_map(|e| e.into_token())
-            .find(|t| is_designator(t.kind()) || t.kind() == SyntaxKind::ALL_KW);
+        let suffix = node.child_token(|k| is_designator(k) || k == SyntaxKind::ALL_KW);
         let prefix_result = self.name_expr(&prefix, access);
         let Some(suffix) = suffix else {
             return Lookup::Unknown;
@@ -2415,10 +2406,7 @@ impl<'a> Resolver<'a> {
         if !missing.is_empty() {
             let names: Vec<String> = missing.iter().map(|(_, n)| n.clone()).collect();
             let quoted: Vec<String> = names.iter().map(|n| format!("`{n}`")).collect();
-            let close = list
-                .children_with_tokens()
-                .filter_map(|e| e.into_token())
-                .find(|t| t.kind() == SyntaxKind::RPAREN);
+            let close = list.child_token(|k| k == SyntaxKind::RPAREN);
             let fix = close.map(|close| Fix {
                 title: format!("Add {} to the sensitivity list", quoted.join(", ")),
                 edits: vec![Edit {
@@ -2893,15 +2881,8 @@ pub(crate) fn is_clock_edge(node: &SyntaxNode) -> bool {
 /// name, the suffix of a selected name, the prefix of a constrained mark.
 pub(crate) fn mark_token(mark: &SyntaxNode) -> Option<SyntaxToken> {
     match mark.kind() {
-        SyntaxKind::NAME => mark
-            .children_with_tokens()
-            .filter_map(|e| e.into_token())
-            .find(|t| is_designator(t.kind())),
-        SyntaxKind::SELECTED_NAME => mark
-            .children_with_tokens()
-            .filter_map(|e| e.into_token())
-            .filter(|t| is_designator(t.kind()))
-            .last(),
+        SyntaxKind::NAME => mark.child_token(is_designator),
+        SyntaxKind::SELECTED_NAME => mark.last_child_token(is_designator),
         SyntaxKind::CALL_EXPR => mark_token(&mark.children().next()?),
         _ => None,
     }
@@ -2909,7 +2890,5 @@ pub(crate) fn mark_token(mark: &SyntaxNode) -> Option<SyntaxToken> {
 
 /// The operator of a binary or unary expression.
 pub(crate) fn operator_token(node: &SyntaxNode) -> Option<SyntaxToken> {
-    node.children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| !t.kind().is_trivia())
+    node.child_token(|k| !k.is_trivia())
 }

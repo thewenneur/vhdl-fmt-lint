@@ -16,6 +16,7 @@
 
 use rowan::NodeOrToken;
 use rustc_hash::{FxHashMap, FxHashSet};
+use vfl_syntax::green_walk::ChildTokens;
 use vfl_syntax::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange, identifier_key};
 
 use crate::analysis::{Ctx, UnitResult};
@@ -3035,11 +3036,7 @@ impl<'a> Checker<'a> {
 
 /// A numeric, character, string, bit string or null literal.
 fn literal(node: &SyntaxNode) -> Val {
-    let Some(token) = node
-        .children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| !t.kind().is_trivia())
-    else {
+    let Some(token) = node.child_token(|k| !k.is_trivia()) else {
         return Val::Unknown;
     };
     match token.kind() {
@@ -3091,10 +3088,7 @@ fn unique_sig(sigs: &[OpSig]) -> Option<&OpSig> {
 
 /// The suffix of a selected name: a designator or `all`.
 fn selected_suffix(node: &SyntaxNode) -> Option<SyntaxToken> {
-    node.children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .filter(|t| is_designator(t.kind()) || t.kind() == SyntaxKind::ALL_KW)
-        .last()
+    node.last_child_token(|k| is_designator(k) || k == SyntaxKind::ALL_KW)
 }
 
 /// The attribute of an attribute name, lower case.

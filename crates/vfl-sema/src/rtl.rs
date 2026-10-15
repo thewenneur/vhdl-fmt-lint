@@ -7,6 +7,7 @@ mod fsm;
 mod reset;
 
 use rustc_hash::{FxHashMap, FxHashSet};
+use vfl_syntax::green_walk::ChildTokens;
 use vfl_syntax::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange};
 
 use crate::analysis::{Ctx, UnitResult};
@@ -88,10 +89,7 @@ fn static_int_at(
 
 /// The operator token of a unary or binary expression.
 fn operator(expr: &SyntaxNode) -> Option<SyntaxKind> {
-    expr.children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| !t.kind().is_trivia())
-        .map(|t| t.kind())
+    expr.child_token(|k| !k.is_trivia()).map(|t| t.kind())
 }
 
 /// The number of values in `left to right` or `left downto right`.
@@ -105,9 +103,7 @@ pub(crate) fn range_width(
     let mut bounds = range.children();
     let left = static_int(&bounds.next()?, name)?;
     let right = static_int(&bounds.next()?, name)?;
-    let ascending = range
-        .children_with_tokens()
-        .any(|e| e.kind() == SyntaxKind::TO_KW);
+    let ascending = range.has_child(|k| k == SyntaxKind::TO_KW);
     let count = if ascending {
         right - left
     } else {
@@ -460,7 +456,7 @@ impl<'a> Checker<'a> {
                 for element in node.children().filter(|n| n.kind() == WAVEFORM_ELEMENT) {
                     // `value after delay`: the first expression.
                     if let Some(value) = element.children().next()
-                        && !element.children_with_tokens().any(|e| e.kind() == NULL_KW)
+                        && !element.has_child(|k| k == NULL_KW)
                     {
                         out.push(value);
                     }
@@ -560,9 +556,7 @@ impl<'a> Checker<'a> {
             .filter(|n| n.kind() == SyntaxKind::ASSOCIATION_ELEMENT)
             .enumerate()
         {
-            let named = element
-                .children_with_tokens()
-                .any(|e| e.kind() == SyntaxKind::ARROW);
+            let named = element.has_child(|k| k == SyntaxKind::ARROW);
             let mut parts = element.children();
             let (formal, actual) = if named {
                 let formal = parts.next();
@@ -572,11 +566,7 @@ impl<'a> Checker<'a> {
             };
             let Some(actual) = actual else {
                 // `p => open`.
-                if ports
-                    && element
-                        .children_with_tokens()
-                        .any(|e| e.kind() == SyntaxKind::OPEN_KW)
-                {
+                if ports && element.has_child(|k| k == SyntaxKind::OPEN_KW) {
                     self.open_input(&element, formal.as_ref(), interface.get(position));
                 }
                 continue;
@@ -737,9 +727,7 @@ impl<'a> Checker<'a> {
                 SyntaxKind::WAIT_STMT => waits += 1,
                 SyntaxKind::ERROR => error = true,
                 SyntaxKind::WAVEFORM_ELEMENT => {
-                    delayed |= n
-                        .children_with_tokens()
-                        .any(|e| e.kind() == SyntaxKind::AFTER_KW)
+                    delayed |= n.has_child(|k| k == SyntaxKind::AFTER_KW)
                 }
                 SyntaxKind::CALL_EXPR | SyntaxKind::ATTRIBUTE_NAME
                     if edge.is_none() && is_clock_edge(&n) =>
@@ -781,7 +769,7 @@ impl<'a> Checker<'a> {
         let trailing_wait_on = waits == 1
             && body.last().is_some_and(|last| {
                 last.kind() == SyntaxKind::WAIT_STMT && {
-                    let has = |k| last.children_with_tokens().any(|e| e.kind() == k);
+                    let has = |kind| last.has_child(|k| k == kind);
                     has(SyntaxKind::ON_KW) && !has(SyntaxKind::UNTIL_KW) && !has(SyntaxKind::FOR_KW)
                 }
             });

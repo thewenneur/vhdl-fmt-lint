@@ -8,6 +8,7 @@ use std::path::Path;
 use lsp_types::SymbolKind;
 use rustc_hash::FxHashMap;
 use vfl_project::VerilogFile;
+use vfl_syntax::green_walk::ChildTokens;
 use vfl_syntax::{TextRange, TextSize};
 use vfl_verilog_syntax::{SyntaxKind, SyntaxNode, SyntaxToken};
 
@@ -26,9 +27,7 @@ pub(crate) fn file<'a>(world: &'a World, path: &Path) -> Option<&'a VerilogFile>
 
 /// The name token of a `NAME` node, or the first name token of `node`.
 fn name_token(node: &SyntaxNode) -> Option<SyntaxToken> {
-    node.children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| matches!(t.kind(), IDENT | ESC_IDENT))
+    node.child_token(|k| matches!(k, IDENT | ESC_IDENT))
 }
 
 /// The name of a node that declares one: its `NAME` child's token.
@@ -52,9 +51,7 @@ fn name_text(token: &SyntaxToken) -> &str {
 
 /// The keyword starting a node, if it starts with one.
 fn first_keyword(node: &SyntaxNode) -> Option<SyntaxKind> {
-    node.children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| !t.kind().is_trivia())
+    node.child_token(|k| !k.is_trivia())
         .map(|t| t.kind())
         .filter(|k| k.is_keyword())
 }

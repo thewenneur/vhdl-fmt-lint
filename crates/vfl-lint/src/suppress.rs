@@ -9,6 +9,7 @@
 //! Without rule ids every rule is silenced. A category (`naming`) silences
 //! all its rules.
 
+use vfl_syntax::green_walk::for_each_token;
 use vfl_syntax::{LineIndex, SyntaxKind, SyntaxNode, TextRange, TextSize};
 
 #[derive(Debug, Default)]
@@ -20,22 +21,24 @@ pub struct Suppressions {
 
 impl Suppressions {
     pub fn new(root: &SyntaxNode, text: &str, index: &LineIndex) -> Self {
-        let comments = root
-            .descendants_with_tokens()
-            .filter_map(|e| e.into_token())
-            .filter(|t| t.kind() == SyntaxKind::LINE_COMMENT)
-            .filter_map(|t| suppression(t.text_range(), t.text().trim_start_matches('-')));
-        Self::from_comments(comments, text, index, "--")
+        let mut comments = Vec::new();
+        for_each_token(root, |kind, range, text| {
+            if kind == SyntaxKind::LINE_COMMENT {
+                comments.extend(suppression(range, text.trim_start_matches('-')));
+            }
+        });
+        Self::from_comments(comments.into_iter(), text, index, "--")
     }
 
     /// The suppressions of a Verilog file: `// vfl-ignore rule`.
     pub fn verilog(root: &vfl_verilog_syntax::SyntaxNode, text: &str, index: &LineIndex) -> Self {
-        let comments = root
-            .descendants_with_tokens()
-            .filter_map(|e| e.into_token())
-            .filter(|t| t.kind() == vfl_verilog_syntax::SyntaxKind::LINE_COMMENT)
-            .filter_map(|t| suppression(t.text_range(), t.text().trim_start_matches('/')));
-        Self::from_comments(comments, text, index, "//")
+        let mut comments = Vec::new();
+        for_each_token(root, |kind, range, text| {
+            if kind == vfl_verilog_syntax::SyntaxKind::LINE_COMMENT {
+                comments.extend(suppression(range, text.trim_start_matches('/')));
+            }
+        });
+        Self::from_comments(comments.into_iter(), text, index, "//")
     }
 
     /// The comments, by range, that start with `vfl-ignore`.
