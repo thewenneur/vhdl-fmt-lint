@@ -43,7 +43,8 @@ quick fix, and the `source.fixAll.vfl` code action applies the safe ones.
 
 Editors offer more quick fixes than `--fix` applies: renaming a declaration everywhere to
 follow its [naming convention](#naming), adding the `use` clause for an
-[undeclared name](#semaunresolved-name) that a package declares, and, for every rule,
+[undeclared name](#semaunresolved-name) that a package declares, associating the
+[ports an instantiation leaves out](#semaunassociated-port), and, for every rule,
 silencing it on the line or in the file with a `-- vfl-ignore` comment.
 
 A finding can be silenced in the source with `-- vfl-ignore rule-id` at the end of its line
@@ -182,6 +183,16 @@ Both must be associated (ports of other modes can be left out).
 -- entity sub has `generic (N : natural)` without a default
 u2 : entity work.sub port map (a => r, y => o2);  -- generic `N` of entity `sub` must be associated
 ```
+
+In an editor, a quick fix associates the ports (or generics) that must be, each with the
+object of the same name: `b => b`, which is often the signal meant and is otherwise
+reported as undeclared, to be replaced. A second quick fix associates every port left
+out, the outputs and the ones with a default value with `open`. An instantiation without
+a port map or generic map gets one. The new associations follow the layout of the map:
+on its line when it fits on one, else one per line with the commas where the map has them
+(or where `association_separator` puts them) and the arrows aligned when they are. An
+instantiation that was formatted is formatted again with them. `vfl lint --fix` leaves
+these alone, as the names need checking.
 
 ### `sema/type-mismatch`
 

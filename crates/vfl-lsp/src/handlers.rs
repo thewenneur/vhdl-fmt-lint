@@ -74,13 +74,13 @@ pub fn request(world: &mut World, method: &str, params: Value) -> Result<Value, 
         "textDocument/semanticTokens/range" => json(crate::semantic::range(world, parse(params)?)),
         "codeAction/resolve" => {
             let action: CodeAction = parse(params)?;
-            match action
-                .data
-                .clone()
-                .and_then(|d| serde_json::from_value(d).ok())
-            {
-                Some(data) => json(resolve_rename(world, action, data).map_err(Error::Failed)?),
-                None => json(crate::generate::resolve(world, action).map_err(Error::Failed)?),
+            let data = action.data.clone().unwrap_or_default();
+            if let Ok(rename) = serde_json::from_value(data.clone()) {
+                json(resolve_rename(world, action, rename).map_err(Error::Failed)?)
+            } else if let Ok(associate) = serde_json::from_value(data) {
+                json(resolve_associate(world, action, associate).map_err(Error::Failed)?)
+            } else {
+                json(crate::generate::resolve(world, action).map_err(Error::Failed)?)
             }
         }
         "vfl/entities" => json(crate::generate::entities(world)),
@@ -1370,9 +1370,19 @@ fn code_actions(world: &mut World, params: CodeActionParams) -> Option<Vec<CodeA
     if wants(&CodeActionKind::QUICKFIX) {
         for action in crate::actions::actions(world, file, start, end) {
             let problem = &world.lint[action.problem];
-            // A rename's edits are worked out when it is chosen.
-            let (edit, data) = match &action.rename {
-                Some(new_name) => (
+            // A rename's edits are worked out when it is chosen, and so
+            // are an association's.
+            let (edit, data) = match (&action.rename, action.associate) {
+                (_, Some(associate)) => (
+                    None,
+                    serde_json::to_value(AssociateData {
+                        associate,
+                        uri: uri.clone(),
+                        offset: problem.range.start().into(),
+                    })
+                    .ok(),
+                ),
+                (Some(new_name), None) => (
                     None,
                     serde_json::to_value(RenameData {
                         rename: new_name.clone(),
@@ -1381,7 +1391,7 @@ fn code_actions(world: &mut World, params: CodeActionParams) -> Option<Vec<CodeA
                     })
                     .ok(),
                 ),
-                None => (Some(workspace_edit(world, action.edits)), None),
+                (None, None) => (Some(workspace_edit(world, action.edits)), None),
             };
             out.push(CodeActionOrCommand::CodeAction(CodeAction {
                 title: action.title,
@@ -1439,6 +1449,35 @@ fn resolve_rename(
     let file = file_of(world, &data.uri).ok_or("the file is not analyzed")?;
     let (_, symbol) = rename_targets_at(world, file, TextSize::from(data.offset))?;
     let edits = rename_edits(world, &symbol, &data.rename)?;
+    action.edit = Some(workspace_edit(world, edits));
+    Ok(action)
+}
+
+/// What a quick fix associating left-out ports needs to work out its
+/// edits.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct AssociateData {
+    associate: crate::actions::Associate,
+    uri: Url,
+    offset: u32,
+}
+
+/// The edits of a quick fix associating left-out ports.
+fn resolve_associate(
+    world: &mut World,
+    mut action: CodeAction,
+    data: AssociateData,
+) -> Result<CodeAction, String> {
+    world.refresh();
+    let file = file_of(world, &data.uri).ok_or("the file is not analyzed")?;
+    let edits = crate::associate::edits(
+        world,
+        file,
+        TextSize::from(data.offset),
+        data.associate.ports,
+        data.associate.all,
+    )
+    .ok_or("the instantiation has changed")?;
     action.edit = Some(workspace_edit(world, edits));
     Ok(action)
 }

@@ -4,6 +4,12 @@
 
 ### Added
 
+- **Quick fix for `sema/unassociated-port`**: editors offer to associate the ports or
+  generics an instantiation leaves out, adding a port map or generic map when there is
+  none. The required ones get the object of the same name (`b => b`); a second fix also
+  associates every optional port or generic with `open`. The new associations follow the
+  map's layout: on its line, or one per line with the commas before or after and the
+  arrows aligned, and a formatted instantiation stays formatted.
 - **Leading separators**: `interface_separator = "leading"` and
   `association_separator = "leading"` in `[format]` put the `;` of port and generic
   clauses and the `,` of port maps, generic maps, calls and aggregates at the start of the

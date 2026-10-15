@@ -1179,3 +1179,177 @@ fn verilog_problems_and_fixes() {
         "  // vfl-ignore verilog/blocking-in-clocked"
     );
 }
+
+const ASSOCIATE_SUB: &str = "\
+entity sub is
+  generic (N : natural; M : natural := 2);
+  port (a : in bit; b : in bit; c : in bit := '0'; y : out bit; z : out bit);
+end entity;
+architecture rtl of sub is
+begin
+end architecture;
+";
+
+const ASSOCIATE_TOP: &str = "\
+entity top is
+end entity;
+architecture rtl of top is
+  signal a, b, y : bit;
+begin
+  u1 : entity work.sub generic map (N => 3) port map (a => a, y => y);
+  u2 : entity work.sub
+    generic map (
+      N => 1
+    )
+    port map (
+      a     => a,
+      y     => y,
+      inst  => open
+    );
+  u3 : entity work.sub;
+  u4 : entity work.sub generic map (5) port map (a, open, open, y);
+end architecture;
+";
+
+#[test]
+fn quick_fixes_associate_left_out_ports() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("vfl.toml"), "").unwrap();
+    std::fs::write(dir.path().join("sub.vhd"), ASSOCIATE_SUB).unwrap();
+    std::fs::write(dir.path().join("top.vhd"), ASSOCIATE_TOP).unwrap();
+    let top = url(&dir.path().join("top.vhd"));
+    let mut client = Client::start(dir.path());
+    let resolve = |client: &mut Client, fixes: &[Value], title: &str| {
+        let action = fix(fixes, title);
+        // Worked out when chosen.
+        assert!(action.get("edit").is_none(), "{action}");
+        let action = client.request("codeAction/resolve", action.clone());
+        apply(ASSOCIATE_TOP, &action["edit"], &top)
+    };
+
+    // On one line: added on the line.
+    let fixes = quick_fixes(&mut client, &top, 5);
+    assert_eq!(fix(&fixes, "Associate port `b`")["isPreferred"], true);
+    let fixed = resolve(&mut client, &fixes, "Associate port `b`");
+    assert!(
+        fixed.contains("port map (a => a, y => y, b => b);"),
+        "{fixed}"
+    );
+    let fixed = resolve(
+        &mut client,
+        &fixes,
+        "Associate every port, the optional ones `open`",
+    );
+    assert!(
+        fixed.contains("port map (a => a, y => y, b => b, c => open, z => open);"),
+        "{fixed}"
+    );
+
+    // One per line, aligned: the arrows stay aligned.
+    let fixes = quick_fixes(&mut client, &top, 10);
+    let fixed = resolve(&mut client, &fixes, "Associate port `b`");
+    assert!(
+        fixed.contains("      inst  => open,\n      b     => b\n    );"),
+        "{fixed}"
+    );
+
+    // No map at all: one for each.
+    let fixes = quick_fixes(&mut client, &top, 15);
+    let fixed = resolve(&mut client, &fixes, "Associate generic `N`");
+    assert!(
+        fixed.contains("  u3 : entity work.sub\n    generic map (\n      N => N\n    );"),
+        "{fixed}"
+    );
+    let fixed = resolve(&mut client, &fixes, "Associate ports `a`, `b`");
+    assert!(
+        fixed.contains(
+            "  u3 : entity work.sub\n    port map (\n      a => a,\n      b => b\n    );"
+        ),
+        "{fixed}"
+    );
+
+    // Positional associations count.
+    let fixes = quick_fixes(&mut client, &top, 16);
+    assert!(
+        fixes
+            .iter()
+            .all(|f| !f["title"].as_str().unwrap().starts_with("Associate")),
+        "{fixes:#?}"
+    );
+}
+
+const ASSOCIATE_FORMATTED: &str = "\
+entity top is
+end entity;
+architecture rtl of top is
+  signal a, y : bit;
+begin
+  u2 : entity work.sub
+    generic map (
+      N => 1
+    )
+    port map (
+      a => a
+    , y => y
+    );
+  u3 : entity work.sub;
+end architecture;
+";
+
+/// In a formatted file the fix keeps it formatted (here with leading
+/// commas), in the editors that link vfl too.
+#[test]
+fn associating_ports_keeps_the_format() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("vfl.toml"),
+        "[format]\nassociation_separator = \"leading\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("sub.vhd"),
+        ASSOCIATE_SUB.replace("z : out bit", "long_name : out bit"),
+    )
+    .unwrap();
+    let path = dir.path().join("top.vhd");
+    std::fs::write(&path, ASSOCIATE_FORMATTED).unwrap();
+    let mut world = vfl_lsp::World::new(dir.path());
+    let fixed = |world: &mut vfl_lsp::World, at: usize, title: &str| {
+        let fixes = vfl_lsp::editor::quick_fixes(world, &path, at, at);
+        let fix = fixes
+            .iter()
+            .find(|f| f.title == title)
+            .unwrap_or_else(|| panic!("no fix `{title}`"));
+        let mut text = ASSOCIATE_FORMATTED.to_owned();
+        for (range, new) in fix.edits.iter().rev() {
+            text.replace_range(range.clone(), new);
+        }
+        text
+    };
+
+    let at = ASSOCIATE_FORMATTED.find("a => a").unwrap();
+    let text = fixed(
+        &mut world,
+        at,
+        "Associate every port, the optional ones `open`",
+    );
+    assert!(
+        text.contains(
+            "    port map (
+      a         => a
+    , y         => y
+    , b         => b
+    , c         => open
+    , long_name => open
+    );"
+        ),
+        "{text}"
+    );
+
+    let at = ASSOCIATE_FORMATTED.find("u3").unwrap();
+    let text = fixed(&mut world, at, "Associate ports `a`, `b`");
+    assert!(
+        text.contains("  u3 : entity work.sub\n    port map (\n      a => a\n    , b => b\n    );"),
+        "{text}"
+    );
+}

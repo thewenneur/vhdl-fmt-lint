@@ -6,7 +6,8 @@ language server:
 - **Diagnostics** as you type: syntax errors, cross-file semantic checks and lint rules.
 - **Quick fixes**, and **Fix All** (`vfl: Fix All Lint Findings in File`, or on save, below).
   Besides each rule's own fix: rename a declaration to follow a naming convention
-  everywhere, add the `use` clause for a name declared in a package, or silence the rule
+  everywhere, add the `use` clause for a name declared in a package, associate the ports
+  an instantiation leaves out, or silence the rule
   on the line or in the file with a `-- vfl-ignore` comment.
 - **Formatting** with every rule from your `vfl.toml`.
 - **Go to definition**, **find references**, **highlights**, **hover** (with types),

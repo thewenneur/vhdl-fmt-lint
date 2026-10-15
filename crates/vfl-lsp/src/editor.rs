@@ -517,32 +517,40 @@ pub struct QuickFix {
 
 /// The fixes of the problems touching bytes `start..end` of the file at
 /// `path`, as of the last lint: the rules' own fixes, renames that follow
-/// naming conventions, `use` clauses for undeclared names, then comments
-/// that silence the rules.
+/// naming conventions, `use` clauses for undeclared names, associations
+/// for left-out ports, then comments that silence the rules.
 pub fn quick_fixes(world: &mut World, path: &Path, start: usize, end: usize) -> Vec<QuickFix> {
     world.refresh();
     let Some(file) = world.any_file_id(path) else {
         return Vec::new();
     };
     let at = |offset: usize| TextSize::from(offset.min(u32::MAX as usize) as u32);
-    crate::actions::actions(world, file, at(start), at(end))
+    let actions = crate::actions::actions(world, file, at(start), at(end));
+    actions
         .into_iter()
-        .map(|action| QuickFix {
-            title: action.title,
-            safe: action.safe,
-            rule: world.lint[action.problem].rule,
-            edits: if action.rename.is_some() {
-                Vec::new()
-            } else {
-                action
-                    .edits
-                    .into_iter()
-                    .map(|(_, range, text)| (range.into(), text))
-                    .collect()
-            },
-            rename: action.rename,
-            at: world.lint[action.problem].range.start().into(),
-            silences: action.silences,
+        .filter_map(|mut action| {
+            let problem = world.lint[action.problem].range.start();
+            // Asked for when the menu opens: worked out now.
+            if let Some(a) = action.associate {
+                action.edits = crate::associate::edits(world, file, problem, a.ports, a.all)?;
+            }
+            Some(QuickFix {
+                title: action.title,
+                safe: action.safe,
+                rule: world.lint[action.problem].rule,
+                edits: if action.rename.is_some() {
+                    Vec::new()
+                } else {
+                    action
+                        .edits
+                        .into_iter()
+                        .map(|(_, range, text)| (range.into(), text))
+                        .collect()
+                },
+                rename: action.rename,
+                at: problem.into(),
+                silences: action.silences,
+            })
         })
         .collect()
 }
