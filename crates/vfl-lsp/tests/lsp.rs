@@ -1461,3 +1461,51 @@ fn editor_settings_apply_without_a_config_file() {
     );
     assert_eq!(actions, json!([]));
 }
+
+const CASE_TOP: &str = "library ieee;
+use ieee.std_logic_1164.all;
+entity cases is
+  port (s : in std_logic; q : out std_logic);
+end entity;
+architecture rtl of cases is
+  type state_t is (idle, run, done);
+  signal state : state_t;
+begin
+  process (all)
+  begin
+    case state is
+      when idle => q <= '0';
+    end case;
+    case s is
+      when '0' => q <= '1';
+    end case;
+  end process;
+end architecture;
+";
+
+#[test]
+fn quick_fixes_add_missing_case_alternatives() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("vfl.toml"), "").unwrap();
+    std::fs::write(dir.path().join("cases.vhd"), CASE_TOP).unwrap();
+    let uri = url(&dir.path().join("cases.vhd"));
+    let mut client = Client::start(dir.path());
+
+    let fixes = quick_fixes(&mut client, &uri, 11);
+    let add = fix(
+        &fixes,
+        "Add `when` alternatives for the 2 missing choices (may change behavior)",
+    );
+    assert!(
+        apply(CASE_TOP, &add["edit"], &uri).contains(
+            "      when idle => q <= '0';\n      when run => null;\n      when done => null;\n    end case;"
+        )
+    );
+    // `std_logic` has 9 values: `when others`.
+    let fixes = quick_fixes(&mut client, &uri, 14);
+    let others = fix(&fixes, "Add `when others => null;` (may change behavior)");
+    assert!(
+        apply(CASE_TOP, &others["edit"], &uri)
+            .contains("      when '0' => q <= '1';\n      when others => null;\n    end case;")
+    );
+}

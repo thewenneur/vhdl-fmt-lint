@@ -429,7 +429,8 @@ Each entry is either a level, or a table with an optional `level` and rule optio
   has the rule off. This is how `naming/*` rules are turned on.
 - Rules with options: `style/line-length` (`max`), `sema/unassociated-port` (`undeclared`,
   for its quick fix), `sema/missing-branch-assignment` (`clocked`, to check clocked
-  processes too) and every `naming/<kind>` rule (`prefix`, `suffix`, `case`, `pattern`). See [lints.md](lints.md) for what they do.
+  processes too), `sema/multiple-drivers` (`resolved`: `"rtl"`, `"always"` or `"never"`,
+  for signals of resolved types such as `std_logic`) and every `naming/<kind>` rule (`prefix`, `suffix`, `case`, `pattern`). See [lints.md](lints.md) for what they do.
 
 `info` findings are shown as notes. `vfl lint` exits with a failure status when there are
 `error` findings, or `warn` findings too with `--deny-warnings`.

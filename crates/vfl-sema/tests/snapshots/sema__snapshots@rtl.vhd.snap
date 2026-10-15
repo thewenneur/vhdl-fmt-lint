@@ -39,3 +39,13 @@ top.vhd:74:5: sema/missing-branch-assignment: this `elsif` branch does not assig
 top.vhd:77:5: sema/missing-branch-assignment: this `else` branch does not assign `br_a`, which another branch of the `if` assigns [fix: Assign `br_a` and `br_b` a default value before the `if`]
 top.vhd:83:9: sema/missing-branch-assignment: this `if` has no `else`, so `br_e` is not assigned when no condition holds [fix: Assign `br_e` a default value before the `if`]
 top.vhd:106:7: sema/missing-branch-assignment: this `if` has no `else`, so `used_b` is not assigned when no condition holds [fix: Add an `else` that keeps the value of `used_b`]
+top.vhd:24:3: sema/multiple-drivers: `w` is also driven by the statement at line 23; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:25:3: sema/multiple-drivers: `w` is also driven by the statement at line 23; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:26:3: sema/multiple-drivers: `w` is also driven by the statement at line 23; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:27:3: sema/multiple-drivers: `w` is also driven by the statement at line 23; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:28:3: sema/multiple-drivers: `w` is also driven by the statement at line 23; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:29:3: sema/multiple-drivers: `w` is also driven by the statement at line 23; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:30:3: sema/multiple-drivers: `w` is also driven by the statement at line 23; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:31:3: sema/multiple-drivers: `w` is also driven by the statement at line 23; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:35:61: sema/multiple-drivers: `w` is also driven by the statement at line 23; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:36:50: sema/multiple-drivers: `small` is also driven by the statement at line 32; its type is resolved, but two drivers are rarely intended outside a tri-state bus
