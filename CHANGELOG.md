@@ -20,6 +20,24 @@
   changed lines.
 - **`vfl lint --fix-only RULES`** applies the fixes of some rules or categories only.
 - **`vfl rules --explain RULE`** prints a rule's levels and full description.
+- **Long expressions are broken**: a line still longer than `max_width` once its lists are
+  broken up is broken at the operators of its expressions that bind loosest (`else` of
+  conditional assignments, then `and`/`or`, relational, shift, `+`/`-`/`&`, `*`/`/`), in
+  conditions, assignments and port map actuals. `operator_position` (`"trailing"`,
+  `"leading"`, `"preserve"`) places the operator; `break_expressions = false` turns it off.
+  Lines that fit are not changed.
+- **`[format.declaration_case]`**: the case of identifiers by the kind of their declaration
+  (constants and generics in upper case, ports in lower case...), applied to every use of
+  the name in the file.
+- **`[format.blank_lines]`**: blank lines before and after `begin`, before `end`, before
+  processes and between declaration groups, as an exact number or a `{ min, max }` range.
+
+### Changed
+
+- The formatter's `max_width` and the `style/line-length` rule count display columns:
+  Chinese, Japanese and Korean characters take two.
+- A line continuing an element of a list (a port map actual broken over lines) is indented
+  `continuation_indent` further than the elements.
 
 ## [0.7.0] - 2026-10-15
 

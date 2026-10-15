@@ -1,0 +1,4 @@
+[format]
+max_width = 72                 # longer lines are broken: lists first, then expressions
+operator_position = "leading"  # "and", "+"... start the continuation line (default "preserve")
+continuation_indent = 8        # continuation lines go 8 columns in (default: indent)

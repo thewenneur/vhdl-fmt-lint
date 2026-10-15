@@ -49,6 +49,15 @@ preset = "strict"
 line_ending = "crlf"
 max_width = 40
 indent = 3
+operator_position = "leading"
+[format.declaration_case]
+constant = "upper"
+signal = "lower"
+label = "upper"
+[format.blank_lines]
+after_begin = 0
+before_process = { min = 1 }
+between_declaration_groups = 1
 "#,
         r#"
 [lint]
