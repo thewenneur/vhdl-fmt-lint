@@ -21,6 +21,14 @@
 - **`vfl lint --fix-only RULES`** applies the fixes of some rules or categories only.
 - **`vfl rules --explain RULE`** prints a rule's levels and full description.
 
+### Changed
+
+- **Zed downloads the server of its own version**, not the latest release, and checks the
+  archive against the release's `SHA256SUMS` before keeping the binary; Windows on ARM
+  gets a binary too. The example tasks run from the worktree root (`$ZED_WORKTREE_ROOT`)
+  instead of the current file's directory, and the README says they need `vfl` on the
+  `PATH`.
+
 ## [0.7.0] - 2026-10-15
 
 Library inference ranks above `vhdl_ls.toml`, every editor action can take a keyboard

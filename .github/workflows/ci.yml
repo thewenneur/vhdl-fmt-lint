@@ -126,6 +126,9 @@ jobs:
         working-directory: editors/zed
       - run: cargo clippy --target wasm32-wasip2
         working-directory: editors/zed
+      # The download checks (checksum, archive extraction) run natively.
+      - run: cargo test
+        working-directory: editors/zed
       - run: editors/zed/check.sh
 
   # The Neovim, Emacs, Vim and Helix setups in editors/, in those editors.
