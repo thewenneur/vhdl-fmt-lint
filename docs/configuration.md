@@ -123,8 +123,11 @@ Normally not needed: vfl puts each file in a library by itself. In order of prio
 
 1. `[project.libraries]` in `vfl.toml`.
 2. Library lists of other tools found in the tree, read without running them: VUnit
-   `run.py`, FuseSoC `.core`, Vivado `.xpr` and Tcl `read_vhdl -library` scripts, Quartus
-   `.qsf` / `.qip`.
+   `run.py`, FuseSoC `.core`, Edalize EDAM (`*.eda.yml`, `edam.json`), Vivado `.xpr` and Tcl
+   `read_vhdl -library` scripts, Quartus `.qsf` / `.qip`, `.f` file lists (`-makelib` and
+   `-work` libraries, nested `-f`/`-F`), hdlmake `Manifest.py` (`library` and `files`) and
+   Questa/ModelSim `.mpf` projects (`compile_to`). See
+   [design.md](design.md#project-autodiscovery) for what each one is read for.
 3. Inference from the code: a unit referenced as `lib.unit` puts the file that declares it
    in `lib`, and `work.unit` references keep files together.
 4. rust_hdl's `vhdl_ls.toml` (or `.vhdl_ls.toml`) in the project root, with `$VAR`
