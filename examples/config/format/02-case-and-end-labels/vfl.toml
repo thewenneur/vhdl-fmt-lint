@@ -1,0 +1,5 @@
+[format]
+keyword_case = "upper"      # "lower" (default) | "upper" | "preserve"
+identifier_case = "lower"   # "preserve" (default) | "lower" | "upper"
+end_label = "add"           # end entity counter; / end process p_count;
+end_keyword = "add"         # end entity / end architecture / end process

@@ -1,0 +1,3 @@
+# A style sets several keys at once; keys you set yourself win over it.
+[format]
+style = "compact" # "default" | "leading-comma" | "compact" | "classic"

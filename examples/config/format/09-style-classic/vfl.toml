@@ -1,0 +1,4 @@
+# A style sets several keys at once; keys you set yourself win over it.
+[format]
+style = "classic"
+end_label = "preserve" # overrides the style's "add"

@@ -1,0 +1,4 @@
+[format]
+interface_list = "auto"     # generic/port clauses: "expand" (default) | "auto" | "preserve"
+association_list = "expand" # port/generic maps:   "auto" (default) | "expand" | "preserve"
+close_paren = "attached"    # ")" after the last element instead of on its own line

@@ -1,0 +1,4 @@
+before.vhd:10:18: warning[style/trailing-whitespace] trailing whitespace
+before.vhd:22:1: warning[style/tabs] line is indented with tabs
+before.vhd:22:31: warning[style/positional-association] port map associates by position; name the formals
+before.vhd:22:52: warning[style/trailing-whitespace] trailing whitespace
