@@ -121,6 +121,17 @@ is bound to any key with:
 { "ctrl-alt-v l": ["task::Spawn", { "task_name": "vfl: lint file" }] }
 ```
 
+## Snippets
+
+[`snippets/vhdl.json`](snippets/vhdl.json) has VHDL snippets: `entity` (an entity and its
+architecture), `architecture`, `process-sync` and `process-async` (clocked processes with a
+synchronous or asynchronous reset), `process-clocked`, `process-comb`, `fsm` (an
+architecture with a state machine), `fsm-process`, `testbench`, `for-generate`,
+`if-generate`, `package` (with its body) and `record`. Copy it to
+`~/.config/zed/snippets/vhdl.json` (**snippets: configure snippets** opens that directory).
+It is the VS Code extension's file without its choices and file-name variables, which
+become plain placeholders.
+
 ## Grammars
 
 The grammars are [tree-sitter-vhdl](https://github.com/jpt13653903/tree-sitter-vhdl) for VHDL and
