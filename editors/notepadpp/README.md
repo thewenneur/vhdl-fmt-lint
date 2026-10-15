@@ -63,11 +63,14 @@ are ready, and are dropped if the file changed in the meantime.
   of the current file's entity, with its symbol, block diagram, port maps, state machines
   and hierarchy, in the browser.
 
-- **Verilog and SystemVerilog**: `.v`, `.sv` and their header files are formatted (as a
-  whole, a selection, on save or as you type), their syntax errors are shown as you type,
-  their names are colored by meaning and **Go to symbol in file** lists their modules,
-  ports, parameters, declarations and instances. VHDL that instantiates their modules
-  resolves their ports and parameters.
+- **Verilog and SystemVerilog**: off by default, set by `mode` under `[verilog]` in
+  `vfl.toml` (see [configuration](../../docs/configuration.md#verilog)). With
+  `mode = "names"`, VHDL that instantiates their modules resolves their ports and
+  parameters. With `mode = "full"`, which is in progress and says so once in a message,
+  `.v`, `.sv` and their header files are also formatted (as a whole, a selection, on save
+  or as you type), their syntax errors and lint findings are shown as you type, their
+  names are colored by meaning and **Go to symbol in file** lists their modules, ports,
+  parameters, declarations and instances.
 
 ## Commands
 

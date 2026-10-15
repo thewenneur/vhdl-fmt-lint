@@ -1027,7 +1027,8 @@ end architecture;
 #[test]
 fn verilog_modules_across_languages() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("vfl.toml"), "").unwrap();
+    // Names only: VHDL resolves the module, nothing else is done with it.
+    std::fs::write(dir.path().join("vfl.toml"), "[verilog]\nmode = \"names\"\n").unwrap();
     std::fs::write(dir.path().join("fifo.sv"), VERILOG_FIFO).unwrap();
     std::fs::write(dir.path().join("top.vhd"), VHDL_TOP).unwrap();
     let fifo = url(&dir.path().join("fifo.sv"));
@@ -1121,11 +1122,18 @@ fn completion_after_a_non_ascii_character() {
     assert_eq!(completion.start, 21);
 }
 
+/// A world with no project, with `[verilog]` `mode = "full"` everywhere.
+fn verilog_world() -> vfl_lsp::World {
+    let mut config = vfl_config::Config::default();
+    config.verilog.mode = vfl_config::VerilogMode::Full;
+    vfl_lsp::World::detached_with(config, true)
+}
+
 /// Found by fuzzing: requests on a Verilog document, which has no VHDL
 /// tree, panicked.
 #[test]
 fn requests_on_a_verilog_document() {
-    let mut world = vfl_lsp::World::detached();
+    let mut world = verilog_world();
     let path = std::env::temp_dir().join("vfl_requests_on_verilog.sv");
     world.set_text(path.clone(), "module m(input a);\nendmodule\n".into());
     world.refresh();
@@ -1145,7 +1153,7 @@ fn requests_on_a_verilog_document() {
 /// silence them in `//` comments.
 #[test]
 fn verilog_problems_and_fixes() {
-    let mut world = vfl_lsp::World::detached();
+    let mut world = verilog_world();
     let path = std::env::temp_dir().join("vfl_verilog_problems.sv");
     let text = "module m (input wire clk, input wire d, output reg q);\n  \
                 always @(posedge clk) q = d;\nendmodule\n";

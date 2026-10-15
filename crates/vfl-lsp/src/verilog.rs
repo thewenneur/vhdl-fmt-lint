@@ -17,12 +17,14 @@ use crate::world::World;
 
 use SyntaxKind::*;
 
-/// The Verilog file at `path`, when the project has one there.
+/// The Verilog file at `path`, when the project has one there and
+/// `[verilog]` `mode = "full"` gives it editor features.
 pub(crate) fn file<'a>(world: &'a World, path: &Path) -> Option<&'a VerilogFile> {
-    world
+    let file = world
         .project
         .verilog
-        .get(world.project.verilog_index(path)?)
+        .get(world.project.verilog_index(path)?)?;
+    world.verilog_features(path).then_some(file)
 }
 
 /// The name token of a `NAME` node, or the first name token of `node`.
@@ -600,7 +602,17 @@ endmodule
 ";
 
     fn world(text: &str) -> (tempfile::TempDir, std::path::PathBuf, World) {
+        world_in(text, "full")
+    }
+
+    /// A project of one file, `text`, with `[verilog]` `mode`.
+    fn world_in(text: &str, mode: &str) -> (tempfile::TempDir, std::path::PathBuf, World) {
         let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("vfl.toml"),
+            format!("[verilog]\nmode = \"{mode}\"\n"),
+        )
+        .unwrap();
         let path = dir.path().join("counter.sv");
         std::fs::write(&path, text).unwrap();
         let mut world = World::new(dir.path());
@@ -726,6 +738,48 @@ q port
             request(&mut world, "textDocument/definition", at),
             Value::Null
         );
+    }
+
+    #[test]
+    fn verilog_features_follow_the_mode() {
+        let bad = "module m;\n  assign a = ;\nendmodule\n";
+        // In full: everything, and a notice that it is in progress.
+        let (_dir, _, world) = world_in(bad, "full");
+        assert!(!crate::handlers::diagnostics(&world).is_empty());
+        assert_eq!(world.notices, [vfl_config::VerilogConfig::IN_PROGRESS]);
+        // Names only, or off: nothing in the Verilog file itself.
+        for mode in ["names", "off"] {
+            let (_dir, path, mut world) = world_in(TEXT, mode);
+            assert_eq!(
+                world.project.verilog.len(),
+                usize::from(mode == "names"),
+                "{mode}"
+            );
+            let uri = lsp_types::Url::from_file_path(&path).unwrap();
+            let document = json!({ "textDocument": { "uri": uri } });
+            for method in [
+                "textDocument/documentSymbol",
+                "textDocument/foldingRange",
+                "textDocument/semanticTokens/full",
+            ] {
+                assert_eq!(
+                    request(&mut world, method, document.clone()),
+                    Value::Null,
+                    "{mode} {method}"
+                );
+            }
+            world.set_text(path.clone(), TEXT.replace("assign q = n;", "assign   q=n;"));
+            let edits = request(
+                &mut world,
+                "textDocument/formatting",
+                json!({ "textDocument": { "uri": uri }, "options": { "tabSize": 2, "insertSpaces": true } }),
+            );
+            assert!(edits.as_array().is_none_or(Vec::is_empty), "{mode} {edits}");
+            world.refresh();
+            assert!(world.notices.is_empty(), "{mode}");
+            let (_dir, _, world) = world_in(bad, mode);
+            assert!(crate::handlers::diagnostics(&world).is_empty(), "{mode}");
+        }
     }
 
     #[test]

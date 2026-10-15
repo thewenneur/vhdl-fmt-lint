@@ -177,15 +177,18 @@ impl Project {
         tool_files: Vec<PathBuf>,
     ) -> Result<Project, LoadError> {
         let standard = config.standard();
+        // With `[verilog]` `mode` off, Verilog files are left out, not
+        // read as VHDL.
         let results: Vec<_> = paths
             .into_par_iter()
-            .map(|path| {
+            .filter_map(|path| {
                 let read = match verilog_standard(&config, &path) {
+                    Some(_) if !config.verilog.loaded() => return None,
                     Some(std) => VerilogFile::read(path.clone(), &config, &root.dir, std)
                         .map(Loaded::Verilog),
                     None => SourceFile::read(path.clone(), standard).map(Loaded::Vhdl),
                 };
-                read.map_err(|err| (path, err.to_string()))
+                Some(read.map_err(|err| (path, err.to_string())))
             })
             .collect();
         let mut files = Vec::new();
@@ -379,6 +382,18 @@ mod tests {
         .unwrap();
         fs::write(root.join("rtl/alone.v"), "module alone; endmodule\n").unwrap();
         fs::write(root.join("rtl/defs.svh"), "`define W 8\n").unwrap();
+        // Off by default: the Verilog files are left out, not read as VHDL.
+        let load = || {
+            Project::load(ProjectRoot {
+                dir: root.to_owned(),
+                kind: RootKind::Vcs,
+            })
+            .unwrap()
+        };
+        let off = load();
+        assert_eq!(off.files.len(), 1);
+        assert!(off.verilog.is_empty());
+        fs::write(root.join("vfl.toml"), "[verilog]\nmode = \"names\"\n").unwrap();
         let project = Project::load(ProjectRoot {
             dir: root.to_owned(),
             kind: RootKind::Vcs,

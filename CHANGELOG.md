@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Verilog and SystemVerilog support is off by default**, set by the new `[verilog]`
+  `mode`: `"off"` (the default) ignores Verilog files; `"names"` reads them only so that
+  VHDL resolves the modules it instantiates, with nothing reported, formatted or colored
+  in the Verilog files; `"full"` turns on everything 0.3 did, and says once that this
+  support is in progress (on standard error, and in a message in VS Code and Notepad++).
+  To keep 0.3's behavior, add `mode = "full"` under `[verilog]` in `vfl.toml`.
+- The VS Code extension no longer makes itself the default formatter of Verilog and
+  SystemVerilog.
+
 ## [0.3.1] - 2026-10-15
 
 Faster and leaner analysis, with no change in what it reports.

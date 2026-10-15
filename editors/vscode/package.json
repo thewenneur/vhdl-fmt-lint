@@ -366,14 +366,6 @@
       "[vhdl]": {
         "editor.defaultFormatter": "thewenneur.vfl",
         "editor.formatOnType": true
-      },
-      "[verilog]": {
-        "editor.defaultFormatter": "thewenneur.vfl",
-        "editor.formatOnType": true
-      },
-      "[systemverilog]": {
-        "editor.defaultFormatter": "thewenneur.vfl",
-        "editor.formatOnType": true
       }
     },
     "commands": [

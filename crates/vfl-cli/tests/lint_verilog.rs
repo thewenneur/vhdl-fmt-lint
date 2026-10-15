@@ -64,6 +64,7 @@ fn reports_what_the_files_expect() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/verilog");
     let (ok, stdout, stderr) = vfl(&dir, &["lint", "--output-format", "concise"]);
     assert!(!ok, "{stderr}");
+    assert!(stderr.contains("in progress"), "{stderr}");
     let expected = expected(&dir);
     let reported = reported(&stdout);
     let missing: Vec<_> = expected.difference(&reported).collect();
@@ -77,7 +78,11 @@ fn reports_what_the_files_expect() {
 #[test]
 fn fixes_assignments_and_connections() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("vfl.toml"), "[lint]\npreset = \"strict\"\n").unwrap();
+    std::fs::write(
+        dir.path().join("vfl.toml"),
+        "[lint]\npreset = \"strict\"\n[verilog]\nmode = \"full\"\n",
+    )
+    .unwrap();
     std::fs::write(
         dir.path().join("fix.sv"),
         "`default_nettype none\n\
@@ -102,10 +107,19 @@ fn fixes_assignments_and_connections() {
 #[test]
 fn lints_only_the_requested_verilog_files() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("vfl.toml"), "").unwrap();
     let bad = "module bad (output wire y);\n  assign y = missing;\nendmodule\n";
     std::fs::write(dir.path().join("a.v"), bad).unwrap();
     std::fs::write(dir.path().join("b.v"), bad.replace("bad", "other")).unwrap();
+    // Off by default, and with names only: nothing in Verilog is reported.
+    for config in ["", "[verilog]\nmode = \"names\"\n"] {
+        std::fs::write(dir.path().join("vfl.toml"), config).unwrap();
+        let (ok, stdout, stderr) = vfl(dir.path(), &["lint", "--output-format", "concise"]);
+        assert!(ok && stdout.is_empty(), "{stdout}{stderr}");
+        let (ok, stdout, stderr) = vfl(dir.path(), &["lint", "a.v"]);
+        assert!(ok && stdout.is_empty(), "{stdout}{stderr}");
+        assert!(stderr.contains("mode = \"full\""), "{stderr}");
+    }
+    std::fs::write(dir.path().join("vfl.toml"), "[verilog]\nmode = \"full\"\n").unwrap();
     let (_, stdout, _) = vfl(dir.path(), &["lint", "--output-format", "concise", "a.v"]);
     assert!(stdout.contains("a.v:2:14"), "{stdout}");
     assert!(!stdout.contains("b.v"), "{stdout}");

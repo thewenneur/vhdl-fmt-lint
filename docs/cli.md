@@ -39,7 +39,8 @@ vfl fmt [OPTIONS] [PATHS]...
 Formats VHDL, Verilog and SystemVerilog files in place with the `[format]` settings
 ([configuration.md](configuration.md#format)). Paths are files or directories; `-` reads
 standard input and writes the result to standard output. A file is formatted as Verilog
-or SystemVerilog by its extension (see [`[verilog]`](configuration.md#verilog)).
+or SystemVerilog by its extension, with `[verilog]` `mode = "full"` only (see
+[`[verilog]`](configuration.md#verilog)); otherwise Verilog files are left as they are.
 
 | Option | |
 |--------|---|
@@ -66,10 +67,11 @@ vfl lint [OPTIONS] [PATHS]...
 ```
 
 Analyzes the whole project around each path, so names, types and overloads are resolved
-across files and libraries, then reports the findings in the given files only. The
-project's Verilog and SystemVerilog modules take part as entities: instances of them are
-checked against their parameters and ports. Verilog and SystemVerilog files are linted
-too (see [lints.md](lints.md#verilog-and-systemverilog)). Which rules
+across files and libraries, then reports the findings in the given files only. Unless
+`[verilog]` `mode` is off (the default), the project's Verilog and SystemVerilog modules
+take part as entities: instances of them are checked against their parameters and ports.
+With `mode = "full"`, Verilog and SystemVerilog files are linted too (see
+[lints.md](lints.md#verilog-and-systemverilog)). Which rules
 run and at which level comes from `[lint]` ([configuration.md](configuration.md#lint));
 every rule is described in [lints.md](lints.md).
 
@@ -100,7 +102,8 @@ vfl check [PATHS]...
 Parses the files and reports syntax errors only, without analyzing the project. Faster
 than `vfl lint` when only the syntax matters.
 
-Verilog and SystemVerilog files are checked too: by default `.v` and `.vh` files as
+With `[verilog]` `mode = "full"` (see [`[verilog]`](configuration.md#verilog)), Verilog
+and SystemVerilog files are checked too: by default `.v` and `.vh` files as
 Verilog-2005 and `.sv` and `.svh` files as SystemVerilog-2017 (see
 [`[verilog]`](configuration.md#verilog)). `` `ifdef `` branches are chosen from the
 configured `defines` and the macros defined in the file and in the files it includes;
@@ -125,8 +128,8 @@ Shows what vfl discovers for the project around `PATH` (default: the current dir
 its root, the config files that apply, every source file, the library each file is in and
 why (a `[project.libraries]` entry, a `vhdl_ls.toml`, a tool file such as VUnit's `run.py`,
 a FuseSoC `.core`, a Vivado or Quartus project, or inference from `library.unit`
-references). Verilog and SystemVerilog files are listed apart, with the libraries of the
-units that instantiate their modules.
+references). Verilog and SystemVerilog files (unless `[verilog]` `mode`
+is off) are listed apart, with the libraries of the units that instantiate their modules.
 
 | Option | |
 |--------|---|
@@ -149,7 +152,7 @@ vfl doc [OPTIONS] [PATH]
 
 Writes the documentation of the design: an index, a page per entity (generics, ports,
 symbol, architectures, instances, processes, state machines and their diagrams) and a page
-per package, as HTML, Markdown or AsciiDoc. Verilog and SystemVerilog modules get a page
+per package, as HTML, Markdown or AsciiDoc. Unless `[verilog]` `mode` is off, Verilog and SystemVerilog modules get a page
 too (parameters, ports, symbol, instances) and appear in the hierarchy. Doc comments are the comments directly above a
 declaration or at the end of its line, or only the `--!` ones if the file has any. What is
 documented and which diagrams are drawn comes from `[doc]` and `[doc.diagrams]`
@@ -246,7 +249,7 @@ client. It offers:
   workspace symbols;
 - semantic highlighting: signals, ports (with their mode), variables, constants,
   generics, types, subprograms, entities, components, packages and enumeration literals;
-- for Verilog and SystemVerilog files: lint diagnostics with their fixes, formatting (document, range and on
+- for Verilog and SystemVerilog files, with `[verilog]` `mode = "full"`: lint diagnostics with their fixes, formatting (document, range and on
   type), document symbols (modules, parameters, ports, declarations, functions, tasks,
   instances and named generate blocks), folding ranges, and semantic highlighting of the
   names declared in the file;

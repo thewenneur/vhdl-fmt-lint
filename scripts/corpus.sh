@@ -11,6 +11,8 @@ set -euo pipefail
 
 cache=${1:-.corpus}
 mkdir -p "$cache"
+# Every project gets all of vfl's Verilog support, which is off by default.
+printf '[verilog]\nmode = "full"\n' >"$cache/vfl.toml"
 
 # name  url  commit
 repos=(

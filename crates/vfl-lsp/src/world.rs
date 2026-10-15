@@ -29,6 +29,9 @@ pub struct World {
     pub analysis: Analysis,
     pub lint: Vec<vfl_lint::Diagnostic>,
     pub config_errors: Vec<String>,
+    /// What to tell the user once, such as that Verilog support is in
+    /// progress.
+    pub notices: Vec<String>,
     /// Why the project could not be loaded as configured.
     load_error: Option<String>,
     configs: FxHashMap<PathBuf, Config>,
@@ -42,6 +45,8 @@ pub struct World {
     pub dirty: bool,
     /// The semantic tokens last sent, for answering with deltas.
     pub(crate) semantic: crate::semantic::Sent,
+    /// Whether every file has the project's config.
+    fixed_config: bool,
 }
 
 impl World {
@@ -57,12 +62,14 @@ impl World {
             outside: FxHashSet::default(),
             lint: Vec::new(),
             config_errors: Vec::new(),
+            notices: Vec::new(),
             configs: FxHashMap::default(),
             lint_cache: vfl_lint::LintCache::default(),
             sources: None,
             inferred_from: Vec::new(),
             dirty: true,
             semantic: Default::default(),
+            fixed_config: false,
         };
         world.refresh();
         world
@@ -71,12 +78,20 @@ impl World {
     /// A world with no project, for documents that are not saved
     /// anywhere: only open documents are analyzed, with default settings.
     pub fn detached() -> World {
+        World::detached_with(Config::default(), false)
+    }
+
+    /// A world with no project, whose open documents are analyzed with
+    /// `config`, or, unless `everywhere`, the config of their directory
+    /// when they are saved somewhere.
+    pub fn detached_with(config: Config, everywhere: bool) -> World {
         let root = ProjectRoot {
             dir: PathBuf::new(),
             kind: RootKind::Fallback,
         };
         World {
-            project: empty(&root, Config::default()),
+            fixed_config: everywhere,
+            project: empty(&root, config),
             load_error: None,
             root,
             analysis: Analysis::empty(),
@@ -84,6 +99,7 @@ impl World {
             outside: FxHashSet::default(),
             lint: Vec::new(),
             config_errors: Vec::new(),
+            notices: Vec::new(),
             configs: FxHashMap::default(),
             lint_cache: vfl_lint::LintCache::default(),
             sources: None,
@@ -113,8 +129,12 @@ impl World {
     /// saved anywhere, which gets the defaults.
     pub fn config(&mut self, path: &Path) -> &Config {
         let dir = config_dir(path);
+        let project = &self.project.config;
+        let fixed = self.fixed_config;
         self.configs.entry(dir.clone()).or_insert_with(|| {
-            if dir.as_os_str().is_empty() {
+            if fixed {
+                project.clone()
+            } else if dir.as_os_str().is_empty() {
                 Config::default()
             } else {
                 vfl_config::load_for_dir(&dir).unwrap_or_default()
@@ -180,6 +200,9 @@ impl World {
     ) -> Option<VerilogFile> {
         let root = self.root.dir.clone();
         let config = self.config(&path);
+        if !config.verilog.loaded() {
+            return None;
+        }
         let standard = verilog_standard(config, &path)?;
         Some(VerilogFile::new(
             path, text, encoding, config, &root, standard,
@@ -288,7 +311,9 @@ impl World {
             .iter()
             .map(|p| &self.configs[&config_dir(p)])
             .collect();
-        // Verilog files follow the VHDL ones in the analysis.
+        // Verilog files follow the VHDL ones in the analysis, linted only
+        // with `[verilog]` `mode = "full"`.
+        let vhdl = self.project.files.len();
         let settings: Vec<FileSettings> = self
             .project
             .files
@@ -302,6 +327,7 @@ impl World {
             )
             .zip(&configs)
             .enumerate()
+            .filter(|(i, (_, config))| *i < vhdl || config.verilog.full())
             .map(|(i, ((syntax_errors, verilog), config))| FileSettings {
                 file: i as FileId,
                 syntax_errors,
@@ -309,6 +335,11 @@ impl World {
                 verilog,
             })
             .collect();
+        self.notices.clear();
+        if settings.len() > vhdl {
+            self.notices
+                .push(vfl_config::VerilogConfig::IN_PROGRESS.to_owned());
+        }
         let result = vfl_lint::lint_cached(&self.analysis, &settings, &mut self.lint_cache);
         self.lint = result.diagnostics;
         self.config_errors = result.config_errors;
@@ -383,6 +414,16 @@ impl World {
     /// The analyzed file at `path`, VHDL or Verilog.
     pub fn any_file_id(&self, path: &Path) -> Option<FileId> {
         self.analysis.file_id(path)
+    }
+
+    /// Whether the Verilog file at `path` gets editor features: with
+    /// `[verilog]` `mode = "full"` only.
+    pub fn verilog_features(&self, path: &Path) -> bool {
+        self.configs
+            .get(&config_dir(path))
+            .unwrap_or(&self.project.config)
+            .verilog
+            .full()
     }
 
     /// Whether an analyzed file is a VHDL one.

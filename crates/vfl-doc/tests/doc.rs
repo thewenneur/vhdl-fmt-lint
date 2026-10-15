@@ -543,7 +543,7 @@ fn loads_a_project_and_skips_excluded_files() {
 #[test]
 fn verilog_modules_are_documented_and_in_the_hierarchy() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("vfl.toml"), "").unwrap();
+    std::fs::write(dir.path().join("vfl.toml"), "[verilog]\nmode = \"names\"\n").unwrap();
     std::fs::write(
         dir.path().join("top.vhd"),
         "entity top is port (clk : in bit); end;\n\

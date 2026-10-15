@@ -125,6 +125,8 @@ impl From<StandardSetting> for Standard {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct VerilogConfig {
+    /// How much of vfl works on Verilog and SystemVerilog files.
+    pub mode: VerilogMode,
     /// File extensions of Verilog sources, parsed with `standard`.
     pub extensions: Vec<String>,
     /// The Verilog standard (keyword set) of files with `extensions`.
@@ -143,6 +145,7 @@ pub struct VerilogConfig {
 impl Default for VerilogConfig {
     fn default() -> Self {
         VerilogConfig {
+            mode: VerilogMode::Off,
             extensions: vec!["v".into(), "vh".into()],
             standard: VerilogStandard::Verilog2005,
             sv_extensions: vec!["sv".into(), "svh".into()],
@@ -154,6 +157,22 @@ impl Default for VerilogConfig {
 }
 
 impl VerilogConfig {
+    /// What vfl says wherever it works on Verilog files in
+    /// [`VerilogMode::Full`].
+    pub const IN_PROGRESS: &'static str = "Verilog and SystemVerilog support is in progress: \
+        expect gaps and false findings in their files ([verilog] mode = \"full\")";
+
+    /// Whether Verilog files are read at all, for the modules VHDL
+    /// instantiates.
+    pub fn loaded(&self) -> bool {
+        self.mode != VerilogMode::Off
+    }
+
+    /// Whether Verilog files are checked, formatted and linted.
+    pub fn full(&self) -> bool {
+        self.mode == VerilogMode::Full
+    }
+
     /// The standard to parse a file with this extension with, if it is a
     /// Verilog or SystemVerilog source.
     pub fn standard_for_extension(&self, ext: &str) -> Option<VerilogStandard> {
@@ -166,6 +185,21 @@ impl VerilogConfig {
             None
         }
     }
+}
+
+/// The `[verilog]` `mode`: how much of vfl works on Verilog and
+/// SystemVerilog files.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VerilogMode {
+    /// Verilog files are ignored.
+    #[default]
+    Off,
+    /// Verilog files are read only for the modules VHDL instantiates:
+    /// names resolve, nothing in the Verilog files is reported or formatted.
+    Names,
+    /// Everything: checking, formatting and linting Verilog files too.
+    Full,
 }
 
 /// A Verilog or SystemVerilog standard, spelled as `` `begin_keywords ``
