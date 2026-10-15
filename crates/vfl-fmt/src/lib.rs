@@ -69,7 +69,7 @@ use crate::lang::{Lang, Node};
 
 pub use range::{
     Edit, apply_edits, format_range, format_ranges, format_ranges_in, format_ranges_verilog,
-    format_ranges_verilog_in, format_typed, format_typed_verilog,
+    format_ranges_verilog_in, format_typed, format_typed_verilog, minimal_edit,
 };
 
 /// Why a file could not be formatted. The file should be left as it is.

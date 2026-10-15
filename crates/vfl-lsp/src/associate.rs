@@ -491,27 +491,13 @@ fn formatted(
     .ok()?;
     let result = vfl_fmt::apply_edits(&fixed, &after);
     // One edit covering what changed.
-    let mut prefix = text
-        .bytes()
-        .zip(result.bytes())
-        .take_while(|(a, b)| a == b)
-        .count();
-    while !text.is_char_boundary(prefix) {
-        prefix -= 1;
-    }
-    let mut suffix = text[prefix..]
-        .bytes()
-        .rev()
-        .zip(result[prefix..].bytes().rev())
-        .take_while(|(a, b)| a == b)
-        .count();
-    while !text.is_char_boundary(text.len() - suffix) {
-        suffix -= 1;
-    }
-    let (old_end, new_end) = (text.len() - suffix, result.len() - suffix);
+    let edit = vfl_fmt::minimal_edit(text, &result);
     Some(vec![(
-        TextRange::new((prefix as u32).into(), (old_end as u32).into()),
-        result[prefix..new_end].to_owned(),
+        TextRange::new(
+            (edit.range.start as u32).into(),
+            (edit.range.end as u32).into(),
+        ),
+        edit.text,
     )])
 }
 
