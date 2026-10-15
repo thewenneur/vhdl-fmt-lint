@@ -322,6 +322,24 @@ fn lint_file(
     } else {
         vfl_sema::MissingBranches::default()
     };
+    // Computed on demand too.
+    let multiple = if enabled(vfl_sema::codes::MULTIPLE_DRIVERS) {
+        Some(
+            rules::resolved_drivers(lint_config).unwrap_or_else(|error| {
+                errors.push(error);
+                vfl_sema::ResolvedDrivers::default()
+            }),
+        )
+    } else {
+        None
+    };
+    let drivers = analysis.driver_checks(
+        settings.file,
+        vfl_sema::DriverChecks {
+            multiple,
+            loops: enabled(vfl_sema::codes::COMBINATIONAL_LOOP),
+        },
+    );
     // A latch that a missing branch assignment explains is reported as the
     // latter only.
     let explained = |d: &vfl_sema::Diagnostic| {
@@ -332,6 +350,7 @@ fn lint_file(
         .copied()
         .filter(|d| !explained(d))
         .chain(&branches.diagnostics)
+        .chain(&drivers)
     {
         let code = d.code;
         let mut finding = Finding::new(code, d.range, d.message.clone());

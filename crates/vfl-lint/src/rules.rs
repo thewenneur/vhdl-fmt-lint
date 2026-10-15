@@ -1,7 +1,7 @@
 //! The rule registry: every rule's id, summary and default levels.
 
 use vfl_config::{Level, LintConfig, Preset, RuleSetting};
-use vfl_sema::codes;
+use vfl_sema::{ResolvedDrivers, codes};
 
 /// A lint rule.
 #[derive(Debug, Clone, Copy)]
@@ -248,6 +248,34 @@ pub const RULES: &[Rule] = &[
         false,
     ),
     rule(
+        codes::INCOMPLETE_CASE,
+        "The choices of a `case` statement or selected assignment leave out values of the selector's subtype, and there is no `when others`.",
+        Error,
+        Error,
+        true,
+    ),
+    rule(
+        codes::DUPLICATE_CHOICE,
+        "A choice of a `case` statement or selected assignment names a value an earlier choice covers.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        codes::MULTIPLE_DRIVERS,
+        "A signal, or an overlapping part of it, is driven by more than one process, concurrent statement or instance.",
+        Warn,
+        Error,
+        false,
+    ),
+    rule(
+        codes::COMBINATIONAL_LOOP,
+        "A signal depends on itself through concurrent assignments and combinational processes, with no register on the way.",
+        Warn,
+        Error,
+        false,
+    ),
+    rule(
         "verilog/blocking-in-clocked",
         "A clocked `always` block assigns a signal with a blocking assignment (`=`).",
         Warn,
@@ -489,6 +517,21 @@ pub fn clocked_branches(config: &LintConfig) -> Result<bool, String> {
     }
 }
 
+/// The `resolved` option of `sema/multiple-drivers`: which signals of a
+/// resolved type (`std_logic`) are reported.
+pub fn resolved_drivers(config: &LintConfig) -> Result<ResolvedDrivers, String> {
+    let value = options(config, codes::MULTIPLE_DRIVERS).and_then(|o| o.get("resolved"));
+    match value.map(|v| v.as_str()) {
+        None | Some(Some("rtl")) => Ok(ResolvedDrivers::Rtl),
+        Some(Some("always")) => Ok(ResolvedDrivers::Always),
+        Some(Some("never")) => Ok(ResolvedDrivers::Never),
+        _ => Err(format!(
+            "`resolved` of `{}` must be \"rtl\", \"always\" or \"never\"",
+            codes::MULTIPLE_DRIVERS
+        )),
+    }
+}
+
 /// Rule ids in `config` that do not exist.
 pub fn unknown_rules(config: &LintConfig) -> Vec<String> {
     config
@@ -523,6 +566,19 @@ mod tests {
         assert_eq!(level(&on, codes::MISSING_BRANCH_ASSIGNMENT), Warn);
         let bad = config("[rules]\n\"sema/missing-branch-assignment\" = { clocked = 1 }");
         assert!(clocked_branches(&bad).is_err());
+    }
+
+    #[test]
+    fn the_resolved_option_is_checked() {
+        let config = |toml: &str| -> LintConfig { toml::from_str(toml).unwrap() };
+        assert_eq!(resolved_drivers(&config("")), Ok(ResolvedDrivers::Rtl));
+        let always = config("[rules]\n\"sema/multiple-drivers\" = { resolved = \"always\" }");
+        assert_eq!(resolved_drivers(&always), Ok(ResolvedDrivers::Always));
+        assert_eq!(level(&always, codes::MULTIPLE_DRIVERS), Warn);
+        let never = config("[rules]\n\"sema/multiple-drivers\" = { resolved = \"never\" }");
+        assert_eq!(resolved_drivers(&never), Ok(ResolvedDrivers::Never));
+        let bad = config("[rules]\n\"sema/multiple-drivers\" = { resolved = true }");
+        assert!(resolved_drivers(&bad).is_err());
     }
 
     #[test]

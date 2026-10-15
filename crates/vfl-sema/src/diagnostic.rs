@@ -84,4 +84,8 @@ pub mod codes {
     pub const RESET_POLARITY: &str = "sema/reset-polarity";
     pub const FSM_UNREACHABLE_STATE: &str = "sema/fsm-unreachable-state";
     pub const FSM_STUCK_STATE: &str = "sema/fsm-stuck-state";
+    pub const INCOMPLETE_CASE: &str = "sema/incomplete-case";
+    pub const DUPLICATE_CHOICE: &str = "sema/duplicate-choice";
+    pub const MULTIPLE_DRIVERS: &str = "sema/multiple-drivers";
+    pub const COMBINATIONAL_LOOP: &str = "sema/combinational-loop";
 }
