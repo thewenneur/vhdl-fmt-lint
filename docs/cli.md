@@ -256,4 +256,4 @@ client. It offers:
 - code actions that insert an instantiation or a component declaration, or generate a
   testbench, from an entity.
 
-Setup for VS Code, Notepad++, Neovim and Helix is in the [README](../README.md#installation).
+Setup for each editor is in [editors.md](editors.md).

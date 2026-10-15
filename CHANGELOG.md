@@ -1,6 +1,16 @@
 # Changelog
 
-## [Unreleased]
+## Unreleased
+
+### Added
+
+- **Zed extension** (`editors/zed`): VHDL, Verilog and SystemVerilog highlighting, outline,
+  brackets and indentation from Tree-sitter grammars, and the language server, from the
+  `PATH` or downloaded from the latest release. Installed as a dev extension for now.
+- **Setup for more editors** ([docs/editors.md](docs/editors.md)), with ready-made files in
+  `editors/`: Neovim, Vim (vim-lsp, yegappan/lsp, coc.nvim), Emacs (Eglot and lsp-mode),
+  Helix, Sublime Text, Kate and JetBrains IDEs (LSP4IJ). The Neovim, Emacs, Vim and Helix
+  setups are tested against those editors in CI.
 
 ### Changed
 
@@ -23,11 +33,6 @@
   aligned token, its whole block is laid out, and only the lines that change are in the
   edits.
 
-### Fixed
-
-- A broken-up Verilog call with an empty argument (`f(a,, b)`) no longer puts the empty
-  argument on a line of its own, which the next formatting undid.
-
 To format as 0.4 did:
 
 ```toml
@@ -38,6 +43,11 @@ indent = 2
 scope = "contiguous"
 semicolon = false
 ```
+
+### Fixed
+
+- A broken-up Verilog call with an empty argument (`f(a,, b)`) no longer puts the empty
+  argument on a line of its own, which the next formatting undid.
 
 ## [0.4.0] - 2026-10-15
 

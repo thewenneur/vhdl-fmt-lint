@@ -1,0 +1,16 @@
+[package]
+name = "vfl-zed"
+version = "0.4.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Built to WebAssembly by Zed (or `cargo build --target wasm32-wasip2`), so it
+# stays out of the main workspace.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+zed_extension_api = "0.7.0"

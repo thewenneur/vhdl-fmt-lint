@@ -1,0 +1,13 @@
+// vfl language server for Sublime Text's LSP package: VHDL, Verilog and
+// SystemVerilog. Merge "clients" into Preferences > Package Settings > LSP >
+// Settings. The selectors need syntax packages that define them, such as
+// "VHDL" and "SystemVerilog" from Package Control. See docs/editors.md.
+{
+  "clients": {
+    "vfl": {
+      "enabled": true,
+      "command": ["vfl", "lsp"],
+      "selector": "source.vhdl | source.verilog | source.systemverilog"
+    }
+  }
+}

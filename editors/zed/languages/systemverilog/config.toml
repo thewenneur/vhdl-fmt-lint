@@ -1,0 +1,11 @@
+name = "SystemVerilog"
+grammar = "systemverilog"
+path_suffixes = ["sv", "svh"]
+line_comments = ["// "]
+tab_size = 2
+brackets = [
+  { start = "(", end = ")", close = true, newline = true },
+  { start = "[", end = "]", close = true, newline = false },
+  { start = "{", end = "}", close = true, newline = true },
+  { start = "\"", end = "\"", close = true, newline = false, not_in = ["string", "comment"] },
+]

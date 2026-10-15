@@ -1,0 +1,10 @@
+{
+  "languageserver": {
+    "vfl": {
+      "command": "vfl",
+      "args": ["lsp"],
+      "filetypes": ["vhdl", "verilog", "systemverilog"],
+      "rootPatterns": ["vfl.toml", ".git"]
+    }
+  }
+}
