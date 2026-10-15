@@ -23,6 +23,18 @@ for query in languages/systemverilog/*.scm; do
   fi
 done
 
+# The example keymap only spawns tasks of the example tasks.json.
+python3 - <<'PY'
+import json
+labels = {task["label"] for task in json.load(open("tasks.json"))}
+for section in json.load(open("keymap.json")):
+    for key, action in section["bindings"].items():
+        if isinstance(action, list) and action[0] == "task::Spawn":
+            name = action[1]["task_name"]
+            assert name in labels, f"keymap.json: {key} spawns unknown task {name!r}"
+PY
+echo "ok: keymap.json and tasks.json agree"
+
 cargo build --release --target wasm32-wasip2
 echo "ok: extension builds"
 

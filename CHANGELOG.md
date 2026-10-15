@@ -4,6 +4,9 @@
 
 ### Added
 
+- **Configuration guide by example** in `examples/config`: one folder per formatter or lint
+  topic, each with a `vfl.toml`, a file before and after `vfl fmt` or `vfl lint --fix`, and
+  a README. A test keeps the `after` files in sync with vfl.
 - **`sema/missing-branch-assignment`**: every signal a process assigns in a branch of an
   `if` or `case` must be assigned in all its branches (and the `if` must have an `else`),
   unless it has a default before the statement. Reported at the branch that leaves it out.
@@ -12,6 +15,11 @@
   clocked processes (safe), a default before the statement in combinational ones (unsafe).
 - **`style/case-others`** (strict): a `case` statement without `when others`; the fix adds
   `when others => null;`.
+
+### Fixed
+
+- **`-- vfl: skip` keeps the comment at the end of the skipped statement** as written; the
+  formatter used to change the spaces before it.
 
 ## [0.6.0] - 2026-10-15
 

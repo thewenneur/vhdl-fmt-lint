@@ -1,0 +1,8 @@
+before.vhd:6:9: warning[naming/input-port] port `clk` should end with `_i`
+before.vhd:7:9: warning[naming/output-port] port `led` should end with `_o`
+before.vhd:12:10: warning[naming/type] type `Phase` should end with `_t`
+before.vhd:13:14: warning[naming/constant] constant `halfPeriod` should start with `C_`
+before.vhd:14:12: warning[naming/signal] signal `ticks` should start with `s_`
+before.vhd:15:12: warning[naming/signal] signal `ledPhase` should start with `s_`
+before.vhd:17:5: warning[naming/process] label `toggle` should start with `p_`
+before.vhd:48:5: error[naming/instance] label `blink0` should match `^(?:u_[a-z0-9_]+)$`

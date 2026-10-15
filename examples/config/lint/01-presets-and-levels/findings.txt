@@ -1,0 +1,4 @@
+before.vhd:7:9: error[sema/unused-port] port `rst` is never used
+before.vhd:9:9: error[sema/unused-port] port `debug` is never used
+before.vhd:17:5: warning[style/process-label] process without a label
+before.vhd:20:81: warning[style/line-length] line is 94 characters long (max 80)

@@ -1,0 +1,13 @@
+[
+  {
+    "context": "Editor && (extension == vhd || extension == vhdl || extension == vho || extension == vht || extension == v || extension == vh || extension == sv || extension == svh)",
+    "bindings": {
+      "ctrl-alt-v l": ["task::Spawn", { "task_name": "vfl: lint file" }],
+      "ctrl-alt-v x": ["task::Spawn", { "task_name": "vfl: fix file" }],
+      "ctrl-alt-v p": ["task::Spawn", { "task_name": "vfl: lint project" }],
+      "ctrl-alt-v d": ["task::Spawn", { "task_name": "vfl: generate documentation" }],
+      "ctrl-alt-v t": ["task::Spawn", { "task_name": "vfl: generate testbench" }],
+      "ctrl-alt-v r": "editor::RestartLanguageServer"
+    }
+  }
+]

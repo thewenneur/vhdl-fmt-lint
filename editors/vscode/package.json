@@ -378,7 +378,12 @@
         "command": "vfl.fixAll",
         "title": "Fix All Lint Findings in File",
         "category": "vfl",
-        "enablement": "editorLangId == vhdl"
+        "enablement": "editorLangId =~ /^(vhdl|verilog|systemverilog)$/"
+      },
+      {
+        "command": "vfl.toggleFormatOnType",
+        "title": "Toggle Format on Type",
+        "category": "vfl"
       },
       {
         "command": "vfl.showOutput",
@@ -425,7 +430,7 @@
       "commandPalette": [
         {
           "command": "vfl.fixAll",
-          "when": "editorLangId == vhdl"
+          "when": "editorLangId =~ /^(vhdl|verilog|systemverilog)$/"
         },
         {
           "command": "vfl.insertInstance",
