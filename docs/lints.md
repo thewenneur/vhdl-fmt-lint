@@ -794,7 +794,8 @@ written for the Synopsys packages may then need conversions.
 
 ### `style/line-length`
 
-A line is longer than `max` columns, counted in characters. Off in `recommended`.
+A line is longer than `max` columns. Columns are counted as displayed: wide characters
+(Chinese, Japanese, Korean) take two, as in the formatter's `max_width`. Off in `recommended`.
 
 | Option | Type | Default |
 |--------|------|---------|

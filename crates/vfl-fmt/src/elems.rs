@@ -42,13 +42,23 @@ impl<L: Lang> Elem<L> {
         self.parent.as_ref().map(Node::kind)
     }
 
+    /// The columns it takes on screen: CJK and other wide characters
+    /// count twice. Multi-line chunks count with their first line only.
     pub fn width(&self) -> usize {
-        // Multi-line chunks count with their first line only.
-        self.text
-            .split('\n')
-            .next()
-            .map_or(0, |line| line.chars().count())
+        self.text.split('\n').next().map_or(0, display_width)
     }
+}
+
+/// The columns `text` takes on screen (Unicode East Asian width). Control
+/// characters such as a tab inside a comment count as one column, as they
+/// did before display widths were used.
+pub(crate) fn display_width(text: &str) -> usize {
+    if text.is_ascii() {
+        return text.len();
+    }
+    text.chars()
+        .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
+        .sum()
 }
 
 #[inline(always)]
@@ -83,7 +93,8 @@ pub(crate) fn collect<L: Lang>(
             match c {
                 '\n' | '\r' => *col = 0,
                 '\t' => *col = (*col / tab + 1) * tab,
-                _ => *col += 1,
+                c if c.is_ascii() => *col += 1,
+                c => *col += unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) as u32,
             }
         }
     };
