@@ -11,7 +11,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use vfl_config::{Config, Level};
+use vfl_config::{Config, Level, Preset, Style};
 use vfl_fmt::FormatError;
 use vfl_lsp::World;
 use vfl_lsp::editor::{
@@ -19,6 +19,7 @@ use vfl_lsp::editor::{
     QuickFix, SignatureHelp, Symbol, TokenKind, Use, token_modifier,
 };
 use vfl_lsp::generate::{self, EntityRef, Generated, Kind};
+use vfl_lsp::settings::ProjectConfig;
 use vfl_project::{Encoding, find_root};
 
 /// How bad a problem is.
@@ -146,6 +147,20 @@ pub struct Engine {
     /// When each file a project reads was last modified, by root
     /// directory, to notice changes made outside the editor.
     stamps: HashMap<PathBuf, Stamps>,
+    /// The config of files no config file applies to: the plugin's lint
+    /// preset and format style.
+    defaults: Config,
+}
+
+/// The config the plugin's settings give to files no config file applies
+/// to, as if a `vfl.toml` set them.
+pub fn editor_config(preset: Preset, style: Style) -> Config {
+    Config::from_toml_str(&format!(
+        "[lint]\npreset = \"{}\"\n[format]\nstyle = \"{}\"\n",
+        preset.name(),
+        style.name()
+    ))
+    .unwrap_or_default()
 }
 
 #[derive(Default)]
@@ -423,6 +438,29 @@ impl Engine {
         generate::generate(world, kind, entity)
     }
 
+    /// The settings in effect at the root of the buffer's project, as the
+    /// text of its config file, and where that file goes.
+    pub fn project_config(
+        &mut self,
+        path: Option<&Path>,
+        text: &str,
+    ) -> Result<ProjectConfig, String> {
+        if path.is_none_or(|p| !p.is_absolute()) {
+            return Err("save the file in its project first".into());
+        }
+        let (world, _) = self.sync(path, text);
+        vfl_lsp::settings::project_config(world)
+    }
+
+    /// Changes the config of files no config file applies to, reloading
+    /// the projects when that changes anything.
+    pub fn set_defaults(&mut self, defaults: Config) {
+        if defaults != self.defaults {
+            self.defaults = defaults;
+            self.reload();
+        }
+    }
+
     /// Sets the text of a buffer without asking anything about it.
     pub fn update(&mut self, path: Option<&Path>, text: &str) {
         self.sync(path, text);
@@ -487,8 +525,9 @@ impl Engine {
         let (world, file_path) = match path.filter(|p| p.is_absolute()) {
             Some(path) => {
                 let root = find_root(path);
+                let defaults = &self.defaults;
                 let world = self.worlds.entry(root.dir.clone()).or_insert_with(|| {
-                    let world = World::new(&root.dir);
+                    let world = World::with_defaults(&root.dir, defaults.clone());
                     if let Some(stamps) = Stamps::of(&world) {
                         self.stamps.insert(root.dir.clone(), stamps);
                     }
@@ -497,7 +536,8 @@ impl Engine {
                 (world, path.to_owned())
             }
             None => (
-                self.untitled.get_or_insert_with(World::detached),
+                self.untitled
+                    .get_or_insert_with(|| World::detached_with(self.defaults.clone(), false)),
                 PathBuf::from(UNTITLED),
             ),
         };
@@ -532,11 +572,12 @@ impl Engine {
             .and_then(Path::parent)
             .map(Path::to_owned)
             .unwrap_or_default();
+        let defaults = &self.defaults;
         self.configs.entry(dir.clone()).or_insert_with(|| {
             if dir.as_os_str().is_empty() {
-                Config::default()
+                defaults.clone()
             } else {
-                vfl_config::load_for_dir(&dir).unwrap_or_default()
+                vfl_config::load_for_dir_or(&dir, defaults).unwrap_or_default()
             }
         })
     }
@@ -803,6 +844,42 @@ end architecture;
             .expect("formats");
         assert!(out.is_some_and(|t| t.contains("entity e is")));
         assert_eq!(engine.format(None, "entity e is\nend entity;\n"), Ok(None));
+    }
+
+    #[test]
+    fn plugin_settings_apply_without_a_config_file() {
+        let dir = tempfile::tempdir().unwrap();
+        if !vfl_config::config_chain(dir.path()).unwrap().is_empty() {
+            return; // A stray config above the temporary directory.
+        }
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let path = dir.path().join("e.vhd");
+        std::fs::write(&path, UNUSED).unwrap();
+        let mut engine = Engine::default();
+        let unused = |out: &LintOutput| out.findings.iter().any(|f| f.rule == "sema/unused-signal");
+        assert!(unused(&engine.lint(Some(&path), UNUSED)));
+
+        engine.set_defaults(editor_config(Preset::None, Style::Classic));
+        assert!(!unused(&engine.lint(Some(&path), UNUSED)));
+        let formatted = engine.format(Some(&path), UNUSED).unwrap().unwrap();
+        assert!(formatted.starts_with("ENTITY e IS"), "{formatted}");
+        let unsaved = engine.format(None, UNUSED).unwrap().unwrap();
+        assert!(unsaved.starts_with("ENTITY e IS"), "{unsaved}");
+
+        let generated = engine.project_config(Some(&path), UNUSED).unwrap();
+        assert_eq!(generated.path, dir.path().join("vfl.toml"));
+        assert!(!generated.exists);
+        assert!(generated.text.contains("preset = \"none\""));
+        assert!(engine.project_config(None, UNUSED).is_err());
+
+        // A config file replaces the settings.
+        std::fs::write(&generated.path, "[lint]\npreset = \"recommended\"\n").unwrap();
+        engine.reload();
+        assert!(unused(&engine.lint(Some(&path), UNUSED)));
+        assert_eq!(
+            engine.format(Some(&path), "entity e is\nend entity;\n"),
+            Ok(None)
+        );
     }
 
     #[test]

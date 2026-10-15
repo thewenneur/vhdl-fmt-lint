@@ -167,6 +167,19 @@ async function run() {
     folds?.some((f) => f.start === 0),
     `no fold for the module in ${JSON.stringify(folds)}`,
   );
+
+  // Without a vfl.toml, the preset and style settings apply, and become one
+  // on request.
+  fs.rmSync(path.join(folder, "vfl.toml"));
+  await vscode.workspace
+    .getConfiguration("vfl")
+    .update("lint.preset", "none", vscode.ConfigurationTarget.Workspace);
+  await until("no findings with the `none` preset", () =>
+    vscode.languages.getDiagnostics(uri).every((d) => d.code === "syntax/error"),
+  );
+  const written = await vscode.commands.executeCommand("vfl.generateConfig");
+  assert.equal(written, path.join(folder, "vfl.toml"));
+  assert.match(fs.readFileSync(written, "utf8"), /^preset = "none"$/m);
 }
 
 module.exports = { run };

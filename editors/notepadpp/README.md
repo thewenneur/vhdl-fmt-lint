@@ -98,6 +98,7 @@ Mapper > Plugin commands**.
 | Insert entity instantiation, Insert component instantiation, Insert component declaration | Lists the entities of the project, those of the current file first, and inserts the code for the one picked at the caret. |
 | Generate testbench | Lists the entities of the project and writes a testbench for the one picked next to it (`<entity>_tb.vhd`, see `[generate]` in `vfl.toml`), then opens it. |
 | Generate documentation | Writes the documentation of the current file's project as `vfl doc` does, where and how `[doc]` in `vfl.toml` says, then opens the index: an HTML one in the default browser, a Markdown or AsciiDoc one in Notepad++. It is written in the background, so Notepad++ stays responsive on large projects. |
+| Generate project config (vfl.toml) | Writes the settings in effect at the root of the current file's project to its `vfl.toml`, every key set, and opens it: the lint preset and format style below when the project has no `vfl.toml`. It asks before replacing one. |
 | Show diagrams | Writes the HTML documentation of the current file's project to a temporary folder (`%TEMP%\vfl_npp\diagrams`) and opens the page of the first entity (else package) of the file in the default browser. |
 | Show type | Shows what the name at the caret is, as hovering it does. |
 | Show parameters | Shows the parameter hints of the call around the caret. |
@@ -109,9 +110,11 @@ Mapper > Plugin commands**.
 | Code assistance | Types on hover, parameter hints and completion after a dot (on by default). The three commands above work either way. |
 | Highlight uses | Highlights the uses of the name at the caret (on by default). |
 | Color names by meaning | Colors signals, ports, constants, variables, types and subprograms (on by default). Input ports are blue, output ports red, and `inout`/`buffer` ports pink. |
+| Lint preset without vfl.toml... | Lists the lint presets (`none`, `recommended`, `strict`) for files no `vfl.toml` applies to; `recommended` by default. A `vfl.toml` replaces it, so that a project is linted the same for everyone. |
+| Format style without vfl.toml... | Lists the format styles (`default`, `leading-comma`, `compact`, `classic`) for files no `vfl.toml` applies to; `default` by default. A `vfl.toml` replaces it too. |
 | Reload project | Re-reads the whole project from disk. Changed files are normally picked up by themselves, so this is rarely needed. |
 
-The five settings are kept in `plugins\Config\vfl_npp.ini`. Problems in `vfl.toml` are
+The settings are kept in `plugins\Config\vfl_npp.ini`. Problems in `vfl.toml` are
 shown in a message box, once per problem.
 
 The documentation is made from the files on disk, so save the file first; it is only

@@ -15,7 +15,7 @@ use vfl_syntax::Standard;
 
 mod layering;
 
-pub use layering::{config_chain, find_config, load_for_dir, load_layered};
+pub use layering::{config_chain, find_config, load_for_dir, load_for_dir_or, load_layered};
 
 /// File names recognised as configuration, in priority order.
 pub const CONFIG_FILE_NAMES: [&str; 2] = ["vfl.toml", ".vfl.toml"];
@@ -71,6 +71,24 @@ impl Config {
         };
         let table: toml::Table = text.parse().map_err(parse_error)?;
         Config::try_from(table).map_err(parse_error)
+    }
+
+    /// The text of a config file setting every key to its value in `self`,
+    /// under `comment` (each line becomes a `#` comment).
+    pub fn file_text(&self, comment: &str) -> String {
+        let mut text: String = comment
+            .lines()
+            .map(|l| match l {
+                "" => "#\n".to_owned(),
+                l => format!("# {l}\n"),
+            })
+            .collect();
+        if !text.is_empty() {
+            text.push('\n');
+        }
+        // A `Config` always serializes.
+        text.push_str(&toml::to_string_pretty(self).unwrap_or_default());
+        text
     }
 
     /// The configured standard as the parser's type.
@@ -403,6 +421,25 @@ pub enum Style {
     Classic,
 }
 
+impl Style {
+    pub const ALL: [Style; 4] = [
+        Style::Default,
+        Style::LeadingComma,
+        Style::Compact,
+        Style::Classic,
+    ];
+
+    /// The name, as in config files.
+    pub fn name(self) -> &'static str {
+        match self {
+            Style::Default => "default",
+            Style::LeadingComma => "leading-comma",
+            Style::Compact => "compact",
+            Style::Classic => "classic",
+        }
+    }
+}
+
 /// Where the separator between the elements of a list goes when the
 /// elements are on separate lines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -689,6 +726,19 @@ pub enum Preset {
     Strict,
 }
 
+impl Preset {
+    pub const ALL: [Preset; 3] = [Preset::None, Preset::Recommended, Preset::Strict];
+
+    /// The name, as in config files.
+    pub fn name(self) -> &'static str {
+        match self {
+            Preset::None => "none",
+            Preset::Recommended => "recommended",
+            Preset::Strict => "strict",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Level {
@@ -950,6 +1000,20 @@ mod tests {
     }
 
     #[test]
+    fn preset_and_style_names_are_the_config_spellings() {
+        for preset in Preset::ALL {
+            let config =
+                Config::from_toml_str(&format!("lint.preset = \"{}\"", preset.name())).unwrap();
+            assert_eq!(config.lint.preset, preset);
+        }
+        for style in Style::ALL {
+            let config =
+                Config::from_toml_str(&format!("format.style = \"{}\"", style.name())).unwrap();
+            assert_eq!(config.format.style, style);
+        }
+    }
+
+    #[test]
     fn unknown_keys_are_rejected() {
         assert!(Config::from_toml_str("[format]\nindnet = 4").is_err());
     }
@@ -958,6 +1022,19 @@ mod tests {
     fn default_config_round_trips_through_toml() {
         let text = toml::to_string(&Config::default()).unwrap();
         assert_eq!(Config::from_toml_str(&text).unwrap(), Config::default());
+    }
+
+    #[test]
+    fn file_text_round_trips_with_a_style() {
+        let config =
+            Config::from_toml_str("[format]\nstyle = \"compact\"\n[lint]\npreset = \"none\"\n")
+                .unwrap();
+        let text = config.file_text("Generated.\n\nSecond paragraph.");
+        assert!(
+            text.starts_with("# Generated.\n#\n# Second paragraph.\n\n"),
+            "{text}"
+        );
+        assert_eq!(Config::from_toml_str(&text).unwrap(), config);
     }
 
     #[test]

@@ -13,7 +13,8 @@ runs from a terminal. If the editor does not see it, use its full path in the co
 Every configuration below:
 
 - starts `vfl lsp`, with no options or initialization settings: the server reads its
-  settings from `vfl.toml` ([configuration reference](configuration.md));
+  settings from `vfl.toml` ([configuration reference](configuration.md)), or from the
+  [editor settings](#editor-settings) in a project without one;
 - uses it for `.vhd`, `.vhdl`, `.vho` and `.vht` files (language id `vhdl`), `.v` and
   `.vh` (`verilog`), and `.sv` and `.svh` (`systemverilog`); the server tells the
   languages apart by the file extension, so a language id that differs is harmless;
@@ -80,7 +81,9 @@ To use another binary, set it in Zed's `settings.json`:
 }
 ```
 
-Zed formats on save with the language server by default.
+Zed formats on save with the language server by default. The lint preset and format style of
+projects without a `vfl.toml` go in `lsp.vfl.initialization_options` (see
+[Editor settings](#editor-settings)).
 
 ## Neovim
 
@@ -278,6 +281,30 @@ File name patterns** add the patterns above with the language ids `vhdl`, `veril
 ## Other editors
 
 Any other editor with an LSP client works the same way: run `vfl lsp` over stdio for the
-file types above, with no initialization options. The server announces what it supports
+file types above, with no initialization options needed. The server announces what it supports
 in its `initialize` response, including its semantic token types and its on-type
 formatting triggers (`;` and newline).
+
+## Editor settings
+
+In a project without a `vfl.toml`, the server uses the settings the editor gives it: any
+`vfl.toml` keys, as a JSON object under `config`, in the initialization options or later in
+a `workspace/didChangeConfiguration` notification (which applies them at once). The lint
+preset and the format style are the usual ones:
+
+```json
+{ "config": { "lint": { "preset": "strict" }, "format": { "style": "compact" } } }
+```
+
+A `vfl.toml` replaces them entirely, so that a project is linted and formatted the same for
+everyone. The code action **Generate project config (vfl.toml) from the settings in effect**
+(kind `source.vfl.generateConfig`, offered while the project has no `vfl.toml`) writes them
+to `vfl.toml` at the project root, every key set.
+
+| Editor | Lint preset and format style | Generate the config file |
+|--------|------------------------------|--------------------------|
+| VS Code | `vfl.lint.preset`, `vfl.format.style` | **vfl: Generate Project Config (vfl.toml)** |
+| Notepad++ | **Lint preset without vfl.toml...**, **Format style without vfl.toml...** | **Generate project config (vfl.toml)** |
+| Zed | `lsp.vfl.initialization_options`, as above ([README](../editors/zed/README.md)) | The code action |
+| Neovim | `init_options` in `vim.lsp.config("vfl", { ... })` | The code action |
+| Others | The client's initialization options | The code action |

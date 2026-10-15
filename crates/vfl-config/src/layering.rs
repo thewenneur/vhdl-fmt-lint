@@ -43,6 +43,18 @@ pub fn load_for_dir(dir: &Path) -> Result<Config, ConfigError> {
     load_layered(&config_chain(dir)?)
 }
 
+/// The effective config for files in `dir`, or `defaults` when no config
+/// file applies. Editors pass their own settings as `defaults`; a config
+/// file replaces them all, so that a project is linted and formatted the
+/// same in every editor and on the command line.
+pub fn load_for_dir_or(dir: &Path, defaults: &Config) -> Result<Config, ConfigError> {
+    let chain = config_chain(dir)?;
+    if chain.is_empty() {
+        return Ok(defaults.clone());
+    }
+    load_layered(&chain)
+}
+
 /// Merges `files` in order (later files override earlier ones) and applies
 /// the schema to the result.
 pub fn load_layered(files: &[PathBuf]) -> Result<Config, ConfigError> {
@@ -167,6 +179,22 @@ mod tests {
             load_for_dir(root),
             Err(ConfigError::ExtendsCycle { .. })
         ));
+    }
+
+    #[test]
+    fn editor_defaults_apply_only_without_a_config_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join("proj/.git/HEAD"), "");
+        let defaults = Config::from_toml_str("[lint]\npreset = \"strict\"\n").unwrap();
+        if config_chain(root).unwrap().is_empty() {
+            let config = load_for_dir_or(&root.join("proj"), &defaults).unwrap();
+            assert_eq!(config, defaults);
+        }
+        write(&root.join("proj/vfl.toml"), "[format]\nindent = 2\n");
+        let config = load_for_dir_or(&root.join("proj"), &defaults).unwrap();
+        assert_eq!(config.format.indent, 2);
+        assert_eq!(config.lint.preset, crate::Preset::Recommended);
     }
 
     #[test]

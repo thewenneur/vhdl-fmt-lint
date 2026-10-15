@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Lint preset and format style from the editor** for projects without a `vfl.toml`:
+  `vfl.lint.preset` and `vfl.format.style` in VS Code, **Lint preset without vfl.toml...**
+  and **Format style without vfl.toml...** in Notepad++, `lsp.vfl.initialization_options`
+  in Zed, and any `vfl.toml` key under `config` in the initialization options of other
+  LSP clients. A `vfl.toml` replaces them.
+- **Generate project config (vfl.toml)** in VS Code and Notepad++, and as a code action in
+  other editors, writes the settings in effect to the project's `vfl.toml`, every key set.
+
 ## [0.6.0] - 2026-10-15
 
 State machine diagrams follow their branches instead of a circle and stay readable at 50+

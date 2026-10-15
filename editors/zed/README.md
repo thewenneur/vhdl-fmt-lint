@@ -36,6 +36,27 @@ The extension starts, in order:
 }
 ```
 
+In a project without a `vfl.toml`, the lint preset (`none`, `recommended`, `strict`) and
+the format style (`default`, `leading-comma`, `compact`, `classic`) come from the settings,
+as `vfl.toml` keys under `config` (any other `vfl.toml` key works too):
+
+```json
+{
+  "lsp": {
+    "vfl": {
+      "initialization_options": {
+        "config": { "lint": { "preset": "strict" }, "format": { "style": "compact" } }
+      }
+    }
+  }
+}
+```
+
+A project's `vfl.toml` replaces them, so that it is linted and formatted the same for
+everyone. To write one from the settings in effect, run the code action **Generate project
+config (vfl.toml) from the settings in effect** (offered while the project has no
+`vfl.toml`).
+
 **Uninstall the "VHDL" and "Verilog" extensions from the Zed registry first.** They define
 the same languages (`VHDL`, `Verilog`, `SystemVerilog`) and the same grammar names (`vhdl`,
 `systemverilog`) as this extension, and Zed then mixes one extension's grammar with the

@@ -15,6 +15,7 @@ pub mod generate;
 mod handlers;
 mod refactor;
 mod semantic;
+pub mod settings;
 mod types;
 mod verilog;
 mod world;
@@ -94,6 +95,7 @@ pub fn capabilities() -> ServerCapabilities {
                 CodeActionKind::QUICKFIX,
                 CodeActionKind::new("source.fixAll.vfl"),
                 CodeActionKind::new(generate::TESTBENCH_KIND),
+                CodeActionKind::new(settings::GENERATE_CONFIG_KIND),
             ]),
             resolve_provider: Some(true),
             ..Default::default()
@@ -172,16 +174,30 @@ pub fn run(connection: &Connection) -> Result<()> {
         }
     });
 
+    // The editor's settings: the config of files no config file applies to.
+    let (defaults, settings_error) = match params
+        .initialization_options
+        .as_ref()
+        .and_then(settings::editor_config)
+    {
+        Some(Ok(config)) => (config, None),
+        Some(Err(error)) => (vfl_config::Config::default(), Some(error)),
+        None => (vfl_config::Config::default(), None),
+    };
+
     let mut server = Server {
         connection,
         inbox,
         queue: VecDeque::new(),
         cancelled: FxHashSet::default(),
-        world: World::new(&root),
+        world: World::with_defaults(&root, defaults),
         published: FxHashMap::default(),
         shown_errors: Vec::new(),
         next_request: 0,
     };
+    if let Some(error) = settings_error {
+        server.warn(&error)?;
+    }
     if watch {
         server.register_watchers()?;
     }
@@ -224,7 +240,7 @@ impl Server<'_> {
                     if notification.method == n::Exit::METHOD {
                         return Ok(());
                     }
-                    self.handle_notification(notification);
+                    self.handle_notification(notification)?;
                 }
                 Message::Response(_) => {}
             }
@@ -342,9 +358,20 @@ impl Server<'_> {
         }
     }
 
-    fn handle_notification(&mut self, notification: Notification) {
+    fn handle_notification(&mut self, notification: Notification) -> Result<()> {
         let world = &mut self.world;
         match notification.method.as_str() {
+            n::DidChangeConfiguration::METHOD => {
+                if let Some(p) =
+                    params::<lsp_types::DidChangeConfigurationParams>(notification.params)
+                {
+                    match settings::editor_config(&p.settings) {
+                        Some(Ok(config)) => world.set_defaults(config),
+                        Some(Err(error)) => self.warn(&error)?,
+                        None => {}
+                    }
+                }
+            }
             n::DidOpenTextDocument::METHOD => {
                 if let Some(p) = params::<lsp_types::DidOpenTextDocumentParams>(notification.params)
                     && let Ok(path) = p.text_document.uri.to_file_path()
@@ -390,6 +417,15 @@ impl Server<'_> {
             }
             _ => {}
         }
+        Ok(())
+    }
+
+    /// Shows a warning in the editor.
+    fn warn(&self, message: &str) -> Result<()> {
+        self.notify::<n::ShowMessage>(lsp_types::ShowMessageParams {
+            typ: lsp_types::MessageType::WARNING,
+            message: format!("vfl: {message}"),
+        })
     }
 
     /// Sends the diagnostics of every file whose diagnostics changed, and
@@ -422,10 +458,7 @@ impl Server<'_> {
                 continue;
             }
             self.shown_errors.push(error.clone());
-            self.notify::<n::ShowMessage>(lsp_types::ShowMessageParams {
-                typ: lsp_types::MessageType::WARNING,
-                message: format!("vfl: {error}"),
-            })?;
+            self.warn(&error)?;
         }
         Ok(())
     }

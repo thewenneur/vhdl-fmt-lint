@@ -3,8 +3,9 @@
 // The server does the work: diagnostics, quick fixes, formatting,
 // navigation, rename, completion and code generation. This file finds the
 // `vfl` binary, starts it over stdio and restarts it when its settings
-// change, asks it for generated code, and drops format on type unless
-// `vfl.format.onType` is set. Documentation and diagrams are generated on
+// change, passes it the lint preset and format style of projects without
+// a `vfl.toml`, asks it for generated code and config files, and drops
+// format on type unless `vfl.format.onType` is set. Documentation and diagrams are generated on
 // demand by running `vfl doc`, never on the server's hot path.
 
 import { execFile } from "node:child_process";
@@ -51,6 +52,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       insertGenerated("component", entity),
     ),
     vscode.commands.registerCommand("vfl.generateTestbench", generateTestbench),
+    vscode.commands.registerCommand("vfl.generateConfig", generateConfig),
     vscode.commands.registerCommand("vfl.generateDocs", generateDocs),
     vscode.commands.registerCommand("vfl.showDiagrams", showDiagrams),
     // The target of the links between pages in the diagrams view.
@@ -68,6 +70,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("vfl.server")) {
         void restart();
+      } else if (
+        (e.affectsConfiguration("vfl.lint.preset") || e.affectsConfiguration("vfl.format.style")) &&
+        client?.isRunning()
+      ) {
+        void client.sendNotification("workspace/didChangeConfiguration", {
+          settings: editorSettings(),
+        });
       }
     }),
   );
@@ -100,6 +109,7 @@ async function start(): Promise<void> {
       language,
     })),
     outputChannel: output,
+    initializationOptions: editorSettings,
     middleware: {
       // `editor.formatOnType` is on for VHDL and Verilog by default; this
       // setting decides.
@@ -118,6 +128,20 @@ async function start(): Promise<void> {
     client = undefined;
     void vscode.window.showErrorMessage(`vfl: the language server failed to start: ${err}`);
   }
+}
+
+/**
+ * The settings the server applies to projects without a `vfl.toml`, as
+ * `vfl.toml` keys under `config`.
+ */
+function editorSettings(): { config: object } {
+  const settings = vscode.workspace.getConfiguration("vfl");
+  return {
+    config: {
+      lint: { preset: settings.get<string>("lint.preset", "recommended") },
+      format: { style: settings.get<string>("format.style", "default") },
+    },
+  };
 }
 
 async function reportMissingServer(): Promise<void> {
@@ -292,6 +316,49 @@ async function generateTestbench(entity?: string): Promise<void> {
   }
   await vscode.workspace.fs.writeFile(uri, Buffer.from(generated.text, "utf8"));
   await vscode.window.showTextDocument(uri);
+}
+
+// Project config.
+
+interface ProjectConfig {
+  /** The config file at the project root: the one there, or `vfl.toml`. */
+  path: string;
+  /** The settings in effect, every key set. */
+  text: string;
+  exists: boolean;
+}
+
+/**
+ * Writes the settings in effect (`vfl.lint.preset`, `vfl.format.style`, or
+ * the `vfl.toml` there is) to the project's `vfl.toml` and opens it.
+ * Returns the file written.
+ */
+async function generateConfig(): Promise<string | undefined> {
+  if (!client?.isRunning()) {
+    void vscode.window.showErrorMessage("vfl: the language server is not running.");
+    return undefined;
+  }
+  let generated: ProjectConfig;
+  try {
+    generated = await client.sendRequest<ProjectConfig>("vfl/projectConfig", {});
+  } catch (err) {
+    void vscode.window.showErrorMessage(`vfl: ${err instanceof Error ? err.message : err}`);
+    return undefined;
+  }
+  if (generated.exists) {
+    const choice = await vscode.window.showWarningMessage(
+      `${path.basename(generated.path)} exists. Replace it with every setting in effect?`,
+      { modal: true },
+      "Replace",
+    );
+    if (choice !== "Replace") {
+      return undefined;
+    }
+  }
+  const uri = vscode.Uri.file(generated.path);
+  await vscode.workspace.fs.writeFile(uri, Buffer.from(generated.text, "utf8"));
+  await vscode.window.showTextDocument(uri);
+  return generated.path;
 }
 
 // Documentation and diagrams, by running `vfl doc`.

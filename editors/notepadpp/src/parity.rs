@@ -47,11 +47,20 @@ pub const FEATURES: &[(&str, &[&str])] = &[
     ),
     (
         "codeAction/resolve",
-        &["Fix problem at caret", "Generate testbench"],
+        &[
+            "Fix problem at caret",
+            "Generate testbench",
+            "Generate project config (vfl.toml)",
+        ],
     ),
     ("quickfix", &["Fix problem at caret"]),
     ("source.fixAll.vfl", &["Fix all problems"]),
     (vfl_lsp::generate::TESTBENCH_KIND, &["Generate testbench"]),
+    (
+        vfl_lsp::settings::GENERATE_CONFIG_KIND,
+        &["Generate project config (vfl.toml)"],
+    ),
+    ("vfl/projectConfig", &["Generate project config (vfl.toml)"]),
     (
         "vfl/entities",
         &[
@@ -81,6 +90,13 @@ pub const FEATURES: &[(&str, &[&str])] = &[
     ),
     ("window/showMessage", &["Lint automatically"]),
     ("workspace/didChangeWatchedFiles", &["Reload project"]),
+    (
+        "workspace/didChangeConfiguration",
+        &[
+            "Lint preset without vfl.toml...",
+            "Format style without vfl.toml...",
+        ],
+    ),
 ];
 
 #[cfg(test)]

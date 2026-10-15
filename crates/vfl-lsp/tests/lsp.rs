@@ -16,6 +16,11 @@ struct Client {
 
 impl Client {
     fn start(root: &Path) -> Client {
+        Client::start_with(root, Value::Null)
+    }
+
+    /// Starts the server with the editor settings `options`.
+    fn start_with(root: &Path, options: Value) -> Client {
         let (server, connection) = Connection::memory();
         let handle = thread::spawn(move || vfl_lsp::run(&server).unwrap());
         let mut client = Client {
@@ -27,7 +32,12 @@ impl Client {
         let root = url(root);
         client.request(
             "initialize",
-            json!({ "capabilities": {}, "rootUri": root, "processId": null }),
+            json!({
+                "capabilities": {},
+                "rootUri": root,
+                "processId": null,
+                "initializationOptions": options,
+            }),
         );
         client.notify("initialized", json!({}));
         client
@@ -1368,4 +1378,86 @@ fn associating_ports_keeps_the_format() {
         text.contains("  u3 : entity work.sub\n    port map (\n      a => a\n    , b => b\n    );"),
         "{text}"
     );
+}
+
+/// The editor's settings are the config of a project without a config
+/// file, and become its `vfl.toml` on request.
+#[test]
+fn editor_settings_apply_without_a_config_file() {
+    let dir = tempfile::tempdir().unwrap();
+    if !vfl_config::config_chain(dir.path()).unwrap().is_empty() {
+        return; // A stray config above the temporary directory.
+    }
+    std::fs::create_dir(dir.path().join(".git")).unwrap();
+    let path = dir.path().join("a.vhd");
+    let text = "entity a is\nend entity;\narchitecture rtl of a is\n  signal s : bit;\nbegin\nend architecture;\n";
+    std::fs::write(&path, text).unwrap();
+    let uri = url(&path);
+    let mut client = Client::start_with(
+        dir.path(),
+        json!({ "config": { "lint": { "preset": "none" }, "format": { "style": "classic" } } }),
+    );
+    client.notify(
+        "textDocument/didOpen",
+        json!({ "textDocument": { "uri": uri, "languageId": "vhdl", "version": 0, "text": text } }),
+    );
+    assert_eq!(client.diagnostics(&uri), Vec::<Value>::new());
+    let edits = client.request(
+        "textDocument/formatting",
+        json!({ "textDocument": { "uri": uri }, "options": { "tabSize": 4, "insertSpaces": true } }),
+    );
+    assert!(edits.to_string().contains("ENTITY"), "{edits}");
+
+    // A settings change applies right away.
+    client.notify(
+        "workspace/didChangeConfiguration",
+        json!({ "settings": { "config": { "lint": { "preset": "strict" } } } }),
+    );
+    let rules: Vec<Value> = client
+        .diagnostics(&uri)
+        .iter()
+        .map(|d| d["code"].clone())
+        .collect();
+    assert!(rules.contains(&json!("sema/unused-signal")), "{rules:?}");
+
+    // The settings in effect, as a config file.
+    let generated = client.request("vfl/projectConfig", Value::Null);
+    assert_eq!(generated["exists"], json!(false));
+    let target = dir.path().join("vfl.toml");
+    assert_eq!(generated["path"], json!(target));
+    let text = generated["text"].as_str().unwrap();
+    assert!(text.contains("preset = \"strict\""), "{text}");
+    let actions = client.request(
+        "textDocument/codeAction",
+        json!({
+            "textDocument": { "uri": uri },
+            "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } },
+            "context": { "diagnostics": [], "only": ["source.vfl.generateConfig"] },
+        }),
+    );
+    let action = actions[0].clone();
+    assert_eq!(action["kind"], json!("source.vfl.generateConfig"));
+    let resolved = client.request("codeAction/resolve", action);
+    let changes = &resolved["edit"]["documentChanges"];
+    assert_eq!(changes[0]["kind"], json!("create"));
+    assert_eq!(changes[1]["edits"][0]["newText"], json!(text));
+
+    // Once written, the file wins over the editor's settings.
+    std::fs::write(&target, "[lint]\npreset = \"none\"\n").unwrap();
+    client.notify(
+        "workspace/didChangeWatchedFiles",
+        json!({ "changes": [{ "uri": url(&target), "type": 1 }] }),
+    );
+    assert_eq!(client.diagnostics(&uri), Vec::<Value>::new());
+    let generated = client.request("vfl/projectConfig", Value::Null);
+    assert_eq!(generated["exists"], json!(true));
+    let actions = client.request(
+        "textDocument/codeAction",
+        json!({
+            "textDocument": { "uri": uri },
+            "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } },
+            "context": { "diagnostics": [], "only": ["source.vfl.generateConfig"] },
+        }),
+    );
+    assert_eq!(actions, json!([]));
 }
