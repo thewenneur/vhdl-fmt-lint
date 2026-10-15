@@ -95,6 +95,20 @@ fn spacing() {
     );
 }
 
+/// Found by the `format` fuzz target: a malformed external path keeps the
+/// spaces that separate its tokens, instead of gluing `s foo` into `sfoo`.
+#[test]
+fn tokens_written_apart_are_not_joined() {
+    for (path, formatted) in [
+        (".tb.dut.s foo", ".tb.dut.s foo"),
+        (".tb.dut.s \u{ff}\u{ff}", ".tb.dut.s \u{ff}\u{ff}"),
+        (".a - -b", ".a- -b"),
+    ] {
+        let alias = |path| format!("package p is\n  alias x is << signal {path} : bit >>;\nend;\n");
+        assert_eq!(fmt(&alias(path)), alias(formatted));
+    }
+}
+
 #[test]
 fn keyword_and_identifier_case() {
     let text = "Entity Foo Is End Entity Foo;\n";

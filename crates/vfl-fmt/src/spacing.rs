@@ -2,7 +2,7 @@
 
 use vfl_config::FormatConfig;
 use vfl_syntax::SyntaxKind::{self, *};
-use vfl_syntax::Vhdl;
+use vfl_syntax::{Standard, Vhdl};
 
 use crate::elems::Elem;
 
@@ -20,9 +20,36 @@ fn in_external_path(elem: &Elem<Vhdl>) -> bool {
     elem.parent_kind() == Some(EXTERNAL_PATH)
 }
 
+/// Whether there was white space between two elements in the source.
+#[inline]
+fn spaced_in_source(prev: &Elem<Vhdl>, cur: &Elem<Vhdl>) -> bool {
+    match (prev.src, cur.src) {
+        (Some(p), Some(c)) => p.end() < c.start(),
+        _ => false,
+    }
+}
+
+/// Whether two tokens lex differently once written together: `s foo` in
+/// a malformed external path, `- -a`.
+#[cold]
+fn would_join(prev: &Elem<Vhdl>, cur: &Elem<Vhdl>) -> bool {
+    if !prev.is_token(prev.kind) || !cur.is_token(cur.kind) {
+        return false;
+    }
+    let joined = format!("{}{}", prev.text, cur.text);
+    let (tokens, _) = vfl_syntax::lex(&joined, Standard::Vhdl2019);
+    !matches!(&tokens[..], [a, b] if a.kind == prev.kind && b.kind == cur.kind)
+}
+
 /// Whether a space goes between `prev` and `cur` when they share a line.
 #[inline]
 pub(crate) fn space_between(prev: &Elem<Vhdl>, cur: &Elem<Vhdl>, config: &FormatConfig) -> bool {
+    // Tokens written apart stay apart where they would read as one.
+    space_by_rule(prev, cur, config) || (spaced_in_source(prev, cur) && would_join(prev, cur))
+}
+
+#[inline]
+fn space_by_rule(prev: &Elem<Vhdl>, cur: &Elem<Vhdl>, config: &FormatConfig) -> bool {
     if prev.is_comment() || cur.is_comment() {
         return true;
     }
