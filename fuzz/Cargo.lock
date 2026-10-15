@@ -744,7 +744,7 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
 name = "vfl-config"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "serde",
  "thiserror",
@@ -754,7 +754,7 @@ dependencies = [
 
 [[package]]
 name = "vfl-fmt"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "rowan",
  "thiserror",
@@ -783,7 +783,7 @@ dependencies = [
 
 [[package]]
 name = "vfl-gen"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "regex",
  "rowan",
@@ -794,11 +794,12 @@ dependencies = [
 
 [[package]]
 name = "vfl-lint"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "rayon",
  "regex",
  "rowan",
+ "rustc-hash",
  "serde_json",
  "toml",
  "vfl-config",
@@ -810,12 +811,13 @@ dependencies = [
 
 [[package]]
 name = "vfl-lsp"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "lsp-server",
  "lsp-types",
  "rowan",
+ "rustc-hash",
  "serde",
  "serde_json",
  "vfl-config",
@@ -830,11 +832,12 @@ dependencies = [
 
 [[package]]
 name = "vfl-project"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "globset",
  "ignore",
  "rayon",
+ "rustc-hash",
  "thiserror",
  "toml",
  "vfl-config",
@@ -846,25 +849,28 @@ dependencies = [
 
 [[package]]
 name = "vfl-sema"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "rayon",
  "rowan",
+ "rustc-hash",
+ "smallvec",
  "vfl-syntax",
 ]
 
 [[package]]
 name = "vfl-syntax"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "rowan",
 ]
 
 [[package]]
 name = "vfl-verilog-syntax"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "rowan",
+ "rustc-hash",
  "vfl-syntax",
 ]
 

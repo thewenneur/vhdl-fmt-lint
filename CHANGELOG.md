@@ -1,9 +1,15 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.1] - 2026-10-15
+
+Faster and leaner analysis, with no change in what it reports.
 
 ### Changed
 
+- **Faster re-analysis after an edit**: 25 to 30% fewer instructions per edit (UVVM and
+  neorv32, measured with Callgrind), and a faster project open. Syntax tree walks no longer
+  allocate a node for every step, and internal maps hash with FxHash instead of SipHash.
+  Lint results are byte-identical to 0.3.0.
 - **Less memory in the language server**: 10 to 12% less resident memory once a project
   is open, and a long session no longer grows past what it needs: on UVVM, 40 edits of a
   package most of the project uses now peak at 168 MiB instead of 235 MiB. A
