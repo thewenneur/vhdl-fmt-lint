@@ -1378,13 +1378,8 @@ mod tests {
         assert!(Config::from_toml_str("[format.declaration_case]\nnope = \"upper\"").is_err());
     }
 
-    #[test]
-    fn every_key_is_documented() {
-        // Git may check the doc out with CRLF line endings on Windows.
-        let doc = include_str!("../../../docs/configuration.md").replace("\r\n", "\n");
-        let mut config = Config::default();
-        config.format.continuation_indent = Some(2);
-        // Keys left out when unset.
+    /// Sets the keys that are left out of the serialized config when unset.
+    fn set_unset_keys(config: &mut Config) {
         config.format.declaration_case = DeclarationCase {
             entity: Some(Case::Lower),
             architecture: Some(Case::Lower),
@@ -1411,6 +1406,15 @@ mod tests {
             before_process: one,
             between_declaration_groups: one,
         };
+    }
+
+    #[test]
+    fn every_key_is_documented() {
+        // Git may check the doc out with CRLF line endings on Windows.
+        let doc = include_str!("../../../docs/configuration.md").replace("\r\n", "\n");
+        let mut config = Config::default();
+        config.format.continuation_indent = Some(2);
+        set_unset_keys(&mut config);
         config.doc.title = Some("Design".into());
         let toml::Value::Table(table) = toml::Value::try_from(&config).unwrap() else {
             panic!("the config is not a table");
@@ -1458,6 +1462,7 @@ mod tests {
     fn full_config_table() -> toml::Table {
         let mut config = Config::default();
         config.format.continuation_indent = Some(2);
+        set_unset_keys(&mut config);
         config.doc.title = Some("Design".into());
         config.lint.baseline = Some("baseline.json".into());
         config.lint.waivers.push(Waiver {

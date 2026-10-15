@@ -90,7 +90,7 @@
           "default": "default"
         },
         "max_width": {
-          "description": "Lines longer than this get their parenthesized lists broken up, one element per line.",
+          "description": "Lines longer than this get their parenthesized lists broken up, one element per line, then their expressions broken at operators (`break_expressions`); see Long lines. Columns are counted as displayed: Chinese, Japanese and Korean characters take two.",
           "type": "integer",
           "minimum": 0,
           "default": 100
@@ -213,6 +213,20 @@
           ],
           "default": "preserve"
         },
+        "break_expressions": {
+          "description": "A line still longer than `max_width` once its lists are broken up is broken inside its expressions, at the operators that bind loosest; see Long lines. `false` only breaks lists.",
+          "type": "boolean",
+          "default": true
+        },
+        "operator_position": {
+          "description": "Where the operator goes when an expression is on several lines: `\"trailing\"` (end of the line: `a and` then `b`), `\"leading\"` (start of the next line: `a` then `and b`) or `\"preserve\"` (line breaks written next to an operator stay on their side; those the formatter adds go after it).",
+          "enum": [
+            "trailing",
+            "leading",
+            "preserve"
+          ],
+          "default": "preserve"
+        },
         "line_ending": {
           "description": "`\"auto\"` keeps the line endings the file uses (LF for new files), `\"lf\"` or `\"crlf\"` converts.",
           "enum": [
@@ -307,6 +321,263 @@
                 "never"
               ],
               "default": "blank-line"
+            }
+          },
+          "additionalProperties": false
+        },
+        "declaration_case": {
+          "type": "object",
+          "description": "The case of identifiers by the kind of their declaration; a kind left out follows `identifier_case`.",
+          "properties": {
+            "entity": {
+              "description": "Entities.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "architecture": {
+              "description": "Architectures.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "package": {
+              "description": "Packages and package instantiations.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "component": {
+              "description": "Components.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "generic": {
+              "description": "Generics.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "port": {
+              "description": "Ports.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "constant": {
+              "description": "Constants.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "signal": {
+              "description": "Signals.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "variable": {
+              "description": "Variables, shared ones included.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "type": {
+              "description": "Types.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "subtype": {
+              "description": "Subtypes.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "enum_literal": {
+              "description": "The literals of enumeration types: `IDLE` in `type state_t is (IDLE, RUN)`.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "function": {
+              "description": "Functions.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "procedure": {
+              "description": "Procedures.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "alias": {
+              "description": "Aliases.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "label": {
+              "description": "Statement labels: processes, instances, generate statements, blocks.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "blank_lines": {
+          "type": "object",
+          "description": "How many blank lines go at some places: a number, or a range `{ min, max }`. A key left out keeps the blank lines as written, up to `max_blank_lines`.",
+          "properties": {
+            "before_begin": {
+              "description": "Before the `begin` of an architecture, process, block, subprogram or generate statement.",
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "max": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "after_begin": {
+              "description": "After that `begin`.",
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "max": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "before_end": {
+              "description": "Before the `end` of a construct: entity, architecture, package, process, subprogram, `if`, `case`, loop, generate, record...",
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "max": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "before_process": {
+              "description": "Before a process, block or generate statement, and above the comment lines right above it; not for the first statement after `begin`.",
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "max": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "between_declaration_groups": {
+              "description": "Between two declarations of different kinds that follow one another (types and subtypes, constants, signals, variables, files, aliases, attributes, components, subprograms, `use` clauses), above the comment lines right above the second.",
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "max": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
             }
           },
           "additionalProperties": false
