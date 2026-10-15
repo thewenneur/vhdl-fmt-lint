@@ -259,6 +259,15 @@ impl<'a> Resolver<'a> {
                 Arc::new(Region::default())
             }
         };
+        // A vendor stub declares the primitives most often used: names it
+        // lacks are not reported.
+        let region = if self.ctx.is_stub(self.file) {
+            let mut region = Arc::unwrap_or_clone(region);
+            region.opaque = true;
+            Arc::new(region)
+        } else {
+            region
+        };
         if let Some(name) = name {
             self.end_label_refs(&node, &name, id);
         }
@@ -889,9 +898,12 @@ impl<'a> Resolver<'a> {
         self.parents.push(id);
         self.frames.push(Frame::default());
         self.visit_children(node);
-        let members = Arc::new(self.frames.pop().unwrap().locals);
+        let mut members = self.frames.pop().unwrap().locals;
+        // A vendor stub declares the ports and generics most often used:
+        // others are not reported, nor ones left unassociated.
+        members.opaque = self.ctx.is_stub(self.file);
         self.parents.pop();
-        self.decls[id.index as usize].members = Some(members);
+        self.decls[id.index as usize].members = Some(Arc::new(members));
         self.end_label_refs(node, &name, id);
     }
 

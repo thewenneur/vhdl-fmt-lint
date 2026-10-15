@@ -162,7 +162,9 @@ If the unit exists but in another library, check that library's assignment with
 A `library` clause names a library that no file of the project is in, so nothing from it is
 checked. This is an `info` note: it often means a third-party library (OSVVM, UVVM, vendor
 primitives) is outside the project root or excluded. `std`, `ieee` and `work` are always
-known.
+known, and so are the vendor primitive libraries vfl bundles declarations of (`unisim`,
+`xpm`, `altera_mf`, Lattice's) once a file uses them, unless `[project]` `vendor-stubs` is
+off ([configuration.md](configuration.md#vendor-libraries)).
 
 ### `sema/duplicate-declaration`
 
