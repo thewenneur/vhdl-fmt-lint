@@ -1194,7 +1194,7 @@ const ASSOCIATE_TOP: &str = "\
 entity top is
 end entity;
 architecture rtl of top is
-  signal a, b, y : bit;
+  signal a, b, y, z : bit;
 begin
   u1 : entity work.sub generic map (N => 3) port map (a => a, y => y);
   u2 : entity work.sub
@@ -1235,13 +1235,10 @@ fn quick_fixes_associate_left_out_ports() {
         fixed.contains("port map (a => a, y => y, b => b);"),
         "{fixed}"
     );
-    let fixed = resolve(
-        &mut client,
-        &fixes,
-        "Associate every port, the optional ones `open`",
-    );
+    let fixed = resolve(&mut client, &fixes, "Associate every port");
+    // Any port without an object of its name is left open.
     assert!(
-        fixed.contains("port map (a => a, y => y, b => b, c => open, z => open);"),
+        fixed.contains("port map (a => a, y => y, b => b, c => open, z => z);"),
         "{fixed}"
     );
 
@@ -1257,7 +1254,7 @@ fn quick_fixes_associate_left_out_ports() {
     let fixes = quick_fixes(&mut client, &top, 15);
     let fixed = resolve(&mut client, &fixes, "Associate generic `N`");
     assert!(
-        fixed.contains("  u3 : entity work.sub\n    generic map (\n      N => N\n    );"),
+        fixed.contains("  u3 : entity work.sub\n    generic map (\n      N => open\n    );"),
         "{fixed}"
     );
     let fixed = resolve(&mut client, &fixes, "Associate ports `a`, `b`");
@@ -1328,17 +1325,13 @@ fn associating_ports_keeps_the_format() {
     };
 
     let at = ASSOCIATE_FORMATTED.find("a => a").unwrap();
-    let text = fixed(
-        &mut world,
-        at,
-        "Associate every port, the optional ones `open`",
-    );
+    let text = fixed(&mut world, at, "Associate every port");
     assert!(
         text.contains(
             "    port map (
       a         => a
     , y         => y
-    , b         => b
+    , b         => open
     , c         => open
     , long_name => open
     );"
@@ -1347,6 +1340,22 @@ fn associating_ports_keeps_the_format() {
     );
 
     let at = ASSOCIATE_FORMATTED.find("u3").unwrap();
+    let text = fixed(&mut world, at, "Associate ports `a`, `b`");
+    assert!(
+        text.contains(
+            "  u3 : entity work.sub\n    port map (\n      a => a\n    , b => open\n    );"
+        ),
+        "{text}"
+    );
+
+    // Configured to name the required ones, to be filled in.
+    std::fs::write(
+        dir.path().join("vfl.toml"),
+        "[format]\nassociation_separator = \"leading\"\n\
+         [lint.rules]\n\"sema/unassociated-port\" = { undeclared = \"name\" }\n",
+    )
+    .unwrap();
+    let mut world = vfl_lsp::World::new(dir.path());
     let text = fixed(&mut world, at, "Associate ports `a`, `b`");
     assert!(
         text.contains("  u3 : entity work.sub\n    port map (\n      a => a\n    , b => b\n    );"),

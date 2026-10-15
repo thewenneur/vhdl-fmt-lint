@@ -434,6 +434,32 @@ pub fn options<'a>(config: &'a LintConfig, id: &str) -> Option<&'a toml::Table> 
     }
 }
 
+/// What a quick fix associates a port with when no object of its name is
+/// declared: the `undeclared` option of `sema/unassociated-port`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Undeclared {
+    /// `open` (the default).
+    Open,
+    /// The port's own name, to be replaced, for the ports that must be
+    /// associated.
+    Name,
+}
+
+/// The `undeclared` option of `sema/unassociated-port` in `config`, or what
+/// is wrong with it.
+pub fn undeclared(config: &LintConfig) -> Result<Undeclared, String> {
+    let value =
+        options(config, vfl_sema::codes::UNASSOCIATED_PORT).and_then(|o| o.get("undeclared"));
+    match value.map(|v| v.as_str()) {
+        None | Some(Some("open")) => Ok(Undeclared::Open),
+        Some(Some("name")) => Ok(Undeclared::Name),
+        _ => Err(format!(
+            "`undeclared` of `{}` must be \"open\" or \"name\"",
+            vfl_sema::codes::UNASSOCIATED_PORT
+        )),
+    }
+}
+
 /// Rule ids in `config` that do not exist.
 pub fn unknown_rules(config: &LintConfig) -> Vec<String> {
     config
@@ -446,6 +472,17 @@ pub fn unknown_rules(config: &LintConfig) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_undeclared_option_is_checked() {
+        let config = |toml: &str| -> LintConfig { toml::from_str(toml).unwrap() };
+        assert_eq!(undeclared(&config("")), Ok(Undeclared::Open));
+        let named = config("[rules]\n\"sema/unassociated-port\" = { undeclared = \"name\" }");
+        assert_eq!(undeclared(&named), Ok(Undeclared::Name));
+        let bad = config("[rules]\n\"sema/unassociated-port\" = { undeclared = \"x\" }");
+        assert!(undeclared(&bad).is_err());
+    }
+
     use super::*;
 
     #[test]
