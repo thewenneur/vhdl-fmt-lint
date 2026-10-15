@@ -145,7 +145,7 @@ pub struct VerilogConfig {
 impl Default for VerilogConfig {
     fn default() -> Self {
         VerilogConfig {
-            mode: VerilogMode::Off,
+            mode: VerilogMode::Names,
             extensions: vec!["v".into(), "vh".into()],
             standard: VerilogStandard::Verilog2005,
             sv_extensions: vec!["sv".into(), "svh".into()],
@@ -193,10 +193,10 @@ impl VerilogConfig {
 #[serde(rename_all = "lowercase")]
 pub enum VerilogMode {
     /// Verilog files are ignored.
-    #[default]
     Off,
     /// Verilog files are read only for the modules VHDL instantiates:
     /// names resolve, nothing in the Verilog files is reported or formatted.
+    #[default]
     Names,
     /// Everything: checking, formatting and linting Verilog files too.
     Full,

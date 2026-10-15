@@ -435,12 +435,13 @@ of events).
 
 ## `[verilog]`
 
-Verilog and SystemVerilog sources. Their support is off by default and is set by `mode`:
+Verilog and SystemVerilog sources. How much vfl does with them is set by `mode`; by
+default, only the names VHDL needs:
 
 | `mode` | What vfl does with Verilog and SystemVerilog files |
 |--------|------------------------------------------------------|
-| `"off"` (default) | Ignores them: they are not read, checked, formatted or linted. |
-| `"names"` | Reads them only for the modules VHDL instantiates, so that `entity work.fifo` resolves and its port and generic maps are checked, hover and go to definition work from VHDL, and `vfl doc` documents the modules. Nothing in the Verilog files themselves is reported, formatted or colored. |
+| `"off"` | Ignores them: they are not read, checked, formatted or linted. |
+| `"names"` (default) | Reads them only for the modules VHDL instantiates, so that `entity work.fifo` resolves and its port and generic maps are checked, hover and go to definition work from VHDL, and `vfl doc` documents the modules. Nothing in the Verilog files themselves is reported, formatted or colored. |
 | `"full"` | Everything below: `vfl check`, `vfl fmt` and `vfl lint` work on them, and the editors format, lint, outline and color them. This support is in progress, so vfl says so once: `vfl` on standard error, the language server and the Notepad++ plugin in a message. |
 
 With `mode = "full"`, `vfl check` parses them. In `vfl lint`, `vfl doc`
@@ -464,7 +465,7 @@ expanded.
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
-| `mode` | string | `"off"` | How much of vfl works on Verilog and SystemVerilog files: `"off"`, `"names"` or `"full"` (see above). |
+| `mode` | string | `"names"` | How much of vfl works on Verilog and SystemVerilog files: `"off"`, `"names"` or `"full"` (see above). |
 | `extensions` | array of strings | `["v", "vh"]` | File extensions, without the dot, of Verilog sources. |
 | `standard` | string | `"1364-2005"` | The Verilog standard of those files: `"1364-1995"`, `"1364-2001"`, `"1364-2005"` (or `"1995"`, `"2001"`, `"2005"`), or a SystemVerilog one to parse `.v` files as SystemVerilog. |
 | `sv_extensions` | array of strings | `["sv", "svh"]` | File extensions, without the dot, of SystemVerilog sources. |
@@ -593,7 +594,7 @@ reset_cycles = 5
 # clock_pattern, reset_pattern, active_low_pattern: see above
 
 [verilog]
-mode = "off"
+mode = "names"
 extensions = ["v", "vh"]
 standard = "1364-2005"
 sv_extensions = ["sv", "svh"]

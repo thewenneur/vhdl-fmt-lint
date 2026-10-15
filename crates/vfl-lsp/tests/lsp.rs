@@ -1027,8 +1027,9 @@ end architecture;
 #[test]
 fn verilog_modules_across_languages() {
     let dir = tempfile::tempdir().unwrap();
-    // Names only: VHDL resolves the module, nothing else is done with it.
-    std::fs::write(dir.path().join("vfl.toml"), "[verilog]\nmode = \"names\"\n").unwrap();
+    // Names only, the default: VHDL resolves the module, nothing else is
+    // done with it.
+    std::fs::write(dir.path().join("vfl.toml"), "").unwrap();
     std::fs::write(dir.path().join("fifo.sv"), VERILOG_FIFO).unwrap();
     std::fs::write(dir.path().join("top.vhd"), VHDL_TOP).unwrap();
     let fifo = url(&dir.path().join("fifo.sv"));

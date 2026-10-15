@@ -800,7 +800,7 @@ end architecture;
     fn verilog_buffers() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("top.sv");
-        // Off by default: left alone.
+        // Names only by default: left alone.
         let mut engine = Engine::default();
         assert_eq!(
             engine.format(Some(&path), "module top;assign a=b;endmodule\n"),

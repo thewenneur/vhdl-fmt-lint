@@ -110,8 +110,8 @@ fn lints_only_the_requested_verilog_files() {
     let bad = "module bad (output wire y);\n  assign y = missing;\nendmodule\n";
     std::fs::write(dir.path().join("a.v"), bad).unwrap();
     std::fs::write(dir.path().join("b.v"), bad.replace("bad", "other")).unwrap();
-    // Off by default, and with names only: nothing in Verilog is reported.
-    for config in ["", "[verilog]\nmode = \"names\"\n"] {
+    // Names only (the default), and off: nothing in Verilog is reported.
+    for config in ["", "[verilog]\nmode = \"off\"\n"] {
         std::fs::write(dir.path().join("vfl.toml"), config).unwrap();
         let (ok, stdout, stderr) = vfl(dir.path(), &["lint", "--output-format", "concise"]);
         assert!(ok && stdout.is_empty(), "{stdout}{stderr}");

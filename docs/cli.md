@@ -68,7 +68,7 @@ vfl lint [OPTIONS] [PATHS]...
 
 Analyzes the whole project around each path, so names, types and overloads are resolved
 across files and libraries, then reports the findings in the given files only. Unless
-`[verilog]` `mode` is off (the default), the project's Verilog and SystemVerilog modules
+`[verilog]` `mode` is off (it is `"names"` by default), the project's Verilog and SystemVerilog modules
 take part as entities: instances of them are checked against their parameters and ports.
 With `mode = "full"`, Verilog and SystemVerilog files are linted too (see
 [lints.md](lints.md#verilog-and-systemverilog)). Which rules

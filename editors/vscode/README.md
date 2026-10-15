@@ -33,9 +33,9 @@ language server:
   `"rules": { "signal": "#c586c0", "port.out": { "bold": true } }`.
 
 **Verilog and SystemVerilog** files (`.v`, `.vh`, `.sv`, `.svh`) get syntax highlighting.
-The rest is off by default and set by `mode` under `[verilog]` in `vfl.toml` (see
+The rest is set by `mode` under `[verilog]` in `vfl.toml` (see
 [configuration](https://github.com/thewenneur/vhdl-fmt-lint/blob/main/docs/configuration.md#verilog)):
-with `mode = "names"`, VHDL that instantiates their modules resolves their ports and
+by default (`mode = "names"`), VHDL that instantiates their modules resolves their ports and
 parameters, with hover and go to definition; with `mode = "full"`, which is in progress and
 says so once in a message, they also get syntax errors and lint findings as you type,
 formatting (whole file, selection and on type), semantic highlighting, an outline of their

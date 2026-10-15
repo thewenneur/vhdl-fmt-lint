@@ -382,7 +382,8 @@ mod tests {
         .unwrap();
         fs::write(root.join("rtl/alone.v"), "module alone; endmodule\n").unwrap();
         fs::write(root.join("rtl/defs.svh"), "`define W 8\n").unwrap();
-        // Off by default: the Verilog files are left out, not read as VHDL.
+        // Off: the Verilog files are left out, not read as VHDL.
+        fs::write(root.join("vfl.toml"), "[verilog]\nmode = \"off\"\n").unwrap();
         let load = || {
             Project::load(ProjectRoot {
                 dir: root.to_owned(),
@@ -393,7 +394,8 @@ mod tests {
         let off = load();
         assert_eq!(off.files.len(), 1);
         assert!(off.verilog.is_empty());
-        fs::write(root.join("vfl.toml"), "[verilog]\nmode = \"names\"\n").unwrap();
+        // Names only, the default.
+        fs::remove_file(root.join("vfl.toml")).unwrap();
         let project = Project::load(ProjectRoot {
             dir: root.to_owned(),
             kind: RootKind::Vcs,
