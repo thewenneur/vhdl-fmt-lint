@@ -5,6 +5,7 @@ mod changed;
 mod doc;
 mod lint;
 mod new;
+mod order;
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -113,6 +114,30 @@ enum Command {
         /// Print the libraries as a rust_hdl `vhdl_ls.toml` instead.
         #[arg(long)]
         vhdl_ls: bool,
+    },
+    /// Print the files of the project in compile order, with their
+    /// libraries: as a list, JSON, or a script for GHDL, Questa/ModelSim
+    /// or Vivado.
+    ///
+    /// Each file comes after the files declaring the units it uses. Files
+    /// that use each other's units are reported, and the command fails.
+    Order {
+        /// A directory or file of the project (default: the current directory).
+        #[arg(default_value = ".")]
+        path: PathBuf,
+        /// Output format.
+        #[arg(long, short, value_enum, default_value = "list")]
+        format: order::OrderFormat,
+        /// Keep only the files this entity or configuration needs, as
+        /// `name` or `library.name`.
+        #[arg(long, value_name = "UNIT")]
+        top: Option<String>,
+        /// Write absolute paths instead of paths relative to the project root.
+        #[arg(long)]
+        absolute: bool,
+        /// Write to this file instead of standard output.
+        #[arg(long, short)]
+        output: Option<PathBuf>,
     },
     /// Inspect configuration.
     Config {
@@ -354,6 +379,19 @@ fn run(cli: Cli) -> Result<bool> {
         .map(|()| true),
         Command::Check { paths, tree } => check(&paths, tree).map(|()| true),
         Command::Project { path, vhdl_ls } => show_project(&path, vhdl_ls).map(|()| true),
+        Command::Order {
+            path,
+            format,
+            top,
+            absolute,
+            output,
+        } => order::run(order::Options {
+            path,
+            format,
+            top,
+            absolute,
+            output,
+        }),
         Command::Config {
             command: ConfigCommand::Show { path },
         } => show_config(&path).map(|()| true),

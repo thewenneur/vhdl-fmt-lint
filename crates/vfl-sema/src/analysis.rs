@@ -111,6 +111,8 @@ pub(crate) struct Ctx<'a> {
     pub architectures: &'a FxHashMap<(String, String, String), UnitId>,
     pub results: &'a [OnceLock<Arc<UnitResult>>],
     pub standard: Option<UnitId>,
+    /// The vendor libraries whose stubs are analyzed.
+    pub stubs: &'a [&'a str],
 }
 
 impl Ctx<'_> {
@@ -132,8 +134,22 @@ impl Ctx<'_> {
         self.libraries.contains_key(library)
     }
 
+    /// Whether names from `unit` of `library` are not checked: a unit of a
+    /// bundled library that is not bundled, or any unit of a library known
+    /// from its stubs only.
     pub fn opaque_unit(&self, library: &str, unit: &str) -> bool {
-        stdlib::OPAQUE_UNITS.contains(&(library, unit))
+        stdlib::OPAQUE_UNITS.contains(&(library, unit)) || self.stubs.contains(&library)
+    }
+
+    /// Whether `file` is a vendor library's stubs, which declare only part
+    /// of each primitive: names they lack are not reported.
+    pub fn is_stub(&self, file: FileId) -> bool {
+        let file = &self.files[file as usize];
+        file.builtin
+            && file
+                .libraries
+                .first()
+                .is_some_and(|l| self.stubs.contains(&l.as_str()))
     }
 
     pub fn unit_decl_kind(&self, unit: UnitId) -> Option<DeclKind> {
@@ -252,16 +268,80 @@ fn bundled() -> &'static [Bundled] {
     })
 }
 
+/// The stubs of vendor library `library`, parsed once: its package of
+/// components, then an entity for each component, so that `entity
+/// unisim.bufg` resolves too.
+fn vendor_stubs(library: &str) -> &'static [Bundled] {
+    const N: usize = stdlib::VENDOR.len();
+    static STUBS: [OnceLock<Vec<Bundled>>; N] = [const { OnceLock::new() }; N];
+    let Some(index) = stdlib::VENDOR.iter().position(|(l, _, _)| *l == library) else {
+        return &[];
+    };
+    STUBS[index].get_or_init(|| {
+        let (library, name, text) = stdlib::VENDOR[index];
+        let parse = vfl_syntax::parse(text, Standard::Vhdl2019);
+        let root = parse.syntax();
+        let context = descendants_where(&root, |k| k == SyntaxKind::CONTEXT_CLAUSE)
+            .into_iter()
+            .next()
+            .map(|c| c.text().to_string())
+            .unwrap_or_default();
+        let mut entities = String::new();
+        for component in descendants_where(&root, |k| k == SyntaxKind::COMPONENT_DECL) {
+            let Some(name) = designator(&component) else {
+                continue;
+            };
+            entities.push_str(&format!("{context}\nentity {} is\n", name.text()));
+            for clause in component.children().filter(|c| {
+                matches!(
+                    c.kind(),
+                    SyntaxKind::GENERIC_CLAUSE | SyntaxKind::PORT_CLAUSE
+                )
+            }) {
+                entities.push_str(&format!("  {}\n", clause.text()));
+            }
+            entities.push_str("end entity;\n\n");
+        }
+        let entities_parse = vfl_syntax::parse(&entities, Standard::Vhdl2019);
+        vec![
+            (
+                library.to_owned(),
+                name.to_owned(),
+                Arc::<str>::from(text),
+                parse.green().clone(),
+            ),
+            (
+                library.to_owned(),
+                "entities.vhd".to_owned(),
+                Arc::<str>::from(entities.as_str()),
+                entities_parse.green().clone(),
+            ),
+        ]
+    })
+}
+
 impl Analysis {
     /// Analyzes `files` together with the bundled `std` and `ieee` libraries.
     pub fn new(inputs: Vec<FileInput>) -> Analysis {
-        Analysis::build(inputs, Vec::new(), None, Vec::new())
+        Analysis::build(inputs, Vec::new(), &[], None, Vec::new())
     }
 
     /// Analyzes `files` together with modules of other languages, which
     /// VHDL instantiates like entities, and the bundled libraries.
     pub fn with_foreign(inputs: Vec<FileInput>, foreign: Vec<ForeignInput>) -> Analysis {
-        Analysis::build(inputs, foreign, None, Vec::new())
+        Analysis::build(inputs, foreign, &[], None, Vec::new())
+    }
+
+    /// [`Analysis::with_foreign`], with the bundled stubs of the vendor
+    /// libraries named in `stubs` (see [`crate::VENDOR_LIBRARIES`]): their
+    /// components and entities resolve, with the ports and generics they
+    /// declare, and what they do not declare is not reported.
+    pub fn with_stubs(
+        inputs: Vec<FileInput>,
+        foreign: Vec<ForeignInput>,
+        stubs: &[&str],
+    ) -> Analysis {
+        Analysis::build(inputs, foreign, stubs, None, Vec::new())
     }
 
     /// Analyzes a new version of the project, reusing the results of the
@@ -273,7 +353,7 @@ impl Analysis {
     /// or renamed, or when `self` was built by [`Analysis::new`] (which
     /// skips the bookkeeping reuse needs), everything is analyzed again.
     pub fn update(&self, inputs: Vec<FileInput>) -> Analysis {
-        Analysis::build(inputs, Vec::new(), Some(self), self.results.clone())
+        Analysis::build(inputs, Vec::new(), &[], Some(self), self.results.clone())
     }
 
     /// [`Analysis::update`] with modules of other languages: a changed
@@ -284,7 +364,7 @@ impl Analysis {
         inputs: Vec<FileInput>,
         foreign: Vec<ForeignInput>,
     ) -> Analysis {
-        Analysis::build(inputs, foreign, Some(self), self.results.clone())
+        Analysis::build(inputs, foreign, &[], Some(self), self.results.clone())
     }
 
     /// [`Analysis::update_with_foreign`], consuming this analysis: the
@@ -298,7 +378,19 @@ impl Analysis {
         foreign: Vec<ForeignInput>,
     ) -> Analysis {
         let results = std::mem::take(&mut self.results);
-        Analysis::build(inputs, foreign, Some(&self), results)
+        Analysis::build(inputs, foreign, &[], Some(&self), results)
+    }
+
+    /// [`Analysis::into_update_with_foreign`], with the vendor stubs of
+    /// [`Analysis::with_stubs`].
+    pub fn into_update_with_stubs(
+        mut self,
+        inputs: Vec<FileInput>,
+        foreign: Vec<ForeignInput>,
+        stubs: &[&str],
+    ) -> Analysis {
+        let results = std::mem::take(&mut self.results);
+        Analysis::build(inputs, foreign, stubs, Some(&self), results)
     }
 
     /// An analysis of nothing, not even the bundled libraries: a
@@ -336,6 +428,7 @@ impl Analysis {
     fn build(
         inputs: Vec<FileInput>,
         foreign: Vec<ForeignInput>,
+        stubs: &[&str],
         previous: Option<&Analysis>,
         previous_results: Vec<Arc<UnitResult>>,
     ) -> Analysis {
@@ -395,7 +488,8 @@ impl Analysis {
                 line_index,
             });
         }
-        for (library, name, text, green) in bundled() {
+        let stub_files = stubs.iter().flat_map(|library| vendor_stubs(library));
+        for (library, name, text, green) in bundled().iter().chain(stub_files) {
             let path = PathBuf::from(format!("<bundled>/{library}/{name}"));
             let line_index = match unchanged(files.len(), &path, green, &None) {
                 Some(id) => previous.expect("unchanged").files[id].line_index.clone(),
@@ -477,6 +571,7 @@ impl Analysis {
             architectures: &architectures,
             results: &results,
             standard,
+            stubs,
         };
 
         // Dependencies between units.

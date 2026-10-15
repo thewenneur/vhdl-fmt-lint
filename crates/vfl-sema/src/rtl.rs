@@ -639,6 +639,12 @@ impl<'a> Checker<'a> {
                 self.decl(id)
                     .is_some_and(|d| matches!(d.kind, DeclKind::Entity | DeclKind::Component))
             });
+        // Not a vendor primitive's stub, whose port widths depend on
+        // generics it may not declare.
+        let unit = unit.filter(|&u| {
+            self.decl(u)
+                .is_some_and(|d| !self.ctx.files[d.file as usize].builtin)
+        });
         let members = unit.and_then(|u| self.decl(u)?.members.clone());
         for aspect in node.children() {
             let ports = match aspect.kind() {
