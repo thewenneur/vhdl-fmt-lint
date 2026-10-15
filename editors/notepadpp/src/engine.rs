@@ -16,7 +16,7 @@ use vfl_fmt::FormatError;
 use vfl_lsp::World;
 use vfl_lsp::editor::{
     self, Completion, Completions, FileEdits, HoverInfo, Location, ProjectProblem, ProjectSymbol,
-    QuickFix, SignatureHelp, Symbol, TokenKind, Use,
+    QuickFix, SignatureHelp, Symbol, TokenKind, Use, token_modifier,
 };
 use vfl_lsp::generate::{self, EntityRef, Generated, Kind};
 use vfl_project::{Encoding, find_root};
@@ -44,7 +44,12 @@ impl Severity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NameColor {
     Signal,
-    Port,
+    /// A port of mode `in`.
+    PortIn,
+    /// A port of mode `out`.
+    PortOut,
+    /// A port of another mode: `inout`, `buffer`, `linkage` or a view.
+    PortInout,
     /// A constant, generic or enumeration literal.
     Constant,
     /// A variable or subprogram parameter.
@@ -55,19 +60,23 @@ pub enum NameColor {
 }
 
 impl NameColor {
-    pub const ALL: [NameColor; 6] = [
+    pub const ALL: [NameColor; 8] = [
         NameColor::Signal,
-        NameColor::Port,
+        NameColor::PortIn,
+        NameColor::PortOut,
+        NameColor::PortInout,
         NameColor::Constant,
         NameColor::Variable,
         NameColor::Type,
         NameColor::Subprogram,
     ];
 
-    fn of(kind: TokenKind) -> Option<NameColor> {
+    fn of(kind: TokenKind, modifiers: u32) -> Option<NameColor> {
         Some(match kind {
             TokenKind::Signal => NameColor::Signal,
-            TokenKind::Port => NameColor::Port,
+            TokenKind::Port if modifiers & token_modifier::IN != 0 => NameColor::PortIn,
+            TokenKind::Port if modifiers & token_modifier::OUT != 0 => NameColor::PortOut,
+            TokenKind::Port => NameColor::PortInout,
             TokenKind::Constant | TokenKind::Generic | TokenKind::EnumMember => NameColor::Constant,
             TokenKind::Variable | TokenKind::Parameter => NameColor::Variable,
             TokenKind::Type | TokenKind::TypeParameter => NameColor::Type,
@@ -320,7 +329,7 @@ impl Engine {
         let (world, file_path) = self.sync(path, text);
         editor::semantic_tokens(world, &file_path)
             .into_iter()
-            .filter_map(|t| Some((t.range, NameColor::of(t.kind)?)))
+            .filter_map(|t| Some((t.range, NameColor::of(t.kind, t.modifiers)?)))
             .collect()
     }
 
@@ -1013,6 +1022,43 @@ end architecture;
         }
         // Units and labels keep the lexer's colors.
         assert!(!colors.iter().any(|(name, _)| *name == "e" || *name == "a"));
+    }
+
+    #[test]
+    fn colors_ports_by_mode() {
+        const PORTS: &str = "\
+entity e is
+  port (clk : in bit; q : out bit; d : inout bit; b : buffer bit);
+end entity;
+
+architecture a of e is
+begin
+  q <= clk;
+end architecture;
+";
+        let mut engine = Engine::default();
+        let colors: Vec<(&str, NameColor)> = engine
+            .name_colors(None, PORTS)
+            .into_iter()
+            .map(|(range, color)| (&PORTS[range], color))
+            .collect();
+        for expected in [
+            ("clk", NameColor::PortIn),
+            ("q", NameColor::PortOut),
+            ("d", NameColor::PortInout),
+            ("b", NameColor::PortInout),
+        ] {
+            assert!(colors.contains(&expected), "{expected:?} in {colors:?}");
+        }
+        // Uses are colored like the declaration.
+        assert_eq!(
+            colors
+                .iter()
+                .filter(|c| **c == ("clk", NameColor::PortIn))
+                .count(),
+            2,
+            "{colors:?}"
+        );
     }
 
     #[test]

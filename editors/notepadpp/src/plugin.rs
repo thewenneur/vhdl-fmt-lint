@@ -127,20 +127,28 @@ pub(crate) const USE_INDICATOR: usize = 3;
 pub(crate) const WRITE_INDICATOR: usize = 4;
 const UNUSED_INDICATOR: usize = 5;
 /// Indicators for name colors, one per [`NameColor`], when Notepad++ is
-/// too old to hand them out.
-const FALLBACK_NAME_INDICATORS: [usize; NameColor::ALL.len()] = [15, 16, 17, 18, 19, 20];
+/// too old to hand them out. 21 is Notepad++'s fifth mark style, the one
+/// least likely to be in use.
+const FALLBACK_NAME_INDICATORS: [usize; NameColor::ALL.len()] = [8, 15, 16, 17, 18, 19, 20, 21];
 
-/// Name colors (0x00BBGGRR) on a light and on a dark background.
+/// Name colors (0x00BBGGRR) on a light and on a dark background. Input
+/// ports are blue and output ports red on both: far apart for red-green
+/// color blindness too, and clear of the keyword, comment and type colors
+/// of Notepad++'s default and dark themes.
 fn name_color(color: NameColor, dark: bool) -> isize {
     match (color, dark) {
         (NameColor::Signal, false) => 0xAA248E,
-        (NameColor::Port, false) => 0x5714AD,
+        (NameColor::PortIn, false) => 0xB25300,
+        (NameColor::PortOut, false) => 0x0000D5,
+        (NameColor::PortInout, false) => 0x5714AD,
         (NameColor::Constant, false) => 0x005EC2,
         (NameColor::Variable, false) => 0x801000,
         (NameColor::Type, false) => 0x997F26,
         (NameColor::Subprogram, false) => 0x265E79,
         (NameColor::Signal, true) => 0xC086C5,
-        (NameColor::Port, true) => 0xB18FF4,
+        (NameColor::PortIn, true) => 0xFFA947,
+        (NameColor::PortOut, true) => 0x5784FF,
+        (NameColor::PortInout, true) => 0xB18FF4,
         (NameColor::Constant, true) => 0x50A0E5,
         (NameColor::Variable, true) => 0xFEDC9C,
         (NameColor::Type, true) => 0xB0C94E,
