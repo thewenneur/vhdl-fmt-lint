@@ -62,10 +62,6 @@ const MENU: &[(&str, Option<extern "C" fn()>)] = &[
     ("Generate testbench", Some(cmd_testbench)),
     ("", None),
     ("Generate documentation", Some(cmd_generate_docs)),
-    (
-        "Generate project config (vfl.toml)",
-        Some(cmd_generate_config),
-    ),
     ("Show diagrams", Some(cmd_show_diagrams)),
     ("", None),
     ("Show type", Some(cmd_show_type)),
@@ -79,11 +75,17 @@ const MENU: &[(&str, Option<extern "C" fn()>)] = &[
     ("Code assistance", Some(cmd_toggle_assist)),
     ("Highlight uses", Some(cmd_toggle_highlight)),
     ("Color names by meaning", Some(cmd_toggle_name_colors)),
-    ("Lint preset without vfl.toml...", Some(cmd_lint_preset)),
-    ("Format style without vfl.toml...", Some(cmd_format_style)),
     ("", None),
     ("Reload project", Some(cmd_reload)),
     ("About", Some(cmd_about)),
+    // Notepad++ keeps shortcuts by menu position: new entries go last.
+    ("", None),
+    ("Lint preset without vfl.toml...", Some(cmd_lint_preset)),
+    ("Format style without vfl.toml...", Some(cmd_format_style)),
+    (
+        "Generate project config (vfl.toml)",
+        Some(cmd_generate_config),
+    ),
 ];
 
 /// The position of a menu entry.
