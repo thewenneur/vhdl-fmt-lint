@@ -1,6 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.4.0] - 2026-10-15
+
+Full Verilog and SystemVerilog support becomes opt-in (`[verilog] mode`), the formatter gains
+leading separators and named styles, and editors can fill in the ports an instantiation
+leaves out.
 
 ### Added
 
@@ -35,6 +39,10 @@
 
 - A list written with leading commas no longer formats to a lone `,` on its own line:
   with the default trailing separators, the commas move back to the ends of the lines.
+- The formatter no longer glues together tokens that were written apart and would read
+  as one token once joined (`s foo` in a malformed external path, `- -a`).
+- A file with lone CR line ends no longer fails to format when a Verilog `` `define `` is
+  continued by a `\` onto an empty line: lone CRs are read as line ends throughout.
 
 ## [0.3.1] - 2026-10-15
 

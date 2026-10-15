@@ -227,3 +227,12 @@ fn leading_separators_keep_empty_arguments_together() {
     let out = fmt_with(text, &config("style = \"leading-comma\"\nmax_width = 40"));
     assert!(out.contains(",, get_full_name()"), "{out}");
 }
+
+/// Found by the `format_verilog` fuzz target: a `\` before a lone CR read as
+/// CR LF once the formatter put a newline after it.
+#[test]
+fn a_continuation_before_a_lone_cr() {
+    assert_eq!(fmt("`define W \\\r"), fmt("`define W \\\n"));
+    let text = "`define F(q) \\\r\r\rmodule m; endmodule\n";
+    assert_eq!(fmt(text), fmt(&text.replace('\r', "\n")));
+}

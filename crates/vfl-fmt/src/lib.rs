@@ -151,11 +151,17 @@ impl<'a> Source<'a> {
             None => ("", text),
         };
         let crlf = body.contains("\r\n");
-        let text = if crlf {
+        let mut text = if crlf {
             body.replace("\r\n", "\n")
         } else {
             body.to_owned()
         };
+        // A lone CR is a line end too. Kept, it can end a token (a `\`
+        // continuing a directive onto an empty line) and read as CR LF once
+        // a newline follows it in the output.
+        if text.contains('\r') {
+            text = text.replace('\r', "\n");
+        }
         Source { bom, crlf, text }
     }
 }
