@@ -170,12 +170,15 @@ async function run() {
 
   // Without a vfl.toml, the preset and style settings apply, and become one
   // on request.
+  // `sema/unused-signal` is reported until the server has the new preset;
+  // without a `vfl.toml` the default preset would still report it.
+  assert.ok(vscode.languages.getDiagnostics(uri).some((d) => d.code === "sema/unused-signal"));
   fs.rmSync(path.join(folder, "vfl.toml"));
   await vscode.workspace
     .getConfiguration("vfl")
     .update("lint.preset", "none", vscode.ConfigurationTarget.Workspace);
   await until("no findings with the `none` preset", () =>
-    vscode.languages.getDiagnostics(uri).every((d) => d.code === "syntax/error"),
+    vscode.languages.getDiagnostics(uri).every((d) => d.code !== "sema/unused-signal"),
   );
   const written = await vscode.commands.executeCommand("vfl.generateConfig");
   assert.equal(written, path.join(folder, "vfl.toml"));
