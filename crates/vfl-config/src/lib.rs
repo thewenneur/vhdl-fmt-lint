@@ -1248,4 +1248,169 @@ mod tests {
         }
         walk(&table, "", &doc);
     }
+
+    /// The JSON schema of `vfl.toml` that the VS Code extension gives the
+    /// TOML extensions, for completion and checking in the editor.
+    fn schema() -> serde_json::Value {
+        serde_json::from_str(include_str!(
+            "../../../editors/vscode/schemas/vfl.schema.json"
+        ))
+        .unwrap()
+    }
+
+    /// A config whose every optional key is set, as a TOML table.
+    fn full_config_table() -> toml::Table {
+        let mut config = Config::default();
+        config.format.continuation_indent = Some(2);
+        config.doc.title = Some("Design".into());
+        config.lint.baseline = Some("baseline.json".into());
+        config.lint.waivers.push(Waiver {
+            message: Some("x".into()),
+            reason: Some("y".into()),
+            ..Waiver::default()
+        });
+        let toml::Value::Table(table) = toml::Value::try_from(&config).unwrap() else {
+            panic!("the config is not a table");
+        };
+        table
+    }
+
+    /// A config of the single key `path` set to `value`.
+    fn config_with(path: &str, value: toml::Value) -> Result<Config, ConfigError> {
+        let mut parts: Vec<&str> = path.split('.').collect();
+        let mut value = value;
+        while let Some(last) = parts.pop() {
+            let mut table = toml::Table::new();
+            table.insert(last.into(), value);
+            value = toml::Value::Table(table);
+        }
+        let toml::Value::Table(table) = value else {
+            unreachable!()
+        };
+        Config::try_from(table).map_err(|e| ConfigError::Invalid(Box::new(e)))
+    }
+
+    #[test]
+    fn schema_has_every_key_and_no_other() {
+        // Tables whose keys are names the user picks, not config keys.
+        const OPEN: [&str; 2] = ["project.libraries", "lint.rules"];
+        fn walk(table: &toml::Table, schema: &serde_json::Value, path: &str) {
+            let props = schema["properties"]
+                .as_object()
+                .unwrap_or_else(|| panic!("the schema of [{path}] has no properties"));
+            assert_eq!(
+                schema["additionalProperties"],
+                serde_json::Value::Bool(false),
+                "the schema of [{path}] accepts unknown keys"
+            );
+            let join = |key: &str| {
+                if path.is_empty() {
+                    key.to_string()
+                } else {
+                    format!("{path}.{key}")
+                }
+            };
+            for (key, value) in table {
+                let full = join(key);
+                let sub = props
+                    .get(key)
+                    .unwrap_or_else(|| panic!("the schema has no {full}"));
+                if OPEN.contains(&full.as_str()) {
+                    continue;
+                }
+                match value {
+                    toml::Value::Table(inner) => walk(inner, sub, &full),
+                    toml::Value::Array(items) if full == "lint.waiver" => {
+                        let toml::Value::Table(inner) = &items[0] else {
+                            panic!("lint.waiver holds tables")
+                        };
+                        walk(inner, &sub["items"], &full);
+                    }
+                    _ => {}
+                }
+            }
+            for key in props.keys() {
+                // `root` and `extends` are read while layering the files.
+                let special = path.is_empty() && (key == "root" || key == "extends");
+                assert!(
+                    special || table.contains_key(key),
+                    "the schema has {}, which is not a config key",
+                    join(key)
+                );
+            }
+        }
+        walk(&full_config_table(), &schema(), "");
+    }
+
+    #[test]
+    fn schema_values_are_the_accepted_ones() {
+        let defaults = toml::Value::Table(full_config_table());
+        let default_of = |path: &str| {
+            path.split('.')
+                .try_fold(&defaults, |value, key| value.get(key))
+                .cloned()
+        };
+        fn leaves(
+            schema: &serde_json::Value,
+            path: &str,
+            out: &mut Vec<(String, serde_json::Value)>,
+        ) {
+            for (key, sub) in schema["properties"].as_object().into_iter().flatten() {
+                let full = if path.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{path}.{key}")
+                };
+                if full == "lint.rules" || full == "lint.waiver" {
+                    continue;
+                }
+                if sub.get("properties").is_some() {
+                    leaves(sub, &full, out);
+                } else {
+                    out.push((full, sub.clone()));
+                }
+            }
+        }
+        let mut all = Vec::new();
+        leaves(&schema(), "", &mut all);
+        for (path, leaf) in all {
+            if path == "root" || path == "extends" || path == "project.libraries" {
+                continue;
+            }
+            let bogus = config_with(&path, toml::Value::String("not-a-value".into()));
+            if let Some(values) = leaf["enum"].as_array() {
+                let values: Vec<&str> = values.iter().map(|v| v.as_str().unwrap()).collect();
+                for value in &values {
+                    config_with(&path, toml::Value::String(value.to_string()))
+                        .unwrap_or_else(|e| panic!("{path} = {value:?} is rejected: {e}"));
+                }
+                // The error lists the names the key takes; each must be in the schema.
+                let message = bogus.expect_err(&path).to_string();
+                // "expected `a`", "expected `a` or `b`", "expected one of `a`, `b`, `c`".
+                let (_, expected) = message
+                    .lines()
+                    .find_map(|line| line.split_once("unknown variant `not-a-value`, expected "))
+                    .unwrap_or_else(|| panic!("{path}: {message}"));
+                for name in expected.split('`').skip(1).step_by(2) {
+                    assert!(
+                        values.contains(&name),
+                        "the schema of {path} lacks {name:?}"
+                    );
+                }
+            } else if leaf["type"] == "string" {
+                assert!(
+                    bogus.is_ok(),
+                    "{path} takes only some strings: give it an enum"
+                );
+            }
+            if let Some(default) = leaf.get("default") {
+                let value = default_of(&path).unwrap_or_else(|| panic!("{path} has no default"));
+                assert_eq!(
+                    serde_json::to_value(&value).unwrap(),
+                    *default,
+                    "the default of {path}"
+                );
+            }
+        }
+    }
 }
