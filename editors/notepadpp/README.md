@@ -108,7 +108,7 @@ Mapper > Plugin commands**.
 | Show messages under lines | Shows each message under its line (on by default); with it off, hover or use Next problem. |
 | Code assistance | Types on hover, parameter hints and completion after a dot (on by default). The three commands above work either way. |
 | Highlight uses | Highlights the uses of the name at the caret (on by default). |
-| Color names by meaning | Colors signals, ports, constants, variables, types and subprograms (on by default). |
+| Color names by meaning | Colors signals, ports, constants, variables, types and subprograms (on by default). Input ports are blue, output ports red, and `inout`/`buffer` ports pink. |
 | Reload project | Re-reads the whole project from disk. Changed files are normally picked up by themselves, so this is rarely needed. |
 
 The five settings are kept in `plugins\Config\vfl_npp.ini`. Problems in `vfl.toml` are
