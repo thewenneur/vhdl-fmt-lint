@@ -102,7 +102,10 @@ mod tests {
 
     #[test]
     fn released_entries_keep_their_position() {
-        assert!(NAMES.len() >= RELEASED.len(), "a released entry was removed");
+        assert!(
+            NAMES.len() >= RELEASED.len(),
+            "a released entry was removed"
+        );
         for (i, (now, then)) in NAMES.iter().zip(RELEASED).enumerate() {
             assert_eq!(
                 now, then,

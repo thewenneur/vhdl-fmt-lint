@@ -83,7 +83,10 @@ const MENU: &[(&str, Option<extern "C" fn()>)] = &[
 // The entries are those of `menu::NAMES`, in its order, which keeps the
 // positions Notepad++ saves users' shortcuts under.
 const _: () = {
-    assert!(MENU.len() == menu::NAMES.len(), "MENU and menu::NAMES differ");
+    assert!(
+        MENU.len() == menu::NAMES.len(),
+        "MENU and menu::NAMES differ"
+    );
     let mut i = 0;
     while i < MENU.len() {
         assert!(
