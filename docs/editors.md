@@ -65,6 +65,10 @@ somewhere it can stay, and run **zed: install dev extension**, picking the `vfl-
 directory (or `editors/zed` in a clone). Zed builds it with [rustup](https://rustup.rs)'s
 Rust.
 
+Uninstall the "VHDL" and "Verilog" extensions of the Zed registry first: they define the same
+languages and grammar names, and with both installed Zed mixes their grammars and queries, so
+VHDL files open as plain text. The vfl extension replaces them.
+
 It uses `vfl` from the `PATH`, or downloads the latest release's binary when there is none.
 To use another binary, set it in Zed's `settings.json`:
 
