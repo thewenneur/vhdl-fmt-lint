@@ -12,7 +12,7 @@ mod verilog;
 use std::path::{Path, PathBuf};
 
 pub use import::is_tool_file;
-pub use infer::{BUNDLED_LIBRARIES, Inference, Reason, infer_libraries};
+pub use infer::{BUNDLED_LIBRARIES, Inference, Reason, infer_libraries, library_conflicts};
 pub use load::{Encoding, LibrarySources, LoadError, Project, SourceFile, decode, encode};
 pub use summary::{
     FileSummary, UnitKind, UnitRef, UnitSummary, name_token, simple_name, summarize,

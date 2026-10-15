@@ -385,9 +385,13 @@ use them. Implemented, all read without running the tool:
   Quartus's `$::quartus(qip_path)`. A word using anything else is skipped.
 
 These files are found by the same walk as sources (so `.gitignore` applies). Their globs
-use the tools' semantics: `*` stays within a directory. `vfl.toml` wins over
-`vhdl_ls.toml`, which wins over tool files; a file a tool lists in no library is still
-inferred. HDLmake `Manifest.py` is not read yet. This makes migration a no-op.
+use the tools' semantics: `*` stays within a directory. `vfl.toml` wins over tool files;
+a file a tool lists in no library is still inferred. `vhdl_ls.toml` ranks below inference
+by default: it places only the files inference leaves in no library, and its libraries then
+propagate along `work` references. If that leaves library conflicts (references to project
+units missing from the library meant, units declared twice in a library), the ranking with
+`vhdl_ls.toml` above inference is tried too and kept when it leaves fewer (`[project]` `vhdl-ls = "prefer"` ranks it just below
+`vfl.toml` instead, `"off"` ignores it). HDLmake `Manifest.py` is not read yet. This makes migration a no-op.
 
 **4. Infer libraries from the code.** For everything else, every file is parsed (fast,
 parallel) and indexed by the primary units it declares and the references it makes

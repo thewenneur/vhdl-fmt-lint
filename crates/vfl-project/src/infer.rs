@@ -54,12 +54,14 @@ pub struct Inference {
 ///
 /// `explicit[i]`, when set, fixes file `i`'s libraries; inference never
 /// changes those. Everything else starts empty, gains libraries from
-/// `lib.unit` references and along `work` references until nothing changes,
-/// and ends in `work` if nothing placed it.
+/// `lib.unit` references and along `work` references until nothing changes.
+/// A file still in no library then takes `fallback[i]` when set, and those
+/// propagate the same way; what is left ends in `work`.
 pub fn infer_libraries(
     paths: &[PathBuf],
     summaries: &[FileSummary],
     explicit: &[Option<Vec<(String, Reason)>>],
+    fallback: &[Option<Vec<(String, Reason)>>],
 ) -> Inference {
     let n = paths.len();
     let mut libs: Vec<Vec<(String, Reason)>> = explicit
@@ -67,7 +69,7 @@ pub fn infer_libraries(
         .map(|e| e.clone().unwrap_or_default())
         .collect();
     libs.resize(n, Vec::new());
-    let fixed: Vec<bool> = (0..n)
+    let mut fixed: Vec<bool> = (0..n)
         .map(|i| explicit.get(i).is_some_and(Option::is_some))
         .collect();
     let mut notes = Vec::new();
@@ -85,17 +87,7 @@ pub fn infer_libraries(
 
     let has = |libs: &[(String, Reason)], lib: &str| libs.iter().any(|(l, _)| l == lib);
 
-    // Picks the files a reference from `from` to `unit` means: the declaring
-    // files closest to `from` in the directory tree.
-    let closest = |from: usize, candidates: &[usize]| -> Vec<usize> {
-        let depth = |c: usize| common_depth(&paths[from], &paths[c]);
-        let best = candidates.iter().map(|&c| depth(c)).max().unwrap_or(0);
-        candidates
-            .iter()
-            .copied()
-            .filter(|&c| depth(c) == best)
-            .collect()
-    };
+    let closest = |from: usize, candidates: &[usize]| closest(paths, from, candidates);
 
     // 1. Named libraries: `lib.unit` puts unit's file in lib.
     for (file, summary) in summaries.iter().enumerate() {
@@ -127,6 +119,48 @@ pub fn infer_libraries(
     }
 
     // 2. Propagate along `work` references until nothing changes.
+    propagate(paths, summaries, &declared, &fixed, &mut libs);
+
+    // 3. Files the code placed nowhere take their fallback libraries
+    // (`vhdl_ls.toml`), which then propagate in turn.
+    let mut fell_back = false;
+    for file in 0..n {
+        if let Some(Some(fallback)) = fallback.get(file)
+            && libs[file].is_empty()
+        {
+            libs[file] = fallback.clone();
+            fixed[file] = true;
+            fell_back = true;
+        }
+    }
+    if fell_back {
+        propagate(paths, summaries, &declared, &fixed, &mut libs);
+    }
+
+    for file_libs in &mut libs {
+        if file_libs.is_empty() {
+            file_libs.push(("work".into(), Reason::Default));
+        }
+    }
+    Inference {
+        libraries: libs,
+        notes,
+    }
+}
+
+/// Spreads libraries along `work` references until nothing changes: a unit
+/// used through `work` joins its user's libraries, and a file nothing
+/// placed joins those of the units it uses.
+fn propagate(
+    paths: &[PathBuf],
+    summaries: &[FileSummary],
+    declared: &HashMap<&str, Vec<usize>>,
+    fixed: &[bool],
+    libs: &mut [Vec<(String, Reason)>],
+) {
+    let n = paths.len();
+    let has = |libs: &[(String, Reason)], lib: &str| libs.iter().any(|(l, _)| l == lib);
+    let closest = |from: usize, candidates: &[usize]| closest(paths, from, candidates);
     loop {
         let mut changed = false;
         for file in 0..n {
@@ -200,16 +234,75 @@ pub fn infer_libraries(
             break;
         }
     }
+}
 
-    for file_libs in &mut libs {
-        if file_libs.is_empty() {
-            file_libs.push(("work".into(), Reason::Default));
+/// How many library conflicts these libraries leave: units declared more
+/// than once in a library, and `lib.unit` and `work.unit` references that
+/// do not resolve, the unit being declared in the project but in none of
+/// the files of the library the reference means (for `work`, each library
+/// of the referencing file). References to units the project does not
+/// declare at all, or to bundled libraries, are not counted.
+pub fn library_conflicts(summaries: &[FileSummary], libs: &[Vec<(String, Reason)>]) -> usize {
+    let mut declared: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (file, summary) in summaries.iter().enumerate() {
+        for unit in summary.units.iter().filter(|u| u.kind.is_primary()) {
+            let files = declared.entry(unit.name.as_str()).or_default();
+            if !files.contains(&file) {
+                files.push(file);
+            }
         }
     }
-    Inference {
-        libraries: libs,
-        notes,
+    let in_library = |candidates: &[usize], lib: &str| {
+        candidates
+            .iter()
+            .any(|&c| libs[c].iter().any(|(l, _)| l == lib))
+    };
+    // A unit declared twice in one library: one of them is not the unit
+    // its users mean.
+    let mut missing: usize = declared
+        .values()
+        .map(|files| {
+            let mut seen: Vec<&str> = files
+                .iter()
+                .flat_map(|&f| libs[f].iter().map(|(l, _)| l.as_str()))
+                .collect();
+            let all = seen.len();
+            seen.sort_unstable();
+            seen.dedup();
+            all - seen.len()
+        })
+        .sum();
+    for (file, summary) in summaries.iter().enumerate() {
+        for r in summary.refs.iter().filter(|r| !r.implicit) {
+            if BUNDLED_LIBRARIES.contains(&r.library.as_str()) {
+                continue;
+            }
+            let Some(candidates) = declared.get(r.unit.as_str()) else {
+                continue;
+            };
+            if r.library == "work" {
+                missing += libs[file]
+                    .iter()
+                    .filter(|(lib, _)| !in_library(candidates, lib))
+                    .count();
+            } else if !in_library(candidates, &r.library) {
+                missing += 1;
+            }
+        }
     }
+    missing
+}
+
+/// Picks the files a reference from `from` means among the `candidates`
+/// declaring the unit: those closest to `from` in the directory tree.
+fn closest(paths: &[PathBuf], from: usize, candidates: &[usize]) -> Vec<usize> {
+    let depth = |c: usize| common_depth(&paths[from], &paths[c]);
+    let best = candidates.iter().map(|&c| depth(c)).max().unwrap_or(0);
+    candidates
+        .iter()
+        .copied()
+        .filter(|&c| depth(c) == best)
+        .collect()
 }
 
 /// How many leading path components two files' directories share.
@@ -243,7 +336,7 @@ mod tests {
             .iter()
             .map(|(_, text)| summarize(&parse(text, Standard::Vhdl2008).syntax()))
             .collect();
-        let inference = infer_libraries(&paths, &summaries, &vec![None; files.len()]);
+        let inference = infer_libraries(&paths, &summaries, &vec![None; files.len()], &[]);
         files
             .iter()
             .zip(inference.libraries)
@@ -318,7 +411,7 @@ mod tests {
             )]),
             None,
         ];
-        let inference = infer_libraries(&paths, &summaries, &explicit);
+        let inference = infer_libraries(&paths, &summaries, &explicit, &[]);
         assert_eq!(inference.libraries[0].len(), 1);
         assert_eq!(inference.libraries[0][0].0, "mylib");
     }

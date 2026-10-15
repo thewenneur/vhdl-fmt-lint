@@ -66,6 +66,11 @@ impl LibraryGlobs {
     }
 
     /// The libraries `path` (relative to the root, `/`-separated) is listed in.
+    /// The file the lists come from.
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
     pub fn assign(&self, relative: &str) -> Option<Vec<(String, Reason)>> {
         let libs: Vec<(String, Reason)> = self
             .libraries

@@ -8,6 +8,16 @@
   topic, each with a `vfl.toml`, a file before and after `vfl fmt` or `vfl lint --fix`, and
   a README. A test keeps the `after` files in sync with vfl.
 
+### Changed
+
+- **Library inference ranks above `vhdl_ls.toml`**: a rust_hdl `vhdl_ls.toml` now only
+  places the files inference leaves in no library, so a stale one no longer overrides what
+  the code says. When inference leaves library conflicts (references to units missing from
+  the library meant, units declared twice in a library) and ranking `vhdl_ls.toml` first
+  leaves fewer, vfl keeps that instead and `vfl project` says so. The new `[project]`
+  `vhdl-ls` key sets this: `"fallback"` (default), `"prefer"` (always the old ranking) or
+  `"off"`.
+
 ### Fixed
 
 - **`-- vfl: skip` keeps the comment at the end of the skipped statement** as written; the
