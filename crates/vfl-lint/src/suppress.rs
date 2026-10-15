@@ -99,7 +99,9 @@ impl Suppressions {
     }
 }
 
-fn matches(rules: &[String], rule: &str) -> bool {
+/// Whether `rule` is one of `rules`, or in one of their categories
+/// (`naming`, `style/*`); every rule if `rules` is empty.
+pub fn matches(rules: &[String], rule: &str) -> bool {
     rules.is_empty()
         || rules.iter().any(|r| {
             r == rule

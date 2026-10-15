@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Waivers**: `[[lint.waiver]]` entries in `vfl.toml` silence findings by file glob, rule
+  or category, line or line range, and message pattern, without touching the sources, on
+  the command line and in editors.
+- **Baselines**: `vfl lint --write-baseline FILE` records the current findings;
+  `--baseline FILE` (or `lint.baseline` in `vfl.toml`) then reports only new ones, and
+  the summary counts the baselined ones. Findings are matched by file, rule, message and
+  line text, not line number, so edits elsewhere in a file keep them baselined.
+- **`vfl fmt --diff`** prints a unified diff of what formatting would change, and fails
+  like `--check` if there is any.
+- **JUnit XML and GitLab Code Quality output**: `vfl lint --output-format junit` and
+  `--output-format gitlab`.
+- **`vfl lint --changed-since REF`** reports only the files changed since a git revision
+  (the whole project is still analyzed), and with `--changed-lines` only the findings on
+  changed lines.
+- **`vfl lint --fix-only RULES`** applies the fixes of some rules or categories only.
+- **`vfl rules --explain RULE`** prints a rule's levels and full description.
+
+### Changed
+
+- LSP position conversion finds the line of an offset without scanning the line's text
+  twice.
+- The fuzzing dictionary and seeds include non-ASCII text (no-break and ideographic spaces,
+  accents, CJK, an emoji outside the BMP) and CRLF line breaks.
+
 ### Fixed
 
 - **Language server crash on hover** over a declaration continued on lines indented with
@@ -14,13 +40,6 @@
 - **Edits past the end of a CRLF line** are inserted before the `\r\n`, not between `\r`
   and `\n`.
 - Name resolution no longer panics on an unbalanced scope (a bug); it degrades instead.
-
-### Changed
-
-- LSP position conversion finds the line of an offset without scanning the line's text
-  twice.
-- The fuzzing dictionary and seeds include non-ASCII text (no-break and ideographic spaces,
-  accents, CJK, an emoji outside the BMP) and CRLF line breaks.
 
 ## [0.7.0] - 2026-10-15
 

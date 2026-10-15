@@ -62,6 +62,7 @@ fn settings<'a>(
             syntax_errors,
             config,
             verilog,
+            root: None,
         })
         .collect()
 }

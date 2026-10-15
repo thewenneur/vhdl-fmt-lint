@@ -11,6 +11,7 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+globset.workspace = true
 rustc-hash.workspace = true
 vfl-config.workspace = true
 vfl-project.workspace = true
