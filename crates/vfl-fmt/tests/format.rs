@@ -677,6 +677,15 @@ fn leading_separators_stay_inside_one_line_lists() {
 }
 
 #[test]
+fn skip_keeps_the_comment_ending_the_statement() {
+    let text = "architecture a of e is begin\n-- vfl: skip\nkeep  <=  this;   -- as written\nq<=r; -- next\nend;";
+    assert_eq!(
+        fmt(text),
+        "architecture a of e is\nbegin\n  -- vfl: skip\nkeep  <=  this;   -- as written\n  q <= r; -- next\nend;\n"
+    );
+}
+
+#[test]
 fn separators_do_not_cross_directives() {
     let text = "architecture a of e is begin
 u0 : entity work.sub port map (a => b, -- vfl: skip

@@ -1,0 +1,5 @@
+[format]
+max_width = 60             # lists of longer lines are broken one element per line (default 100)
+case_alternative = "break" # every statement of a "when" on its own line (default "preserve")
+max_blank_lines = 1        # longer runs of blank lines are shortened (default 2)
+space_after_keyword = false # process(clk), port map(...), if(...)

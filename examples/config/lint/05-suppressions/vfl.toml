@@ -1,0 +1,8 @@
+[project]
+exclude = ["after.vhd"] # keep the two copies of the example from clashing
+
+[lint]
+preset = "strict"
+
+[lint.rules]
+"style/file-name" = "off"

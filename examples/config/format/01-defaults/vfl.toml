@@ -1,0 +1,2 @@
+# An empty vfl.toml is enough: every key takes its default value.
+# `vfl config show` prints them all.
