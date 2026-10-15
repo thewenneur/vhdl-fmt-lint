@@ -1,0 +1,123 @@
+# A long fuzzing campaign, run by hand: every target fuzzes in its own job
+# for `hours`, then the workflow starts itself again until `rounds` runs
+# are done (GitHub stops a job after 6 hours). The corpus carries over
+# from one run to the next through the cache, and each run uploads the
+# crashes it found. See fuzz/README.md.
+name: Fuzz campaign
+
+on:
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: Hours of fuzzing per target and per run (at most 5.75)
+        default: "5.75"
+      rounds:
+        description: Runs in a row, each started by the one before
+        default: "2"
+      targets:
+        description: Targets, separated by spaces
+        default: parse format verilog format_verilog lint reanalyze lsp
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: ""
+
+jobs:
+  targets:
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - id: list
+        env:
+          TARGETS: ${{ inputs.targets }}
+        run: echo "list=$(jq -cn --arg t "$TARGETS" '$t | split(" ") | map(select(. != ""))')" >>"$GITHUB_OUTPUT"
+
+  fuzz:
+    needs: targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 358
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJson(needs.targets.outputs.list) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - uses: actions/cache@v4
+        id: cargo-fuzz
+        with:
+          path: ~/.cargo/bin/cargo-fuzz
+          key: cargo-fuzz-0.13.2-${{ runner.os }}
+      - if: steps.cargo-fuzz.outputs.cache-hit != 'true'
+        run: cargo install cargo-fuzz --version 0.13.2 --locked
+      - uses: actions/cache/restore@v4
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+      - run: fuzz/seed.sh
+      - run: cargo +nightly fuzz build -s none "$TARGET"
+        working-directory: fuzz
+        env:
+          TARGET: ${{ matrix.target }}
+      - name: Fuzz for ${{ inputs.hours }} hours
+        working-directory: fuzz
+        env:
+          HOURS: ${{ inputs.hours }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          seconds=$(awk -v h="$HOURS" 'BEGIN { s = int(h * 3600); print (s > 20700 ? 20700 : s) }')
+          # One process per core; a crash, timeout or out-of-memory input
+          # is saved and the campaign goes on.
+          cargo +nightly fuzz run -s none "$TARGET" "corpus/$TARGET" -- \
+            -dict=hdl.dict -max_len=16384 -timeout=30 -rss_limit_mb=4096 \
+            -fork="$(nproc)" -ignore_crashes=1 -ignore_timeouts=1 -ignore_ooms=1 \
+            -max_total_time="$seconds" 2>&1 | tail -n 200 || true
+      - name: List what was found
+        if: always()
+        working-directory: fuzz
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          shopt -s nullglob
+          files=(artifacts/"$TARGET"/*)
+          echo "$TARGET: ${#files[@]} inputs saved, corpus of $(ls "corpus/$TARGET" | wc -l)" | tee -a "$GITHUB_STEP_SUMMARY"
+          for f in "${files[@]}"; do
+            echo "::group::$f"
+            base64 -w0 "$f"
+            echo
+            echo "::endgroup::"
+          done
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}
+          if-no-files-found: ignore
+
+  next:
+    needs: fuzz
+    if: ${{ !cancelled() && fromJson(inputs.rounds) > 1 }}
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          HOURS: ${{ inputs.hours }}
+          ROUNDS: ${{ inputs.rounds }}
+          TARGETS: ${{ inputs.targets }}
+        run: |
+          gh workflow run fuzz-campaign.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" \
+            -f hours="$HOURS" -f rounds="$((ROUNDS - 1))" -f targets="$TARGETS"
