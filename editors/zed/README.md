@@ -36,18 +36,13 @@ The extension starts, in order:
 }
 ```
 
-With another VHDL or Verilog extension installed, put vfl first for each language (a
-name with a `!` in front, such as `"!vhdl_ls"`, turns that server off):
-
-```json
-{
-  "languages": {
-    "VHDL": { "language_servers": ["vfl", "..."] },
-    "Verilog": { "language_servers": ["vfl", "..."] },
-    "SystemVerilog": { "language_servers": ["vfl", "..."] }
-  }
-}
-```
+**Uninstall the "VHDL" and "Verilog" extensions from the Zed registry first.** They define
+the same languages (`VHDL`, `Verilog`, `SystemVerilog`) and the same grammar names (`vhdl`,
+`systemverilog`) as this extension, and Zed then mixes one extension's grammar with the
+other's queries: VHDL files open as plain text, and the log (**zed: open log**) shows
+`failed to load language VHDL: Error loading highlights query ... Invalid node type
+"type_mark"`. This extension replaces both: it brings the languages, and vfl is their
+language server.
 
 Grammars: [tree-sitter-vhdl](https://github.com/jpt13653903/tree-sitter-vhdl) for VHDL and
 [tree-sitter-systemverilog](https://github.com/gmlarumbe/tree-sitter-systemverilog) for
