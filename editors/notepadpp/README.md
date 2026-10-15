@@ -75,8 +75,15 @@ are ready, and are dropped if the file changed in the meantime.
 
 ## Commands
 
-All under **Plugins > vfl**. To give them keyboard shortcuts, use **Settings > Shortcut
-Mapper > Plugin commands**.
+All under **Plugins > vfl**. Every one of them, the settings included, can be given a
+keyboard shortcut: open **Settings > Shortcut Mapper**, choose the **Plugin commands** tab,
+type `vfl` in the filter, then double-click a command (or select it and click **Modify**) and
+pick its keys. The shortcut is shown next to the command in the menu. The plugin ships none,
+so none of Notepad++'s own is taken; the mapper says when a key is already in use.
+
+Notepad++ saves these shortcuts in `shortcuts.xml` by the position of each command in the
+menu, so new commands are only ever added at the end of the menu: shortcuts keep their
+commands when the plugin is upgraded.
 
 | Command | |
 |---|---|

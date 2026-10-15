@@ -42,6 +42,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         apply: "first",
       }),
     ),
+    vscode.commands.registerCommand("vfl.toggleFormatOnType", toggleFormatOnType),
     vscode.commands.registerCommand("vfl.insertInstance", (entity?: string) =>
       insertGenerated("instance", entity),
     ),
@@ -294,6 +295,29 @@ async function insertGenerated(kind: GenerateKind, entity?: string): Promise<voi
 }
 
 /** Writes a testbench next to the entity and opens it. */
+/**
+ * Flips `vfl.format.onType` where it is set: in the workspace folder or the
+ * workspace when it is set there, else in the user settings. It is read at each keystroke, so the
+ * change applies at once.
+ */
+async function toggleFormatOnType(): Promise<void> {
+  // Scoped to the file in front, as the keystroke handler reads it.
+  const config = vscode.workspace.getConfiguration(
+    "vfl",
+    vscode.window.activeTextEditor?.document,
+  );
+  const on = !config.get<boolean>("format.onType", false);
+  const inspected = config.inspect<boolean>("format.onType");
+  const target =
+    inspected?.workspaceFolderValue !== undefined
+      ? vscode.ConfigurationTarget.WorkspaceFolder
+      : inspected?.workspaceValue !== undefined
+        ? vscode.ConfigurationTarget.Workspace
+        : vscode.ConfigurationTarget.Global;
+  await config.update("format.onType", on, target);
+  vscode.window.setStatusBarMessage(`vfl: format on type ${on ? "on" : "off"}`, 3000);
+}
+
 async function generateTestbench(entity?: string): Promise<void> {
   entity ??= await pickEntity("Entity to test");
   if (!entity) {
