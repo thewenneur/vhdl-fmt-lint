@@ -9,6 +9,7 @@ use std::fmt::Write;
 
 use crate::fsm::Fsm;
 use crate::hierarchy::Node;
+use crate::layered;
 use crate::model::{Direction, Entity, Interface};
 
 const FONT_SIZE: f64 = 12.0;
@@ -67,7 +68,7 @@ text{fill:#f0f6fc}\
 .vfl-muted{fill:#9198a1}}";
 
 /// The most arrows of a state diagram that get their conditions written.
-const MAX_FSM_LABELS: usize = 10;
+const MAX_FSM_LABELS: usize = 24;
 
 /// The longest text a diagram shows in one piece; longer texts are cut.
 const MAX_TEXT: usize = 48;
@@ -469,18 +470,59 @@ pub fn hierarchy(roots: &[Node], link: Option<&dyn Fn(usize) -> String>) -> Stri
     c.finish("Design hierarchy", 6.0)
 }
 
-/// A state diagram: states on a circle, transitions as arrows labelled
-/// with their conditions.
-pub fn fsm(machine: &Fsm) -> String {
-    use std::f64::consts::PI;
-    let n = machine.states.len().max(1);
-    let r = machine
-        .states
-        .iter()
-        .map(|s| width(&cut(s, 24)) / 2.0 + 10.0)
-        .fold(24.0, f64::max);
-    let index = |state: &str| machine.states.iter().position(|s| s == state);
+/// A smooth curve through `points`, which go steadily up or down: a
+/// monotone cubic (Fritsch-Carlson) in x as a function of y, so it never
+/// overshoots a waypoint, leaving the first point and entering the last one
+/// vertically.
+fn spline(points: &[(f64, f64)]) -> String {
+    let mut d = String::new();
+    let Some(&(x0, y0)) = points.first() else {
+        return d;
+    };
+    let _ = write!(d, "M{x0:.1},{y0:.1}");
+    let slope = |p: (f64, f64), q: (f64, f64)| {
+        if (q.1 - p.1).abs() < 1e-6 {
+            0.0
+        } else {
+            (q.0 - p.0) / (q.1 - p.1)
+        }
+    };
+    let n = points.len();
+    let tangent = |i: usize| {
+        if i == 0 || i + 1 == n {
+            return 0.0;
+        }
+        let (a, b) = (
+            slope(points[i - 1], points[i]),
+            slope(points[i], points[i + 1]),
+        );
+        if a * b <= 0.0 {
+            0.0
+        } else {
+            2.0 / (1.0 / a + 1.0 / b)
+        }
+    };
+    for i in 0..n - 1 {
+        let ((x1, y1), (x2, y2)) = (points[i], points[i + 1]);
+        let third = (y2 - y1) / 3.0;
+        let _ = write!(
+            d,
+            "C{:.1},{:.1} {:.1},{:.1} {x2:.1},{y2:.1}",
+            x1 + tangent(i) * third,
+            y1 + third,
+            x2 - tangent(i + 1) * third,
+            y2 - third,
+        );
+    }
+    d
+}
 
+/// A state diagram, laid out in layers from the initial state down (see
+/// [`crate::layered`]): branches run side by side, loops go back up, and
+/// transitions are curves labelled with their conditions.
+pub fn fsm(machine: &Fsm) -> String {
+    const HEIGHT: f64 = 30.0;
+    let index = |state: &str| machine.states.iter().position(|s| s == state);
     // Transitions between the same states share one arrow.
     let mut edges: BTreeMap<(usize, usize), Vec<Option<String>>> = BTreeMap::new();
     for t in &machine.transitions {
@@ -491,166 +533,113 @@ pub fn fsm(machine: &Fsm) -> String {
             }
         }
     }
-    // Past a few labelled arrows the labels overlap more than they help:
+    // Past a few labelled arrows the labels take more room than they help:
     // the transition table of the page lists the conditions.
     let labelled = edges
         .values()
         .filter(|c| c.iter().any(Option::is_some))
         .count();
     let show_labels = labelled <= MAX_FSM_LABELS;
-    let widest = if show_labels {
-        edges
-            .values()
-            .flatten()
-            .flatten()
-            .map(|c| width(&cut(c, 28)))
-            .fold(0.0, f64::max)
-    } else {
-        0.0
-    };
-    // Room between neighbouring states for the labels of their arrows.
-    let ring = if n <= 1 {
-        0.0
-    } else {
-        ((2.0 * r + 90.0 + 0.8 * widest) * n as f64 / (2.0 * PI)).max(r + 60.0 + widest / 2.0)
-    };
-    let position = |i: usize| -> (f64, f64) {
-        if n == 2 {
-            return (i as f64 * (2.0 * ring), 0.0);
-        }
-        let angle = -PI / 2.0 + 2.0 * PI * i as f64 / n as f64;
-        (ring * angle.cos(), ring * angle.sin())
-    };
-    let center = if n == 2 { (ring, 0.0) } else { (0.0, 0.0) };
-    let mut c = Canvas::new();
-    let mut labels = Canvas::new();
-    // A label centred at (x, y), or beside it on the side of the normal
-    // (nx, ny) so that it clears its arrow.
-    let label = |labels: &mut Canvas,
-                 x: f64,
-                 y: f64,
-                 normal: Option<(f64, f64)>,
-                 conditions: &[Option<String>]| {
+    let lines = |conditions: &[Option<String>]| -> Vec<String> {
         if !show_labels {
-            return;
+            return Vec::new();
         }
         let mut lines: Vec<String> = conditions.iter().flatten().map(|c| cut(c, 28)).collect();
         if lines.len() > 3 {
             lines.truncate(3);
             lines.push("…".into());
         }
-        let h = lines.len() as f64 * 14.0;
-        let w = lines.iter().map(|l| width(l)).fold(0.0, f64::max);
-        if lines.is_empty() {
-            return;
-        }
-        let (x, y) = match normal {
-            Some((nx, ny)) => {
-                let reach = (w / 2.0 + 2.0) * nx.abs() + (h / 2.0 + 2.0) * ny.abs() + 2.0;
-                (x + nx * reach, y + ny * reach)
-            }
-            None => (x, y),
-        };
-        labels.rect(
-            x - w / 2.0 - 2.0,
-            y - h / 2.0 - 2.0,
-            w + 4.0,
-            h + 4.0,
-            "vfl-label-bg",
-        );
-        for (i, line) in lines.iter().enumerate() {
-            labels.text(
-                x,
-                y - h / 2.0 + 11.0 + i as f64 * 14.0,
-                line,
-                "middle",
-                "vfl-muted",
-            );
-        }
+        lines
     };
-    for (&(a, b), conditions) in &edges {
-        let (ax, ay) = position(a);
-        let (bx, by) = position(b);
-        if a == b {
-            // A loop on the outer side of the state.
-            let (ox, oy) = (ax - center.0, ay - center.1);
-            let len = (ox * ox + oy * oy).sqrt();
-            let angle = if len < 1e-6 { -PI / 2.0 } else { oy.atan2(ox) };
-            let p = |t: f64, d: f64| (ax + d * t.cos(), ay + d * t.sin());
-            let (sx, sy) = p(angle - 0.45, r);
-            let (ex, ey) = p(angle + 0.45, r);
-            let (c1x, c1y) = p(angle - 0.6, r * 2.4);
-            let (c2x, c2y) = p(angle + 0.6, r * 2.4);
-            c.extend(c1x, c1y, c2x, c2y);
+    let names: Vec<String> = machine.states.iter().map(|s| cut(s, 24)).collect();
+    let sizes: Vec<(f64, f64)> = names.iter().map(|s| (width(s) + 24.0, HEIGHT)).collect();
+    let texts: Vec<Vec<String>> = edges.values().map(|c| lines(c)).collect();
+    let list: Vec<layered::Edge> = edges
+        .keys()
+        .zip(&texts)
+        .map(|(&(from, to), lines)| layered::Edge {
+            from,
+            to,
+            label: (!lines.is_empty()).then(|| {
+                let w = lines.iter().map(|l| width(l)).fold(0.0, f64::max);
+                (w + 4.0, lines.len() as f64 * 14.0 + 4.0)
+            }),
+        })
+        .collect();
+    let initial = machine.initial.as_deref().and_then(index);
+    let layout = layered::layout(&sizes, &list, initial);
+
+    let mut c = Canvas::new();
+    let mut labels = Canvas::new();
+    for ((edge, route), lines) in list.iter().zip(&layout.routes).zip(&texts) {
+        if route.points.is_empty() {
+            // A loop on the right side of the state.
+            let (x, y) = layout.states[edge.from];
+            let right = x + sizes[edge.from].0 / 2.0;
+            let reach = right + layered::LOOP_ROOM - 4.0;
+            c.extend(right, y - 18.0, reach, y + 18.0);
             c.raw(&format!(
-                r#"<path class="vfl-edge" marker-end="url(#vfl-arrow)" d="M{sx:.1},{sy:.1}C{c1x:.1},{c1y:.1} {c2x:.1},{c2y:.1} {ex:.1},{ey:.1}"/>"#
+                r#"<path class="vfl-edge" marker-end="url(#vfl-arrow)" d="M{:.1},{:.1}C{reach:.1},{:.1} {reach:.1},{:.1} {:.1},{:.1}"/>"#,
+                right - 4.0,
+                y - HEIGHT / 2.0 + 1.0,
+                y - 22.0,
+                y + 22.0,
+                right - 4.0,
+                y + HEIGHT / 2.0 - 1.0,
             ));
-            let (lx, ly) = p(angle, r * 2.3);
-            label(&mut labels, lx, ly, None, conditions);
-            continue;
-        }
-        let (dx, dy) = (bx - ax, by - ay);
-        let len = (dx * dx + dy * dy).sqrt().max(1e-6);
-        let (ux, uy) = (dx / len, dy / len);
-        // Bend both arrows of a pair, to opposite sides.
-        let bend = if edges.contains_key(&(b, a)) {
-            32.0
         } else {
-            0.0
-        };
-        let (mx, my) = ((ax + bx) / 2.0 - uy * bend, (ay + by) / 2.0 + ux * bend);
-        let towards = |px: f64, py: f64, qx: f64, qy: f64| {
-            let (vx, vy) = (qx - px, qy - py);
-            let l = (vx * vx + vy * vy).sqrt().max(1e-6);
-            (px + vx / l * r, py + vy / l * (r + 0.0))
-        };
-        let (sx, sy) = towards(ax, ay, mx, my);
-        let (ex, ey) = towards(bx, by, mx, my);
-        let (ex, ey) = (ex - (ex - bx) * 0.04, ey - (ey - by) * 0.04);
-        c.raw(&format!(
-            r#"<path class="vfl-edge" marker-end="url(#vfl-arrow)" d="M{sx:.1},{sy:.1}Q{mx:.1},{my:.1} {ex:.1},{ey:.1}"/>"#
-        ));
-        let (lx, ly) = (
-            0.25 * sx + 0.5 * mx + 0.25 * ex,
-            0.25 * sy + 0.5 * my + 0.25 * ey,
-        );
-        // A bent arrow's label goes on the outer side of its bend.
-        let normal = (bend > 0.0).then_some((-uy, ux));
-        label(&mut labels, lx, ly, normal, conditions);
+            let d = spline(&route.points);
+            for &(x, y) in &route.points {
+                c.extend(x, y, x, y);
+            }
+            c.raw(&format!(
+                r#"<path class="vfl-edge" marker-end="url(#vfl-arrow)" d="{d}"/>"#
+            ));
+        }
+        if let Some((x, y)) = route.label {
+            let h = lines.len() as f64 * 14.0;
+            let w = lines.iter().map(|l| width(l)).fold(0.0, f64::max);
+            labels.rect(x, y - h / 2.0 - 2.0, w + 4.0, h + 4.0, "vfl-label-bg");
+            for (i, line) in lines.iter().enumerate() {
+                labels.text(
+                    x + 2.0,
+                    y - h / 2.0 + 11.0 + i as f64 * 14.0,
+                    line,
+                    "start",
+                    "vfl-muted",
+                );
+            }
+        }
     }
-    for (i, state) in machine.states.iter().enumerate() {
-        let (x, y) = position(i);
-        let initial = machine.initial.as_deref() == Some(state.as_str());
-        c.extend(x - r, y - r, x + r, y + r);
+    for (i, name) in names.iter().enumerate() {
+        let (x, y) = layout.states[i];
+        let (w, h) = sizes[i];
+        let initial = Some(i) == initial;
         let class = if initial { "vfl-initial" } else { "vfl-state" };
+        let (left, top) = (x - w / 2.0, y - h / 2.0);
+        c.extend(left, top, left + w, top + h);
         c.raw(&format!(
-            r#"<circle class="{class}" cx="{x:.1}" cy="{y:.1}" r="{r:.1}"/>"#
+            r#"<rect class="{class}" x="{left:.1}" y="{top:.1}" width="{w:.1}" height="{h:.1}" rx="{:.1}"/>"#,
+            h / 2.0
         ));
         c.text(
             x,
             y + 4.0,
-            &cut(state, 24),
+            name,
             "middle",
             if initial { "vfl-title" } else { "" },
         );
         if initial {
-            // The entry arrow, from outside the ring.
-            let (ox, oy) = (x - center.0, y - center.1);
-            let len = (ox * ox + oy * oy).sqrt();
-            let (ux, uy) = if len < 1e-6 {
-                (0.0, -1.0)
-            } else {
-                (ox / len, oy / len)
-            };
-            // Enter beside a self-loop, not through it.
-            let (ux, uy) = (ux * 0.6 - uy * 0.8, uy * 0.6 + ux * 0.8);
-            let (sx, sy) = (x + ux * (r + 30.0), y + uy * (r + 30.0));
-            let (ex, ey) = (x + ux * (r + 2.0), y + uy * (r + 2.0));
-            c.extend(sx - 5.0, sy - 5.0, sx + 5.0, sy + 5.0);
+            // The entry arrow, from above.
+            let (sy, ey) = (top - 26.0, top - 2.0);
+            c.extend(x - 5.0, sy - 5.0, x + 5.0, sy + 5.0);
             c.raw(&format!(
-                r#"<circle class="vfl-pin" cx="{sx:.1}" cy="{sy:.1}" r="4"/><path class="vfl-edge" marker-end="url(#vfl-arrow)" d="M{sx:.1},{sy:.1}L{ex:.1},{ey:.1}"/>"#
+                r#"<circle class="vfl-pin" cx="{x:.1}" cy="{sy:.1}" r="4"/><path class="vfl-edge" marker-end="url(#vfl-arrow)" d="M{x:.1},{sy:.1}L{x:.1},{ey:.1}"/>"#
             ));
         }
+    }
+    if names.is_empty() {
+        c.text(0.0, 14.0, "(no states)", "start", "vfl-muted");
     }
     if !labels.body.is_empty() {
         c.extend(labels.min_x, labels.min_y, labels.max_x, labels.max_y);

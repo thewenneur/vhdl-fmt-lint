@@ -99,7 +99,8 @@ the line above; `on_type = false` under `[format]` in `vfl.toml` turns it off fo
   in `vfl.toml`.
 - `vfl: Show Diagrams`, the diagram button in the title bar of a VHDL editor, shows the
   documentation page of the first entity (else package) of the file, with its diagrams, in
-  a view beside the editor. Links to other entities open their pages in the view. The page
+  a view beside the editor. Diagrams zoom with the buttons over them, Ctrl or Cmd + wheel,
+  or `+` `-` `0`, and pan by dragging. Links to other entities open their pages in the view. The page
   is drawn again when a VHDL file is saved, and follows the light or dark color theme. Its
   HTML is written to the extension's storage, not to the project.
 

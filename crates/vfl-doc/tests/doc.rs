@@ -473,6 +473,9 @@ fn writes_html_pages() {
     assert!(counter.starts_with("<!DOCTYPE html>"));
     assert!(counter.contains("<li class=\"current\"><a href=\"work.counter.html\""));
     assert!(counter.contains("<div class=\"diagram\"><svg"));
+    // Diagrams zoom: one script, last in the body.
+    assert_eq!(counter.matches("<script>").count(), 1);
+    assert!(counter.contains("</script>\n</body>"));
     assert!(
         counter.contains("<p>A simple up counter.</p><p>Wraps around at the maximum value.</p>")
     );

@@ -15,7 +15,8 @@ A fast, fully configurable VHDL formatter, linter and language server, in pure R
   architecture as block diagrams wired by signal, port maps, data flow, clock domains and their
   crossings, reset trees, package dependencies, record and register bit fields, state machines
   and WaveDrom timing diagrams written in doc comments; `vfl schema` draws one diagram as SVG,
-  Mermaid or DOT.
+  Mermaid or DOT. In HTML pages every diagram zooms (buttons over it, Ctrl or Cmd + wheel,
+  `+` `-` `0`) and pans by dragging.
   See [examples/uart/doc](examples/uart/doc/index.md) for an example.
   In VS Code, **vfl: Generate Documentation** and **vfl: Show Diagrams** (a button in the
   editor title bar, showing the current file's entity in a view beside it); in Notepad++,

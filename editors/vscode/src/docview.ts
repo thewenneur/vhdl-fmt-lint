@@ -4,15 +4,22 @@
 /** The command the links between pages run in the webview. */
 export const OPEN_PAGE_COMMAND = "vfl.openDocPage";
 
-/** No scripts, nothing loaded: the pages are self-contained HTML with inline SVG. */
-const CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:;";
+/**
+ * Nothing loaded: the pages are self-contained HTML with inline SVG. The
+ * only script allowed is the diagram zoom `vfl doc` puts last in the body,
+ * marked with `nonce`.
+ */
+function csp(nonce: string): string {
+  return `default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'nonce-${nonce}';`;
+}
 
 /**
  * `html` for the webview: a restrictive content security policy, the dark
  * styles applied when `dark` (and only then, whatever the OS theme), and
- * links to the other pages turned into command links to `page`'s siblings.
+ * links to the other pages turned into command links to `page`'s siblings,
+ * and the zoom script of the diagrams allowed to run.
  */
-export function webviewHtml(html: string, page: string, dark: boolean): string {
+export function webviewHtml(html: string, page: string, dark: boolean, nonce: string): string {
   // The pages follow `prefers-color-scheme`, which webviews take from the
   // OS rather than from the VS Code theme.
   let result = html.replace(/@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)/g, () =>
@@ -33,7 +40,13 @@ export function webviewHtml(html: string, page: string, dark: boolean): string {
       return `${attr}command:${OPEN_PAGE_COMMAND}?${args}"`;
     },
   );
-  const meta = `<meta http-equiv="Content-Security-Policy" content="${CSP}">`;
+  // Only the script vfl writes right before `</body>`; text from the
+  // sources is escaped, so it cannot add one.
+  result = result.replace(
+    /<script>((?:(?!<\/script>)[\s\S])*)<\/script>(\s*<\/body>)/,
+    (_m, code: string, end: string) => `<script nonce="${nonce}">${code}</script>${end}`,
+  );
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${csp(nonce)}">`;
   const head = /<head[^>]*>/i.exec(result);
   if (head) {
     const at = head.index + head[0].length;
