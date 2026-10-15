@@ -115,6 +115,13 @@
   and `\n`.
 - Name resolution no longer panics on an unbalanced scope (a bug); it degrades instead.
 
+### Fixed
+
+- `vfl lint` run in `examples/` no longer mixes the configuration lessons with the UART
+  design (15 errors from duplicate entities): each lesson of `examples/config` is a
+  project of its own (`root = true`), and `examples/uart` is formatted with the default
+  style.
+
 ## [0.7.0] - 2026-10-15
 
 Library inference ranks above `vhdl_ls.toml`, every editor action can take a keyboard
