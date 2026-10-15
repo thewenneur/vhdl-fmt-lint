@@ -14,12 +14,12 @@
 use rustc_hash::FxHashSet;
 use vfl_syntax::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange, TextSize};
 
-use vfl_syntax::green_walk::{ChildTokens, descendants_where};
+use vfl_syntax::green_walk::{ChildTokens, descendants_where, for_each_token};
 
 use crate::analysis::Analysis;
 use crate::decl::{Decl, DeclId, DeclKind, FileId, Mode, Target, TypeDef, UnitId};
 use crate::diagnostic::{Diagnostic, Edit, Fix, codes};
-use crate::resolver::{is_clock_edge, mark_token};
+use crate::resolver::mark_token;
 use crate::rtl::assignment_target;
 use crate::rtl::reset::{if_branches, process_body};
 
@@ -58,8 +58,20 @@ impl Analysis {
             found: Vec::new(),
         };
         let root = analyzed.syntax();
-        for process in descendants_where(&root, |k| k == SyntaxKind::PROCESS_STMT) {
-            checker.process(&process, clocked);
+        // Processes are statements of architectures, entities, blocks and
+        // generates: only these are looked into.
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            for child in node.children() {
+                use SyntaxKind::*;
+                match child.kind() {
+                    PROCESS_STMT => checker.process(&child, clocked),
+                    DESIGN_UNIT | ARCHITECTURE_BODY | ENTITY_DECL | BLOCK_STMT
+                    | FOR_GENERATE_STMT | IF_GENERATE_STMT | CASE_GENERATE_STMT | GENERATE_BODY
+                    | CASE_ALTERNATIVE => stack.push(child),
+                    _ => {}
+                }
+            }
         }
         let mut found = checker.found;
         found.sort_by_key(|(range, ..)| range.start());
@@ -130,29 +142,46 @@ impl<'a> Branches<'a> {
     /// clocked branch of clocked ones without `wait` when `clocked`.
     /// Processes with `after` delays are simulation models and left out.
     fn process(&mut self, process: &SyntaxNode, clocked: bool) {
+        // Clocked processes test the edge in a top-level `if` or `elsif`:
+        // left out before looking at their statements.
+        if !clocked && top_level_edge(process) {
+            return;
+        }
+        // One pass over the tokens, building no syntax nodes: most other
+        // processes are left out here.
         let mut waits = 0;
-        let mut edge = None;
-        let wanted = |k| {
+        let mut delayed = false;
+        let mut branching = false;
+        let mut edge: Option<TextRange> = None;
+        let mut previous = SyntaxKind::ERROR;
+        for_each_token(process, |kind, range, text| {
             use SyntaxKind::*;
-            matches!(
-                k,
-                WAIT_STMT | ERROR | WAVEFORM_ELEMENT | CALL_EXPR | ATTRIBUTE_NAME
-            )
-        };
-        for n in descendants_where(process, wanted) {
-            match n.kind() {
-                SyntaxKind::WAIT_STMT => waits += 1,
-                SyntaxKind::ERROR => return,
-                SyntaxKind::WAVEFORM_ELEMENT if n.has_child(|k| k == SyntaxKind::AFTER_KW) => {
-                    return;
-                }
-                SyntaxKind::CALL_EXPR | SyntaxKind::ATTRIBUTE_NAME
-                    if edge.is_none() && is_clock_edge(&n) =>
+            if kind.is_trivia() {
+                return;
+            }
+            match kind {
+                WAIT_KW => waits += 1,
+                AFTER_KW => delayed = true,
+                IF_KW | CASE_KW => branching = true,
+                // `rising_edge(clk)`, `falling_edge(clk)`, `clk'event`.
+                IDENT
+                    if edge.is_none()
+                        && (text.eq_ignore_ascii_case("rising_edge")
+                            || text.eq_ignore_ascii_case("falling_edge")
+                            || (previous == TICK && text.eq_ignore_ascii_case("event"))) =>
                 {
-                    edge = Some(n)
+                    edge = Some(range)
                 }
                 _ => {}
             }
+            previous = kind;
+        });
+        // Delayed assignments (`after 10 ns`) are simulation models.
+        if delayed || !branching || (edge.is_some() && !clocked) {
+            return;
+        }
+        if !descendants_where(process, |k| k == SyntaxKind::ERROR).is_empty() {
+            return;
         }
         let body = process_body(process);
         match edge {
@@ -165,7 +194,7 @@ impl<'a> Branches<'a> {
                 }
                 if let Some((_, branch)) = if_branches(statement).into_iter().find(|(c, _)| {
                     c.as_ref()
-                        .is_some_and(|c| c.text_range().contains_range(edge.text_range()))
+                        .is_some_and(|c| c.text_range().contains_range(edge))
                 }) {
                     self.branches(&branch, true);
                 }
@@ -639,6 +668,45 @@ impl Scan<'_> {
     fn needed(&self, id: DeclId) -> bool {
         !self.done.contains(&id) && !self.partial.contains(&id)
     }
+}
+
+/// Whether the condition of an `if` or `elsif` among the statements of a
+/// process tests a clock edge.
+fn top_level_edge(process: &SyntaxNode) -> bool {
+    process
+        .children()
+        .filter(|n| n.kind() == SyntaxKind::IF_STMT)
+        .any(|statement| {
+            let mut condition = false;
+            statement.children_with_tokens().any(|e| match e {
+                rowan::NodeOrToken::Token(t) => {
+                    condition = matches!(t.kind(), SyntaxKind::IF_KW | SyntaxKind::ELSIF_KW);
+                    false
+                }
+                rowan::NodeOrToken::Node(n) if condition => {
+                    condition = false;
+                    has_edge(&n)
+                }
+                rowan::NodeOrToken::Node(_) => false,
+            })
+        })
+}
+
+/// Whether a condition holds `rising_edge`, `falling_edge` or `'event`.
+fn has_edge(node: &SyntaxNode) -> bool {
+    let mut found = false;
+    let mut previous = SyntaxKind::ERROR;
+    for_each_token(node, |kind, _, text| {
+        if kind.is_trivia() {
+            return;
+        }
+        found |= kind == SyntaxKind::IDENT
+            && (text.eq_ignore_ascii_case("rising_edge")
+                || text.eq_ignore_ascii_case("falling_edge")
+                || (previous == SyntaxKind::TICK && text.eq_ignore_ascii_case("event")));
+        previous = kind;
+    });
+    found
 }
 
 /// A test of a reset signal: `rst`, `rst = '1'`, `not rst_n`,

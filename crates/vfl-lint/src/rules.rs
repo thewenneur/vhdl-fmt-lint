@@ -187,8 +187,8 @@ pub const RULES: &[Rule] = &[
     rule(
         codes::MISSING_BRANCH_ASSIGNMENT,
         "A branch of an `if` or `case` in a process does not assign a signal another branch assigns, and nothing before it does.",
-        Off,
-        Warn,
+        Error,
+        Error,
         true,
     ),
     rule(
@@ -327,6 +327,13 @@ pub const RULES: &[Rule] = &[
     rule(
         "style/tabs",
         "A line is indented with tabs.",
+        Off,
+        Warn,
+        true,
+    ),
+    rule(
+        "style/case-others",
+        "A `case` statement has no `when others` alternative.",
         Off,
         Warn,
         true,
@@ -513,7 +520,7 @@ mod tests {
         assert_eq!(clocked_branches(&config("")), Ok(false));
         let on = config("[rules]\n\"sema/missing-branch-assignment\" = { clocked = true }");
         assert_eq!(clocked_branches(&on), Ok(true));
-        assert_eq!(level(&on, codes::MISSING_BRANCH_ASSIGNMENT), Warn);
+        assert_eq!(level(&on, codes::MISSING_BRANCH_ASSIGNMENT), Error);
         let bad = config("[rules]\n\"sema/missing-branch-assignment\" = { clocked = 1 }");
         assert!(clocked_branches(&bad).is_err());
     }

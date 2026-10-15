@@ -77,7 +77,7 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`sema/unneeded-sensitivity`](#semaunneeded-sensitivity) | off | warn | unsafe |
 | [`sema/width-mismatch`](#semawidth-mismatch) | warn | error | |
 | [`sema/inferred-latch`](#semainferred-latch) | warn | error | |
-| [`sema/missing-branch-assignment`](#semamissing-branch-assignment) | off | warn | safe, unsafe |
+| [`sema/missing-branch-assignment`](#semamissing-branch-assignment) | error | error | safe, unsafe |
 | [`sema/clock-domain-crossing`](#semaclock-domain-crossing) | info | warn | |
 | [`sema/open-input`](#semaopen-input) | warn | error | |
 | [`sema/inout-port`](#semainout-port) | info | warn | |
@@ -98,6 +98,7 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`style/line-length`](#styleline-length) | off | warn | |
 | [`style/trailing-whitespace`](#styletrailing-whitespace) | off | warn | safe |
 | [`style/tabs`](#styletabs) | off | warn | safe |
+| [`style/case-others`](#stylecase-others) | off | warn | safe |
 | [`style/process-label`](#styleprocess-label) | off | warn | |
 | [`style/positional-association`](#stylepositional-association) | off | warn | safe |
 | [`style/clock-edge`](#styleclock-edge) | off | warn | unsafe |
@@ -396,7 +397,7 @@ branch is left out, as it only sets the registers that have a reset value:
 
 ```toml
 [lint.rules]
-"sema/missing-branch-assignment" = { clocked = true }   # also turns the rule on at warn
+"sema/missing-branch-assignment" = { clocked = true }
 ```
 
 Fixes: in a clocked process, the branch that leaves a register out gets `q <= q;`, and an
@@ -407,9 +408,11 @@ fix assigns the signals a default value before the statement: `'0'`, `(others =>
 design and is unsafe (`vfl lint --fix --unsafe-fixes`, or the quick fix in an editor).
 
 A `case` without `when others` is complete by the language's rules, so only its
-alternatives are compared. Not reported: signals assigned only in part (an element or a
-slice), processes with `wait` (other than one trailing `wait on`) or `after` delays, and
-processes that do not parse. `off` in `recommended`, `warn` in `strict`.
+alternatives are compared; [`style/case-others`](#stylecase-others) reports it in `strict`.
+Not reported: signals assigned only in part (an element or a slice), processes with `wait`
+(other than one trailing `wait on`) or `after` delays, and processes that do not parse.
+`error` in both presets, one level above [`sema/inferred-latch`](#semainferred-latch) in
+`recommended`: it names the branch to fix, where the latch finding names the signal.
 
 ### `sema/clock-domain-crossing`
 
@@ -688,6 +691,14 @@ re-indents with spaces.
 
 Fix (safe): replaces the indentation with spaces, a tab reaching the next multiple of
 `format.indent` columns.
+
+### `style/case-others`
+
+A `case` statement has no `when others` alternative. The choices must still cover every
+value, but a `when others` keeps the statement complete when the selector's type grows, and
+makes the default explicit. Reported at `case`. The fix adds `when others => null;` before
+`end case`, which is legal even when the other choices cover every value (safe). `off` in
+`recommended`, `warn` in `strict`.
 
 ### `style/process-label`
 

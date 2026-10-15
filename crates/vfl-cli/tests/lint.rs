@@ -158,12 +158,12 @@ fn branch_assignments_in_clocked_processes_are_an_option() {
     let rule = "\"sema/missing-branch-assignment\"";
     let on = format!("[lint.rules]\n{rule} = \"warn\"\n");
     let clocked = format!("[lint.rules]\n{rule} = {{ clocked = true }}\n");
-    for (config, expected) in [(on.as_str(), false), (clocked.as_str(), true)] {
+    for (config, expected) in [(on.as_str(), ""), (clocked.as_str(), "error")] {
         let dir = project(&[("vfl.toml", config), ("r.vhd", source)]);
         let (_, stdout, _) = vfl(dir.path(), &["lint", "--output-format", "concise"]);
         assert_eq!(
-            stdout.contains("r.vhd:9:7: warning[sema/missing-branch-assignment] this `if` has no `else`, so `q` is not assigned"),
-            expected,
+            stdout.contains(&format!("r.vhd:9:7: {expected}[sema/missing-branch-assignment] this `if` has no `else`, so `q` is not assigned")),
+            !expected.is_empty(),
             "{config}{stdout}"
         );
         assert!(!stdout.contains("#clocked"), "{stdout}");
@@ -192,6 +192,29 @@ fn branch_assignments_are_fixed() {
     let fixed = std::fs::read_to_string(dir.path().join("f.vhd")).unwrap();
     assert!(
         fixed.contains("  begin\n    c <= '0';\n    if en = '1' then"),
+        "{fixed}"
+    );
+}
+
+#[test]
+fn case_without_others_is_reported_in_strict() {
+    let source = "entity c is\n  port (s : in bit; q : out bit);\nend;\n\
+                  architecture rtl of c is\nbegin\n  process (all)\n  begin\n    \
+                  q <= '0';\n    case s is\n      when '1' => q <= '1';\n      \
+                  when '0' => null;\n    end case;\n  end process;\nend;\n";
+    let dir = project(&[
+        ("vfl.toml", "[lint]\npreset = \"strict\"\n"),
+        ("c.vhd", source),
+    ]);
+    let (_, stdout, _) = vfl(dir.path(), &["lint", "--output-format", "concise"]);
+    assert!(
+        stdout.contains("c.vhd:9:5: warning[style/case-others]"),
+        "{stdout}"
+    );
+    vfl(dir.path(), &["lint", "--fix"]);
+    let fixed = std::fs::read_to_string(dir.path().join("c.vhd")).unwrap();
+    assert!(
+        fixed.contains("      when '0' => null;\n      when others => null;\n    end case;"),
         "{fixed}"
     );
 }

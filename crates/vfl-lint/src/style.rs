@@ -24,16 +24,18 @@ pub fn check(ctx: &StyleContext, enabled: impl Fn(&str) -> bool, out: &mut Vec<F
         lines(ctx.text, ctx.max_line_length, ctx.indent, &enabled, out);
     }
     // The kinds the arms below look at: only these become syntax nodes.
+    let case_others = enabled("style/case-others");
     let wanted = |kind| {
-        matches!(
-            kind,
-            SyntaxKind::INTERFACE_OBJECT_DECL
-                | SyntaxKind::USE_CLAUSE
-                | SyntaxKind::PROCESS_STMT
-                | SyntaxKind::GENERIC_MAP_ASPECT
-                | SyntaxKind::PORT_MAP_ASPECT
-                | SyntaxKind::BINARY_EXPR
-        )
+        (case_others && kind == SyntaxKind::CASE_STMT)
+            || matches!(
+                kind,
+                SyntaxKind::INTERFACE_OBJECT_DECL
+                    | SyntaxKind::USE_CLAUSE
+                    | SyntaxKind::PROCESS_STMT
+                    | SyntaxKind::GENERIC_MAP_ASPECT
+                    | SyntaxKind::PORT_MAP_ASPECT
+                    | SyntaxKind::BINARY_EXPR
+            )
     };
     for node in descendants_where(ctx.root, wanted) {
         match node.kind() {
@@ -133,12 +135,66 @@ pub fn check(ctx: &StyleContext, enabled: impl Fn(&str) -> bool, out: &mut Vec<F
                 }
             }
             SyntaxKind::BINARY_EXPR if enabled("style/clock-edge") => clock_edge(ctx, &node, out),
+            SyntaxKind::CASE_STMT => case_others_check(ctx.text, &node, out),
             _ => {}
         }
     }
     if enabled("style/file-name") {
         file_name(ctx, out);
     }
+}
+
+/// `style/case-others`: a `case` statement without `when others`.
+fn case_others_check(text: &str, node: &SyntaxNode, out: &mut Vec<Finding>) {
+    let alternatives: Vec<SyntaxNode> = node
+        .children()
+        .filter(|n| n.kind() == SyntaxKind::CASE_ALTERNATIVE)
+        .collect();
+    let has_others = alternatives.iter().any(|a| {
+        a.children()
+            .filter(|n| n.kind() == SyntaxKind::CHOICES)
+            .any(|c| {
+                c.descendants_with_tokens()
+                    .any(|e| e.kind() == SyntaxKind::OTHERS_KW)
+            })
+    });
+    let Some(case_kw) = first_token(node, SyntaxKind::CASE_KW) else {
+        return;
+    };
+    if has_others || alternatives.is_empty() {
+        return;
+    }
+    let mut finding = Finding::new(
+        "style/case-others",
+        case_kw.text_range(),
+        "`case` without `when others`",
+    );
+    // `when others => null;` before `end case`, indented as the other
+    // alternatives. Legal even when the choices already cover every value.
+    let line_start = |offset: usize| text[..offset].rfind('\n').map_or(0, |i| i + 1);
+    if let Some(end) = first_token(node, SyntaxKind::END_KW) {
+        let end = usize::from(end.text_range().start());
+        let start = line_start(end);
+        let when = usize::from(alternatives[0].text_range().start());
+        let when_start = line_start(when);
+        if text[start..end].trim().is_empty() && text[when_start..when].trim().is_empty() {
+            let newline = if text[..start].ends_with("\r\n") {
+                "\r\n"
+            } else {
+                "\n"
+            };
+            let at = TextSize::from(start as u32);
+            finding = finding.with_fix(Fix {
+                title: "Add `when others => null;`".into(),
+                edits: vec![Edit {
+                    range: TextRange::empty(at),
+                    text: format!("{}when others => null;{newline}", &text[when_start..when]),
+                }],
+                safe: true,
+            });
+        }
+    }
+    out.push(finding);
 }
 
 fn first_token(node: &SyntaxNode, kind: SyntaxKind) -> Option<vfl_syntax::SyntaxToken> {
