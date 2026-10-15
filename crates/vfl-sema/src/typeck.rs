@@ -22,7 +22,7 @@ use vfl_syntax::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange, identifier_key}
 
 use crate::analysis::{Ctx, UnitResult};
 use crate::decl::{
-    Access, Decl, DeclId, DeclKind, ElementRef, Mode, Reference, Target, TypeDef, UnitId,
+    Access, Decl, DeclId, DeclKind, ElementRef, Mode, Reference, Target, Targets, TypeDef, UnitId,
 };
 use crate::diagnostic::{Diagnostic, codes};
 use crate::resolver::{mark_token, operator_token};
@@ -195,7 +195,7 @@ struct Std {
 
 /// The changes checking makes to a unit's result.
 pub(crate) struct Outcome {
-    narrowed: Vec<(usize, Vec<Target>)>,
+    narrowed: Vec<(usize, Targets)>,
     dropped: Vec<usize>,
     added: Vec<Reference>,
     elements: Vec<ElementRef>,
@@ -274,7 +274,7 @@ struct Checker<'a> {
     local_types: FxMap<DeclId, TyS>,
     /// The return types of the enclosing subprograms (`None` in procedures).
     returns: Vec<Option<TyS>>,
-    narrowed: Vec<(usize, Vec<Target>)>,
+    narrowed: Vec<(usize, Targets)>,
     dropped: Vec<usize>,
     added: Vec<Reference>,
     elements: Vec<ElementRef>,
@@ -649,7 +649,7 @@ impl<'a> Checker<'a> {
             return;
         };
         let targets = &self.result.refs[index].targets;
-        let kept: Vec<Target> = targets
+        let kept: Targets = targets
             .iter()
             .filter(|t| matches!(t, Target::Decl(id) if keep.contains(id)))
             .cloned()

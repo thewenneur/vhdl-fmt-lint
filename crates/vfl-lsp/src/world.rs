@@ -51,7 +51,7 @@ impl World {
         let mut world = World {
             load_error,
             root,
-            analysis: Analysis::new(Vec::new()),
+            analysis: Analysis::empty(),
             project,
             overlays: HashMap::new(),
             outside: HashSet::new(),
@@ -79,7 +79,7 @@ impl World {
             project: empty(&root, Config::default()),
             load_error: None,
             root,
-            analysis: Analysis::new(Vec::new()),
+            analysis: Analysis::empty(),
             overlays: HashMap::new(),
             outside: HashSet::new(),
             lint: Vec::new(),
@@ -272,7 +272,8 @@ impl World {
         }
         self.dirty = false;
         self.infer();
-        self.analysis = vfl_lint::reanalyze(&self.project, &self.analysis);
+        let previous = std::mem::replace(&mut self.analysis, Analysis::empty());
+        self.analysis = vfl_lint::reanalyze(&self.project, previous);
         let paths: Vec<PathBuf> = self
             .project
             .files

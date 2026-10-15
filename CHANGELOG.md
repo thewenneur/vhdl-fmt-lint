@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Less memory in the language server**: 10 to 12% less resident memory once a project
+  is open, and a long session no longer grows past what it needs: on UVVM, 40 edits of a
+  package most of the project uses now peak at 168 MiB instead of 235 MiB. A
+  re-analysis frees the previous results of the units it analyzes again before building
+  their new ones, a name's targets are stored inline when there is one, and the tables
+  kept per unit no longer keep their growth slack. Edits, hover and completion are as
+  fast or faster (see `docs/benchmarks.md`, and `scripts/bench_memory.py` to measure).
+
 ## [0.3.0] - 2026-10-14
 
 ### Added

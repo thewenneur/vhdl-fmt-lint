@@ -14,6 +14,7 @@ workspace = true
 vfl-syntax.workspace = true
 rayon.workspace = true
 rowan.workspace = true
+smallvec.workspace = true
 
 [dev-dependencies]
 vfl-config.workspace = true

@@ -88,6 +88,34 @@ shared between the old and the new analysis instead of being built again. The sl
 edits change a package that most of the project uses (UVVM's `types_pkg`), which
 re-analyzes everything that depends on it.
 
+### Memory
+
+`scripts/bench_memory.py` starts `vfl lsp` on a project as an editor does: it opens the
+project, opens 8 files spread over it (symbols, folding ranges and semantic tokens of
+each), then edits each 3 times (a comment appended), each edit followed by a hover. It
+reports the resident memory after opening and at the end, the peak, and the edit
+latency (from `didChange` to the hover's answer). Median of 3 runs.
+
+| Project | RSS after open | RSS after edits | Peak RSS | Edit (median / max) |
+|---|---:|---:|---:|---:|
+| neorv32 | 32 MiB (was 36) | 33 MiB (was 37) | 33 MiB (was 37) | 7 / 12 ms (was 7 / 14) |
+| OSVVM | 54 MiB (was 60) | 71 MiB (was 76) | 71 MiB (was 76) | 5 / 69 ms (was 5 / 55) |
+| UVVM | 128 MiB (was 143) | 130 MiB (was 146) | 131 MiB (was 146) | 14 / 28 ms (was 17 / 30) |
+| VUnit | 66 MiB (was 75) | 68 MiB (was 76) | 68 MiB (was 76) | 9 / 12 ms (was 10 / 17) |
+| cva6 (Verilog) | 63 MiB (was 65) | 65 MiB (was 67) | 66 MiB (was 67) | 16 / 23 ms (was 17 / 24) |
+
+A long session grows more: 40 edits of UVVM's `types_pkg` (`integer` changed to
+`natural`), each re-analyzing most of the project, end at 161 MiB with a peak of
+168 MiB (was 235 MiB, still growing), with a median edit of 504 ms (was 562 ms). A
+re-analysis frees the previous results of the units it analyzes again before it builds
+their new ones, so the old and new results of a large re-analysis are never in memory
+together.
+
+What remains is mostly the syntax trees (about 40% of the heap on UVVM), the
+declarations and references of every unit, and the source texts. The resident memory is
+higher than the heap because the system allocator keeps memory freed by the worker
+threads.
+
 ### Editor requests
 
 `crates/vfl-lsp/examples/request_latency.rs` opens a project, then sends hover, signature

@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use smallvec::SmallVec;
 use vfl_syntax::TextRange;
 
 /// A file of the analysis: an index into [`crate::Analysis::files`].
@@ -259,7 +260,8 @@ pub struct Element {
 /// The declarations of one declarative region, by name, in source order.
 #[derive(Debug, Clone, Default)]
 pub struct Region {
-    names: HashMap<String, Vec<DeclId>>,
+    /// Most names declare one thing: kept inline, with no allocation.
+    names: HashMap<String, SmallVec<[DeclId; 1]>>,
     order: Vec<DeclId>,
     /// Set when the region could not be built completely (an unknown
     /// generic package, say): lookups that fail are not errors.
@@ -281,7 +283,10 @@ impl Region {
     }
 
     pub fn get(&self, name: &str) -> &[DeclId] {
-        self.names.get(name).map(Vec::as_slice).unwrap_or(&[])
+        self.names
+            .get(name)
+            .map(|ids| ids.as_slice())
+            .unwrap_or(&[])
     }
 
     /// Declarations in source order.
@@ -300,7 +305,8 @@ impl Region {
     /// Feeds the region's names and declarations to `h`.
     pub(crate) fn hash_into(&self, h: &mut impl std::hash::Hasher) {
         use std::hash::Hash;
-        let mut names: Vec<(&String, &Vec<DeclId>)> = self.names.iter().collect();
+        let mut names: Vec<(&String, &[DeclId])> =
+            self.names.iter().map(|(k, v)| (k, v.as_slice())).collect();
         names.sort_unstable_by_key(|(k, _)| *k);
         names.hash(h);
         self.order.hash(h);
@@ -312,7 +318,7 @@ impl Region {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Target {
     Decl(DeclId),
-    Library(String),
+    Library(Arc<str>),
 }
 
 /// How a reference uses what it names.
@@ -348,10 +354,13 @@ pub struct ElementRef {
     pub name: String,
 }
 
+/// What a name refers to: usually one declaration, kept inline.
+pub type Targets = SmallVec<[Target; 1]>;
+
 /// A resolved reference.
 #[derive(Debug, Clone)]
 pub struct Reference {
     pub range: TextRange,
-    pub targets: Vec<Target>,
+    pub targets: Targets,
     pub access: Access,
 }

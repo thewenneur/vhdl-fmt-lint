@@ -84,6 +84,22 @@ pub(crate) struct UnitResult {
     pub opaque_ops: Vec<TextRange>,
 }
 
+impl UnitResult {
+    /// Gives back what the tables grew beyond their length: results are
+    /// kept for the life of the analysis, and often across many.
+    fn shrink_to_fit(&mut self) {
+        self.decls.shrink_to_fit();
+        self.imports.shrink_to_fit();
+        self.libraries.shrink_to_fit();
+        self.refs.shrink_to_fit();
+        self.elements.shrink_to_fit();
+        self.diagnostics.shrink_to_fit();
+        self.use_items.shrink_to_fit();
+        self.used_imports.shrink_to_fit();
+        self.opaque_ops.shrink_to_fit();
+    }
+}
+
 /// Library name -> unit name -> primary units.
 type LibraryIndex = HashMap<String, HashMap<String, Vec<UnitId>>>;
 
@@ -238,13 +254,13 @@ fn bundled() -> &'static [Bundled] {
 impl Analysis {
     /// Analyzes `files` together with the bundled `std` and `ieee` libraries.
     pub fn new(inputs: Vec<FileInput>) -> Analysis {
-        Analysis::build(inputs, Vec::new(), None)
+        Analysis::build(inputs, Vec::new(), None, Vec::new())
     }
 
     /// Analyzes `files` together with modules of other languages, which
     /// VHDL instantiates like entities, and the bundled libraries.
     pub fn with_foreign(inputs: Vec<FileInput>, foreign: Vec<ForeignInput>) -> Analysis {
-        Analysis::build(inputs, foreign, None)
+        Analysis::build(inputs, foreign, None, Vec::new())
     }
 
     /// Analyzes a new version of the project, reusing the results of the
@@ -256,7 +272,7 @@ impl Analysis {
     /// or renamed, or when `self` was built by [`Analysis::new`] (which
     /// skips the bookkeeping reuse needs), everything is analyzed again.
     pub fn update(&self, inputs: Vec<FileInput>) -> Analysis {
-        Analysis::build(inputs, Vec::new(), Some(self))
+        Analysis::build(inputs, Vec::new(), Some(self), self.results.clone())
     }
 
     /// [`Analysis::update`] with modules of other languages: a changed
@@ -267,7 +283,39 @@ impl Analysis {
         inputs: Vec<FileInput>,
         foreign: Vec<ForeignInput>,
     ) -> Analysis {
-        Analysis::build(inputs, foreign, Some(self))
+        Analysis::build(inputs, foreign, Some(self), self.results.clone())
+    }
+
+    /// [`Analysis::update_with_foreign`], consuming this analysis: the
+    /// results of the units analyzed again are freed as soon as it is known
+    /// that they are, rather than kept until the new analysis is built, so
+    /// that the old and new results of a large re-analysis are never in
+    /// memory together.
+    pub fn into_update_with_foreign(
+        mut self,
+        inputs: Vec<FileInput>,
+        foreign: Vec<ForeignInput>,
+    ) -> Analysis {
+        let results = std::mem::take(&mut self.results);
+        Analysis::build(inputs, foreign, Some(&self), results)
+    }
+
+    /// An analysis of nothing, not even the bundled libraries: a
+    /// placeholder that costs nothing to build. Updating it analyzes
+    /// everything.
+    pub fn empty() -> Analysis {
+        Analysis {
+            files: Vec::new(),
+            units: Vec::new(),
+            results: Vec::new(),
+            interfaces: Vec::new(),
+            uses: Vec::new(),
+            per_file: Vec::new(),
+            diagnostics: Vec::new(),
+            user_files: 0,
+            fresh: Vec::new(),
+            incremental: false,
+        }
     }
 
     /// How many units were analyzed (not reused) to build this analysis.
@@ -288,6 +336,7 @@ impl Analysis {
         inputs: Vec<FileInput>,
         foreign: Vec<ForeignInput>,
         previous: Option<&Analysis>,
+        previous_results: Vec<Arc<UnitResult>>,
     ) -> Analysis {
         let user_files = inputs.len();
         // A file unchanged since the previous analysis (same tree, or same
@@ -498,28 +547,37 @@ impl Analysis {
         // (the order depends only on the units and their dependencies), so
         // a unit whose inputs did not change would get the same result, even
         // where a dependency cycle was broken.
-        let reuse = |unit: UnitId, affected: &[bool]| -> bool {
-            let Some(p) = previous else { return false };
-            let u = unit as usize;
-            if changed[units[u].file as usize] {
-                return false;
-            }
-            let dirty = deps[u]
-                .iter()
-                .chain(&p.uses[u])
-                .any(|&d| affected[d as usize]);
-            if dirty {
-                return false;
-            }
-            let _ = results[u].set(p.results[u].clone());
-            true
+        // The previous results, each taken when its unit is reused or
+        // dropped when it is analyzed again (freeing it, unless the caller
+        // keeps the previous analysis).
+        let mut old: Vec<Option<Arc<UnitResult>>> = match previous {
+            Some(_) => previous_results.into_iter().map(Some).collect(),
+            None => Vec::new(),
         };
+        let reuse =
+            |unit: UnitId, affected: &[bool], old: &mut [Option<Arc<UnitResult>>]| -> bool {
+                let Some(p) = previous else { return false };
+                let u = unit as usize;
+                let reusable = !changed[units[u].file as usize]
+                    && !deps[u]
+                        .iter()
+                        .chain(&p.uses[u])
+                        .any(|&d| affected[d as usize]);
+                let result = old[u].take();
+                match result {
+                    Some(result) if reusable => {
+                        let _ = results[u].set(result);
+                        true
+                    }
+                    _ => false,
+                }
+            };
 
         let mut done = vec![false; units.len()];
         let mut remaining: Vec<UnitId> = (0..units.len() as UnitId).collect();
         if let Some(standard) = standard {
             let s = standard as usize;
-            if reuse(standard, &affected) {
+            if reuse(standard, &affected, &mut old) {
                 interfaces[s] = previous.map_or(0, |p| p.interfaces[s]);
             } else {
                 let result = analyze(standard);
@@ -557,7 +615,7 @@ impl Analysis {
             }
             let mut todo = Vec::new();
             for &u in &ready {
-                if reuse(u, &affected) {
+                if reuse(u, &affected, &mut old) {
                     let p = previous.expect("reused from a previous analysis");
                     interfaces[u as usize] = p.interfaces[u as usize];
                 } else {
@@ -635,6 +693,7 @@ impl Analysis {
                 if let Some(outcome) = outcome {
                     outcome.apply(&mut result);
                 }
+                result.shrink_to_fit();
                 let uses = if incremental {
                     used_units(u as UnitId, &result)
                 } else {
@@ -1016,7 +1075,12 @@ fn interface_hash(result: &UnitResult) -> u64 {
 /// The other units that a unit's results refer to.
 fn used_units(unit: UnitId, result: &UnitResult) -> Vec<UnitId> {
     let mut out: Vec<UnitId> = Vec::new();
-    let mut add = |id: DeclId| out.push(id.unit);
+    // Neighboring names mostly refer to the same unit.
+    let mut add = |id: DeclId| {
+        if out.last() != Some(&id.unit) {
+            out.push(id.unit);
+        }
+    };
     for r in &result.refs {
         for t in &r.targets {
             if let crate::decl::Target::Decl(id) = t {
@@ -1047,5 +1111,6 @@ fn used_units(unit: UnitId, result: &UnitResult) -> Vec<UnitId> {
     out.sort_unstable();
     out.dedup();
     out.retain(|&u| u != unit);
+    out.shrink_to_fit();
     out
 }
