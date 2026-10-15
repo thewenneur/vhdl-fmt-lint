@@ -308,19 +308,18 @@ fn lint_file(
             error.message.clone(),
         ));
     }
-    let clocked_branches = rules::clocked_branches(lint_config).unwrap_or_else(|error| {
-        errors.push(error);
-        false
-    });
-    for d in sema {
-        let code = if d.code == vfl_sema::codes::MISSING_BRANCH_ASSIGNMENT_CLOCKED {
-            if !clocked_branches {
-                continue;
-            }
-            vfl_sema::codes::MISSING_BRANCH_ASSIGNMENT
-        } else {
-            d.code
-        };
+    // Computed on demand: it costs nothing where the rule is off.
+    let branches = if enabled(vfl_sema::codes::MISSING_BRANCH_ASSIGNMENT) {
+        let clocked = rules::clocked_branches(lint_config).unwrap_or_else(|error| {
+            errors.push(error);
+            false
+        });
+        analysis.missing_branch_assignments(settings.file, clocked)
+    } else {
+        Vec::new()
+    };
+    for d in sema.iter().copied().chain(&branches) {
+        let code = d.code;
         let mut finding = Finding::new(code, d.range, d.message.clone());
         finding.fix = d.fix.clone();
         findings.push(finding);

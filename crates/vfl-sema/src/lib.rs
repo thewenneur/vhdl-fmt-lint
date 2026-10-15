@@ -34,6 +34,7 @@
 //! ```
 
 mod analysis;
+mod branches;
 mod checks;
 mod decl;
 mod diagnostic;
