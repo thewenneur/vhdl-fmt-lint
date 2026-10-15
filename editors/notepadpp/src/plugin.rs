@@ -29,11 +29,12 @@ use crate::engine::{
     is_library_copy, is_project_file, is_verilog_path, is_vhdl_path, minimal_edit, plain_text,
     signature_tip,
 };
+use crate::menu;
 use crate::tools;
 use crate::win::*;
 use crate::worker::{Key, Worker, panic_message};
 
-/// Menu entries, in order. `None` is a separator.
+/// Menu entries, in the order of [`menu::NAMES`]. `None` is a separator.
 const MENU: &[(&str, Option<extern "C" fn()>)] = &[
     ("Format document", Some(cmd_format)),
     ("Format selection", Some(cmd_format_selection)),
@@ -78,6 +79,24 @@ const MENU: &[(&str, Option<extern "C" fn()>)] = &[
     ("Reload project", Some(cmd_reload)),
     ("About", Some(cmd_about)),
 ];
+
+// The entries are those of `menu::NAMES`, in its order, which keeps the
+// positions Notepad++ saves users' shortcuts under.
+const _: () = {
+    assert!(
+        MENU.len() == menu::NAMES.len(),
+        "MENU and menu::NAMES differ"
+    );
+    let mut i = 0;
+    while i < MENU.len() {
+        assert!(
+            eq(MENU[i].0.as_bytes(), menu::NAMES[i].as_bytes()),
+            "MENU and menu::NAMES differ"
+        );
+        assert!(MENU[i].0.is_empty() == MENU[i].1.is_none());
+        i += 1;
+    }
+};
 
 /// The position of a menu entry.
 const fn item(name: &str) -> usize {

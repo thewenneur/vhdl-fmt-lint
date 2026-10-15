@@ -44,7 +44,59 @@ other's queries: VHDL files open as plain text, and the log (**zed: open log**) 
 "type_mark"`. This extension replaces both: it brings the languages, and vfl is their
 language server.
 
-Grammars: [tree-sitter-vhdl](https://github.com/jpt13653903/tree-sitter-vhdl) for VHDL and
+## Keyboard shortcuts
+
+Zed extensions cannot add commands of their own, so vfl's actions are bound in two ways.
+
+What the language server does is one of Zed's own actions, bound in `keymap.json`
+(**zed: open keymap**):
+
+| Action | Zed action |
+|---|---|
+| Format document | `editor::Format` |
+| Format selection | `editor::FormatSelections` |
+| Quick fixes, generate testbench (on an entity) | `editor::ToggleCodeActions` |
+| Next / previous problem | `editor::GoToDiagnostic`, `editor::GoToPreviousDiagnostic` |
+| Problems of the project | `diagnostics::Deploy` |
+| Go to definition | `editor::GoToDefinition` |
+| Go back | `pane::GoBack` |
+| Find references | `editor::FindAllReferences` |
+| Rename | `editor::Rename` |
+| Go to symbol in file | `outline::Toggle` |
+| Go to symbol in project | `project_symbols::Toggle` |
+| Show type | `editor::Hover` |
+| Show parameters | `editor::ShowSignatureHelp` |
+| Complete | `editor::ShowCompletions` |
+| Restart the server | `editor::RestartLanguageServer` |
+
+To apply every safe fix when formatting, add to `settings.json`:
+
+```json
+{
+  "languages": {
+    "VHDL": { "code_actions_on_format": { "source.fixAll.vfl": true } }
+  }
+}
+```
+
+The rest runs `vfl` as a [task](https://zed.dev/docs/tasks). [`tasks.json`](tasks.json)
+has tasks to lint or fix the file, lint the project, generate the documentation, generate
+a testbench and print an instantiation or a component declaration. The last three use the
+selected text as the entity name, so select it first; Zed hides tasks whose variables are
+missing. Copy it to `~/.config/zed/tasks.json` (**zed: open tasks**), or to `.zed/tasks.json`
+in a project, and run the tasks with **task: spawn**. [`keymap.json`](keymap.json) binds them
+to `ctrl-alt-v` followed by a letter (`l` lint file, `x` fix file, `p` lint project, `d`
+documentation, `t` testbench, `r` restart the server) in VHDL and Verilog files; none of
+these is taken in Zed's default keymaps. Merge its section into your `keymap.json`. A task
+is bound to any key with:
+
+```json
+{ "ctrl-alt-v l": ["task::Spawn", { "task_name": "vfl: lint file" }] }
+```
+
+## Grammars
+
+The grammars are [tree-sitter-vhdl](https://github.com/jpt13653903/tree-sitter-vhdl) for VHDL and
 [tree-sitter-systemverilog](https://github.com/gmlarumbe/tree-sitter-systemverilog) for
 Verilog and SystemVerilog, both under the MIT License; the highlight queries are adapted
 from theirs.

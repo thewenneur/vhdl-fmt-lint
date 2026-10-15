@@ -48,11 +48,18 @@ Install the extension from the `.vsix` of the latest release: see the
 [README](../README.md#vs-code) and the [extension's README](../editors/vscode/README.md)
 for its commands and settings.
 
+Every command can be given a key in **Preferences: Open Keyboard Shortcuts** (search for
+`vfl`); see [Keyboard shortcuts](../editors/vscode/README.md#keyboard-shortcuts).
+
 ## Notepad++
 
 The plugin has the formatter, the linter and the editor features built in, without
 `vfl lsp`: see the [README](../README.md#notepad) and the
 [plugin's README](../editors/notepadpp/README.md).
+
+Every menu command, the settings included, can be given a key in **Settings > Shortcut
+Mapper > Plugin commands** (filter on `vfl`); see
+[Commands](../editors/notepadpp/README.md#commands).
 
 ## Zed
 
@@ -81,6 +88,12 @@ To use another binary, set it in Zed's `settings.json`:
 ```
 
 Zed formats on save with the language server by default.
+
+Zed extensions cannot add commands, so the language server's features are bound through
+Zed's own actions (`editor::Format`, `editor::ToggleCodeActions`, `editor::Rename`, ...),
+and the rest (lint the project, documentation, testbench) through the example
+[tasks](../editors/zed/tasks.json) and [keymap](../editors/zed/keymap.json); see
+[Keyboard shortcuts](../editors/zed/README.md#keyboard-shortcuts).
 
 ## Neovim
 

@@ -1,0 +1,66 @@
+[
+  {
+    "label": "vfl: lint file",
+    "command": "vfl",
+    "args": ["lint", "$ZED_FILE"],
+    "cwd": "$ZED_DIRNAME",
+    "reveal": "always",
+    "hide": "never"
+  },
+  {
+    "label": "vfl: fix file",
+    "command": "vfl",
+    "args": ["lint", "--fix", "$ZED_FILE"],
+    "cwd": "$ZED_DIRNAME",
+    "reveal": "no_focus",
+    "hide": "on_success"
+  },
+  {
+    "label": "vfl: format file",
+    "command": "vfl",
+    "args": ["fmt", "$ZED_FILE"],
+    "cwd": "$ZED_DIRNAME",
+    "reveal": "no_focus",
+    "hide": "on_success"
+  },
+  {
+    "label": "vfl: lint project",
+    "command": "vfl",
+    "args": ["lint"],
+    "cwd": "$ZED_DIRNAME",
+    "reveal": "always",
+    "hide": "never"
+  },
+  {
+    "label": "vfl: generate documentation",
+    "command": "vfl",
+    "args": ["doc"],
+    "cwd": "$ZED_DIRNAME",
+    "reveal": "no_focus",
+    "hide": "on_success"
+  },
+  {
+    "label": "vfl: generate testbench",
+    "command": "vfl",
+    "args": ["new", "tb", "$ZED_SELECTED_TEXT", "--project", "$ZED_DIRNAME"],
+    "cwd": "$ZED_DIRNAME",
+    "reveal": "no_focus",
+    "hide": "on_success"
+  },
+  {
+    "label": "vfl: print entity instantiation",
+    "command": "vfl",
+    "args": ["new", "instance", "$ZED_SELECTED_TEXT", "--project", "$ZED_DIRNAME"],
+    "cwd": "$ZED_DIRNAME",
+    "reveal": "always",
+    "hide": "never"
+  },
+  {
+    "label": "vfl: print component declaration",
+    "command": "vfl",
+    "args": ["new", "component", "$ZED_SELECTED_TEXT", "--project", "$ZED_DIRNAME"],
+    "cwd": "$ZED_DIRNAME",
+    "reveal": "always",
+    "hide": "never"
+  }
+]
