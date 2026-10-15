@@ -220,3 +220,10 @@ fn leading_separators() {
         "module m (\n  input  a // first\n, output b\n);\n  sub u (\n    .x(a)\n  , .y(b)\n  );\nendmodule\n"
     );
 }
+
+#[test]
+fn leading_separators_keep_empty_arguments_together() {
+    let text = "module m;\n  initial x = create(\"a_long_name_for_this_component\",, get_full_name());\nendmodule\n";
+    let out = fmt_with(text, &config("style = \"leading-comma\"\nmax_width = 40"));
+    assert!(out.contains(",, get_full_name()"), "{out}");
+}

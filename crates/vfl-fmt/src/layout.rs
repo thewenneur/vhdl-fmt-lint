@@ -266,15 +266,17 @@ pub(crate) fn breaks<L: Lang>(
         if let Some(j) = next(list.open) {
             forced[j] = true;
         }
-        for &sep in &list.seps {
+        for (k, &sep) in list.seps.iter().enumerate() {
             if list.leading {
                 // The break goes before the separator, which the element
-                // follows on its line.
+                // follows on its line. An empty element (`f(a,, b)`) leaves
+                // two separators together.
                 let joins = elems[sep].src_newlines == 0
                     && elems
                         .get(sep + 1)
                         .is_some_and(|e| L::joins_previous_element(e));
-                forced[sep] |= !joins;
+                let empty = k > 0 && list.seps[k - 1] + 1 == sep;
+                forced[sep] |= !joins && !empty;
                 continue;
             }
             if let Some(j) = next(sep).filter(|&j| {
