@@ -400,6 +400,19 @@ use them. Implemented, all read without running the tool:
 - Vivado `.xpr` (`Library` attribute, default `xil_defaultlib`) and Tcl `read_vhdl
   -library` scripts.
 - Quartus `.qsf`/`.qip`: `set_global_assignment -name VHDL_FILE ... -library`.
+- Edalize EDAM (`*.eda.yml`, `*.eda.json`, `edam.json`): `files` entries of a `vhdlSource*`
+  type with a `logical_name`.
+- `.f` file lists: files after `-makelib lib` (up to `-endlib`, as Vivado's
+  `export_simulation` writes them) or `-work lib`. `-f` lists nest with paths relative to
+  the top list's directory, `-F` ones relative to themselves; `$VAR`, `${VAR}` and
+  `$(VAR)` come from the environment; `//`, `/* */` and `#` comments, `+incdir+`,
+  `+define+`, `-v`, `-y` and other options are skipped.
+- hdlmake `Manifest.py`: `files` (a directory stands for its VHDL files) in `library`.
+  Each module's own manifest is found by the walk, so `modules` is not followed.
+- Questa/ModelSim projects (`.mpf`): `Project_File_N` with the `compile_to` library of
+  `Project_File_P_N`.
+
+  Bender's `Bender.yml` is not read: it has no VHDL libraries to import.
 
   In both Tcl formats, `set` variables are followed (`set path [file dirname [info
   script]]`, then `$path/rtl/x.vhd` or `${path}`), along with `[file join|dirname|
@@ -413,7 +426,7 @@ by default: it places only the files inference leaves in no library, and its lib
 propagate along `work` references. If that leaves library conflicts (references to project
 units missing from the library meant, units declared twice in a library), the ranking with
 `vhdl_ls.toml` above inference is tried too and kept when it leaves fewer (`[project]` `vhdl-ls = "prefer"` ranks it just below
-`vfl.toml` instead, `"off"` ignores it). HDLmake `Manifest.py` is not read yet. This makes migration a no-op.
+`vfl.toml` instead, `"off"` ignores it). This makes migration a no-op.
 
 **4. Infer libraries from the code.** For everything else, every file is parsed (fast,
 parallel) and indexed by the primary units it declares and the references it makes
@@ -428,8 +441,16 @@ parallel) and indexed by the primary units it declares and the references it mak
   constraints) are resolved by directory proximity, and surfaced as a diagnostic that
   suggests a one-line `[project.libraries]` entry.
 
+Vendor primitive libraries (`unisim`, `xpm`, `altera_mf`, Lattice's) are not part of the
+project. vfl bundles declarations of their common primitives, written from public
+documentation, and analyzes a library's only when a file uses it and no file is in it
+(`[project]` `vendor-stubs`). Their packages and components are marked incomplete, so names
+they lack stay unchecked rather than reported.
+
 **5. Explain it.** `vfl project` prints the root, the files, the inferred libraries and why
-each file landed where it did. The LSP exposes the same through a command.
+each file landed where it did. The LSP exposes the same through a command. `vfl order`
+writes the files in compile order, from the same libraries and unit references, for GHDL,
+Questa or Vivado.
 
 Explicit entries in `[project.libraries]` always win over inference, so the escape hatch
 is small and local rather than a full list.

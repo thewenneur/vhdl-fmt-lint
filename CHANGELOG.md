@@ -4,6 +4,23 @@
 
 ### Added
 
+- **`vfl order`** prints the files of the project in compile order with their libraries:
+  as a list, as JSON, or as a script for GHDL (`ghdl -a --work=lib`), Questa/ModelSim
+  (`vlib`, `vmap`, `vcom`, `vlog`) or Vivado (`read_vhdl -library`). `--top unit` keeps only
+  what an entity or configuration needs. Files that use each other's units are reported
+  and make the command fail.
+- **More project imports**: library lists are also read from `.f` file lists (`-makelib`
+  and `-work` libraries, nested `-f`/`-F` lists, environment variables; `+incdir+`, `-v`,
+  `-y` and other options are skipped), Edalize EDAM files (`*.eda.yml`, `edam.json`),
+  hdlmake `Manifest.py` (`library` and `files`, read without running it) and
+  Questa/ModelSim `.mpf` projects (`compile_to`).
+- **Vendor primitive libraries**: declarations of the commonly used Xilinx `unisim` and
+  `xpm`, Intel `altera_mf` and Lattice (`ecp5u`, `machxo2`, `sb_ice40_components_syn`)
+  primitives are bundled and analyzed when the design uses one of these libraries and the
+  project has no copy of it. Their components and entities resolve (hover, go to
+  definition, type checks of the actuals) instead of the library being left unchecked;
+  primitives, ports and generics they do not declare are not reported. `[project]`
+  `vendor-stubs = false` turns them off.
 - **`sema/incomplete-case`** (error): a `case` statement or selected assignment whose
   choices leave out values of the selector's subtype (enumerations, integer subtypes with
   static bounds, `std_logic_vector` and other character arrays) and has no `when others`.

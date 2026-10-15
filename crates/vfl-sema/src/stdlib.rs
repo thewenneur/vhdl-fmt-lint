@@ -111,3 +111,52 @@ pub const OPAQUE_UNITS: &[(&str, &str)] = &[
     ("ieee", "vital_primitives"),
     ("ieee", "vital_memory"),
 ];
+
+/// `(library, file name, text)` of the vendor primitive stubs: component
+/// declarations of the primitives most designs instantiate, with their
+/// ports and the generics most often set, written for this tool from the
+/// vendors' public documentation (no vendor source is copied). A library's
+/// stubs are only analyzed when the design uses it and has no copy of its
+/// own; what they do not declare is not checked (see [`VENDOR_LIBRARIES`]).
+pub const VENDOR: &[(&str, &str, &str)] = &[
+    (
+        "unisim",
+        "vcomponents.vhd",
+        include_str!("../stdlib/vendor/unisim/vcomponents.vhd"),
+    ),
+    (
+        "xpm",
+        "vcomponents.vhd",
+        include_str!("../stdlib/vendor/xpm/vcomponents.vhd"),
+    ),
+    (
+        "altera_mf",
+        "altera_mf_components.vhd",
+        include_str!("../stdlib/vendor/altera_mf/altera_mf_components.vhd"),
+    ),
+    (
+        "ecp5u",
+        "components.vhd",
+        include_str!("../stdlib/vendor/ecp5u/components.vhd"),
+    ),
+    (
+        "machxo2",
+        "components.vhd",
+        include_str!("../stdlib/vendor/machxo2/components.vhd"),
+    ),
+    (
+        "sb_ice40_components_syn",
+        "components.vhd",
+        include_str!("../stdlib/vendor/sb_ice40_components_syn/components.vhd"),
+    ),
+];
+
+/// The libraries [`VENDOR`] has stubs for.
+pub const VENDOR_LIBRARIES: &[&str] = &[
+    "unisim",
+    "xpm",
+    "altera_mf",
+    "ecp5u",
+    "machxo2",
+    "sb_ice40_components_syn",
+];
