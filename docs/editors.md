@@ -58,9 +58,12 @@ The plugin has the formatter, the linter and the editor features built in, witho
 
 The [Zed extension](../editors/zed/README.md) adds the VHDL, Verilog and SystemVerilog
 languages (highlighting, outline, brackets and indentation from Tree-sitter grammars) and
-starts `vfl lsp` for them. It is not in the Zed extension registry yet; install it from a
-clone with **zed: install dev extension**, picking `editors/zed` (Zed builds it with
-[rustup](https://rustup.rs)'s Rust).
+starts `vfl lsp` for them. It is not in the Zed extension registry yet; download
+`vfl-zed-vX.Y.Z.zip` from the
+[latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest), unzip it
+somewhere it can stay, and run **zed: install dev extension**, picking the `vfl-zed`
+directory (or `editors/zed` in a clone). Zed builds it with [rustup](https://rustup.rs)'s
+Rust.
 
 It uses `vfl` from the `PATH`, or downloads the latest release's binary when there is none.
 To use another binary, set it in Zed's `settings.json`:

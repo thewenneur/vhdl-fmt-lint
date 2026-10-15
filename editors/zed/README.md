@@ -6,12 +6,16 @@ language server (`vfl lsp`): diagnostics as you type, quick fixes, formatting (o
 of a selection, and on type), hover with types, signature help, completion, go to
 definition, references, rename and semantic highlighting.
 
-It is not in the Zed extension registry yet. To install it from a clone of this
-repository (Zed builds it, so [rustup](https://rustup.rs) must be installed):
+It is not in the Zed extension registry yet, so it installs as a dev extension, which Zed
+builds itself: [rustup](https://rustup.rs) must be installed.
 
-1. In Zed, run **zed: install dev extension** from the command palette (or
+1. Download `vfl-zed-vX.Y.Z.zip` from the
+   [latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest) and unzip
+   it somewhere it can stay (Zed builds and loads it from there), giving a `vfl-zed`
+   directory. From a clone of this repository, use `editors/zed` instead.
+2. In Zed, run **zed: install dev extension** from the command palette (or
    **Extensions > Install Dev Extension**).
-2. Pick the `editors/zed` directory.
+3. Pick that `vfl-zed` (or `editors/zed`) directory.
 
 The extension starts, in order:
 

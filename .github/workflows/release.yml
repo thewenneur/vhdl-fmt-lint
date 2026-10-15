@@ -4,10 +4,17 @@ name: Release
 # the tag for the workspace version), builds every artifact and publishes a
 # GitHub Release with the matching CHANGELOG.md section as its notes. A pull
 # request that touches this file runs the same builds without publishing.
+# Running it by hand with `add_zed_to` set to an existing tag instead builds
+# only that tag's Zed extension package and adds it to that release.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      add_zed_to:
+        description: "Existing release tag to add the Zed extension package to (leave empty to cut a release)"
+        required: false
+        default: ""
   pull_request:
     paths:
       - .github/workflows/release.yml
@@ -26,11 +33,22 @@ jobs:
       version: ${{ steps.v.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.add_zed_to || github.ref }}
       - id: v
         shell: bash
+        env:
+          ADD_ZED_TO: ${{ inputs.add_zed_to }}
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ -n "$ADD_ZED_TO" ]]; then
+            if [[ "$ADD_ZED_TO" != "v$version" ]]; then
+              echo "::error::$ADD_ZED_TO has the workspace version $version"
+              exit 1
+            fi
+            exit 0
+          fi
           if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "v$version" ]]; then
             echo "::error::tag $GITHUB_REF_NAME does not match the workspace version $version"
             exit 1
@@ -52,6 +70,7 @@ jobs:
 
   cli:
     needs: version
+    if: inputs.add_zed_to == ''
     strategy:
       fail-fast: false
       matrix:
@@ -92,6 +111,7 @@ jobs:
 
   notepadpp:
     needs: version
+    if: inputs.add_zed_to == ''
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -112,6 +132,7 @@ jobs:
 
   vscode:
     needs: version
+    if: inputs.add_zed_to == ''
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -137,8 +158,75 @@ jobs:
           name: vscode
           path: editors/vscode/*.vsix
 
+  # The Zed extension as a zip of its sources: Zed installs it with
+  # "zed: install dev extension" and compiles it itself. Building it here
+  # makes sure the packaged sources compile.
+  zed:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.add_zed_to || github.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+      - name: Check the extension version
+        shell: bash
+        working-directory: editors/zed
+        run: |
+          for file in extension.toml Cargo.toml; do
+            ext=$(sed -n 's/^version = "\(.*\)"/\1/p' "$file" | head -n1)
+            if [ "$ext" != "${{ needs.version.outputs.version }}" ]; then
+              echo "::error::editors/zed/$file is $ext, the workspace is ${{ needs.version.outputs.version }}"
+              exit 1
+            fi
+          done
+      - run: cargo build --release --locked --target wasm32-wasip2
+        working-directory: editors/zed
+      - name: Package
+        shell: bash
+        run: |
+          name=vfl-zed-v${{ needs.version.outputs.version }}
+          mkdir dist
+          git archive --format=zip --prefix=vfl-zed/ -o "dist/$name.zip" HEAD:editors/zed
+          unzip -l "dist/$name.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zed
+          path: dist/*.zip
+
+  # `add_zed_to`: adds the Zed package to an existing release, and its
+  # checksum to that release's SHA256SUMS.
+  add-zed:
+    needs: [version, zed]
+    if: inputs.add_zed_to != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: zed
+          path: dist
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.add_zed_to }}
+        run: |
+          cd dist
+          gh release download "$TAG" --pattern SHA256SUMS
+          zip=$(ls vfl-zed-*.zip)
+          grep -v " $zip\$" SHA256SUMS > SHA256SUMS.new || true
+          sha256sum "$zip" >> SHA256SUMS.new
+          sort -k2 SHA256SUMS.new > SHA256SUMS
+          cat SHA256SUMS
+          gh release upload "$TAG" "$zip" SHA256SUMS --clobber
+
   publish:
-    needs: [version, cli, notepadpp, vscode]
+    needs: [version, cli, notepadpp, vscode, zed]
+    if: inputs.add_zed_to == ''
     runs-on: ubuntu-latest
     permissions:
       contents: write
