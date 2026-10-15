@@ -27,15 +27,15 @@ top.vhd:33:8: sema/width-mismatch: `n` has 4 elements but the value has 5
 top.vhd:34:30: sema/width-mismatch: `q` has 8 elements but the value has 7
 top.vhd:35:41: sema/width-mismatch: `a` has 4 elements but the value has 8
 top.vhd:36:50: sema/width-mismatch: `y` has 8 elements but the value has 4
-top.vhd:41:5: sema/missing-branch-assignment: this `if` has no `else`, so `latch_q` is not assigned when no condition holds
+top.vhd:41:5: sema/missing-branch-assignment: this `if` has no `else`, so `latch_q` is not assigned when no condition holds [fix: Assign `latch_q` a default value before the `if`]
 top.vhd:42:7: sema/inferred-latch: `latch_q` is not assigned on every path through this combinational process, which infers a latch
 top.vhd:62:19: sema/inferred-latch: `case_q` is not assigned on every path through this combinational process, which infers a latch
-top.vhd:63:7: sema/missing-branch-assignment: this `when` alternative does not assign `case_q`, which another branch of the `case` assigns
+top.vhd:63:7: sema/missing-branch-assignment: this `when` alternative does not assign `case_q`, which another branch of the `case` assigns [fix: Assign `case_q` a default value before the `case`]
 top.vhd:72:7: sema/inferred-latch: `br_a` is not assigned on every path through this combinational process, which infers a latch
 top.vhd:73:7: sema/inferred-latch: `br_b` is not assigned on every path through this combinational process, which infers a latch
-top.vhd:74:5: sema/missing-branch-assignment: this `elsif` branch does not assign `br_b`, which another branch of the `if` assigns
-top.vhd:77:5: sema/missing-branch-assignment: this `else` branch does not assign `br_a`, which another branch of the `if` assigns
-top.vhd:83:9: sema/missing-branch-assignment: this `if` has no `else`, so `br_e` is not assigned when no condition holds
+top.vhd:74:5: sema/missing-branch-assignment: this `elsif` branch does not assign `br_b`, which another branch of the `if` assigns [fix: Assign `br_a` and `br_b` a default value before the `if`]
+top.vhd:77:5: sema/missing-branch-assignment: this `else` branch does not assign `br_a`, which another branch of the `if` assigns [fix: Assign `br_a` and `br_b` a default value before the `if`]
+top.vhd:83:9: sema/missing-branch-assignment: this `if` has no `else`, so `br_e` is not assigned when no condition holds [fix: Assign `br_e` a default value before the `if`]
 top.vhd:84:11: sema/inferred-latch: `br_e` is not assigned on every path through this combinational process, which infers a latch
-top.vhd:106:7: sema/missing-branch-assignment#clocked: this `if` has no `else`, so `used_b` is not assigned when no condition holds
+top.vhd:106:7: sema/missing-branch-assignment#clocked: this `if` has no `else`, so `used_b` is not assigned when no condition holds [fix: Add an `else` that keeps the value of `used_b`]
 top.vhd:106:10: sema/clock-domain-crossing: `data_a` is registered on `clk_a` but used here on `clk_b` without a synchronizer

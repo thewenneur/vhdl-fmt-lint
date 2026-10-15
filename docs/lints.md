@@ -77,7 +77,7 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`sema/unneeded-sensitivity`](#semaunneeded-sensitivity) | off | warn | unsafe |
 | [`sema/width-mismatch`](#semawidth-mismatch) | warn | error | |
 | [`sema/inferred-latch`](#semainferred-latch) | warn | error | |
-| [`sema/missing-branch-assignment`](#semamissing-branch-assignment) | off | warn | |
+| [`sema/missing-branch-assignment`](#semamissing-branch-assignment) | off | warn | safe, unsafe |
 | [`sema/clock-domain-crossing`](#semaclock-domain-crossing) | info | warn | |
 | [`sema/open-input`](#semaopen-input) | warn | error | |
 | [`sema/inout-port`](#semainout-port) | info | warn | |
@@ -398,6 +398,13 @@ branch is left out, as it only sets the registers that have a reset value:
 [lint.rules]
 "sema/missing-branch-assignment" = { clocked = true }   # also turns the rule on at warn
 ```
+
+Fixes: in a clocked process, the branch that leaves a register out gets `q <= q;`, and an
+`if` without `else` gets an `else` with them, which keeps the design's meaning (safe, except
+for `out` ports, which can only be read from VHDL-2008 on). In a combinational process, the
+fix assigns the signals a default value before the statement: `'0'`, `(others => '0')`,
+`false`, `0`, or the type's `'left` / `'low`. That removes the latch, so it changes the
+design and is unsafe (`vfl lint --fix --unsafe-fixes`, or the quick fix in an editor).
 
 A `case` without `when others` is complete by the language's rules, so only its
 alternatives are compared. Not reported: signals assigned only in part (an element or a

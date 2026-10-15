@@ -189,7 +189,7 @@ pub const RULES: &[Rule] = &[
         "A branch of an `if` or `case` in a process does not assign a signal another branch assigns, and nothing before it does.",
         Off,
         Warn,
-        false,
+        true,
     ),
     rule(
         codes::CLOCK_DOMAIN_CROSSING,

@@ -169,3 +169,29 @@ fn branch_assignments_in_clocked_processes_are_an_option() {
         assert!(!stdout.contains("#clocked"), "{stdout}");
     }
 }
+
+#[test]
+fn branch_assignments_are_fixed() {
+    let source = "entity f is\n  port (clk, en, d : in bit);\nend;\n\
+                  architecture rtl of f is\n  signal r, c : bit;\nbegin\n  \
+                  process (clk)\n  begin\n    if clk'event and clk = '1' then\n      \
+                  if en = '1' then\n        r <= d;\n      end if;\n    end if;\n  \
+                  end process;\n  process (all)\n  begin\n    if en = '1' then\n      \
+                  c <= d;\n    end if;\n  end process;\nend;\n";
+    let config = "[lint.rules]\n\"sema/missing-branch-assignment\" = { clocked = true }\n";
+    let dir = project(&[("vfl.toml", config), ("f.vhd", source)]);
+    vfl(dir.path(), &["lint", "--fix"]);
+    let fixed = std::fs::read_to_string(dir.path().join("f.vhd")).unwrap();
+    assert!(
+        fixed.contains("        r <= d;\n      else\n        r <= r;\n      end if;"),
+        "{fixed}"
+    );
+    // Defaults change the design: only with `--unsafe-fixes`.
+    assert!(!fixed.contains("c <= '0';"), "{fixed}");
+    vfl(dir.path(), &["lint", "--fix", "--unsafe-fixes"]);
+    let fixed = std::fs::read_to_string(dir.path().join("f.vhd")).unwrap();
+    assert!(
+        fixed.contains("  begin\n    c <= '0';\n    if en = '1' then"),
+        "{fixed}"
+    );
+}

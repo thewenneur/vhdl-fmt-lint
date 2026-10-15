@@ -8,7 +8,8 @@
   `if` or `case` must be assigned in all its branches (and the `if` must have an `else`),
   unless it has a default before the statement. Reported at the branch that leaves it out.
   Combinational processes by default; `{ clocked = true }` checks clocked processes too,
-  leaving the reset branch out. Off in `recommended`, warn in `strict`.
+  leaving the reset branch out. Off in `recommended`, warn in `strict`. Fixes: `q <= q;` in
+  clocked processes (safe), a default before the statement in combinational ones (unsafe).
 - **The Zed extension is a release download**: `vfl-zed-vX.Y.Z.zip`, its sources, to install
   with **zed: install dev extension** without cloning the repository.
 
