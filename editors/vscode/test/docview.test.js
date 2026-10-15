@@ -33,28 +33,32 @@ const PAGE = `<!DOCTYPE html>
 <a href="work.fifo.html#ports">self</a>
 <a href="https://example.com/x.html">out</a>
 <svg><style>@media (prefers-color-scheme:dark){text{fill:#fff}}</style><a href="work.uart_rx.html"><text>rx</text></a></svg>
+<p><script>not this</script></p>
+<script>zoom()</script>
 </body>
 </html>`;
 
-test("adds a content security policy without scripts", () => {
-  const html = webviewHtml(PAGE, "work.fifo.html", false);
+test("adds a content security policy allowing only the zoom script", () => {
+  const html = webviewHtml(PAGE, "work.fifo.html", false, "N0nce");
   assert.match(
     html,
-    /<head>\n<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:;">/,
+    /<head>\n<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'nonce-N0nce';">/,
   );
+  assert.ok(html.includes('<script nonce="N0nce">zoom()</script>\n</body>'), html);
+  assert.equal(html.match(/nonce="/g).length, 1, html);
 });
 
 test("follows the VS Code theme instead of the OS one", () => {
-  const dark = webviewHtml(PAGE, "work.fifo.html", true);
+  const dark = webviewHtml(PAGE, "work.fifo.html", true, "N0nce");
   assert.ok(!dark.includes("prefers-color-scheme"));
   assert.match(dark, /:root\{color-scheme:dark;--bg:#fff\}@media all\{:root\{--bg:#000\}\}/);
   assert.match(dark, /<style>@media all\{text/);
-  const light = webviewHtml(PAGE, "work.fifo.html", false);
+  const light = webviewHtml(PAGE, "work.fifo.html", false, "N0nce");
   assert.match(light, /:root\{color-scheme:light;--bg:#fff\}@media not all\{/);
 });
 
 test("turns links to other pages into command links", () => {
-  const html = webviewHtml(PAGE, "work.fifo.html", false);
+  const html = webviewHtml(PAGE, "work.fifo.html", false, "N0nce");
   const link = (page) =>
     `href="command:vfl.openDocPage?${encodeURIComponent(JSON.stringify([page]))}"`;
   assert.ok(html.includes(`<a ${link("index.html")}>Home</a>`), html);

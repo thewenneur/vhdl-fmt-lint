@@ -8,6 +8,7 @@
 // demand by running `vfl doc`, never on the server's hot path.
 
 import { execFile } from "node:child_process";
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -435,7 +436,8 @@ async function showDiagrams(uri?: vscode.Uri): Promise<string | undefined> {
       pageTitle(state.page),
       { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
       {
-        enableScripts: false,
+        // For the zoom of the diagrams; the page's CSP allows only it.
+        enableScripts: true,
         enableCommandUris: [OPEN_PAGE_COMMAND],
         enableFindWidget: true,
         localResourceRoots: [],
@@ -473,7 +475,8 @@ function renderDiagrams(view: Diagrams): void {
   const kind = vscode.window.activeColorTheme.kind;
   const dark = kind === vscode.ColorThemeKind.Dark || kind === vscode.ColorThemeKind.HighContrast;
   view.panel.title = pageTitle(view.page);
-  view.panel.webview.html = webviewHtml(html, view.page, dark);
+  const nonce = crypto.randomBytes(16).toString("base64");
+  view.panel.webview.html = webviewHtml(html, view.page, dark, nonce);
 }
 
 /** Draws the diagrams again after a save, one run at a time. */
