@@ -77,6 +77,7 @@ What the language server does is one of Zed's own actions, bound in `keymap.json
 | Format document | `editor::Format` |
 | Format selection | `editor::FormatSelections` |
 | Quick fixes, generate testbench (on an entity) | `editor::ToggleCodeActions` |
+| Generate project config (while there is no `vfl.toml`) | `editor::ToggleCodeActions` |
 | Next / previous problem | `editor::GoToDiagnostic`, `editor::GoToPreviousDiagnostic` |
 | Problems of the project | `diagnostics::Deploy` |
 | Go to definition | `editor::GoToDefinition` |
