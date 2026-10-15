@@ -39,7 +39,10 @@ fn testbench_and_templates() {
     let tb = std::fs::read_to_string(dir.path().join("rtl/tb_alu.vhd")).unwrap();
     assert!(tb.contains("ENTITY tb_alu IS"), "{tb}");
     assert!(tb.contains("dut : ENTITY work.alu"), "{tb}");
-    assert!(tb.contains("SIGNAL rst : std_logic := '1';"), "{tb}");
+    assert!(
+        tb.contains("SIGNAL rst          : std_logic := '1'  ;"),
+        "{tb}"
+    );
 
     // An existing file is kept unless forced.
     let again = vfl(dir.path(), &["new", "tb", "alu"]);

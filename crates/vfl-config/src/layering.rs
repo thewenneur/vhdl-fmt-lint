@@ -132,7 +132,7 @@ mod tests {
 
         let chain = config_chain(&outer.join("proj")).unwrap();
         assert_eq!(chain, vec![outer.join("proj/.vfl.toml")]);
-        assert_eq!(load_for_dir(&outer.join("proj")).unwrap().format.indent, 2);
+        assert_eq!(load_for_dir(&outer.join("proj")).unwrap().format.indent, 4);
     }
 
     #[test]

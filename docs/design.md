@@ -196,14 +196,17 @@ Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
    deeper than a following `end`, `else`, `when` or `)`, in which case it stays with the
    block above.
 4. **Alignment**: each line can carry anchors, tokens that line up with the same token on
-   neighbouring lines of the same construct. Consecutive lines with the same anchor form a
-   block, and each anchor of a block is padded to the block's rightmost column, leftmost
-   anchors first. Targets, each switchable: `:`, the subtype after the mode, and `:=` in port
+   other lines. By default (`scope = "block"`) every anchor of a kind lines up across the
+   whole enclosing block (process, architecture, generate body, subprogram, package, entity,
+   record, interface list), even with other lines, blank lines or comments in between; with
+   `scope = "contiguous"` only consecutive lines of the same construct do. Each anchor of a
+   run is padded to the run's rightmost column, leftmost anchors first. Targets, each switchable: `:`, the subtype after the mode, and `:=` in port
    and generic lists; `:`, `:=` and `is` in declarations; `<=` and `:=` of consecutive
    assignments; `=>` in maps and aggregates; `=>` of one-line case alternatives and the
-   assignments after them; `when` in conditional and selected assignments; trailing
-   comments. Blocks end at blank lines, at comment lines too, or at neither
-   (`block_boundary`).
+   assignments after them; `when` in conditional and selected assignments; the `;` ending
+   those lines (interface elements, declarations and statements each among themselves);
+   trailing comments. With `scope = "contiguous"`, runs end at blank lines, at comment lines
+   too, or at neither (`block_boundary`).
 
 The plan was a Wadler/Prettier document IR printed against `max_width`. Keeping the author's
 line breaks and only adding breaks turned out simpler and closer to how VHDL is written by hand
@@ -226,11 +229,14 @@ Guarantees, enforced in tests, in the corpus job and at runtime:
   to the statements or declarations they touch (not past the construct around them), to
   every line of an alignment run they are part of, and to lines that start and end on the
   same tokens in the source and the output. Protected regions are never touched.
-  Only the block around the selection is laid out: whole lines between blank lines (which end
-  alignment runs), cut between the items of a construct, and not after a comment line, whose
-  indentation follows the code below it. Files with `-- vfl:` directives, `max_blank_lines = 0`
-  or `block_boundary = "never"` are laid out whole. The corpus job checks that both give the
-  same edits.
+  Only the part around the selection is laid out: whole lines between blank lines, cut
+  between the items of a construct, and not after a comment line, whose indentation follows
+  the code below it. With `scope = "block"` that part holds the whole alignment block around
+  the selection (the process, the interface list, ...), and the block around that one when
+  the edits reach out of it; the lines of an edit that stay as they are are left out of it.
+  Files with `-- vfl:` directives, `max_blank_lines = 0`, or `block_boundary = "never"` with
+  `scope = "contiguous"`, are laid out whole. The corpus job checks that both give the same
+  edits.
 
 ### Linter
 
@@ -292,8 +298,8 @@ osvvm = ["third_party/osvvm/**/*.vhd"]
 [format]
 style           = "default"  # "default" | "leading-comma" | "compact" | "classic"
 max_width       = 100
-indent          = 2
-# continuation_indent = 2   # defaults to `indent`
+indent          = 4
+# continuation_indent = 4   # defaults to `indent`
 use_tabs        = false
 keyword_case    = "lower"    # "lower" | "upper" | "preserve"
 identifier_case = "preserve"
@@ -322,7 +328,9 @@ case_choice      = true       # => of one-line case alternatives
 when_clause      = true       # `when` in conditional and selected assignments
 conditional_continuation = true  # continuation lines start under the first value
 trailing_comment = true
-block_boundary   = "blank-line"   # "blank-line" | "comment" | "never"
+semicolon        = true       # the `;` ending aligned lines
+scope            = "block"    # "block": the whole process, architecture, ...; "contiguous"
+block_boundary   = "blank-line"   # with "contiguous": "blank-line" | "comment" | "never"
 
 [lint]
 preset = "recommended"       # "none" | "recommended" | "strict"

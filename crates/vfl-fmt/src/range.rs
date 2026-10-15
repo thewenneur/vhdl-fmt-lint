@@ -11,7 +11,8 @@
 //!   line;
 //! - to every line of an alignment run that one of the lines is part of, so
 //!   the `:` of a port list or the `<=` of a block of assignments still
-//!   line up;
+//!   line up (with `scope = "block"`, from the first to the last line of
+//!   the run in its block; unchanged lines are then left out of the edits);
 //! - to the comment lines just above, and from a comment line to the code
 //!   line it is indented after;
 //! - to lines that start and end at the same tokens in the source and in
@@ -22,11 +23,12 @@
 
 use std::ops::Range;
 
-use rowan::{NodeOrToken, TextSize};
-use vfl_config::{BlockBoundary, FormatConfig};
+use rowan::{NodeOrToken, TextRange, TextSize};
+use vfl_config::{AlignScope, BlockBoundary, FormatConfig};
 use vfl_syntax::{Standard, Vhdl};
 use vfl_verilog_syntax::{Options, Verilog};
 
+use crate::align::block;
 use crate::kinds::is_item;
 use crate::lang::{Element, Lang, Node, Token};
 use crate::verify::{first_difference, lexical};
@@ -209,42 +211,71 @@ fn ranges_with<L: Lang>(
     let root = parse_valid::<L>(src, std)?;
     let offsets = Offsets::new(text, &source);
     let whole = 0..src.len();
-    let window = ranges
+    let norm: Vec<(usize, usize)> = ranges
         .iter()
         .map(|r| {
             let (a, b) = (offsets.to_norm(r.start), offsets.to_norm(r.end));
-            match incremental {
-                true => window(&root, src, a.min(b), a.max(b), config).unwrap_or(whole.clone()),
-                false => whole.clone(),
-            }
+            (a.min(b), a.max(b))
         })
-        .reduce(|x, y| x.start.min(y.start)..x.end.max(y.end));
-    let Some(window) = window else {
-        return Ok(Vec::new());
-    };
-    let Some(laid) = lay_out(src, &root, config, std, Some(window))? else {
-        return Ok(Vec::new());
-    };
-    let view = View::new(&laid, src);
-
-    let mut spans: Vec<(usize, usize)> = ranges
-        .iter()
-        .flat_map(|r| view.selected(offsets.to_norm(r.start), offsets.to_norm(r.end)))
-        .filter_map(|(l0, l1)| view.widen(l0, l1))
         .collect();
-    spans.sort_unstable();
-    let mut merged: Vec<(usize, usize)> = Vec::new();
-    for (l0, l1) in spans {
-        match merged.last_mut() {
-            Some(last) if l0 <= last.1 => last.1 = last.1.max(l1),
-            _ => merged.push((l0, l1)),
+    // With `scope = "block"`, runs reach across their whole block: the
+    // block around the selection is laid out, and the one around it when
+    // the edits reach out of it.
+    let mut outer = match (incremental, config.align.scope) {
+        (true, AlignScope::Block) => {
+            let a = norm.iter().map(|r| r.0).min().unwrap_or(0);
+            let b = norm.iter().map(|r| r.1).max().unwrap_or(0);
+            Some(selection_block(&root, src, a, b))
         }
-    }
+        _ => None,
+    };
+    let edits = loop {
+        let window = match (&outer, incremental) {
+            (_, false) => whole.clone(),
+            (Some(inner), true) => {
+                let r = inner.text_range();
+                window(&root, src, r.start().into(), r.end().into(), config)
+                    .unwrap_or(whole.clone())
+            }
+            (None, true) => norm
+                .iter()
+                .map(|&(a, b)| window(&root, src, a, b, config).unwrap_or(whole.clone()))
+                .reduce(|x, y| x.start.min(y.start)..x.end.max(y.end))
+                .unwrap_or(whole.clone()),
+        };
+        let Some(laid) = lay_out(src, &root, config, std, Some(window))? else {
+            return Ok(Vec::new());
+        };
+        let view = View::new(&laid, src);
 
-    let edits: Vec<Edit> = merged
-        .into_iter()
-        .filter_map(|(l0, l1)| view.edit(l0, l1))
-        .collect();
+        let mut spans: Vec<(usize, usize)> = norm
+            .iter()
+            .flat_map(|&(a, b)| view.selected(a, b))
+            .filter_map(|(l0, l1)| view.widen(l0, l1))
+            .collect();
+        spans.sort_unstable();
+        let mut merged: Vec<(usize, usize)> = Vec::new();
+        for (l0, l1) in spans {
+            match merged.last_mut() {
+                Some(last) if l0 <= last.1 => last.1 = last.1.max(l1),
+                _ => merged.push((l0, l1)),
+            }
+        }
+
+        let edits: Vec<Edit> = merged
+            .into_iter()
+            .filter_map(|(l0, l1)| view.edit(l0, l1))
+            .collect();
+        let parent = outer.as_ref().and_then(|inner| {
+            let range = inner.text_range();
+            let escapes = edits.iter().any(|e| !within(&root, e.range.clone(), range));
+            escapes.then(|| inner.parent()).flatten()
+        });
+        match parent {
+            Some(parent) => outer = Some(block(&parent)),
+            None => break edits,
+        }
+    };
     // Only layout, case and the words after `end` may change.
     for edit in &edits {
         let before = lexical::<L>(&src[edit.range.clone()], std);
@@ -255,6 +286,7 @@ fn ranges_with<L: Lang>(
     }
     Ok(edits
         .into_iter()
+        .filter_map(|e| unchanged_lines_out(src, e))
         .map(|e| Edit {
             range: offsets.to_orig(e.range.start)..offsets.to_orig(e.range.end),
             text: if source.crlf {
@@ -264,6 +296,83 @@ fn ranges_with<L: Lang>(
             },
         })
         .collect())
+}
+
+/// The innermost alignment block holding the lines of bytes `a..b`.
+fn selection_block<L: Lang>(root: &Node<L>, src: &str, a: usize, b: usize) -> Node<L> {
+    let line_start = src[..a.min(src.len())].rfind('\n').map_or(0, |k| k + 1);
+    let line_end = src[b.min(src.len())..]
+        .find('\n')
+        .map_or(src.len(), |k| b + k);
+    let first = first_token_after(root, src, line_start).map(|t| t.text_range().start());
+    let last = last_token_before(root, line_end).map(|t| t.text_range().end());
+    let range = match (first, last) {
+        (Some(s), Some(e)) if s < e => TextRange::new(s, e),
+        _ => return root.clone(),
+    };
+    let node = match root.covering_element(range) {
+        NodeOrToken::Node(n) => n,
+        NodeOrToken::Token(t) => match t.parent() {
+            Some(p) => p,
+            None => return root.clone(),
+        },
+    };
+    block(&node)
+}
+
+/// Whether the bytes `range` hold only comments and whitespace outside
+/// `inner`: the lines they cover depend on nothing outside it.
+fn within<L: Lang>(root: &Node<L>, range: Range<usize>, inner: TextRange) -> bool {
+    let (s, e) = (usize::from(inner.start()), usize::from(inner.end()));
+    let trivia = |from: usize, to: usize| {
+        if from >= to {
+            return true;
+        }
+        let Some(mut token) = root
+            .token_at_offset(TextSize::from(from as u32))
+            .right_biased()
+        else {
+            return true;
+        };
+        while usize::from(token.text_range().start()) < to {
+            if token.kind() != L::WHITESPACE && !L::is_comment(token.kind()) {
+                return false;
+            }
+            match next_token(&token) {
+                Some(t) => token = t,
+                None => return true,
+            }
+        }
+        true
+    };
+    trivia(range.start, s) && trivia(e, range.end)
+}
+
+/// `edit` without the lines at its start and end that it leaves as they
+/// are. `None` when nothing is left.
+fn unchanged_lines_out(src: &str, edit: Edit) -> Option<Edit> {
+    let old = &src[edit.range.clone()];
+    let new = edit.text.as_str();
+    let mut pre = 0;
+    while let (Some(i), Some(j)) = (old[pre..].find('\n'), new[pre..].find('\n')) {
+        if i != j || old[pre..pre + i] != new[pre..pre + i] {
+            break;
+        }
+        pre += i + 1;
+    }
+    let mut suf = 0;
+    loop {
+        let (o, n) = (&old[pre..old.len() - suf], &new[pre..new.len() - suf]);
+        match (o.rfind('\n'), n.rfind('\n')) {
+            (Some(i), Some(j)) if o[i..] == n[j..] => suf += o.len() - i,
+            _ => break,
+        }
+    }
+    let (o, n) = (&old[pre..old.len() - suf], &new[pre..new.len() - suf]);
+    (o != n).then(|| Edit {
+        range: edit.range.start + pre..edit.range.end - suf,
+        text: n.to_owned(),
+    })
 }
 
 /// The part of the file that lays out the same alone as within the file,
@@ -277,7 +386,10 @@ fn window<L: Lang>(
     b: usize,
     config: &FormatConfig,
 ) -> Option<Range<usize>> {
-    if config.max_blank_lines == 0 || config.align.block_boundary == BlockBoundary::Never {
+    if config.max_blank_lines == 0
+        || (config.align.scope == AlignScope::Contiguous
+            && config.align.block_boundary == BlockBoundary::Never)
+    {
         return None;
     }
     // `-- vfl: off` may start a region far above.
@@ -589,7 +701,13 @@ impl<'a, L: Lang> View<'a, L> {
                 l0 = l0.min(a);
                 l1 = l1.max(b);
             }
-            for &(a, b) in laid.runs.iter().chain(&self.moved) {
+            for run in &laid.runs {
+                if run.touches(l0, l1) {
+                    l0 = l0.min(run.first);
+                    l1 = l1.max(run.last);
+                }
+            }
+            for &(a, b) in &self.moved {
                 if a <= l1 && b >= l0 {
                     l0 = l0.min(a);
                     l1 = l1.max(b);

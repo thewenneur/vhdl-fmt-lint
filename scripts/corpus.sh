@@ -88,6 +88,7 @@ printf '%s\n' \
   'close_paren = "attached"' \
   'case_alternative = "break"' \
   '[format.align]' \
+  'scope = "contiguous"' \
   'block_boundary = "never"' >"$alt_config"
 # Leading separators, with lists broken up and laid out as written.
 leading_config=$(mktemp)

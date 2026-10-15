@@ -1,5 +1,38 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **The formatter aligns every token across its whole block by default**: every `<=` of a
+  process at any `if` depth, every `=>` of the port maps of an architecture and of the
+  alternatives of a `case`, every `:` of a declarative part, line up even with other lines,
+  blank lines or comments in between. A block is a process, an architecture, a block or
+  generate body, a subprogram, an entity, a package, a component, a record or protected
+  type, or a generic, port or parameter list (in Verilog: a module, an `always` or
+  `initial` procedure, a function or task, a generate block, a struct, a port or parameter
+  list). The new `[format.align]` key `scope` sets this: `"block"` (the default) or
+  `"contiguous"`, the earlier behavior, where only consecutive lines align, up to
+  `block_boundary`.
+- **The `;` ending aligned lines is aligned too by default**, with the new
+  `[format.align]` key `semicolon`. Interface elements, declarations and statements each
+  line up their `;` among themselves.
+- **`indent` is 4 by default** (was 2). The `compact` style keeps 2, and the `compact` and
+  `classic` styles keep aligning consecutive lines only, without the `;`.
+- Range and on-type formatting follow the wider alignment: the block around the edited
+  line is laid out, and only the lines that change are in the edits.
+
+To format as 0.4 did:
+
+```toml
+[format]
+indent = 2
+
+[format.align]
+scope = "contiguous"
+semicolon = false
+```
+
 ## [0.4.0] - 2026-10-15
 
 Full Verilog and SystemVerilog support becomes opt-in (`[verilog] mode`), the formatter gains

@@ -815,7 +815,7 @@ end architecture;
             .expect("formats");
         assert_eq!(
             out.as_deref(),
-            Some("module top;\n  assign a = b;\nendmodule\n")
+            Some("module top;\n    assign a = b;\nendmodule\n")
         );
         let text = "module top;\n  assign a = ;\nendmodule\n";
         let output = engine.lint(Some(&path), text);
@@ -852,13 +852,15 @@ end architecture;
         let cursor = text.find("y;").unwrap() + 2;
         assert_eq!(
             engine.format_typed(None, text, cursor, ';'),
-            Some("entity e is\nend;\narchitecture a of e is\nbegin\n  x <= y;\nend;\n".into())
+            Some("entity e is\nend;\narchitecture a of e is\nbegin\n    x <= y;\nend;\n".into())
         );
         let text = "entity e is\nend;\narchitecture a of e is\nbegin\nx<=y;\n  \nend;\n";
         let cursor = text.find("  \n").unwrap() + 2;
         assert_eq!(
             engine.format_typed(None, text, cursor, '\n'),
-            Some("entity e is\nend;\narchitecture a of e is\nbegin\n  x <= y;\n  \nend;\n".into())
+            Some(
+                "entity e is\nend;\narchitecture a of e is\nbegin\n    x <= y;\n  \nend;\n".into()
+            )
         );
         assert_eq!(engine.format_typed(None, text, cursor, 'x'), None);
     }

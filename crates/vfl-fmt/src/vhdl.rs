@@ -1,11 +1,13 @@
 //! The formatter's rules for VHDL.
 
 use rowan::NodeOrToken;
-use vfl_config::{AlignConfig, Case, EndKeyword, EndLabel, FormatConfig, ListLayout, Separator};
+use vfl_config::{
+    AlignConfig, AlignScope, Case, EndKeyword, EndLabel, FormatConfig, ListLayout, Separator,
+};
 use vfl_syntax::SyntaxKind::{self, *};
 use vfl_syntax::{Standard, SyntaxError, SyntaxNode, SyntaxToken, Vhdl};
 
-use crate::align::{Context, Kind, child_token, context};
+use crate::align::{Context, Kind, child_token, context_in};
 use crate::elems::{Elem, apply_case};
 use crate::lang::Lang;
 use crate::layout::{Analysis, Line};
@@ -174,6 +176,29 @@ impl Lang for Vhdl {
         add: &mut impl FnMut(Kind, Context, usize),
     ) -> bool {
         anchors_of(node, elems, an, line, config, add)
+    }
+
+    #[inline]
+    fn is_align_block(kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            ENTITY_DECL
+                | ARCHITECTURE_BODY
+                | PACKAGE_DECL
+                | PACKAGE_BODY
+                | CONFIGURATION_DECL
+                | INTERFACE_LIST
+                | COMPONENT_DECL
+                | SUBPROGRAM_BODY
+                | PROCESS_STMT
+                | BLOCK_STMT
+                | GENERATE_BODY
+                | RECORD_TYPE_DEF
+                | PROTECTED_TYPE_DEF
+                | PROTECTED_TYPE_BODY
+                | MODE_VIEW_DECL
+                | SEQUENTIAL_BLOCK_STMT
+        )
     }
 
     #[inline]
@@ -544,7 +569,7 @@ fn anchors_of(
     let Some(parent) = parent else {
         return false;
     };
-    let ctx = context(&parent);
+    let ctx = context_in(&parent, config);
     match node.kind() {
         INTERFACE_OBJECT_DECL => {
             let generic = parent
@@ -621,10 +646,12 @@ fn anchors_of(
             true
         }
         CASE_ALTERNATIVE => {
-            // Only when a statement follows on the same line.
-            let Some(arrow) = child_token(node, an, &[ARROW])
-                .filter(|&a| a + 1 < line.end && !elems[a + 1].is_comment())
-            else {
+            // Only when a statement follows on the same line, or with
+            // `scope = "block"` on every line.
+            let Some(arrow) = child_token(node, an, &[ARROW]).filter(|&a| {
+                config.scope == AlignScope::Block
+                    || (a + 1 < line.end && !elems[a + 1].is_comment())
+            }) else {
                 return true;
             };
             if config.case_choice {
@@ -633,6 +660,7 @@ fn anchors_of(
             // Aligning the statements only makes sense when the choices are.
             if config.case_choice
                 && config.assignment
+                && arrow + 1 < line.end
                 && let Some(op) = statement_assignment(&elems[arrow + 1], an)
             {
                 add(Kind::AlternativeAssign, ctx, op);

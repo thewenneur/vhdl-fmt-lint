@@ -168,7 +168,8 @@ keyword_case = "upper"
 end_label = "add"
 
 [format.align]
-block_boundary = "never"   # align whole port lists, across blank lines and comments
+scope = "contiguous"       # align consecutive lines only, not the whole block
+semicolon = false          # leave the `;` after the last token
 ```
 
 ```toml

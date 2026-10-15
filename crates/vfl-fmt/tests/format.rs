@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use vfl_config::{Config, FormatConfig};
+use vfl_config::{AlignConfig, AlignScope, Config, FormatConfig};
 use vfl_fmt::{FormatError, format};
 use vfl_syntax::Standard;
 
@@ -16,21 +16,50 @@ fn fmt_with(text: &str, config: &FormatConfig) -> String {
 }
 
 fn fmt(text: &str) -> String {
-    fmt_with(text, &FormatConfig::default())
+    fmt_with(text, &legacy())
 }
 
-/// A format config from the body of a `[format]` table.
+/// The defaults before block alignment (0.4): most tests show their own
+/// option against them. `alignment_defaults` shows the current defaults.
+fn legacy() -> FormatConfig {
+    FormatConfig {
+        indent: 2,
+        align: AlignConfig {
+            scope: AlignScope::Contiguous,
+            semicolon: false,
+            ..AlignConfig::default()
+        },
+        ..FormatConfig::default()
+    }
+}
+
+/// A format config from the body of a `[format]` table, on top of
+/// [`legacy`] unless it picks a style.
 fn config(toml: &str) -> FormatConfig {
-    Config::from_toml_str(&format!("[format]\n{toml}"))
+    let mut config = Config::from_toml_str(&format!("[format]\n{toml}"))
         .unwrap()
-        .format
+        .format;
+    if !toml.contains("style") {
+        let sets = |key: &str| toml.lines().any(|l| l.trim_start().starts_with(key));
+        let legacy = legacy();
+        if !sets("indent") {
+            config.indent = legacy.indent;
+        }
+        if !sets("scope") {
+            config.align.scope = legacy.align.scope;
+        }
+        if !sets("semicolon") {
+            config.align.semicolon = legacy.align.semicolon;
+        }
+    }
+    config
 }
 
 #[test]
 fn snapshots() {
     insta::glob!("data/*.vhd", |path| {
         let text = std::fs::read_to_string(path).unwrap();
-        insta::assert_snapshot!(fmt(&text));
+        insta::assert_snapshot!(fmt_with(&text, &FormatConfig::default()));
     });
 }
 
@@ -42,6 +71,7 @@ fn parser_test_files_are_stable() {
         let text = std::fs::read_to_string(&path).unwrap();
         for config in [
             FormatConfig::default(),
+            legacy(),
             config(
                 "keyword_case = \"upper\"\nidentifier_case = \"upper\"\nuse_tabs = true\nindent = 4",
             ),
@@ -325,6 +355,105 @@ end;
 
 #[test]
 fn alignment_defaults() {
+    let defaults = FormatConfig::default();
+    assert_eq!(
+        fmt_with(ALIGN_SAMPLE, &defaults),
+        "\
+entity e is
+    port (
+        clk     : in  std_logic                                      ; -- clock
+        data_in : in  std_logic_vector(7 downto 0) := (others => '0');
+
+        q       : out std_logic                                        -- output
+    );
+end;
+architecture a of e is
+    signal s           : bit       ;
+    constant long_name : bit := '0';
+begin
+    s           <= a;
+    long_name_2 <= b;
+    y           <= c when d else
+                   e;
+end;
+"
+    );
+    // Lines in between, at any depth, do not end the alignment.
+    let text = "architecture a of e is begin
+p : process (clk) begin
+if rising_edge(clk) then
+if rst = '1' then count <= 0;
+else q <= d; -- data
+count <= count + 1;
+end if;
+case s is when IDLE => s <= RUN; when RUNNING =>
+s <= IDLE;
+when others => null;
+end case;
+end if;
+end process;
+u0 : entity work.sub port map (
+clk => clk,
+
+data_in => q
+);
+end;";
+    assert_eq!(
+        fmt_with(text, &defaults),
+        "\
+architecture a of e is
+begin
+    p : process (clk)
+    begin
+        if rising_edge(clk) then
+            if rst = '1' then
+                count <= 0              ;
+            else
+                q     <= d              ; -- data
+                count <= count + 1      ;
+            end if;
+            case s is
+                when IDLE    => s <= RUN;
+                when RUNNING =>
+                    s <= IDLE           ;
+                when others  => null    ;
+            end case;
+        end if;
+    end process;
+    u0 : entity work.sub
+        port map (
+            clk     => clk,
+
+            data_in => q
+        );
+end;
+"
+    );
+    // The earlier defaults stay a config away.
+    let contiguous =
+        config("indent = 2\n[format.align]\nscope = \"contiguous\"\nsemicolon = false");
+    assert_eq!(fmt_with(text, &contiguous), fmt_with(text, &legacy()));
+    assert_eq!(fmt_with(ALIGN_SAMPLE, &contiguous), fmt(ALIGN_SAMPLE));
+}
+
+#[test]
+fn semicolons_can_stay_unaligned() {
+    let text = "architecture a of e is begin\nx <= a;\nlong_name <= b + c;\nend;";
+    assert_eq!(
+        fmt_with(
+            text,
+            &config("indent = 4\n[format.align]\nscope = \"block\"")
+        ),
+        "architecture a of e is\nbegin\n    x         <= a;\n    long_name <= b + c;\nend;\n"
+    );
+    assert_eq!(
+        fmt_with(text, &FormatConfig::default()),
+        "architecture a of e is\nbegin\n    x         <= a    ;\n    long_name <= b + c;\nend;\n"
+    );
+}
+
+#[test]
+fn contiguous_alignment() {
     assert_eq!(
         fmt(ALIGN_SAMPLE),
         "\
@@ -504,6 +633,7 @@ end;
 "
     );
     // Wider indentation: the separator still hangs left of the elements.
+    // The arrows of both maps line up, in the same block.
     assert_eq!(
         fmt_with(
             INSTANCE,
@@ -513,8 +643,8 @@ end;
 begin
     u0 : entity work.sub
         generic map (
-            W => 8
-          , D => 2)
+            W       => 8
+          , D       => 2)
         port map (
             clk     => clk -- the clock
             -- the data

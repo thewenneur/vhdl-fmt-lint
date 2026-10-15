@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use vfl_config::{Config, FormatConfig};
+use vfl_config::{AlignConfig, AlignScope, Config, FormatConfig};
 use vfl_fmt::{FormatError, apply_edits, format_ranges_verilog, format_verilog};
 use vfl_verilog_syntax::{Options, Standard};
 
@@ -30,14 +30,43 @@ fn fmt_with(text: &str, config: &FormatConfig) -> String {
 }
 
 fn fmt(text: &str) -> String {
-    fmt_with(text, &FormatConfig::default())
+    fmt_with(text, &legacy())
 }
 
-/// A format config from the body of a `[format]` table.
+/// The defaults before block alignment (0.4): most tests show their own
+/// option against them. `alignment_defaults` shows the current defaults.
+fn legacy() -> FormatConfig {
+    FormatConfig {
+        indent: 2,
+        align: AlignConfig {
+            scope: AlignScope::Contiguous,
+            semicolon: false,
+            ..AlignConfig::default()
+        },
+        ..FormatConfig::default()
+    }
+}
+
+/// A format config from the body of a `[format]` table, on top of
+/// [`legacy`] unless it picks a style.
 fn config(toml: &str) -> FormatConfig {
-    Config::from_toml_str(&format!("[format]\n{toml}"))
+    let mut config = Config::from_toml_str(&format!("[format]\n{toml}"))
         .unwrap()
-        .format
+        .format;
+    if !toml.contains("style") {
+        let sets = |key: &str| toml.lines().any(|l| l.trim_start().starts_with(key));
+        let legacy = legacy();
+        if !sets("indent") {
+            config.indent = legacy.indent;
+        }
+        if !sets("scope") {
+            config.align.scope = legacy.align.scope;
+        }
+        if !sets("semicolon") {
+            config.align.semicolon = legacy.align.semicolon;
+        }
+    }
+    config
 }
 
 #[test]
@@ -57,6 +86,7 @@ fn parser_test_files_are_stable() {
         let text = std::fs::read_to_string(&path).unwrap();
         for config in [
             FormatConfig::default(),
+            legacy(),
             config("use_tabs = true\nindent = 4\nmax_width = 40"),
             config(
                 "interface_list = \"preserve\"\nassociation_list = \"expand\"\nclose_paren = \"attached\"",
@@ -166,19 +196,27 @@ fn regions_can_be_left_alone() {
 fn ranges() {
     let text = "module m;\nassign a=b;\nassign c=d;\n\nassign e=f;\nendmodule\n";
     let at = text.find("assign c").unwrap();
-    let edits = format_ranges_verilog(
-        text,
-        std::slice::from_ref(&(at..at)),
-        &FormatConfig::default(),
-        &Options {
-            standard: Standard::Sv2017,
-            ..Options::default()
-        },
-    )
-    .unwrap();
+    let edits = |config: &FormatConfig| {
+        let edits = format_ranges_verilog(
+            text,
+            std::slice::from_ref(&(at..at)),
+            config,
+            &Options {
+                standard: Standard::Sv2017,
+                ..Options::default()
+            },
+        )
+        .unwrap();
+        apply_edits(text, &edits)
+    };
     assert_eq!(
-        apply_edits(text, &edits),
+        edits(&legacy()),
         "module m;\n  assign a = b;\n  assign c = d;\n\nassign e=f;\nendmodule\n"
+    );
+    // The `=` of the whole module line up.
+    assert_eq!(
+        edits(&FormatConfig::default()),
+        "module m;\n    assign a = b;\n    assign c = d;\n\n    assign e = f;\nendmodule\n"
     );
 }
 
@@ -217,7 +255,7 @@ fn leading_separators() {
         "module m (input a, // first\n  output b);\n  sub u (.x(a),\n    .y(b));\nendmodule\n";
     assert_eq!(
         fmt_with(text, &config("style = \"leading-comma\"")),
-        "module m (\n  input  a // first\n, output b\n);\n  sub u (\n    .x(a)\n  , .y(b)\n  );\nendmodule\n"
+        "module m (\n    input  a // first\n  , output b\n);\n    sub u (\n        .x(a)\n      , .y(b)\n    );\nendmodule\n"
     );
 }
 

@@ -1,6 +1,6 @@
 ---
 source: crates/vfl-fmt/tests/format.rs
-expression: fmt(&text)
+expression: "fmt_with(&text, &FormatConfig::default())"
 input_file: crates/vfl-fmt/tests/data/comments.vhd
 ---
 -- File header.
@@ -10,30 +10,30 @@ library ieee; -- trailing on a context item
 use ieee.std_logic_1164.all;
 
 entity commented is
-  port (
-    -- a comment before the first port
-    a : in  bit; -- first
-    -- an oddly indented comment
-    b : out bit
-    -- a comment before the closing paren
-  );
+    port (
+        -- a comment before the first port
+        a : in  bit; -- first
+        -- an oddly indented comment
+        b : out bit
+        -- a comment before the closing paren
+    );
 end entity;
 
 architecture rtl of commented is
 begin
-  process (a) is
-  begin
-    if a = '1' then
-      b <= '1';
-      -- the end of the if branch
-    else
-      b <= '0';
-    -- belongs to the else, but written at `end` level
-    end if;
-  end process;
+    process (a) is
+    begin
+        if a = '1' then
+            b <= '1';
+            -- the end of the if branch
+        else
+            b <= '0';
+        -- belongs to the else, but written at `end` level
+        end if;
+    end process;
 
-  /* A block comment
+    /* A block comment
    spanning lines. */
-  b <= a; /* inline block */ -- and a line comment
+    b <= a; /* inline block */ -- and a line comment
 end architecture;
 -- Trailing comment at the end of the file.

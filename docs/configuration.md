@@ -142,7 +142,7 @@ Settings of `vfl fmt` and of formatting in the language server.
 |-----|------|---------|---------|
 | `style` | string | `"default"` | A named set of defaults for the other keys: `"default"`, `"leading-comma"`, `"compact"` or `"classic"`; see [Styles](#styles). Keys set explicitly win over it. |
 | `max_width` | integer | `100` | Lines longer than this get their parenthesized lists broken up, one element per line. |
-| `indent` | integer | `2` | Columns per indentation level. Also the tab width with `use_tabs`. |
+| `indent` | integer | `4` | Columns per indentation level. Also the tab width with `use_tabs`. |
 | `continuation_indent` | integer | `indent` | Columns added for a statement continued on the next line, outside parentheses. |
 | `use_tabs` | boolean | `false` | Indent with tabs instead of spaces. Alignment padding is always spaces. |
 | `keyword_case` | string | `"lower"` | Case of reserved words: `"lower"`, `"upper"` or `"preserve"`. |
@@ -281,13 +281,13 @@ association_list = "auto" # wins over the style's "expand"
 |-------|------|
 | `"default"` | Nothing: every key has the default listed above. |
 | `"leading-comma"` | `interface_separator = "leading"`, `association_separator = "leading"`, `association_list = "expand"`. |
-| `"compact"` | `interface_list = "auto"`, `association_list = "auto"`, `close_paren = "attached"`, `max_blank_lines = 1`, and every `[format.align]` key off except `trailing_comment`. |
-| `"classic"` | `indent = 4`, `keyword_case = "upper"`, `end_label = "add"`, `end_keyword = "add"`, `association_list = "expand"`, `case_alternative = "break"`. |
+| `"compact"` | `indent = 2`, `interface_list = "auto"`, `association_list = "auto"`, `close_paren = "attached"`, `max_blank_lines = 1`, and every `[format.align]` key off except `trailing_comment`, which aligns consecutive lines only (`scope = "contiguous"`). |
+| `"classic"` | `indent = 4`, `keyword_case = "upper"`, `end_label = "add"`, `end_keyword = "add"`, `association_list = "expand"`, `case_alternative = "break"`, and alignment of consecutive lines only, without the `;` (`scope = "contiguous"`, `semicolon = false`). |
 
 ## `[format.align]`
 
-Which columns the formatter lines up across consecutive lines of the same shape. All are on
-by default.
+Which columns the formatter lines up, and across which lines. Every token is aligned by
+default, across the whole block around it (`scope = "block"`).
 
 | Key | Type | Default | Aligns |
 |-----|------|---------|--------|
@@ -295,14 +295,16 @@ by default.
 | `port_mode` | boolean | `true` | The subtype after the mode (`in`, `out`, ...) in port clauses and parameter lists: `clk : in  std_logic;` / `q : out std_logic;`. |
 | `generic_colon` | boolean | `true` | `:` in generic clauses. |
 | `interface_default` | boolean | `true` | `:=` default values in generic and port clauses. |
-| `assignment` | boolean | `true` | `<=` and `:=` in consecutive statements. |
+| `assignment` | boolean | `true` | `<=` and `:=` of assignment statements. |
 | `association` | boolean | `true` | `=>` in port maps, generic maps and aggregates laid out one element per line. |
 | `declaration` | boolean | `true` | `:` and `:=` in object declarations and record elements, and `is` in type and subtype declarations. |
-| `case_choice` | boolean | `true` | `=>` of case alternatives whose statement is on the same line. |
+| `case_choice` | boolean | `true` | `=>` of case alternatives: all of them with `scope = "block"`, else those whose statement is on the same line. |
 | `when_clause` | boolean | `true` | `when` in conditional and selected assignments. |
 | `conditional_continuation` | boolean | `true` | Continuation lines of conditional and selected assignments start under the first value instead of one indentation level in. |
-| `trailing_comment` | boolean | `true` | Comments at the end of consecutive lines. |
-| `block_boundary` | string | `"blank-line"` | What ends a run of aligned lines; see below. |
+| `trailing_comment` | boolean | `true` | Comments at the end of lines. |
+| `semicolon` | boolean | `true` | The `;` ending a line that has another aligned token: interface elements, declarations and statements each line up their `;` among themselves. |
+| `scope` | string | `"block"` | Which lines align together: `"block"` or `"contiguous"`; see below. |
+| `block_boundary` | string | `"blank-line"` | With `scope = "contiguous"`, what ends a run of aligned lines; see below. |
 
 In Verilog and SystemVerilog files, `port_mode`, `port_colon`/`generic_colon` and
 `interface_default` line up the types, names and default values of ports and
@@ -310,6 +312,56 @@ parameters; `declaration` those of net, variable, port and parameter declaration
 kind among themselves) and of struct members; `assignment` the `=`, `<=` and compound
 operators of consecutive assignments; `association` the `(` of named connections
 (`.clk  (clk)`); and `case_choice` the statements after the `:` of case items.
+
+`scope` takes:
+
+- `"block"`: a token lines up with the same token everywhere in the block around it, even
+  with other lines, blank lines or comments in between: every `<=` of a process (at any
+  `if` depth), every `=>` of the port maps of an architecture, every `:` of a declarative
+  part. A block is a process, an architecture, a block or generate body, a subprogram, an
+  entity, a package or package body, a component, a record or protected type, and each
+  generic, port or parameter list (in Verilog: a module, interface, program or package, an
+  `always`/`initial` procedure, a function or task, a generate block, a struct, and each
+  port or parameter list). `block_boundary` does not apply.
+- `"contiguous"`: only consecutive lines of the same construct line up, until a
+  `block_boundary`. This was the default before 0.5.
+
+```vhdl
+-- scope = "block" (the default), semicolon = true
+process (clk)
+begin
+    if rising_edge(clk) then
+        if rst = '1' then
+            counter_value <= (others => '0');
+        else
+            q             <= a              ; -- out
+        end if;
+    end if;
+end process;
+
+-- scope = "contiguous", semicolon = false
+process (clk)
+begin
+    if rising_edge(clk) then
+        if rst = '1' then
+            counter_value <= (others => '0');
+        else
+            q <= a; -- out
+        end if;
+    end if;
+end process;
+```
+
+To get the layout of earlier versions back:
+
+```toml
+[format]
+indent = 2
+
+[format.align]
+scope = "contiguous"
+semicolon = false
+```
 
 `block_boundary` takes:
 
@@ -573,8 +625,8 @@ exclude = []
 [format]
 style = "default"
 max_width = 100
-indent = 2
-# continuation_indent = 2   # unset: follows `indent`
+indent = 4
+# continuation_indent = 4   # unset: follows `indent`
 use_tabs = false
 keyword_case = "lower"
 identifier_case = "preserve"
@@ -604,6 +656,8 @@ case_choice = true
 when_clause = true
 conditional_continuation = true
 trailing_comment = true
+semicolon = true
+scope = "block"
 block_boundary = "blank-line"
 
 [lint]

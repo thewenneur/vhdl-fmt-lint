@@ -306,7 +306,7 @@ impl Default for FormatConfig {
         FormatConfig {
             style: Style::Default,
             max_width: 100,
-            indent: 2,
+            indent: 4,
             continuation_indent: None,
             use_tabs: false,
             keyword_case: Case::Lower,
@@ -345,6 +345,7 @@ impl FormatConfig {
                 ..base
             },
             Style::Compact => FormatConfig {
+                indent: 2,
                 max_blank_lines: 1,
                 interface_list: ListLayout::Auto,
                 association_list: ListLayout::Auto,
@@ -361,6 +362,8 @@ impl FormatConfig {
                     when_clause: false,
                     conditional_continuation: false,
                     trailing_comment: true,
+                    semicolon: false,
+                    scope: AlignScope::Contiguous,
                     block_boundary: BlockBoundary::BlankLine,
                 },
                 ..base
@@ -372,6 +375,11 @@ impl FormatConfig {
                 end_keyword: EndKeyword::Add,
                 association_list: ListLayout::Expand,
                 case_alternative: CaseAlternative::Break,
+                align: AlignConfig {
+                    semicolon: false,
+                    scope: AlignScope::Contiguous,
+                    ..AlignConfig::default()
+                },
                 ..base
             },
         }
@@ -524,8 +532,8 @@ pub enum LineEnding {
     Crlf,
 }
 
-/// `[format.align]`: which columns the formatter lines up across
-/// consecutive lines of the same shape.
+/// `[format.align]`: which columns the formatter lines up, and across
+/// which lines ([`AlignScope`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct AlignConfig {
@@ -538,14 +546,15 @@ pub struct AlignConfig {
     pub generic_colon: bool,
     /// `:=` default values in generic and port clauses.
     pub interface_default: bool,
-    /// `<=` and `:=` in consecutive statements.
+    /// `<=` and `:=` of assignment statements.
     pub assignment: bool,
     /// `=>` in port maps, generic maps and aggregates.
     pub association: bool,
     /// `:` and `:=` in object declarations and record elements, and `is` in
     /// type and subtype declarations.
     pub declaration: bool,
-    /// `=>` of case alternatives whose statement is on the same line.
+    /// `=>` of case alternatives: all of them with `scope = "block"`, else
+    /// those whose statement is on the same line.
     pub case_choice: bool,
     /// `when` in conditional and selected assignments.
     pub when_clause: bool,
@@ -553,6 +562,12 @@ pub struct AlignConfig {
     /// under the first value instead of one indentation level in.
     pub conditional_continuation: bool,
     pub trailing_comment: bool,
+    /// The `;` ending a line whose statement, declaration or interface
+    /// element has another aligned token.
+    pub semicolon: bool,
+    /// Which lines align together. See [`AlignScope`].
+    pub scope: AlignScope,
+    /// What ends a run of aligned lines with `scope = "contiguous"`.
     pub block_boundary: BlockBoundary,
 }
 
@@ -570,9 +585,25 @@ impl Default for AlignConfig {
             when_clause: true,
             conditional_continuation: true,
             trailing_comment: true,
+            semicolon: true,
+            scope: AlignScope::Block,
             block_boundary: BlockBoundary::BlankLine,
         }
     }
+}
+
+/// Which lines align their tokens together.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AlignScope {
+    /// Every line of the same enclosing block: a process, an architecture,
+    /// a block or generate body, a subprogram, a package, an entity, a
+    /// record, an interface list. Lines in between, blank lines and
+    /// comments do not end the alignment; `block_boundary` is ignored.
+    Block,
+    /// Only consecutive lines of the same construct, up to the
+    /// `block_boundary`.
+    Contiguous,
 }
 
 /// What ends an alignment block.
