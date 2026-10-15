@@ -231,9 +231,9 @@ Guarantees, enforced in tests, in the corpus job and at runtime:
   same tokens in the source and the output. Protected regions are never touched.
   Only the part around the selection is laid out: whole lines between blank lines, cut
   between the items of a construct, and not after a comment line, whose indentation follows
-  the code below it. With `scope = "block"` that part holds the whole alignment block around
-  the selection (the process, the interface list, ...), and the block around that one when
-  the edits reach out of it; the lines of an edit that stay as they are are left out of it.
+  the code below it. With `scope = "block"`, when a line to change holds an aligned token,
+  the part grows to the whole block of that token (the process, the interface list, ...)
+  and is laid out again; the lines of an edit that stay as they are are left out of it.
   Files with `-- vfl:` directives, `max_blank_lines = 0`, or `block_boundary = "never"` with
   `scope = "contiguous"`, are laid out whole. The corpus job checks that both give the same
   edits.

@@ -670,7 +670,7 @@ fn anchors_of(
                 NET_DECL => DATA_DECL,
                 kind => kind,
             };
-            let ctx = (ctx.0, Verilog::kind_to_raw(class).0);
+            let ctx = (ctx.0, ctx.1, Verilog::kind_to_raw(class).0);
             let d = config.declaration;
             declaration_anchors(node, an, ctx, (d, d, d), add);
             true

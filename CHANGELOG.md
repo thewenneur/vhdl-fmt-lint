@@ -19,8 +19,14 @@
   line up their `;` among themselves.
 - **`indent` is 4 by default** (was 2). The `compact` style keeps 2, and the `compact` and
   `classic` styles keep aligning consecutive lines only, without the `;`.
-- Range and on-type formatting follow the wider alignment: the block around the edited
-  line is laid out, and only the lines that change are in the edits.
+- Range and on-type formatting follow the wider alignment: when the edited line has an
+  aligned token, its whole block is laid out, and only the lines that change are in the
+  edits.
+
+### Fixed
+
+- A broken-up Verilog call with an empty argument (`f(a,, b)`) no longer puts the empty
+  argument on a line of its own, which the next formatting undid.
 
 To format as 0.4 did:
 

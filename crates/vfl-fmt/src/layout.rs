@@ -279,8 +279,11 @@ pub(crate) fn breaks<L: Lang>(
                 forced[sep] |= !joins && !empty;
                 continue;
             }
+            // An empty element (`f(a,, b)`) keeps its separator next to the
+            // one before it, which a line break there is never kept before.
             if let Some(j) = next(sep).filter(|&j| {
                 Some(j) != list.close
+                    && list.seps.get(k + 1) != Some(&j)
                     && !(elems[j].src_newlines == 0 && L::joins_previous_element(&elems[j]))
             }) {
                 forced[j] = true;

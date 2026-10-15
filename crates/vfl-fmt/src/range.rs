@@ -23,12 +23,11 @@
 
 use std::ops::Range;
 
-use rowan::{NodeOrToken, TextRange, TextSize};
+use rowan::{NodeOrToken, TextSize};
 use vfl_config::{AlignScope, BlockBoundary, FormatConfig};
 use vfl_syntax::{Standard, Vhdl};
 use vfl_verilog_syntax::{Options, Verilog};
 
-use crate::align::block;
 use crate::kinds::is_item;
 use crate::lang::{Element, Lang, Node, Token};
 use crate::verify::{first_difference, lexical};
@@ -218,32 +217,27 @@ fn ranges_with<L: Lang>(
             (a.min(b), a.max(b))
         })
         .collect();
-    // With `scope = "block"`, runs reach across their whole block: the
-    // block around the selection is laid out, and the one around it when
-    // the edits reach out of it.
-    let mut outer = match (incremental, config.align.scope) {
-        (true, AlignScope::Block) => {
-            let a = norm.iter().map(|r| r.0).min().unwrap_or(0);
-            let b = norm.iter().map(|r| r.1).max().unwrap_or(0);
-            Some(selection_block(&root, src, a, b))
-        }
-        _ => None,
-    };
+    // With `scope = "block"`, a run reaches across its whole block: when
+    // the lines to change hold a run whose block is not all laid out, the
+    // part around that block is laid out instead.
+    let block_scope = incremental && config.align.scope == AlignScope::Block;
+    let mut around = (
+        norm.iter().map(|r| r.0).min().unwrap_or(0),
+        norm.iter().map(|r| r.1).max().unwrap_or(0),
+    );
     let edits = loop {
-        let window = match (&outer, incremental) {
-            (_, false) => whole.clone(),
-            (Some(inner), true) => {
-                let r = inner.text_range();
-                window(&root, src, r.start().into(), r.end().into(), config)
-                    .unwrap_or(whole.clone())
+        let window = match incremental {
+            false => whole.clone(),
+            true if block_scope => {
+                window(&root, src, around.0, around.1, config).unwrap_or(whole.clone())
             }
-            (None, true) => norm
+            true => norm
                 .iter()
                 .map(|&(a, b)| window(&root, src, a, b, config).unwrap_or(whole.clone()))
                 .reduce(|x, y| x.start.min(y.start)..x.end.max(y.end))
                 .unwrap_or(whole.clone()),
         };
-        let Some(laid) = lay_out(src, &root, config, std, Some(window))? else {
+        let Some(laid) = lay_out(src, &root, config, std, Some(window.clone()))? else {
             return Ok(Vec::new());
         };
         let view = View::new(&laid, src);
@@ -261,20 +255,23 @@ fn ranges_with<L: Lang>(
                 _ => merged.push((l0, l1)),
             }
         }
-
-        let edits: Vec<Edit> = merged
+        if block_scope {
+            let needed = merged
+                .iter()
+                .flat_map(|&(l0, l1)| laid.runs.iter().filter(move |r| r.touches(l0, l1)))
+                .map(|r| (r.block.0 as usize, r.block.1 as usize))
+                .reduce(|x, y| (x.0.min(y.0), x.1.max(y.1)));
+            if let Some((a, b)) = needed
+                && (a < window.start || b > window.end)
+            {
+                around = (around.0.min(a), around.1.max(b));
+                continue;
+            }
+        }
+        break merged
             .into_iter()
             .filter_map(|(l0, l1)| view.edit(l0, l1))
-            .collect();
-        let parent = outer.as_ref().and_then(|inner| {
-            let range = inner.text_range();
-            let escapes = edits.iter().any(|e| !within(&root, e.range.clone(), range));
-            escapes.then(|| inner.parent()).flatten()
-        });
-        match parent {
-            Some(parent) => outer = Some(block(&parent)),
-            None => break edits,
-        }
+            .collect::<Vec<Edit>>();
     };
     // Only layout, case and the words after `end` may change.
     for edit in &edits {
@@ -296,56 +293,6 @@ fn ranges_with<L: Lang>(
             },
         })
         .collect())
-}
-
-/// The innermost alignment block holding the lines of bytes `a..b`.
-fn selection_block<L: Lang>(root: &Node<L>, src: &str, a: usize, b: usize) -> Node<L> {
-    let line_start = src[..a.min(src.len())].rfind('\n').map_or(0, |k| k + 1);
-    let line_end = src[b.min(src.len())..]
-        .find('\n')
-        .map_or(src.len(), |k| b + k);
-    let first = first_token_after(root, src, line_start).map(|t| t.text_range().start());
-    let last = last_token_before(root, line_end).map(|t| t.text_range().end());
-    let range = match (first, last) {
-        (Some(s), Some(e)) if s < e => TextRange::new(s, e),
-        _ => return root.clone(),
-    };
-    let node = match root.covering_element(range) {
-        NodeOrToken::Node(n) => n,
-        NodeOrToken::Token(t) => match t.parent() {
-            Some(p) => p,
-            None => return root.clone(),
-        },
-    };
-    block(&node)
-}
-
-/// Whether the bytes `range` hold only comments and whitespace outside
-/// `inner`: the lines they cover depend on nothing outside it.
-fn within<L: Lang>(root: &Node<L>, range: Range<usize>, inner: TextRange) -> bool {
-    let (s, e) = (usize::from(inner.start()), usize::from(inner.end()));
-    let trivia = |from: usize, to: usize| {
-        if from >= to {
-            return true;
-        }
-        let Some(mut token) = root
-            .token_at_offset(TextSize::from(from as u32))
-            .right_biased()
-        else {
-            return true;
-        };
-        while usize::from(token.text_range().start()) < to {
-            if token.kind() != L::WHITESPACE && !L::is_comment(token.kind()) {
-                return false;
-            }
-            match next_token(&token) {
-                Some(t) => token = t,
-                None => return true,
-            }
-        }
-        true
-    };
-    trivia(range.start, s) && trivia(e, range.end)
 }
 
 /// `edit` without the lines at its start and end that it leaves as they

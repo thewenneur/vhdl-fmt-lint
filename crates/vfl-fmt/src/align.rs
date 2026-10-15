@@ -74,12 +74,15 @@ impl Kind {
     }
 }
 
-/// Identifies the construct an anchor belongs to.
-pub(crate) type Context = (u32, u16);
+/// Identifies the construct an anchor belongs to: its start and end in the
+/// source, and its kind.
+pub(crate) type Context = (u32, u32, u16);
 
 pub(crate) fn context<L: Lang>(node: &Node<L>) -> Context {
+    let range = node.text_range();
     (
-        node.text_range().start().into(),
+        range.start().into(),
+        range.end().into(),
         L::kind_to_raw(node.kind()).0,
     )
 }
@@ -108,13 +111,15 @@ pub(crate) fn block<L: Lang>(node: &Node<L>) -> Node<L> {
 
 /// A run of anchors aligned together: its first and last line, and with
 /// `scope = "block"` the lines holding its anchors (other lines in between
-/// do not depend on it).
+/// do not depend on it) and the bytes of the block they are in.
 #[derive(Debug, Clone)]
 pub(crate) struct Run {
     pub first: usize,
     pub last: usize,
     /// Empty when every line from `first` to `last` counts.
     pub lines: Vec<usize>,
+    /// The source bytes holding every anchor that can join the run.
+    pub block: (u32, u32),
 }
 
 impl Run {
@@ -164,7 +169,7 @@ pub(crate) fn align<L: Lang>(
         if config.trailing_comment && last > line.start && elems[last].is_comment() {
             let ctx = match (config.scope, &elems[line.start].parent) {
                 (AlignScope::Block, Some(parent)) => context_in(parent, config),
-                _ => (0, 0),
+                _ => (0, 0, 0),
             };
             add(Kind::Comment, ctx, last);
         }
@@ -178,12 +183,14 @@ pub(crate) fn align<L: Lang>(
             // value, which may have moved with the `<=` just aligned.
             hang(elems, an, lines, line_of, &pads);
         }
-        for ((kind, _), anchors) in &groups {
+        for ((kind, ctx), anchors) in &groups {
             if kind.rank() != rank {
                 continue;
             }
             for run in runs(anchors, lines, config) {
-                if run.len() < 2 {
+                // In a block, a lone anchor is a run too: range formatting
+                // must see the rest of its block, which may hold others.
+                if run.len() < 2 && config.scope == AlignScope::Contiguous {
                     continue;
                 }
                 spans.push(Run {
@@ -193,6 +200,7 @@ pub(crate) fn align<L: Lang>(
                         AlignScope::Block => run.iter().map(|&(l, _)| l).collect(),
                         AlignScope::Contiguous => Vec::new(),
                     },
+                    block: (ctx.0, ctx.1),
                 });
                 let target = run
                     .iter()

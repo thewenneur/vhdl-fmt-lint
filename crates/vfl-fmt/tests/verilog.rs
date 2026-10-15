@@ -266,6 +266,15 @@ fn leading_separators_keep_empty_arguments_together() {
     assert!(out.contains(",, get_full_name()"), "{out}");
 }
 
+/// Found by the corpus (cva6): an empty argument of a broken-up call went to
+/// a line of its own, and back on the line before the second time.
+#[test]
+fn trailing_separators_keep_empty_arguments_together() {
+    let text = "module m;\n  initial x = create(\"a_long_name_for_this_component\",, get_full_name());\nendmodule\n";
+    let out = fmt_with(text, &config("max_width = 40"));
+    assert!(out.contains("component\",,\n"), "{out}");
+}
+
 /// Found by the `format_verilog` fuzz target: a `\` before a lone CR read as
 /// CR LF once the formatter put a newline after it.
 #[test]
