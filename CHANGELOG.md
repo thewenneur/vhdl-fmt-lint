@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Zed extension** (`editors/zed`): VHDL, Verilog and SystemVerilog highlighting, outline,
+  brackets and indentation from Tree-sitter grammars, and the language server, from the
+  `PATH` or downloaded from the latest release. Installed as a dev extension for now.
+- **Setup for more editors** ([docs/editors.md](docs/editors.md)), with ready-made files in
+  `editors/`: Neovim, Vim (vim-lsp, yegappan/lsp, coc.nvim), Emacs (Eglot and lsp-mode),
+  Helix, Sublime Text, Kate and JetBrains IDEs (LSP4IJ). The Neovim, Emacs, Vim and Helix
+  setups are tested against those editors in CI.
+
 ## [0.4.0] - 2026-10-15
 
 Full Verilog and SystemVerilog support becomes opt-in (`[verilog] mode`), the formatter gains

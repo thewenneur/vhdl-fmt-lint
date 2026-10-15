@@ -105,6 +105,50 @@ jobs:
           name: vfl-vscode
           path: editors/vscode/*.vsix
 
+  # The Zed extension: builds to WebAssembly, and its queries compile
+  # against the grammars pinned in extension.toml.
+  zed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: editors/zed
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g tree-sitter-cli@0.25.10
+      - run: cargo fmt --check
+        working-directory: editors/zed
+      - run: cargo clippy --target wasm32-wasip2
+        working-directory: editors/zed
+      - run: editors/zed/check.sh
+
+  # The Neovim, Emacs, Vim and Helix setups in editors/, in those editors.
+  editors:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p vfl-cli
+      - name: Install Neovim, Emacs, Vim and Helix
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends emacs-nox vim
+          curl -sSfL https://github.com/neovim/neovim/releases/download/v0.11.4/nvim-linux-x86_64.tar.gz \
+            | tar xz -C "$RUNNER_TEMP"
+          curl -sSfL https://github.com/helix-editor/helix/releases/download/25.07.1/helix-25.07.1-x86_64-linux.tar.xz \
+            | tar xJ -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/nvim-linux-x86_64/bin" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/helix-25.07.1-x86_64-linux" >> "$GITHUB_PATH"
+          echo "HELIX_RUNTIME=$RUNNER_TEMP/helix-25.07.1-x86_64-linux/runtime" >> "$GITHUB_ENV"
+      - run: PATH="$PWD/target/debug:$PATH" REQUIRE_ALL=1 editors/test/run.sh
+
   # A short run of each fuzz target (see fuzz/README.md), from the seed
   # corpus. Longer runs are for local use.
   fuzz:

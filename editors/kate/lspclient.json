@@ -1,0 +1,16 @@
+{
+  "servers": {
+    "vhdl": {
+      "command": ["vfl", "lsp"],
+      "rootIndicationFileNames": ["vfl.toml", ".git"],
+      "url": "https://github.com/thewenneur/vhdl-fmt-lint",
+      "highlightingModeRegex": "^VHDL$"
+    },
+    "verilog": {
+      "command": ["vfl", "lsp"],
+      "rootIndicationFileNames": ["vfl.toml", ".git"],
+      "url": "https://github.com/thewenneur/vhdl-fmt-lint",
+      "highlightingModeRegex": "^(Verilog|SystemVerilog)$"
+    }
+  }
+}

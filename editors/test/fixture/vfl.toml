@@ -1,0 +1,3 @@
+# The Verilog part of the editor tests needs every Verilog feature.
+[verilog]
+mode = "full"

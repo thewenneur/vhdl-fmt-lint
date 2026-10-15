@@ -1,0 +1,19 @@
+# vfl language server for Helix: VHDL, Verilog and SystemVerilog.
+#
+# Copy these sections into ~/.config/helix/languages.toml (or the project's
+# .helix/languages.toml). Helix's `verilog` language covers .v, .vh, .sv and
+# .svh. See docs/editors.md.
+
+[language-server.vfl]
+command = "vfl"
+args = ["lsp"]
+
+[[language]]
+name = "vhdl"
+language-servers = ["vfl"]
+roots = ["vfl.toml"]
+
+[[language]]
+name = "verilog"
+language-servers = ["vfl"]
+roots = ["vfl.toml"]

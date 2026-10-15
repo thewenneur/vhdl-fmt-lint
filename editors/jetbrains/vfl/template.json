@@ -1,0 +1,30 @@
+{
+  "id": "vfl",
+  "name": "vfl",
+  "programArgs": {
+    "default": "vfl lsp"
+  },
+  "fileTypeMappings": [
+    {
+      "fileType": {
+        "name": "VHDL",
+        "patterns": ["*.vhd", "*.vhdl", "*.vho", "*.vht"]
+      },
+      "languageId": "vhdl"
+    },
+    {
+      "fileType": {
+        "name": "Verilog",
+        "patterns": ["*.v", "*.vh"]
+      },
+      "languageId": "verilog"
+    },
+    {
+      "fileType": {
+        "name": "SystemVerilog",
+        "patterns": ["*.sv", "*.svh"]
+      },
+      "languageId": "systemverilog"
+    }
+  ]
+}
