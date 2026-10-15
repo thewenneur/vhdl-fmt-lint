@@ -105,7 +105,7 @@ fn fmt_formats_verilog_by_extension() {
     assert!(vfl(dir.path(), &["fmt"]).status.success());
     assert_eq!(
         std::fs::read_to_string(&sv).unwrap(),
-        "module top;\n  assign a = b;\nendmodule\n"
+        "module top;\n    assign a = b;\nendmodule\n"
     );
 
     // Standard input, named so that it is read as SystemVerilog.
@@ -127,6 +127,6 @@ fn fmt_formats_verilog_by_extension() {
     assert!(out.status.success());
     assert_eq!(
         String::from_utf8_lossy(&out.stdout),
-        "module m;\n  wire a;\nendmodule\n"
+        "module m;\n    wire a;\nendmodule\n"
     );
 }

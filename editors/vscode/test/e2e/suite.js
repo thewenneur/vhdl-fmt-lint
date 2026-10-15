@@ -120,7 +120,7 @@ async function run() {
   const scratch = await vscode.workspace.openTextDocument({ language: "vhdl", content: "" });
   await vscode.window.showTextDocument(scratch);
   await vscode.commands.executeCommand("vfl.insertInstance", "work.e2e_top");
-  assert.match(scratch.getText(), /^u_e2e_top : entity work\.e2e_top\n  port map \(/);
+  assert.match(scratch.getText(), /^u_e2e_top : entity work\.e2e_top\n    port map \(/);
   await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor");
 
   await vscode.commands.executeCommand("vfl.generateTestbench", "e2e_top");

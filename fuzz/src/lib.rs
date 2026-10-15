@@ -39,6 +39,7 @@ association_list = "expand"
 close_paren = "attached"
 case_alternative = "break"
 [format.align]
+scope = "contiguous"
 block_boundary = "never"
 [lint]
 preset = "strict"

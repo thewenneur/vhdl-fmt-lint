@@ -1,18 +1,18 @@
 ---
 source: crates/vfl-fmt/tests/format.rs
-expression: fmt(&text)
+expression: "fmt_with(&text, &FormatConfig::default())"
 input_file: crates/vfl-fmt/tests/data/escapes.vhd
 ---
 architecture rtl of escapes is
 begin
-  a <= b;
-  -- vfl: off
+    a <= b;
+    -- vfl: off
   table : process begin
     x <= "00";    y <= '1';
   end process;
   -- vfl: on
-  c <= d;
-  -- vfl: skip
+    c <= d;
+    -- vfl: skip
   keep   <=   this   ;
-  e <= f;
+    e <= f;
 end;

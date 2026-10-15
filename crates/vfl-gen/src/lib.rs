@@ -20,7 +20,7 @@
 //! let config = Config::default();
 //! assert_eq!(
 //!     vfl_gen::instance(&entity, &config).unwrap(),
-//!     "u_e : entity work.e\n  port map (\n    clk => clk,\n    q   => q\n  );\n"
+//!     "u_e : entity work.e\n    port map (\n        clk => clk,\n        q   => q\n    );\n"
 //! );
 //! ```
 

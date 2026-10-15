@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## [0.5.0] - 2026-10-15
+
+The formatter aligns every token across its whole block by default, the `;` ending the lines
+too, with 4-column indentation; editors beyond VS Code and Notepad++ get a Zed extension and
+ready-made setups.
 
 ### Added
 
@@ -11,6 +15,45 @@
   `editors/`: Neovim, Vim (vim-lsp, yegappan/lsp, coc.nvim), Emacs (Eglot and lsp-mode),
   Helix, Sublime Text, Kate and JetBrains IDEs (LSP4IJ). The Neovim, Emacs, Vim and Helix
   setups are tested against those editors in CI.
+
+### Changed
+
+- **The formatter aligns every token across its whole block by default**: every `<=` of a
+  process at any `if` depth, every `=>` of the port maps of an architecture and of the
+  alternatives of a `case`, every `:` of a declarative part, line up even with other lines,
+  blank lines or comments in between. A block is a process, an architecture, a block or
+  generate body, a subprogram, an entity, a package, a component, a record or protected
+  type, or a generic, port or parameter list (in Verilog: a module, an `always` or
+  `initial` procedure, a function or task, a generate block, a struct, a port or parameter
+  list). The new `[format.align]` key `scope` sets this: `"block"` (the default) or
+  `"contiguous"`, the earlier behavior, where only consecutive lines align, up to
+  `block_boundary`.
+- **The `;` ending aligned lines is aligned too by default**, with the new
+  `[format.align]` key `semicolon`. Interface elements, declarations and statements each
+  line up their `;` among themselves.
+- **`indent` is 4 by default** (was 2). The `compact` style keeps 2, and the `compact` and
+  `classic` styles keep aligning consecutive lines only, without the `;`.
+- Range and on-type formatting follow the wider alignment: when the edited line has an
+  aligned token, its whole block is laid out, and only the lines that change are in the
+  edits. To stay fast while typing, format on type does this only for blocks up to 16 KB;
+  in a larger one the line aligns with the lines near it, and formatting the file or a
+  selection aligns the rest.
+
+To format as 0.4 did:
+
+```toml
+[format]
+indent = 2
+
+[format.align]
+scope = "contiguous"
+semicolon = false
+```
+
+### Fixed
+
+- A broken-up Verilog call with an empty argument (`f(a,, b)`) no longer puts the empty
+  argument on a line of its own, which the next formatting undid.
 
 ## [0.4.0] - 2026-10-15
 

@@ -20,7 +20,7 @@ use vfl_syntax::SyntaxError;
 use vfl_verilog_syntax::SyntaxKind::{self, *};
 use vfl_verilog_syntax::{Options, SyntaxNode, SyntaxToken, Verilog};
 
-use crate::align::{Context, Kind, child_token, context};
+use crate::align::{Context, Kind, child_token, context_in};
 use crate::elems::Elem;
 use crate::lang::Lang;
 use crate::layout::{Analysis, Line};
@@ -330,6 +330,24 @@ impl Lang for Verilog {
                 .is_some_and(|p| p.kind() == PORT && !bare(&p))
     }
 
+    fn is_align_block(kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            MODULE_DECL
+                | INTERFACE_DECL
+                | PROGRAM_DECL
+                | PACKAGE_DECL
+                | PARAM_PORT_LIST
+                | PORT_LIST
+                | STRUCT_TYPE
+                | FUNCTION_DECL
+                | TASK_DECL
+                | PROCEDURE
+                | GENERATE_BLOCK
+        )
+    }
+
+    #[inline]
     fn anchors_of(
         node: &SyntaxNode,
         elems: &[Elem<Verilog>],
@@ -625,7 +643,7 @@ fn anchors_of(
     let Some(parent) = node.parent() else {
         return false;
     };
-    let ctx = context(&parent);
+    let ctx = context_in(&parent, config);
     match node.kind() {
         PORT => {
             let wants = (
@@ -652,7 +670,7 @@ fn anchors_of(
                 NET_DECL => DATA_DECL,
                 kind => kind,
             };
-            let ctx = (ctx.0, Verilog::kind_to_raw(class).0);
+            let ctx = (ctx.0, ctx.1, Verilog::kind_to_raw(class).0);
             let d = config.declaration;
             declaration_anchors(node, an, ctx, (d, d, d), add);
             true

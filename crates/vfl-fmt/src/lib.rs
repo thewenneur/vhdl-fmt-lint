@@ -38,7 +38,7 @@
 //! let out = vfl_fmt::format(text, &FormatConfig::default(), Standard::Vhdl2008).unwrap();
 //! assert_eq!(
 //!     out,
-//!     "entity e is\n  port (\n    a  : in  bit;\n    bb : out bit\n  );\nend;\n"
+//!     "entity e is\n    port (\n        a  : in  bit;\n        bb : out bit\n    );\nend;\n"
 //! );
 //! ```
 
@@ -176,8 +176,8 @@ pub(crate) struct Laid<L: Lang> {
     pub positions: Vec<(usize, usize)>,
     /// That output.
     pub raw: String,
-    /// The first and last line of each run of aligned anchors.
-    pub runs: Vec<(usize, usize)>,
+    /// The lines of each run of aligned anchors.
+    pub runs: Vec<align::Run>,
     /// The formatted file, checked. Empty unless asked for.
     pub out: String,
 }

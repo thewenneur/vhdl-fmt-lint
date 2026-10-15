@@ -160,6 +160,10 @@ pub(crate) trait Lang:
         add: &mut impl FnMut(Kind, Context, usize),
     ) -> bool;
 
+    /// Whether anchors in a node of this kind align together with
+    /// `scope = "block"`: a process, an architecture, an interface list...
+    fn is_align_block(kind: Self::Kind) -> bool;
+
     /// An anchor in the middle of a line (a VHDL `when`).
     fn inline_anchor(
         _elem: &Elem<Self>,

@@ -1,6 +1,16 @@
 use super::*;
 use vfl_syntax::parse;
 
+/// The format defaults before block alignment, which the expected texts
+/// below are laid out with.
+fn legacy() -> Config {
+    let mut config = Config::default();
+    config.format.indent = 2;
+    config.format.align.scope = vfl_config::AlignScope::Contiguous;
+    config.format.align.semicolon = false;
+    config
+}
+
 const COUNTER: &str = "\
 library ieee;
 use ieee.std_logic_1164.all;
@@ -80,7 +90,7 @@ fn reads_generics_and_ports() {
 #[test]
 fn instance_follows_the_format_config() {
     let e = entity(COUNTER);
-    let config = Config::default();
+    let config = legacy();
     assert_eq!(
         instance(&e, &config).unwrap(),
         "\
@@ -97,7 +107,7 @@ u_counter : entity work.counter
   );
 "
     );
-    let mut config = Config::default();
+    let mut config = legacy();
     config.format.keyword_case = vfl_config::Case::Upper;
     config.format.indent = 4;
     config.generate.instance_label = "i_{entity}".into();
@@ -112,7 +122,7 @@ u_counter : entity work.counter
 fn component_matches_the_entity() {
     let e = entity(COUNTER);
     assert_eq!(
-        component(&e, &Config::default()).unwrap(),
+        component(&e, &legacy()).unwrap(),
         "\
 component counter is
   generic (
@@ -133,7 +143,7 @@ end component counter;
 #[test]
 fn testbench_drives_clock_and_reset() {
     let e = entity(COUNTER);
-    let out = testbench(&e, &Config::default()).unwrap();
+    let out = testbench(&e, &legacy()).unwrap();
     insta_like(
         &out,
         "\
@@ -229,7 +239,7 @@ fn names_alone_find_clocks_and_resets() {
             },
         ]
     );
-    let out = testbench(&e, &Config::default()).unwrap();
+    let out = testbench(&e, &legacy()).unwrap();
     assert!(
         out.contains(
             "signal d       : bit_vector(7 downto 0) := (others => '0'); -- TODO: the width"
@@ -242,7 +252,7 @@ fn names_alone_find_clocks_and_resets() {
 #[test]
 fn vhdl93_testbench_stops_by_starving_events() {
     let e = entity("entity e is port (clk : in bit); end;");
-    let mut config = Config::default();
+    let mut config = legacy();
     config.project.standard = vfl_config::StandardSetting::Vhdl1993;
     let out = testbench(&e, &config).unwrap();
     assert!(!out.contains("std.env"), "{out}");
@@ -253,22 +263,22 @@ fn vhdl93_testbench_stops_by_starving_events() {
 #[test]
 fn entity_without_ports_or_clock() {
     let e = entity("entity top is generic (type T; function f return T is <>); end;");
-    let out = testbench(&e, &Config::default()).unwrap();
+    let out = testbench(&e, &legacy()).unwrap();
     assert!(parse(&out, Standard::Vhdl2008).errors().is_empty(), "{out}");
     assert!(out.contains("subtype T is integer;"), "{out}");
-    let inst = instance(&e, &Config::default()).unwrap();
+    let inst = instance(&e, &legacy()).unwrap();
     assert_eq!(
         inst,
         "u_top : entity work.top\n  generic map (\n    T => T\n  );\n"
     );
-    let comp = component(&e, &Config::default()).unwrap();
+    let comp = component(&e, &legacy()).unwrap();
     assert!(comp.contains("function f return T is <>"), "{comp}");
 }
 
 #[test]
 fn invalid_patterns_are_reported() {
     let e = entity(COUNTER);
-    let mut config = Config::default();
+    let mut config = legacy();
     config.generate.clock_pattern = "(".into();
     let err = testbench(&e, &config).unwrap_err();
     assert!(

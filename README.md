@@ -85,9 +85,9 @@ same.
 The extension ([editors/vscode](editors/vscode/README.md)) runs `vfl lsp`, so install `vfl`
 first (above). Then:
 
-1. Download `vfl-0.4.0.vsix` from the
+1. Download `vfl-0.5.0.vsix` from the
    [latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest).
-2. Install it with `code --install-extension vfl-0.4.0.vsix`, or in VS Code with
+2. Install it with `code --install-extension vfl-0.5.0.vsix`, or in VS Code with
    **Extensions > ... > Install from VSIX...**.
 3. Open a folder with VHDL files. If `vfl` is not on the `PATH` or in `~/.cargo/bin`, set
    `vfl.server.path` to it.
@@ -99,7 +99,7 @@ To build the `.vsix` yourself: `cd editors/vscode && npm ci && npm run package`.
 The plugin ([editors/notepadpp](editors/notepadpp/README.md)) has the formatter, the linter
 and the editor features of the language server (types on hover, parameter hints, completion,
 quick fixes, go to definition, references, rename, symbols) built in, so it does not need
-`vfl` installed. Download `vfl_npp-v0.4.0-x64.zip` from the
+`vfl` installed. Download `vfl_npp-v0.5.0-x64.zip` from the
 [latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest), close Notepad++,
 unzip it into the `plugins` folder of its install directory (usually
 `C:\Program Files\Notepad++\plugins`, giving `plugins\vfl_npp\vfl_npp.dll`) and start it again.
@@ -157,7 +157,8 @@ keyword_case = "upper"
 end_label = "add"
 
 [format.align]
-block_boundary = "never"   # align whole port lists, across blank lines and comments
+scope = "contiguous"       # align consecutive lines only, not the whole block
+semicolon = false          # leave the `;` after the last token
 ```
 
 ```toml

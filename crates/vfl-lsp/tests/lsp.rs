@@ -96,6 +96,11 @@ impl Drop for Client {
     }
 }
 
+/// The format defaults before block alignment, which the expected texts
+/// below are laid out with.
+const LEGACY_FORMAT: &str =
+    "[format]\nindent = 2\n[format.align]\nscope = \"contiguous\"\nsemicolon = false\n";
+
 fn url(path: &Path) -> String {
     lsp_types::Url::from_file_path(path).unwrap().to_string()
 }
@@ -107,7 +112,7 @@ architecture rtl of top is\nbegin\n  d <= (others => '0');\nend architecture;\n"
 
 fn setup() -> (tempfile::TempDir, String, String) {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("vfl.toml"), "").unwrap();
+    std::fs::write(dir.path().join("vfl.toml"), LEGACY_FORMAT).unwrap();
     std::fs::write(dir.path().join("pkg.vhd"), PKG).unwrap();
     std::fs::write(dir.path().join("top.vhd"), TOP).unwrap();
     let pkg = url(&dir.path().join("pkg.vhd"));
@@ -366,7 +371,7 @@ fn range_and_on_type_formatting() {
 
 fn types_setup() -> (tempfile::TempDir, Client, String) {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("vfl.toml"), "").unwrap();
+    std::fs::write(dir.path().join("vfl.toml"), LEGACY_FORMAT).unwrap();
     std::fs::write(dir.path().join("types.vhd"), TYPES_PKG).unwrap();
     std::fs::write(dir.path().join("user.vhd"), TYPES_USE).unwrap();
     let client = Client::start(dir.path());
@@ -792,7 +797,7 @@ fn rename(client: &mut Client, position: Value, new_name: &str) -> Value {
 
 #[test]
 fn rename_covers_bodies_components_and_elements() {
-    let (_dir, mut client, [pkg, leaf, top]) = refactor_setup("");
+    let (_dir, mut client, [pkg, leaf, top]) = refactor_setup(LEGACY_FORMAT);
 
     // A subprogram: its declaration, its body, the body's end label and
     // the calls of that overload only.
@@ -944,7 +949,7 @@ fn quick_fixes_for_rules() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("vfl.toml"),
-        "[lint]\npreset = \"strict\"\n[lint.rules]\n\"naming/signal\" = { level = \"warn\", prefix = \"s_\", case = \"snake\" }\n",
+        format!("{LEGACY_FORMAT}[lint]\npreset = \"strict\"\n[lint.rules]\n\"naming/signal\" = {{ level = \"warn\", prefix = \"s_\", case = \"snake\" }}\n"),
     )
     .unwrap();
     std::fs::write(dir.path().join("leaf.vhd"), REFACTOR_LEAF).unwrap();
@@ -1029,7 +1034,7 @@ fn verilog_modules_across_languages() {
     let dir = tempfile::tempdir().unwrap();
     // Names only, the default: VHDL resolves the module, nothing else is
     // done with it.
-    std::fs::write(dir.path().join("vfl.toml"), "").unwrap();
+    std::fs::write(dir.path().join("vfl.toml"), LEGACY_FORMAT).unwrap();
     std::fs::write(dir.path().join("fifo.sv"), VERILOG_FIFO).unwrap();
     std::fs::write(dir.path().join("top.vhd"), VHDL_TOP).unwrap();
     let fifo = url(&dir.path().join("fifo.sv"));
@@ -1214,7 +1219,7 @@ end architecture;
 #[test]
 fn quick_fixes_associate_left_out_ports() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("vfl.toml"), "").unwrap();
+    std::fs::write(dir.path().join("vfl.toml"), LEGACY_FORMAT).unwrap();
     std::fs::write(dir.path().join("sub.vhd"), ASSOCIATE_SUB).unwrap();
     std::fs::write(dir.path().join("top.vhd"), ASSOCIATE_TOP).unwrap();
     let top = url(&dir.path().join("top.vhd"));
@@ -1300,7 +1305,8 @@ fn associating_ports_keeps_the_format() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("vfl.toml"),
-        "[format]\nassociation_separator = \"leading\"\n",
+        "[format]\nassociation_separator = \"leading\"\nindent = 2\n\
+         [format.align]\nscope = \"contiguous\"\nsemicolon = false\n",
     )
     .unwrap();
     std::fs::write(
@@ -1351,7 +1357,8 @@ fn associating_ports_keeps_the_format() {
     // Configured to name the required ones, to be filled in.
     std::fs::write(
         dir.path().join("vfl.toml"),
-        "[format]\nassociation_separator = \"leading\"\n\
+        "[format]\nassociation_separator = \"leading\"\nindent = 2\n\
+         [format.align]\nscope = \"contiguous\"\nsemicolon = false\n\
          [lint.rules]\n\"sema/unassociated-port\" = { undeclared = \"name\" }\n",
     )
     .unwrap();
