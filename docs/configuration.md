@@ -102,7 +102,7 @@ standard (the semantic analysis of `vfl lint` uses the root's).
 | `extensions` | array of strings | `["vhd", "vhdl"]` | File extensions, without the dot, of the files treated as VHDL sources. |
 | `exclude` | array of strings | `[]` | Gitignore-style globs, relative to the project root, of files and directories to skip. `.gitignore` files are honoured as well. |
 | `libraries` | table | `{}` | Explicit library assignments; see below. |
-| `vhdl-ls` | string | `"fallback"` | How rust_hdl's `vhdl_ls.toml` places files in libraries: `"fallback"` (only the files inference places nowhere), `"prefer"` (over inference and tool files, below `[project.libraries]`) or `"off"` (not read). See below. |
+| `vhdl-ls` | string | `"fallback"` | How rust_hdl's `vhdl_ls.toml` places files in libraries: `"fallback"` (only the files inference places nowhere, or over inference when that leaves fewer library conflicts), `"prefer"` (over inference and tool files, below `[project.libraries]`) or `"off"` (not read). See below. |
 
 ### `[project.libraries]`
 
@@ -120,10 +120,13 @@ Normally not needed: vfl puts each file in a library by itself. In order of prio
 5. Files nothing places stay in `work`.
 
 A `vhdl_ls.toml` written by hand often lags behind the code, so by default it only fills
-the gaps. If yours is the reference for the project (UVVM's is, for example: its
-target-dependent files are compiled into every VIP library, which inference cannot tell),
-set `vhdl-ls = "prefer"` to rank it above tool files and inference, as earlier versions
-did. `vhdl-ls = "off"` ignores it.
+the gaps. When the result has library conflicts (a `lib.unit` or `work.unit` reference to
+a unit of the project that is not in that library, or a unit declared twice in one
+library), vfl also tries ranking `vhdl_ls.toml` above tool files and inference, and keeps
+that if it leaves fewer conflicts; `vfl project` then says so. The language server makes
+this choice when it loads the project or a library list changes, not on every edit. This is what happens with
+UVVM, whose VIPs each declare packages of the same names. Set `vhdl-ls = "prefer"` to
+always rank it there, as earlier versions did, or `vhdl-ls = "off"` to ignore it.
 
 `vfl project` shows the library of each file and why it was chosen. Add an entry here only
 when that guess is wrong. Each key is a library name and its value a list of globs,

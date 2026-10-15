@@ -388,7 +388,9 @@ These files are found by the same walk as sources (so `.gitignore` applies). The
 use the tools' semantics: `*` stays within a directory. `vfl.toml` wins over tool files;
 a file a tool lists in no library is still inferred. `vhdl_ls.toml` ranks below inference
 by default: it places only the files inference leaves in no library, and its libraries then
-propagate along `work` references (`[project]` `vhdl-ls = "prefer"` ranks it just below
+propagate along `work` references. If that leaves library conflicts (references to project
+units missing from the library meant, units declared twice in a library), the ranking with
+`vhdl_ls.toml` above inference is tried too and kept when it leaves fewer (`[project]` `vhdl-ls = "prefer"` ranks it just below
 `vfl.toml` instead, `"off"` ignores it). HDLmake `Manifest.py` is not read yet. This makes migration a no-op.
 
 **4. Infer libraries from the code.** For everything else, every file is parsed (fast,

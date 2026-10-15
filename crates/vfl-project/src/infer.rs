@@ -236,6 +236,63 @@ fn propagate(
     }
 }
 
+/// How many library conflicts these libraries leave: units declared more
+/// than once in a library, and `lib.unit` and `work.unit` references that
+/// do not resolve, the unit being declared in the project but in none of
+/// the files of the library the reference means (for `work`, each library
+/// of the referencing file). References to units the project does not
+/// declare at all, or to bundled libraries, are not counted.
+pub fn library_conflicts(summaries: &[FileSummary], libs: &[Vec<(String, Reason)>]) -> usize {
+    let mut declared: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (file, summary) in summaries.iter().enumerate() {
+        for unit in summary.units.iter().filter(|u| u.kind.is_primary()) {
+            let files = declared.entry(unit.name.as_str()).or_default();
+            if !files.contains(&file) {
+                files.push(file);
+            }
+        }
+    }
+    let in_library = |candidates: &[usize], lib: &str| {
+        candidates
+            .iter()
+            .any(|&c| libs[c].iter().any(|(l, _)| l == lib))
+    };
+    // A unit declared twice in one library: one of them is not the unit
+    // its users mean.
+    let mut missing: usize = declared
+        .values()
+        .map(|files| {
+            let mut seen: Vec<&str> = files
+                .iter()
+                .flat_map(|&f| libs[f].iter().map(|(l, _)| l.as_str()))
+                .collect();
+            let all = seen.len();
+            seen.sort_unstable();
+            seen.dedup();
+            all - seen.len()
+        })
+        .sum();
+    for (file, summary) in summaries.iter().enumerate() {
+        for r in summary.refs.iter().filter(|r| !r.implicit) {
+            if BUNDLED_LIBRARIES.contains(&r.library.as_str()) {
+                continue;
+            }
+            let Some(candidates) = declared.get(r.unit.as_str()) else {
+                continue;
+            };
+            if r.library == "work" {
+                missing += libs[file]
+                    .iter()
+                    .filter(|(lib, _)| !in_library(candidates, lib))
+                    .count();
+            } else if !in_library(candidates, &r.library) {
+                missing += 1;
+            }
+        }
+    }
+    missing
+}
+
 /// Picks the files a reference from `from` means among the `candidates`
 /// declaring the unit: those closest to `from` in the directory tree.
 fn closest(paths: &[PathBuf], from: usize, candidates: &[usize]) -> Vec<usize> {
