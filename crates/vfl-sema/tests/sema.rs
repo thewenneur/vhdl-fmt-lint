@@ -109,3 +109,88 @@ fn unterminated_string_ending_in_a_multi_byte_character() {
         Analysis::new(vec![input]);
     }
 }
+
+fn input(path: &str, library: &str, text: &str) -> FileInput {
+    FileInput {
+        path: PathBuf::from(path),
+        text: Arc::from(text),
+        green: parse(text, Standard::Vhdl2008).green().clone(),
+        libraries: vec![library.into()],
+    }
+}
+
+#[test]
+fn vendor_stubs_check_cleanly() {
+    for (library, name, text) in vfl_sema::VENDOR {
+        let analysis = Analysis::new(vec![input(name, library, text)]);
+        assert!(
+            analysis.diagnostics().is_empty(),
+            "{library}/{name}: {:?}",
+            analysis.diagnostics()
+        );
+    }
+}
+
+#[test]
+fn vendor_stubs_resolve_primitives() {
+    let text = "\
+library ieee;
+use ieee.std_logic_1164.all;
+library unisim;
+use unisim.vcomponents.all;
+library xpm;
+
+entity top is
+  port (clk_in, d : in std_logic; v : in std_logic_vector(3 downto 0); q : out std_logic);
+end entity;
+
+architecture rtl of top is
+  signal clk : std_logic;
+begin
+  u0 : BUFG port map (I => clk_in, O => clk);
+  u1 : FDRE generic map (INIT => '0') port map (C => clk, CE => '1', R => '0', D => d, Q => q);
+  -- Not in the stubs: not reported.
+  u2 : BUFGCE_DIV generic map (BUFGCE_DIVIDE => 2) port map (I => clk_in, O => open);
+  u3 : entity unisim.MMCME4_ADV port map (CLKIN1 => clk_in);
+  u4 : IBUFDS generic map (DIFF_TERM => FALSE, NEW_GENERIC => 1) port map (I => d, IB => d, O => open);
+  -- Entities too.
+  u5 : entity unisim.IBUF port map (I => d, O => open);
+  u6 : entity xpm.xpm_cdc_single generic map (DEST_SYNC_FF => 2)
+    port map (src_clk => clk, src_in => d, dest_clk => clk, dest_out => open);
+  -- What they declare is checked.
+  u7 : BUFG port map (I => v, O => open);
+end architecture;
+";
+    let messages = |analysis: &Analysis| -> Vec<String> {
+        analysis
+            .diagnostics()
+            .iter()
+            .map(|d| format!("{}: {}", d.code, d.message))
+            .collect()
+    };
+    let analysis = Analysis::with_stubs(
+        vec![input("top.vhd", "work", text)],
+        Vec::new(),
+        &["unisim", "xpm"],
+    );
+    assert_eq!(
+        messages(&analysis),
+        ["sema/type-mismatch: expected `STD_ULOGIC`, found `STD_LOGIC_VECTOR`"]
+    );
+    let bufg = analysis
+        .units()
+        .iter()
+        .filter(|u| u.library == "unisim" && u.name == "bufg")
+        .count();
+    assert_eq!(bufg, 1, "the BUFG entity");
+
+    // Without them, the libraries are unknown and nothing is checked.
+    let analysis = Analysis::new(vec![input("top.vhd", "work", text)]);
+    assert_eq!(
+        messages(&analysis),
+        [
+            "sema/unknown-library: library `unisim` is not part of the project; names from it are not checked",
+            "sema/unknown-library: library `xpm` is not part of the project; names from it are not checked",
+        ]
+    );
+}

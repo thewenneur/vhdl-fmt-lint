@@ -14,6 +14,13 @@
   `-y` and other options are skipped), Edalize EDAM files (`*.eda.yml`, `edam.json`),
   hdlmake `Manifest.py` (`library` and `files`, read without running it) and
   Questa/ModelSim `.mpf` projects (`compile_to`).
+- **Vendor primitive libraries**: declarations of the commonly used Xilinx `unisim` and
+  `xpm`, Intel `altera_mf` and Lattice (`ecp5u`, `machxo2`, `sb_ice40_components_syn`)
+  primitives are bundled and analyzed when the design uses one of these libraries and the
+  project has no copy of it. Their components and entities resolve (hover, go to
+  definition, type checks of the actuals) instead of the library being left unchecked;
+  primitives, ports and generics they do not declare are not reported. `[project]`
+  `vendor-stubs = false` turns them off.
 
 ## [0.7.0] - 2026-10-15
 

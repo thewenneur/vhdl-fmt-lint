@@ -504,14 +504,22 @@ fn name_formals(
 /// Analyzes a loaded project: every readable file with its inferred
 /// libraries.
 pub fn analyze(project: &vfl_project::Project) -> Analysis {
-    Analysis::with_foreign(analysis_inputs(project), foreign_inputs(project))
+    Analysis::with_stubs(
+        analysis_inputs(project),
+        foreign_inputs(project),
+        &project.vendor_stubs(),
+    )
 }
 
 /// Analyzes a new version of a project, reusing what `previous` found for
 /// the units the changes cannot affect. `previous` is consumed so that
 /// what the new analysis does not reuse is freed while it is built.
 pub fn reanalyze(project: &vfl_project::Project, previous: Analysis) -> Analysis {
-    previous.into_update_with_foreign(analysis_inputs(project), foreign_inputs(project))
+    previous.into_update_with_stubs(
+        analysis_inputs(project),
+        foreign_inputs(project),
+        &project.vendor_stubs(),
+    )
 }
 
 /// The Verilog files of a project, whose modules VHDL instantiates.

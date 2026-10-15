@@ -425,6 +425,12 @@ parallel) and indexed by the primary units it declares and the references it mak
   constraints) are resolved by directory proximity, and surfaced as a diagnostic that
   suggests a one-line `[project.libraries]` entry.
 
+Vendor primitive libraries (`unisim`, `xpm`, `altera_mf`, Lattice's) are not part of the
+project. vfl bundles declarations of their common primitives, written from public
+documentation, and analyzes a library's only when a file uses it and no file is in it
+(`[project]` `vendor-stubs`). Their packages and components are marked incomplete, so names
+they lack stay unchecked rather than reported.
+
 **5. Explain it.** `vfl project` prints the root, the files, the inferred libraries and why
 each file landed where it did. The LSP exposes the same through a command. `vfl order`
 writes the files in compile order, from the same libraries and unit references, for GHDL,
