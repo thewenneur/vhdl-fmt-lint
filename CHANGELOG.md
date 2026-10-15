@@ -68,6 +68,17 @@
   and checks it against the release's `SHA256SUMS`. `vfl.server.path`, the `PATH` and
   `~/.cargo/bin` still come first.
 - **VS Code multi-root workspaces**: one server per workspace folder.
+- **Long expressions are broken**: a line still longer than `max_width` once its lists are
+  broken up is broken at the operators of its expressions that bind loosest (`else` of
+  conditional assignments, then `and`/`or`, relational, shift, `+`/`-`/`&`, `*`/`/`), in
+  conditions, assignments and port map actuals. `operator_position` (`"trailing"`,
+  `"leading"`, `"preserve"`) places the operator; `break_expressions = false` turns it off.
+  Lines that fit are not changed.
+- **`[format.declaration_case]`**: the case of identifiers by the kind of their declaration
+  (constants and generics in upper case, ports in lower case...), applied to every use of
+  the name in the file.
+- **`[format.blank_lines]`**: blank lines before and after `begin`, before `end`, before
+  processes and between declaration groups, as an exact number or a `{ min, max }` range.
 
 ### Changed
 
@@ -82,9 +93,10 @@
 - VS Code: vfl is the default formatter of Verilog and SystemVerilog files too, a workspace
   you do not trust cannot set `vfl.server.path` or `vfl.server.extraEnv`, and the extension
   has an icon and a changelog.
-
-### Changed
-
+- The formatter's `max_width` and the `style/line-length` rule count display columns:
+  Chinese, Japanese and Korean characters take two.
+- A line continuing an element of a list (a port map actual broken over lines) is indented
+  `continuation_indent` further than the elements.
 - LSP position conversion finds the line of an offset without scanning the line's text
   twice.
 - The fuzzing dictionary and seeds include non-ASCII text (no-break and ideographic spaces,

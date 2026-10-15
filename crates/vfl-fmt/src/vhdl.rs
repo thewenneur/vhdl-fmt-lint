@@ -2,7 +2,8 @@
 
 use rowan::NodeOrToken;
 use vfl_config::{
-    AlignConfig, AlignScope, Case, EndKeyword, EndLabel, FormatConfig, ListLayout, Separator,
+    AlignConfig, AlignScope, BlankLines, BlankLinesConfig, Case, EndKeyword, EndLabel,
+    FormatConfig, ListLayout, Separator,
 };
 use vfl_syntax::SyntaxKind::{self, *};
 use vfl_syntax::{Standard, SyntaxError, SyntaxNode, SyntaxToken, Vhdl};
@@ -10,7 +11,7 @@ use vfl_syntax::{Standard, SyntaxError, SyntaxNode, SyntaxToken, Vhdl};
 use crate::align::{Context, Kind, child_token, context_in};
 use crate::elems::{Elem, apply_case};
 use crate::lang::Lang;
-use crate::layout::{Analysis, Line};
+use crate::layout::{Analysis, Line, Operator};
 
 impl Lang for Vhdl {
     type Std<'a> = Standard;
@@ -164,6 +165,24 @@ impl Lang for Vhdl {
     #[inline]
     fn edit_end_clauses(elems: Vec<Elem<Vhdl>>, config: &FormatConfig) -> Vec<Elem<Vhdl>> {
         edit_end_clauses(elems, config)
+    }
+
+    #[inline]
+    fn breakable_operator(token: &SyntaxToken, parent: &SyntaxNode) -> Option<Operator<Vhdl>> {
+        breakable_operator(token, parent)
+    }
+
+    fn apply_declaration_case(elems: &mut [Elem<Vhdl>], root: &SyntaxNode, config: &FormatConfig) {
+        crate::names::apply_declaration_case(elems, root, config);
+    }
+
+    fn blank_line_rule(
+        elems: &[Elem<Vhdl>],
+        an: &Analysis<Vhdl>,
+        i: usize,
+        config: &BlankLinesConfig,
+    ) -> Option<(BlankLines, bool)> {
+        blank_line_rule(elems, an, i, config)
     }
 
     #[inline]
@@ -413,6 +432,61 @@ fn list_layout(list: &SyntaxNode, config: &FormatConfig) -> ListLayout {
             config.association_list
         }
         _ => ListLayout::Preserve,
+    }
+}
+
+/// How loosely a binary operator binds: the lower, the earlier an
+/// expression breaks at it. `**` never breaks.
+fn operator_class(kind: SyntaxKind) -> Option<u8> {
+    Some(match kind {
+        AND_KW | OR_KW | NAND_KW | NOR_KW | XOR_KW | XNOR_KW => 1,
+        EQ | NEQ | LT | LTE | GT | GTE | QEQ | QNEQ | QLT | QLTE | QGT | QGTE => 2,
+        SLL_KW | SRL_KW | SLA_KW | SRA_KW | ROL_KW | ROR_KW => 3,
+        PLUS | MINUS | AMP => 4,
+        STAR | SLASH | MOD_KW | REM_KW => 5,
+        _ => return None,
+    })
+}
+
+/// The class of the operator of a binary expression.
+fn binary_class(node: &SyntaxNode) -> Option<u8> {
+    node.children_with_tokens()
+        .filter_map(NodeOrToken::into_token)
+        .find_map(|t| operator_class(t.kind()))
+}
+
+/// Binary operators, the `else` of conditional values (`a when c else b`)
+/// and the `,` of selected ones, where a long line may break.
+fn breakable_operator(token: &SyntaxToken, parent: &SyntaxNode) -> Option<Operator<Vhdl>> {
+    let kind = token.kind();
+    match parent.kind() {
+        CONDITIONAL_WAVEFORMS | CONDITIONAL_EXPR if kind == ELSE_KW => Some(Operator {
+            class: 0,
+            after_only: true,
+            chain: parent.clone(),
+        }),
+        SELECTED_WAVEFORMS if kind == COMMA => Some(Operator {
+            class: 0,
+            after_only: true,
+            chain: parent.clone(),
+        }),
+        BINARY_EXPR => {
+            let class = operator_class(kind)?;
+            // `a + b - c` nests as `(a + b) - c`: one chain.
+            let mut chain = parent.clone();
+            while let Some(up) = chain
+                .parent()
+                .filter(|p| p.kind() == BINARY_EXPR && binary_class(p) == Some(class))
+            {
+                chain = up;
+            }
+            Some(Operator {
+                class,
+                after_only: false,
+                chain,
+            })
+        }
+        _ => None,
     }
 }
 
@@ -680,4 +754,79 @@ fn statement_assignment(elem: &Elem<Vhdl>, an: &Analysis<Vhdl>) -> Option<usize>
         .take_while(|n| n.text_range().start() == start)
         .find(|n| matches!(n.kind(), SIGNAL_ASSIGN_STMT | VARIABLE_ASSIGN_STMT))
         .and_then(|stmt| child_token(&stmt, an, &[LTE, COLON_EQ]))
+}
+
+/// The outermost statement, declaration or clause starting at `elem`.
+fn item_at(elem: &Elem<Vhdl>) -> Option<SyntaxNode> {
+    let token = elem.syntax.as_ref()?.as_token()?;
+    let start = token.text_range().start();
+    token
+        .parent_ancestors()
+        .take_while(|n| n.text_range().start() == start)
+        .filter(crate::kinds::is_item::<Vhdl>)
+        .last()
+}
+
+/// Declarations that `between_declaration_groups` keeps apart when they
+/// follow one another.
+fn declaration_group(kind: SyntaxKind) -> Option<u8> {
+    Some(match kind {
+        USE_CLAUSE => 0,
+        TYPE_DECL | SUBTYPE_DECL => 1,
+        CONSTANT_DECL => 2,
+        SIGNAL_DECL => 3,
+        VARIABLE_DECL => 4,
+        FILE_DECL => 5,
+        ALIAS_DECL => 6,
+        ATTRIBUTE_DECL | ATTRIBUTE_SPEC => 7,
+        COMPONENT_DECL => 8,
+        SUBPROGRAM_DECL | SUBPROGRAM_BODY | SUBPROGRAM_INSTANTIATION_DECL => 9,
+        PACKAGE_INSTANTIATION_DECL => 10,
+        GROUP_TEMPLATE_DECL | GROUP_DECL => 11,
+        DISCONNECTION_SPEC | CONFIGURATION_SPEC => 12,
+        _ => return None,
+    })
+}
+
+fn blank_line_rule(
+    elems: &[Elem<Vhdl>],
+    an: &Analysis<Vhdl>,
+    i: usize,
+    config: &BlankLinesConfig,
+) -> Option<(BlankLines, bool)> {
+    let is_section = |k: usize, kind: SyntaxKind| an.section[k] && elems[k].is_token(kind);
+    if is_section(i - 1, BEGIN_KW) {
+        return config.after_begin.map(|r| (r, false));
+    }
+    if is_section(i, BEGIN_KW) {
+        return config.before_begin.map(|r| (r, false));
+    }
+    if is_section(i, END_KW) {
+        return config.before_end.map(|r| (r, false));
+    }
+    if !an.item_start[i] {
+        return None;
+    }
+    let item = item_at(&elems[i])?;
+    // The statement or declaration just before, in the same part: none
+    // for the first one.
+    let prev = (0..i).rev().find(|&k| !elems[k].is_comment())?;
+    let parent = item.parent()?;
+    let before = elems[prev]
+        .syntax
+        .as_ref()?
+        .as_token()?
+        .parent_ancestors()
+        .find(|n| n.parent().as_ref() == Some(&parent))
+        .filter(crate::kinds::is_item::<Vhdl>)?;
+    if matches!(
+        item.kind(),
+        PROCESS_STMT | BLOCK_STMT | FOR_GENERATE_STMT | IF_GENERATE_STMT | CASE_GENERATE_STMT
+    ) {
+        return config.before_process.map(|r| (r, true));
+    }
+    let rule = config.between_declaration_groups?;
+    let group = declaration_group(item.kind())?;
+    let other = declaration_group(before.kind())?;
+    (other != group).then_some((rule, true))
 }

@@ -1,0 +1,13 @@
+[format]
+identifier_case = "lower"   # every other name in lower case
+
+[format.declaration_case]   # case by kind of declaration, uses included
+generic = "upper"
+constant = "upper"
+enum_literal = "upper"
+
+[format.blank_lines]
+after_begin = 0                    # no blank line right after "begin"
+before_end = 0                     # nor right before "end"
+before_process = { min = 1 }       # at least one before a process
+between_declaration_groups = 1     # one between the types, the constants, the signals...

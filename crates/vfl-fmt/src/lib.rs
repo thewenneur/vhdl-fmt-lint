@@ -17,7 +17,9 @@
 //!    `max_blank_lines`), and each statement, declaration, clause, `begin`,
 //!    `end`, `else` and `elsif` starts a line. Lists (`port (...)`,
 //!    `port map (...)`, calls, aggregates) are laid out one element per line
-//!    when the config asks for it or when a line is wider than `max_width`.
+//!    when the config asks for it or when a line is wider than `max_width`;
+//!    a line still too wide is broken at the loosest operators of its
+//!    expressions. Widths are display widths (CJK characters count two).
 //! 3. Indentation follows the constructs; a line continuing a statement gets
 //!    `continuation_indent`, and a line inside parentheses one `indent` more
 //!    than the line that opened them.
@@ -48,6 +50,7 @@ mod escape;
 mod kinds;
 mod lang;
 mod layout;
+mod names;
 mod range;
 mod separators;
 mod spacing;
@@ -208,6 +211,9 @@ pub(crate) fn lay_out<L: Lang>(
     let whole = window.is_none();
     let elems = elems::collect(root, config, window);
     let mut elems = L::edit_end_clauses(elems, config);
+    if !config.declaration_case.is_empty() {
+        L::apply_declaration_case(&mut elems, root, config);
+    }
     if elems.is_empty() {
         return Ok(None);
     }

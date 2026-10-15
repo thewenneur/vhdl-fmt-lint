@@ -380,11 +380,23 @@ pub struct FormatConfig {
     pub association_separator: Separator,
     /// Whether `when x => stmt;` may keep its statement on the `when` line.
     pub case_alternative: CaseAlternative,
+    /// Whether a line still longer than `max_width` once its lists are
+    /// broken up is broken inside its expressions, at the operators that
+    /// bind loosest.
+    pub break_expressions: bool,
+    /// Where the operator goes when an expression is broken over lines.
+    pub operator_position: OperatorPosition,
     pub line_ending: LineEnding,
     /// Whether editors may format the line just typed (after `;` or a new
     /// line). Editors have their own switch too.
     pub on_type: bool,
     pub align: AlignConfig,
+    /// The case of the identifiers declared as each kind of declaration,
+    /// and of every reference to them in the same file. Kinds left out
+    /// follow `identifier_case`.
+    pub declaration_case: DeclarationCase,
+    /// Blank lines around `begin`, `end`, processes and declaration groups.
+    pub blank_lines: BlankLinesConfig,
 }
 
 impl Default for FormatConfig {
@@ -408,9 +420,13 @@ impl Default for FormatConfig {
             interface_separator: Separator::Trailing,
             association_separator: Separator::Trailing,
             case_alternative: CaseAlternative::Preserve,
+            break_expressions: true,
+            operator_position: OperatorPosition::Preserve,
             line_ending: LineEnding::Auto,
             on_type: true,
             align: AlignConfig::default(),
+            declaration_case: DeclarationCase::default(),
+            blank_lines: BlankLinesConfig::default(),
         }
     }
 }
@@ -518,6 +534,131 @@ pub enum Separator {
     /// At the start of the next line: `a => x` then `, b => y`. The
     /// separator sits left of the elements so that they line up.
     Leading,
+}
+
+/// Where the operator goes when an expression is broken over lines.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OperatorPosition {
+    /// At the end of the line: `a and` then `b`.
+    Trailing,
+    /// At the start of the next line: `a` then `and b`.
+    Leading,
+    /// Breaks written in the source stay on their side of the operator;
+    /// breaks the formatter adds go after it.
+    Preserve,
+}
+
+/// `[format.declaration_case]`: the case of the identifiers declared as
+/// each kind, and of every reference to them in the same file. A kind left
+/// out follows `identifier_case`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DeclarationCase {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub architecture: Option<Case>,
+    /// Packages and package instantiations.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generic: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub constant: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signal: Option<Case>,
+    /// Variables, shared variables included.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variable: Option<Case>,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub type_: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subtype: Option<Case>,
+    /// The literals of enumeration types (`IDLE` in `(IDLE, RUN)`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enum_literal: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub function: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub procedure: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alias: Option<Case>,
+    /// Statement labels: processes, instances, generate statements, blocks.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<Case>,
+}
+
+impl DeclarationCase {
+    /// Whether no kind has a case of its own.
+    pub fn is_empty(&self) -> bool {
+        *self == DeclarationCase::default()
+    }
+}
+
+/// `[format.blank_lines]`: how many blank lines go at some places. Each key
+/// takes a number (exactly that many) or `{ min = .., max = .. }`; a key
+/// left out keeps what is written, up to `max_blank_lines`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct BlankLinesConfig {
+    /// Before the `begin` of an architecture, process, block, subprogram
+    /// or generate statement.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_begin: Option<BlankLines>,
+    /// After that `begin`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after_begin: Option<BlankLines>,
+    /// Before the `end` of a construct (entity, architecture, process,
+    /// `if`, `case`, loop, record...).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_end: Option<BlankLines>,
+    /// Before a process, block or generate statement, and the comment
+    /// lines just above it; not when it is the first statement after
+    /// `begin`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_process: Option<BlankLines>,
+    /// Between two declarations of different kinds (constants, then
+    /// signals), above the comment lines just above the second.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub between_declaration_groups: Option<BlankLines>,
+}
+
+impl BlankLinesConfig {
+    /// Whether no rule is set.
+    pub fn is_empty(&self) -> bool {
+        *self == BlankLinesConfig::default()
+    }
+}
+
+/// A number of blank lines: exactly `n`, or a range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum BlankLines {
+    Exactly(u32),
+    Range {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        min: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max: Option<u32>,
+    },
+}
+
+impl BlankLines {
+    /// `count` brought into the range.
+    pub fn apply(self, count: u32) -> u32 {
+        match self {
+            BlankLines::Exactly(n) => n,
+            BlankLines::Range { min, max } => {
+                let count = count.max(min.unwrap_or(0));
+                max.map_or(count, |max| count.min(max))
+            }
+        }
+    }
 }
 
 /// Replaces `format.style` in a config table by the settings of that style,
@@ -1216,11 +1357,60 @@ mod tests {
     }
 
     #[test]
+    fn blank_line_rules_and_declaration_case_parse() {
+        let config = Config::from_toml_str(
+            "[format.blank_lines]\nafter_begin = 0\nbefore_process = { min = 1 }\n\
+             before_end = { min = 1, max = 2 }\n\
+             [format.declaration_case]\nconstant = \"upper\"\ntype = \"lower\"\n",
+        )
+        .unwrap();
+        let blank = &config.format.blank_lines;
+        assert_eq!(blank.after_begin.unwrap().apply(3), 0);
+        assert_eq!(blank.before_process.unwrap().apply(0), 1);
+        assert_eq!(blank.before_process.unwrap().apply(2), 2);
+        assert_eq!(blank.before_end.unwrap().apply(5), 2);
+        assert_eq!(blank.before_begin, None);
+        assert_eq!(config.format.declaration_case.constant, Some(Case::Upper));
+        assert_eq!(config.format.declaration_case.type_, Some(Case::Lower));
+        let text = config.file_text("");
+        assert_eq!(Config::from_toml_str(&text).unwrap(), config, "{text}");
+        assert!(Config::from_toml_str("[format.blank_lines]\nafter_begin = \"x\"").is_err());
+        assert!(Config::from_toml_str("[format.declaration_case]\nnope = \"upper\"").is_err());
+    }
+
+    #[test]
     fn every_key_is_documented() {
         // Git may check the doc out with CRLF line endings on Windows.
         let doc = include_str!("../../../docs/configuration.md").replace("\r\n", "\n");
         let mut config = Config::default();
         config.format.continuation_indent = Some(2);
+        // Keys left out when unset.
+        config.format.declaration_case = DeclarationCase {
+            entity: Some(Case::Lower),
+            architecture: Some(Case::Lower),
+            package: Some(Case::Lower),
+            component: Some(Case::Lower),
+            generic: Some(Case::Upper),
+            port: Some(Case::Lower),
+            constant: Some(Case::Upper),
+            signal: Some(Case::Lower),
+            variable: Some(Case::Lower),
+            type_: Some(Case::Lower),
+            subtype: Some(Case::Lower),
+            enum_literal: Some(Case::Upper),
+            function: Some(Case::Lower),
+            procedure: Some(Case::Lower),
+            alias: Some(Case::Lower),
+            label: Some(Case::Lower),
+        };
+        let one = Some(BlankLines::Exactly(1));
+        config.format.blank_lines = BlankLinesConfig {
+            before_begin: one,
+            after_begin: one,
+            before_end: one,
+            before_process: one,
+            between_declaration_groups: one,
+        };
         config.doc.title = Some("Design".into());
         let toml::Value::Table(table) = toml::Value::try_from(&config).unwrap() else {
             panic!("the config is not a table");

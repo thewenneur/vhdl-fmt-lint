@@ -12,7 +12,7 @@ use vfl_syntax::SyntaxError;
 
 use crate::align::{Context, Kind};
 use crate::elems::Elem;
-use crate::layout::{Analysis, Line};
+use crate::layout::{Analysis, Line, Operator};
 
 pub(crate) type Node<L> = rowan::SyntaxNode<L>;
 pub(crate) type Token<L> = rowan::SyntaxToken<L>;
@@ -142,6 +142,34 @@ pub(crate) trait Lang:
     /// the one before it when the list is laid out one element per line.
     fn joins_previous_element(_elem: &Elem<Self>) -> bool {
         false
+    }
+
+    /// When `token`, in `parent`, is an operator an expression may be
+    /// broken at when its line is too long: how.
+    fn breakable_operator(_token: &Token<Self>, _parent: &Node<Self>) -> Option<Operator<Self>> {
+        None
+    }
+
+    /// Applies the case of [`FormatConfig::declaration_case`] to the
+    /// identifiers of `elems` declared in `root`, and to the references to
+    /// them.
+    fn apply_declaration_case(
+        _elems: &mut [Elem<Self>],
+        _root: &Node<Self>,
+        _config: &FormatConfig,
+    ) {
+    }
+
+    /// The `[format.blank_lines]` rule for the gap before the line starting
+    /// with element `i`, and whether the gap is above the comment lines just
+    /// above that line.
+    fn blank_line_rule(
+        _elems: &[Elem<Self>],
+        _an: &Analysis<Self>,
+        _i: usize,
+        _config: &vfl_config::BlankLinesConfig,
+    ) -> Option<(vfl_config::BlankLines, bool)> {
+        None
     }
 
     /// Adds or drops the optional words after `end`.

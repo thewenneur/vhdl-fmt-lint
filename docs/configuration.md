@@ -199,7 +199,7 @@ Settings of `vfl fmt` and of formatting in the language server.
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
 | `style` | string | `"default"` | A named set of defaults for the other keys: `"default"`, `"leading-comma"`, `"compact"` or `"classic"`; see [Styles](#styles). Keys set explicitly win over it. |
-| `max_width` | integer | `100` | Lines longer than this get their parenthesized lists broken up, one element per line. |
+| `max_width` | integer | `100` | Lines longer than this get their parenthesized lists broken up, one element per line, then their expressions broken at operators (`break_expressions`); see [Long lines](#long-lines). Columns are counted as displayed: Chinese, Japanese and Korean characters take two. |
 | `indent` | integer | `4` | Columns per indentation level. Also the tab width with `use_tabs`. |
 | `continuation_indent` | integer | `indent` | Columns added for a statement continued on the next line, outside parentheses. |
 | `use_tabs` | boolean | `false` | Indent with tabs instead of spaces. Alignment padding is always spaces. |
@@ -216,6 +216,8 @@ Settings of `vfl fmt` and of formatting in the language server.
 | `interface_separator` | string | `"trailing"` | Where the `;` between the elements of `generic (...)`, `port (...)` and subprogram parameter lists goes when they are on separate lines: `"trailing"` (end of the line) or `"leading"` (start of the next line); see [Separators](#separators). |
 | `association_separator` | string | `"trailing"` | Where the `,` between the elements of `generic map (...)`, `port map (...)`, calls, aggregates and enumeration types goes when they are on separate lines: `"trailing"` or `"leading"`; see [Separators](#separators). |
 | `case_alternative` | string | `"preserve"` | `"preserve"` keeps a first statement written on the `when ... =>` line there; `"break"` starts every statement of a case alternative on its own line. |
+| `break_expressions` | boolean | `true` | A line still longer than `max_width` once its lists are broken up is broken inside its expressions, at the operators that bind loosest; see [Long lines](#long-lines). `false` only breaks lists. |
+| `operator_position` | string | `"preserve"` | Where the operator goes when an expression is on several lines: `"trailing"` (end of the line: `a and` then `b`), `"leading"` (start of the next line: `a` then `and b`) or `"preserve"` (line breaks written next to an operator stay on their side; those the formatter adds go after it). |
 | `line_ending` | string | `"auto"` | `"auto"` keeps the line endings the file uses (LF for new files), `"lf"` or `"crlf"` converts. |
 | `on_type` | boolean | `true` | Lets editors format the line you just finished as you type: the line of a `;`, or the line above a new line. Editors have their own switch as well (`vfl.format.onType` in VS Code, **Format on type** in Notepad++), off by default; `false` here turns it off for everyone working on the project. In a block larger than 16 KB (with `[format.align] scope = "block"`), the line aligns with the lines near it rather than the whole block, to stay fast; formatting the file or a selection aligns the rest. |
 
@@ -223,6 +225,44 @@ Settings of `vfl fmt` and of formatting in the language server.
 contexts, configurations, components, subprogram bodies, processes, blocks, `if`, `case`,
 loops, generate statements, records, physical types and protected types. A clause holding
 a comment is left alone.
+
+### Long lines
+
+A line longer than `max_width` (not counting a comment at its end) is broken, as little
+as needed:
+
+1. Its port or generic list or map is laid out one element per line.
+2. Its expressions are broken at the operators that bind loosest, all the operators of the
+   same kind in a row at once: the `else` of conditional values and the `,` of selected
+   ones first, then `and`, `or`, `xor`..., then `=`, `/=`, `<`..., then shifts, then `+`,
+   `-`, `&`, then `*`, `/`, `mod`, `rem`. What is in fewer parentheses breaks first: in
+   `if (a and b) or c then`, the `or`. An expression breaks only when it runs past
+   `max_width` itself, so `assert x = y report "a long message";` does not break at `=`.
+3. Calls and aggregates with several elements are laid out one element per line.
+4. Last, the single index or argument of a call (`v(i + 1)`).
+
+Each step is taken only while the line is still too long, and the line breaks written in
+the file are kept: a line that fits is never changed, and running the formatter again
+changes nothing. Continuation lines are indented by `continuation_indent` (or under the
+first value of a conditional assignment, with `[format.align] conditional_continuation`);
+inside a list, by `indent` plus `continuation_indent` from the line of the `(`. Comments
+inside an expression stay where they are. With `max_width = 50`:
+
+```vhdl
+  ready <= (valid_a and enable_a) or
+    (valid_b and not busy_b);
+  y     <= first_value when select_first = 1 else
+           second_value;
+  u0 : entity work.fifo
+    port map (
+      write => write_request and
+        not fifo_full and
+        enable,
+      full  => fifo_full
+    );
+```
+
+With `operator_position = "leading"`, the same lines start with `or` and `and`.
 
 ### Verilog and SystemVerilog
 
@@ -236,8 +276,9 @@ The same settings format Verilog and SystemVerilog files, where they have a mean
   lists, `association_separator` that of connections, parameter values and calls.
 - `space_after_keyword` puts a space between `(` and `if`, `for`, `foreach`, `while`,
   `case`, `repeat` and `wait`.
-- `keyword_case` and `identifier_case` do not apply: Verilog is case-sensitive. Nor do
-  `end_label`, `end_keyword`, `space_before_label_colon` and `case_alternative`.
+- `keyword_case`, `identifier_case` and `[format.declaration_case]` do not apply: Verilog
+  is case-sensitive. Nor do `end_label`, `end_keyword`, `space_before_label_colon`,
+  `case_alternative`, `break_expressions`, `operator_position` and `[format.blank_lines]`.
 
 `begin` and `else` stay where they are written: on the line of the `if` or `always`, or
 on a line of their own. A statement that is the body of an `if`, a loop or an `always`
@@ -341,6 +382,92 @@ association_list = "auto" # wins over the style's "expand"
 | `"leading-comma"` | `interface_separator = "leading"`, `association_separator = "leading"`, `association_list = "expand"`. |
 | `"compact"` | `indent = 2`, `interface_list = "auto"`, `association_list = "auto"`, `close_paren = "attached"`, `max_blank_lines = 1`, and every `[format.align]` key off except `trailing_comment`, which aligns consecutive lines only (`scope = "contiguous"`). |
 | `"classic"` | `indent = 4`, `keyword_case = "upper"`, `end_label = "add"`, `end_keyword = "add"`, `association_list = "expand"`, `case_alternative = "break"`, and alignment of consecutive lines only, without the `;` (`scope = "contiguous"`, `semicolon = false`). |
+
+## `[format.declaration_case]`
+
+The case of identifiers by the kind of their declaration, for example constants and
+generics in upper case and everything else in lower case. Each key takes `"lower"`,
+`"upper"` or `"preserve"`; a kind left out follows `identifier_case`.
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `entity` | string | unset | Entities. |
+| `architecture` | string | unset | Architectures. |
+| `package` | string | unset | Packages and package instantiations. |
+| `component` | string | unset | Components. |
+| `generic` | string | unset | Generics. |
+| `port` | string | unset | Ports. |
+| `constant` | string | unset | Constants. |
+| `signal` | string | unset | Signals. |
+| `variable` | string | unset | Variables, shared ones included. |
+| `type` | string | unset | Types. |
+| `subtype` | string | unset | Subtypes. |
+| `enum_literal` | string | unset | The literals of enumeration types: `IDLE` in `type state_t is (IDLE, RUN)`. |
+| `function` | string | unset | Functions. |
+| `procedure` | string | unset | Procedures. |
+| `alias` | string | unset | Aliases. |
+| `label` | string | unset | Statement labels: processes, instances, generate statements, blocks. |
+
+The case applies to the declaration and to every use of the name in the same file (VHDL
+is case-insensitive, so this changes nothing to the design). A name declared in another
+file, a library package for example, follows `identifier_case`; so does a name declared
+in the file as two kinds with different cases (a constant `width` and a port `width`).
+Extended identifiers (`\Foo\`) never change.
+
+```toml
+[format]
+identifier_case = "lower"
+
+[format.declaration_case]
+generic = "upper"
+constant = "upper"
+enum_literal = "upper"
+```
+
+```vhdl
+constant MAX_COUNT : natural := 2 ** WIDTH - 1;
+...
+if count = MAX_COUNT then
+```
+
+## `[format.blank_lines]`
+
+How many blank lines go at some places. Each key takes a number (exactly that many
+blank lines) or a range, `{ min = 1 }`, `{ max = 0 }`, `{ min = 1, max = 2 }`. A key left
+out keeps the blank lines as written, up to `max_blank_lines`. None is set by default
+or by a style.
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `before_begin` | number or table | unset | Before the `begin` of an architecture, process, block, subprogram or generate statement. |
+| `after_begin` | number or table | unset | After that `begin`. |
+| `before_end` | number or table | unset | Before the `end` of a construct: entity, architecture, package, process, subprogram, `if`, `case`, loop, generate, record... |
+| `before_process` | number or table | unset | Before a process, block or generate statement, and above the comment lines right above it; not for the first statement after `begin`. |
+| `between_declaration_groups` | number or table | unset | Between two declarations of different kinds that follow one another (types and subtypes, constants, signals, variables, files, aliases, attributes, components, subprograms, `use` clauses), above the comment lines right above the second. |
+
+```toml
+[format.blank_lines]
+after_begin = 0
+before_end = 0
+before_process = { min = 1 }
+between_declaration_groups = 1
+```
+
+```vhdl
+architecture rtl of counter is
+    constant MAX : natural := 9;
+
+    -- the count
+    signal count : natural;
+begin
+    p_count : process (clk)
+    begin
+        count <= count + 1;
+    end process;
+
+    p_out : process (clk)
+    ...
+```
 
 ## `[format.align]`
 
@@ -741,6 +868,8 @@ close_paren = "own-line"
 interface_separator = "trailing"
 association_separator = "trailing"
 case_alternative = "preserve"
+break_expressions = true
+operator_position = "preserve"
 line_ending = "auto"
 on_type = true
 
@@ -759,6 +888,10 @@ trailing_comment = true
 semicolon = true
 scope = "block"
 block_boundary = "blank-line"
+
+[format.declaration_case]
+
+[format.blank_lines]
 
 [lint]
 preset = "recommended"
