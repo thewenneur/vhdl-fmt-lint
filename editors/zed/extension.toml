@@ -1,7 +1,7 @@
 id = "vfl"
 name = "vfl"
 description = "VHDL, Verilog and SystemVerilog: diagnostics, lint fixes, formatting, hover, completion, navigation and rename from the vfl language server."
-version = "0.6.0"
+version = "0.7.0"
 schema_version = 1
 authors = ["thewenneur"]
 repository = "https://github.com/thewenneur/vhdl-fmt-lint"
