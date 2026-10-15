@@ -1,6 +1,7 @@
 //! The fixes offered for the problems in a range: each rule's own fix,
 //! renaming a declaration to follow a naming convention, importing a name
-//! that is declared in a package, and silencing the rule with a
+//! that is declared in a package, associating the ports an instantiation
+//! leaves out, and silencing the rule with a
 //! `-- vfl-ignore` comment (`// vfl-ignore` in Verilog).
 
 use vfl_sema::{DeclKind, FileId};
@@ -24,7 +25,19 @@ pub(crate) struct Action {
     pub rename: Option<String>,
     /// Silences the problem rather than fixing it.
     pub silences: bool,
+    /// Associates the ports an instantiation leaves out, with edits worked
+    /// out when it is chosen ([`crate::associate::edits`]).
+    pub associate: Option<Associate>,
     pub edits: Edits,
+}
+
+/// Which associations a `sema/unassociated-port` fix adds.
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub(crate) struct Associate {
+    /// A port map rather than a generic map.
+    pub ports: bool,
+    /// Every port left out, not only the ones that must be associated.
+    pub all: bool,
 }
 
 /// The fixes for the problems of `file` that touch `start..end`, the
@@ -48,6 +61,7 @@ pub(crate) fn actions(world: &World, file: FileId, start: TextSize, end: TextSiz
                 preferred: fix.safe,
                 rename: None,
                 silences: false,
+                associate: None,
                 edits: fix
                     .edits
                     .iter()
@@ -65,6 +79,7 @@ pub(crate) fn actions(world: &World, file: FileId, start: TextSize, end: TextSiz
                 preferred: true,
                 rename: Some(new_name.clone()),
                 silences: false,
+                associate: None,
                 edits: Vec::new(),
             });
         }
@@ -79,9 +94,33 @@ pub(crate) fn actions(world: &World, file: FileId, start: TextSize, end: TextSiz
                         preferred: false,
                         rename: None,
                         silences: false,
+                        associate: None,
                         edits,
                     }),
             );
+        }
+        if d.rule == vfl_sema::codes::UNASSOCIATED_PORT && world.is_vhdl(file) {
+            // "port `a` of entity `e` must be associated"
+            let ports = d.message.starts_with("port");
+            if let Some(missing) = crate::associate::missing(world, file, d.range.start(), ports)
+                && !missing.required.is_empty()
+            {
+                for all in [false, true] {
+                    if all && missing.optional.is_empty() {
+                        continue;
+                    }
+                    fixes.push(Action {
+                        title: crate::associate::title(world, &missing, all),
+                        problem: index,
+                        safe: true,
+                        preferred: !all,
+                        rename: None,
+                        silences: false,
+                        associate: Some(Associate { ports, all }),
+                        edits: Vec::new(),
+                    });
+                }
+            }
         }
         if d.rule != "syntax/error" {
             for (title, edit) in silence(world, file, d.range, d.rule) {
@@ -95,6 +134,7 @@ pub(crate) fn actions(world: &World, file: FileId, start: TextSize, end: TextSiz
                     preferred: false,
                     rename: None,
                     silences: true,
+                    associate: None,
                     edits: vec![edit],
                 });
             }

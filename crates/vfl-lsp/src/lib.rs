@@ -8,6 +8,7 @@
 //! help and completion directly, for editors that link it.
 
 mod actions;
+mod associate;
 pub mod editor;
 pub mod format;
 pub mod generate;

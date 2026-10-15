@@ -43,7 +43,8 @@ are ready, and are dropped if the file changed in the meantime.
   lists those of every file, like the language server's problems view.
 - **Quick fixes**: **Fix problem at caret** lists the fixes for the problem at the caret:
   the rule's own fix, renaming a name everywhere to follow a naming convention, adding the
-  `use` clause for a name declared in a package, or silencing the rule on the line or in
+  `use` clause for a name declared in a package, associating the ports an instantiation
+  leaves out, or silencing the rule on the line or in
   the file with a `-- vfl-ignore` comment. **Fix all problems** applies every safe fix in
   the file.
 - **Go to definition**, also into the bundled `ieee` and `std` sources, and **Go back**.
