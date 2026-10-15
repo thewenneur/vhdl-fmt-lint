@@ -19,6 +19,22 @@
 - **`sema/combinational-loop`** (warn in `recommended`, error in `strict`): a signal that
   depends on itself through concurrent assignments and combinational processes without a
   register, reported once per loop with its path (`a -> b -> a`).
+- **Waivers**: `[[lint.waiver]]` entries in `vfl.toml` silence findings by file glob, rule
+  or category, line or line range, and message pattern, without touching the sources, on
+  the command line and in editors.
+- **Baselines**: `vfl lint --write-baseline FILE` records the current findings;
+  `--baseline FILE` (or `lint.baseline` in `vfl.toml`) then reports only new ones, and
+  the summary counts the baselined ones. Findings are matched by file, rule, message and
+  line text, not line number, so edits elsewhere in a file keep them baselined.
+- **`vfl fmt --diff`** prints a unified diff of what formatting would change, and fails
+  like `--check` if there is any.
+- **JUnit XML and GitLab Code Quality output**: `vfl lint --output-format junit` and
+  `--output-format gitlab`.
+- **`vfl lint --changed-since REF`** reports only the files changed since a git revision
+  (the whole project is still analyzed), and with `--changed-lines` only the findings on
+  changed lines.
+- **`vfl lint --fix-only RULES`** applies the fixes of some rules or categories only.
+- **`vfl rules --explain RULE`** prints a rule's levels and full description.
 
 ## [0.7.0] - 2026-10-15
 

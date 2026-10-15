@@ -18,8 +18,9 @@ pub mod rules;
 mod style;
 mod suppress;
 mod verilog;
+mod waiver;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use rayon::prelude::*;
@@ -30,7 +31,7 @@ use vfl_syntax::green_walk::ChildTokens;
 use vfl_syntax::{GreenNode, SyntaxError, TextRange};
 
 pub use rules::{NAMING_KINDS, RULES, Rule};
-pub use suppress::Suppressions;
+pub use suppress::{Suppressions, matches as rule_matches};
 pub use vfl_sema::{Edit, Fix};
 
 /// A problem found by a rule, before its level is applied.
@@ -85,6 +86,9 @@ pub struct FileSettings<'a> {
     /// the other Verilog files given declare (packages, modules), so a
     /// project's Verilog files are best linted together.
     pub verilog: Option<&'a vfl_verilog_syntax::Parse>,
+    /// The project root, which the file patterns of `[[lint.waiver]]` are
+    /// relative to. Without it they match the path at any depth.
+    pub root: Option<&'a Path>,
 }
 
 /// The diagnostics of a lint run, sorted by file and position, and
@@ -362,6 +366,8 @@ fn lint_file(
     }
     let (conventions, naming_errors) = naming::conventions(lint_config);
     errors.extend(naming_errors);
+    let waivers =
+        waiver::Waivers::new(&lint_config.waivers, &file.path, settings.root, &mut errors);
     let suppressions = match (settings.verilog, project) {
         (Some(parse), Some(project)) => {
             let root = parse.syntax();
@@ -423,7 +429,9 @@ fn lint_file(
             .line_index
             .line_col(&file.text, finding.range.start())
             .line;
-        if suppressions.suppressed(finding.rule, line) {
+        if suppressions.suppressed(finding.rule, line)
+            || !waivers.is_empty() && waivers.waived(finding.rule, line, &finding.message)
+        {
             continue;
         }
         out.push(Diagnostic {
