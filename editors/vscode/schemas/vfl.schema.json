@@ -66,6 +66,11 @@
             "off"
           ],
           "default": "fallback"
+        },
+        "vendor-stubs": {
+          "description": "Load vfl's bundled declarations of vendor primitive libraries (`unisim`, `xpm`, `altera_mf`, `ecp5u`, `machxo2`, `sb_ice40_components_syn`) for a library the design uses and the project does not hold. See Vendor libraries.",
+          "type": "boolean",
+          "default": true
         }
       },
       "additionalProperties": false
@@ -1153,6 +1158,127 @@
             },
             "sema/fsm-stuck-state": {
               "description": "A state machine has a state that nothing but a reset leaves.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/incomplete-case": {
+              "description": "The choices of a `case` statement or selected assignment leave out values of the selector's subtype, and there is no `when others`.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/duplicate-choice": {
+              "description": "A choice of a `case` statement or selected assignment names a value an earlier choice covers.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/multiple-drivers": {
+              "description": "A signal, or an overlapping part of it, is driven by more than one process, concurrent statement or instance.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "resolved": {
+                      "enum": [
+                        "rtl",
+                        "always",
+                        "never"
+                      ],
+                      "default": "rtl",
+                      "description": "When signals of resolved types are reported: except in testbenches (`rtl`), in every architecture (`always`), or never (`never`)."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/combinational-loop": {
+              "description": "A signal depends on itself through concurrent assignments and combinational processes, with no register on the way.",
               "anyOf": [
                 {
                   "enum": [
