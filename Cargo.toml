@@ -28,6 +28,7 @@ ignore = "0.4"
 lsp-server = "0.7"
 lsp-types = "0.95"
 rayon = "1"
+rustc-hash = "1.1"
 regex = "1"
 rowan = "0.16"
 smallvec = { version = "1", features = ["union", "const_generics"] }

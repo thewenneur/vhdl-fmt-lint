@@ -4,8 +4,7 @@
 //! after it), or a record element; where they are named; and whether a
 //! new name would clash with another.
 
-use std::collections::{HashMap, HashSet};
-
+use rustc_hash::{FxHashMap, FxHashSet};
 use vfl_sema::{Access, Decl, DeclId, DeclKind, FileId, Target, TypeDef};
 use vfl_syntax::{SyntaxKind, TextRange, TextSize, identifier_key};
 
@@ -126,7 +125,7 @@ fn element_decl_at(world: &World, file: FileId, offset: TextSize) -> Option<(Tex
 pub(crate) fn linked(world: &World, targets: &[DeclId], within: Option<FileId>) -> Vec<DeclId> {
     let analysis = &world.analysis;
     // Everything linked shares a name with a target.
-    let names: HashSet<&str> = targets
+    let names: FxHashSet<&str> = targets
         .iter()
         .filter_map(|&id| analysis.decl(id))
         .map(|d| d.name.as_str())
@@ -135,7 +134,7 @@ pub(crate) fn linked(world: &World, targets: &[DeclId], within: Option<FileId>) 
         .filter(|(_, d)| names.contains(d.name.as_str()))
         .collect();
     // A body's name refers to what it completes.
-    let mut edges: HashMap<DeclId, Vec<DeclId>> = HashMap::new();
+    let mut edges: FxHashMap<DeclId, Vec<DeclId>> = FxHashMap::default();
     for &(id, decl) in &candidates {
         let Some(reference) = crate::types::reference_at(analysis, decl.file, decl.range) else {
             continue;
@@ -153,7 +152,7 @@ pub(crate) fn linked(world: &World, targets: &[DeclId], within: Option<FileId>) 
     let is_interface =
         |d: &Decl| matches!(d.kind, DeclKind::Port { .. } | DeclKind::Generic { .. });
     let mut out: Vec<DeclId> = Vec::new();
-    let mut seen: HashSet<DeclId> = HashSet::new();
+    let mut seen: FxHashSet<DeclId> = FxHashSet::default();
     let mut queue: Vec<DeclId> = targets.to_vec();
     while let Some(id) = queue.pop() {
         if !seen.insert(id) {

@@ -1,9 +1,8 @@
 //! Checks that run on resolved units: unused and undriven objects, unused
 //! use clauses, unused ports and generics, duplicate design units.
 
-use std::collections::{HashMap, HashSet};
-
 use rayon::prelude::*;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use vfl_syntax::{TextRange, TextSize};
 
@@ -18,8 +17,10 @@ struct Usage {
     writes: u32,
 }
 
-fn usage_of<'r>(refs: impl Iterator<Item = &'r crate::decl::Reference>) -> HashMap<DeclId, Usage> {
-    let mut usage: HashMap<DeclId, Usage> = HashMap::new();
+fn usage_of<'r>(
+    refs: impl Iterator<Item = &'r crate::decl::Reference>,
+) -> FxHashMap<DeclId, Usage> {
+    let mut usage: FxHashMap<DeclId, Usage> = FxHashMap::default();
     for r in refs {
         for target in &r.targets {
             if let Target::Decl(id) = target {
@@ -146,7 +147,7 @@ pub(crate) fn project_checks(ctx: &Ctx) -> Vec<Diagnostic> {
     duplicate_units(ctx, &mut diags);
 
     // Secondary units by (library, primary name).
-    let mut secondaries: HashMap<(&str, &str), Vec<UnitId>> = HashMap::new();
+    let mut secondaries: FxHashMap<(&str, &str), Vec<UnitId>> = FxHashMap::default();
     for (id, unit) in ctx.units.iter().enumerate() {
         if let Some(primary) = &unit.primary {
             secondaries
@@ -162,7 +163,7 @@ pub(crate) fn project_checks(ctx: &Ctx) -> Vec<Diagnostic> {
         .into_par_iter()
         .map(|id| unit_project_checks(ctx, &secondaries, id as UnitId))
         .collect();
-    let mut reported_use_items: HashSet<(u32, TextSize)> = HashSet::new();
+    let mut reported_use_items: FxHashSet<(u32, TextSize)> = FxHashSet::default();
     for (is_use, diag) in per_unit.into_iter().flatten() {
         if is_use && !reported_use_items.insert((diag.file, diag.range.start())) {
             continue;
@@ -177,7 +178,7 @@ pub(crate) fn project_checks(ctx: &Ctx) -> Vec<Diagnostic> {
 /// ports used in one direction only.
 fn unit_project_checks(
     ctx: &Ctx,
-    secondaries: &HashMap<(&str, &str), Vec<UnitId>>,
+    secondaries: &FxHashMap<(&str, &str), Vec<UnitId>>,
     id: UnitId,
 ) -> Vec<(bool, Diagnostic)> {
     let mut diags = Vec::new();
@@ -198,7 +199,7 @@ fn unit_project_checks(
 
     // Unused use clauses.
     if unit.kind != DeclKind::Context && !result.use_items.is_empty() {
-        let mut used: HashSet<u32> = HashSet::new();
+        let mut used: FxHashSet<u32> = FxHashSet::default();
         for &u in std::iter::once(&id).chain(&related) {
             if let Some(r) = ctx.result(u) {
                 used.extend(

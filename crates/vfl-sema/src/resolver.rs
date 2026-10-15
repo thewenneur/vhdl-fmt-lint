@@ -8,9 +8,9 @@
 //! is not part of the project, ...) resolves to "unknown" and is never
 //! reported: false errors are worse than missed ones.
 
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::smallvec;
 use vfl_syntax::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange, identifier_key};
 
@@ -136,7 +136,7 @@ pub(crate) struct Resolver<'a> {
     refs: Vec<Reference>,
     diags: Vec<Diagnostic>,
     use_items: Vec<UseItem>,
-    used_imports: HashSet<ImportId>,
+    used_imports: FxHashSet<ImportId>,
     /// Inside an `ERROR` node, or a builtin file: no name errors.
     quiet: u32,
     /// Inside aggregate choices: a name may be a record element.
@@ -179,7 +179,7 @@ impl<'a> Resolver<'a> {
             refs: Vec::new(),
             diags: Vec::new(),
             use_items: Vec::new(),
-            used_imports: HashSet::new(),
+            used_imports: FxHashSet::default(),
             quiet: u32::from(ctx.files[file as usize].builtin),
             soft: 0,
             implicit: Vec::new(),
@@ -2042,7 +2042,7 @@ impl<'a> Resolver<'a> {
                 (SyntaxKind::PORT_MAP_ASPECT, Interface::Port),
             ] {
                 if !node.children().any(|n| n.kind() == aspect) {
-                    self.check_unassociated(node, target, interface, &HashSet::new());
+                    self.check_unassociated(node, target, interface, &FxHashSet::default());
                 }
             }
         }
@@ -2150,7 +2150,7 @@ impl<'a> Resolver<'a> {
         let formals = target
             .map(|(region, _)| self.interface_decls(region, interface))
             .unwrap_or_default();
-        let mut associated: HashSet<DeclId> = HashSet::new();
+        let mut associated: FxHashSet<DeclId> = FxHashSet::default();
         let mut position = 0usize;
         for element in list.children() {
             if element.kind() != SyntaxKind::ASSOCIATION_ELEMENT {
@@ -2313,7 +2313,7 @@ impl<'a> Resolver<'a> {
         at: &SyntaxNode,
         target: &(Arc<Region>, String),
         interface: Interface,
-        associated: &HashSet<DeclId>,
+        associated: &FxHashSet<DeclId>,
     ) {
         if target.0.opaque {
             return;
@@ -2377,7 +2377,7 @@ impl<'a> Resolver<'a> {
                 _ => None,
             })
         };
-        let mut listed: HashMap<DeclId, TextRange> = HashMap::new();
+        let mut listed: FxHashMap<DeclId, TextRange> = FxHashMap::default();
         for r in &self.refs[sens_refs.clone()] {
             if let Some(id) = signal_of(r, self) {
                 listed.insert(id, r.range);
@@ -2391,7 +2391,7 @@ impl<'a> Resolver<'a> {
             .collect();
         let required = required_ranges(process);
         let mut missing: Vec<(DeclId, String)> = Vec::new();
-        let mut read: HashSet<DeclId> = HashSet::new();
+        let mut read: FxHashSet<DeclId> = FxHashSet::default();
         for r in &body {
             if !r.access.reads() {
                 continue;

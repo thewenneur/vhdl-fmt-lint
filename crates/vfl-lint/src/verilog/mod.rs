@@ -14,11 +14,11 @@ mod procedures;
 mod scope;
 mod width;
 
-use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use rustc_hash::{FxHashMap, FxHashSet};
 use vfl_sema::{Analysis, ForeignModule};
 use vfl_verilog_syntax::{SyntaxKind as K, SyntaxNode, SyntaxToken, TextRange};
 
@@ -95,20 +95,20 @@ impl Exports {
 /// What the Verilog files of a project declare, for the rules of each.
 pub struct Project<'a> {
     files: Vec<(PathBuf, Arc<Exports>)>,
-    packages: HashMap<String, Vec<String>>,
-    globals: HashSet<String>,
-    units: HashSet<String>,
-    modules: HashMap<&'a str, Option<&'a ForeignModule>>,
+    packages: FxHashMap<String, Vec<String>>,
+    globals: FxHashSet<String>,
+    units: FxHashSet<String>,
+    modules: FxHashMap<&'a str, Option<&'a ForeignModule>>,
     /// A hash of what every file sees: the globals and the units.
     shared: u64,
 }
 
 impl<'a> Project<'a> {
     pub fn new(analysis: &'a Analysis, files: Vec<(PathBuf, Arc<Exports>)>) -> Project<'a> {
-        let mut packages: HashMap<String, Vec<String>> = HashMap::new();
-        let mut globals = HashSet::new();
-        let mut units = HashSet::new();
-        let mut open = HashSet::new();
+        let mut packages: FxHashMap<String, Vec<String>> = FxHashMap::default();
+        let mut globals = FxHashSet::default();
+        let mut units = FxHashSet::default();
+        let mut open = FxHashSet::default();
         for (_, exports) in &files {
             open.extend(exports.open.iter().map(String::as_str));
             for (name, names) in &exports.packages {
@@ -122,7 +122,7 @@ impl<'a> Project<'a> {
         }
         // A module defined twice (two test benches), or whose macros may
         // declare more ports and parameters, is not looked up.
-        let mut modules: HashMap<&str, Option<&ForeignModule>> = HashMap::new();
+        let mut modules: FxHashMap<&str, Option<&ForeignModule>> = FxHashMap::default();
         for id in 0..analysis.files().len() {
             for module in analysis.foreign_modules(id as u32).unwrap_or(&[]) {
                 let known = !open.contains(module.name.as_str());
@@ -211,7 +211,7 @@ pub struct Unit<'a> {
     pub scope: Scope,
     pub uses: Vec<Use>,
     /// Names nothing declares, used where they declare an implicit net.
-    pub implicit: HashSet<String>,
+    pub implicit: FxHashSet<String>,
 }
 
 impl Unit<'_> {
@@ -253,7 +253,7 @@ pub fn check(ctx: &Context, enabled: impl Fn(&str) -> bool, out: &mut Vec<Findin
             node,
             scope,
             uses,
-            implicit: HashSet::new(),
+            implicit: FxHashSet::default(),
         };
         names::check(&mut unit, &enabled, out);
         procedures::check(&unit, &enabled, out);

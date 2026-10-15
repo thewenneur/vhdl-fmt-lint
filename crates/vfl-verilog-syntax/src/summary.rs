@@ -6,9 +6,9 @@
 //! whether they are in the port list (`input logic [7:0] a`) or in the
 //! module body (`module m(a); input [7:0] a;`).
 
-use std::collections::HashMap;
-
 use crate::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange};
+
+use rustc_hash::FxHashMap;
 
 /// The direction of a port.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -332,7 +332,7 @@ fn ansi_ports(items: &[SyntaxNode], ports: &mut Vec<Port>) {
 /// Ports whose directions are declared in the module body.
 fn body_ports(module: &SyntaxNode, items: &[SyntaxNode], ports: &mut Vec<Port>) {
     // Name -> (direction, type, declarator, declaration).
-    let mut declared: HashMap<
+    let mut declared: FxHashMap<
         String,
         (
             Option<Direction>,
@@ -340,10 +340,10 @@ fn body_ports(module: &SyntaxNode, items: &[SyntaxNode], ports: &mut Vec<Port>) 
             SyntaxNode,
             SyntaxNode,
         ),
-    > = HashMap::new();
+    > = FxHashMap::default();
     // Types given by a separate net or variable declaration: `output c;
     // reg [3:0] c;`.
-    let mut types: HashMap<String, SyntaxNode> = HashMap::new();
+    let mut types: FxHashMap<String, SyntaxNode> = FxHashMap::default();
     for item in body_items(module) {
         let kind = item.kind();
         if !matches!(

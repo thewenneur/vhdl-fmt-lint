@@ -1,8 +1,8 @@
 //! Declarations, the regions that hold them, and what a name resolves to.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
+use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use vfl_syntax::TextRange;
 
@@ -261,7 +261,7 @@ pub struct Element {
 #[derive(Debug, Clone, Default)]
 pub struct Region {
     /// Most names declare one thing: kept inline, with no allocation.
-    names: HashMap<String, SmallVec<[DeclId; 1]>>,
+    names: FxHashMap<String, SmallVec<[DeclId; 1]>>,
     order: Vec<DeclId>,
     /// Set when the region could not be built completely (an unknown
     /// generic package, say): lookups that fail are not errors.

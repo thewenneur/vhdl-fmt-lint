@@ -10,9 +10,8 @@
 //! `` `elsif `` / `` `else ``; the other branches become `INACTIVE` trivia.
 //! Macro uses are not expanded.
 
-use std::collections::HashMap;
-
 use rowan::{TextRange, TextSize};
+use rustc_hash::FxHashMap;
 
 use crate::{IncludeReader, Options, Standard, SyntaxError, SyntaxKind};
 use SyntaxKind::*;
@@ -42,7 +41,7 @@ const MAX_INCLUDE_READS: u32 = 1024;
 
 /// Splits `text` into tokens. Concatenating the tokens gives back `text`.
 pub fn lex(text: &str, options: &Options) -> Lexed {
-    let mut macros = Macros::new();
+    let mut macros = Macros::default();
     for define in options.defines {
         let name = define.split('=').next().unwrap_or_default();
         macros.insert(name.to_owned(), false);
@@ -57,7 +56,7 @@ pub fn lex(text: &str, options: &Options) -> Lexed {
 }
 
 /// Defined macros, and whether each takes arguments.
-type Macros = HashMap<String, bool>;
+type Macros = FxHashMap<String, bool>;
 
 /// One open `` `ifdef ``.
 struct Conditional {
@@ -1157,7 +1156,7 @@ mod tests {
 
     #[test]
     fn condition_expressions() {
-        let mut macros = Macros::new();
+        let mut macros = Macros::default();
         macros.insert("A".into(), false);
         assert!(Condition::new("(A && !B)", &macros).eval());
         assert!(!Condition::new("(B || !A)", &macros).eval());

@@ -6,15 +6,13 @@
 mod fsm;
 mod reset;
 
-use std::collections::{HashMap, HashSet};
-
+use rustc_hash::{FxHashMap, FxHashSet};
 use vfl_syntax::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange};
 
 use crate::analysis::{Ctx, UnitResult};
 use crate::decl::{Decl, DeclId, DeclKind, Target, TypeDef, UnitId};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::resolver::{is_clock_edge, mark_token};
-use crate::typeck::FxMap;
 
 // ---- Static values ---------------------------------------------------------
 
@@ -176,8 +174,8 @@ pub(crate) fn check_unit(
     unit: UnitId,
     design_unit: &SyntaxNode,
     result: &UnitResult,
-    refs_at: &FxMap<TextRange, usize>,
-    decls_at: &FxMap<TextRange, DeclId>,
+    refs_at: &FxHashMap<TextRange, usize>,
+    decls_at: &FxHashMap<TextRange, DeclId>,
 ) -> Vec<Diagnostic> {
     let file = ctx.units[unit as usize].file;
     let mut checker = Checker {
@@ -206,9 +204,9 @@ struct Checker<'a> {
     unit: UnitId,
     file: u32,
     result: &'a UnitResult,
-    refs_at: &'a FxMap<TextRange, usize>,
+    refs_at: &'a FxHashMap<TextRange, usize>,
     /// This unit's declarations by name range.
-    decls_at: &'a FxMap<TextRange, DeclId>,
+    decls_at: &'a FxHashMap<TextRange, DeclId>,
     /// Reference indexes in source order, built when needed.
     by_start: std::cell::OnceCell<Vec<usize>>,
     /// Clocked processes without `wait`, with their clock.
@@ -822,15 +820,15 @@ impl<'a> Checker<'a> {
     }
 
     /// The signals a sequence of statements assigns on every path.
-    fn sequence(&self, statements: &[SyntaxNode], paths: &mut Paths) -> HashSet<DeclId> {
-        let mut always = HashSet::new();
+    fn sequence(&self, statements: &[SyntaxNode], paths: &mut Paths) -> FxHashSet<DeclId> {
+        let mut always = FxHashSet::default();
         for statement in statements {
             always.extend(self.statement(statement, paths));
         }
         always
     }
 
-    fn statement(&self, node: &SyntaxNode, paths: &mut Paths) -> HashSet<DeclId> {
+    fn statement(&self, node: &SyntaxNode, paths: &mut Paths) -> FxHashSet<DeclId> {
         use SyntaxKind::*;
         match node.kind() {
             SIGNAL_ASSIGN_STMT | SELECTED_ASSIGN_STMT => {
@@ -841,7 +839,7 @@ impl<'a> Checker<'a> {
                     .filter_map(|e| e.into_node())
                     .find(|n| n.kind() != LABEL);
                 let Some(target) = target else {
-                    return HashSet::new();
+                    return FxHashSet::default();
                 };
                 // `s <= a when c;` without a final `else` may not assign.
                 let complete = node
@@ -857,7 +855,7 @@ impl<'a> Checker<'a> {
                 // Signals passed whole to `out` parameters count as
                 // assigned, but are never reported on their own: the
                 // parameter modes of overloads are not always known.
-                let mut always = HashSet::new();
+                let mut always = FxHashSet::default();
                 for name in node
                     .descendants()
                     .filter(|n| n.kind() == ASSOCIATION_ELEMENT)
@@ -899,16 +897,16 @@ impl<'a> Checker<'a> {
                         }
                     }
                 }
-                let sets: Vec<HashSet<DeclId>> =
+                let sets: Vec<FxHashSet<DeclId>> =
                     branches.iter().map(|b| self.sequence(b, paths)).collect();
                 if has_else {
                     intersection(sets)
                 } else {
-                    HashSet::new()
+                    FxHashSet::default()
                 }
             }
             CASE_STMT => {
-                let sets: Vec<HashSet<DeclId>> = node
+                let sets: Vec<FxHashSet<DeclId>> = node
                     .children()
                     .filter(|n| n.kind() == CASE_ALTERNATIVE)
                     .map(|alternative| {
@@ -930,15 +928,20 @@ impl<'a> Checker<'a> {
                     .collect();
                 self.sequence(&body, paths)
             }
-            _ => HashSet::new(),
+            _ => FxHashSet::default(),
         }
     }
 
     /// Records an assignment to `target`; returns the signals it assigns
     /// whole when `complete`.
-    fn assigned(&self, target: &SyntaxNode, complete: bool, paths: &mut Paths) -> HashSet<DeclId> {
+    fn assigned(
+        &self,
+        target: &SyntaxNode,
+        complete: bool,
+        paths: &mut Paths,
+    ) -> FxHashSet<DeclId> {
         use SyntaxKind::*;
-        let mut always = HashSet::new();
+        let mut always = FxHashSet::default();
         match target.kind() {
             NAME => {
                 if let Some(token) = mark_token(target)
@@ -992,7 +995,7 @@ impl<'a> Checker<'a> {
             return;
         }
         // The clock each signal is registered on; `None` when several.
-        let mut domain: HashMap<DeclId, Option<DeclId>> = HashMap::new();
+        let mut domain: FxHashMap<DeclId, Option<DeclId>> = FxHashMap::default();
         for p in &processes {
             for r in self.refs_in(p.range) {
                 if !r.access.writes() {
@@ -1011,7 +1014,7 @@ impl<'a> Checker<'a> {
             }
         }
         for p in &processes {
-            let mut reported: HashSet<DeclId> = HashSet::new();
+            let mut reported: FxHashSet<DeclId> = FxHashSet::default();
             let refs: Vec<&crate::decl::Reference> = self.refs_in(p.range).collect();
             for r in refs {
                 if !r.access.reads() {
@@ -1100,14 +1103,14 @@ impl<'a> Checker<'a> {
 /// and signals assigned only in part.
 #[derive(Default)]
 struct Paths {
-    first: HashMap<DeclId, TextRange>,
-    partial: HashSet<DeclId>,
+    first: FxHashMap<DeclId, TextRange>,
+    partial: FxHashSet<DeclId>,
 }
 
-fn intersection(sets: Vec<HashSet<DeclId>>) -> HashSet<DeclId> {
+fn intersection(sets: Vec<FxHashSet<DeclId>>) -> FxHashSet<DeclId> {
     let mut sets = sets.into_iter();
     let Some(first) = sets.next() else {
-        return HashSet::new();
+        return FxHashSet::default();
     };
     sets.fold(first, |acc, s| acc.intersection(&s).copied().collect())
 }

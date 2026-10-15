@@ -972,6 +972,7 @@ dependencies = [
  "rayon",
  "regex",
  "rowan",
+ "rustc-hash",
  "serde_json",
  "toml",
  "vfl-config",
@@ -989,6 +990,7 @@ dependencies = [
  "lsp-server",
  "lsp-types",
  "rowan",
+ "rustc-hash",
  "serde",
  "serde_json",
  "tempfile",
@@ -1022,6 +1024,7 @@ dependencies = [
  "globset",
  "ignore",
  "rayon",
+ "rustc-hash",
  "tempfile",
  "thiserror",
  "toml",
@@ -1039,6 +1042,7 @@ dependencies = [
  "insta",
  "rayon",
  "rowan",
+ "rustc-hash",
  "smallvec",
  "toml",
  "vfl-config",
@@ -1060,6 +1064,7 @@ version = "0.3.0"
 dependencies = [
  "insta",
  "rowan",
+ "rustc-hash",
  "vfl-syntax",
 ]
 

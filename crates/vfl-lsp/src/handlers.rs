@@ -1,6 +1,5 @@
 //! Request handlers.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use lsp_types::{
@@ -14,6 +13,7 @@ use lsp_types::{
     ReferenceParams, RenameParams, SymbolInformation, SymbolKind, TextDocumentPositionParams,
     TextEdit, Url, WorkspaceEdit, WorkspaceSymbolParams, WorkspaceSymbolResponse,
 };
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -123,7 +123,7 @@ fn lsp_diagnostic(world: &World, d: &vfl_lint::Diagnostic) -> lsp_types::Diagnos
 /// The diagnostics of every user file that has some, Verilog files
 /// included.
 pub fn diagnostics(world: &World) -> Vec<(Url, Vec<lsp_types::Diagnostic>)> {
-    let mut by_file: HashMap<FileId, Vec<lsp_types::Diagnostic>> = HashMap::new();
+    let mut by_file: FxHashMap<FileId, Vec<lsp_types::Diagnostic>> = FxHashMap::default();
     for d in &world.lint {
         by_file
             .entry(d.file)
@@ -622,7 +622,7 @@ fn symbol_kind(kind: DeclKind) -> Option<SymbolKind> {
 /// The declarations of a file worth listing, once each (a file in two
 /// libraries is analyzed twice), with their ids.
 fn file_decls(world: &World, file: FileId) -> Vec<(DeclId, &Decl)> {
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = FxHashSet::default();
     let mut out = Vec::new();
     for unit in world.analysis.file_units(file) {
         for (index, decl) in world.analysis.unit_decls(unit).iter().enumerate() {
@@ -760,7 +760,7 @@ pub(crate) fn outline(
     file: FileId,
 ) -> (Vec<(DeclId, &Decl)>, Vec<usize>, Vec<Vec<usize>>) {
     let decls = file_decls(world, file);
-    let ids: HashMap<DeclId, usize> = decls
+    let ids: FxHashMap<DeclId, usize> = decls
         .iter()
         .enumerate()
         .map(|(i, (id, _))| (*id, i))
@@ -935,7 +935,7 @@ pub(crate) fn workspace_edit(
     world: &World,
     edits: impl IntoIterator<Item = (FileId, TextRange, String)>,
 ) -> WorkspaceEdit {
-    let mut changes: HashMap<Url, Vec<TextEdit>> = HashMap::new();
+    let mut changes: std::collections::HashMap<Url, Vec<TextEdit>> = Default::default();
     for (file, range, text) in edits {
         let Some(uri) = uri(&world.analysis.files()[file as usize].path) else {
             continue;
@@ -1145,7 +1145,7 @@ fn completion_kind(kind: DeclKind) -> CompletionItemKind {
 #[derive(Default)]
 struct Items {
     items: Vec<CompletionItem>,
-    seen: std::collections::HashSet<(String, String)>,
+    seen: FxHashSet<(String, String)>,
 }
 
 impl Items {

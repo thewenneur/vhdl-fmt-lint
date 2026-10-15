@@ -1,7 +1,6 @@
 //! Semantic tokens: names colored by what the analysis resolved them to
 //! (signal, port, constant, type, ...) rather than by the grammar.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use lsp_types::{
@@ -10,6 +9,7 @@ use lsp_types::{
     SemanticTokensLegend, SemanticTokensParams, SemanticTokensRangeParams,
     SemanticTokensRangeResult, SemanticTokensResult,
 };
+use rustc_hash::FxHashMap;
 use vfl_sema::{Decl, DeclKind, FileId, Mode, Target};
 use vfl_syntax::{LineIndex, TextRange, TextSize};
 
@@ -204,7 +204,7 @@ pub fn tokens(world: &World, file: FileId, within: Option<TextRange>) -> Vec<Tok
     };
     // By start offset: a file in several libraries has its units, and so
     // its names, once per library; a declaration wins over a reference.
-    let mut by_start: HashMap<TextSize, Token> = HashMap::new();
+    let mut by_start: FxHashMap<TextSize, Token> = FxHashMap::default();
     let builtin = |f: FileId| analysis.files().get(f as usize).is_some_and(|f| f.builtin);
     for unit in analysis.file_units(file) {
         for decl in analysis.unit_decls(unit) {
@@ -300,7 +300,7 @@ fn encode(doc: Doc, tokens: &[Token]) -> Vec<SemanticToken> {
 /// The last tokens sent for each file, for answering with a delta.
 #[derive(Default)]
 pub struct Sent {
-    files: HashMap<PathBuf, (String, Vec<SemanticToken>)>,
+    files: FxHashMap<PathBuf, (String, Vec<SemanticToken>)>,
     next_id: u64,
 }
 

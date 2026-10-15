@@ -8,9 +8,8 @@
 //! writes the same way, by name; a local that shadows a signal makes the
 //! signal look used, which only ever hides a finding.
 
-use std::collections::{HashMap, HashSet};
-
 use rowan::WalkEvent;
+use rustc_hash::{FxHashMap, FxHashSet};
 use vfl_verilog_syntax::summary::Direction;
 use vfl_verilog_syntax::{SyntaxKind as K, SyntaxNode, SyntaxToken, TextRange};
 
@@ -226,7 +225,7 @@ pub fn words(text: &str) -> impl Iterator<Item = &str> {
 #[derive(Debug, Default)]
 pub struct Scope {
     pub decls: Vec<Decl>,
-    pub by_name: HashMap<String, Vec<usize>>,
+    pub by_name: FxHashMap<String, Vec<usize>>,
     /// Packages imported (`import p::*;` or `import p::x;`).
     pub imports: Vec<String>,
     /// Whether a macro used as an item may declare names this scope
@@ -234,7 +233,7 @@ pub struct Scope {
     pub open: bool,
     /// Names in constructs kept as tokens and in code `` `ifdef `` leaves
     /// out: taken as declared and as used.
-    pub hidden: HashSet<String>,
+    pub hidden: FxHashSet<String>,
 }
 
 impl Scope {

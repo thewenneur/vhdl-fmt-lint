@@ -1,8 +1,7 @@
 //! What a file declares and which library units it refers to: the input to
 //! library inference, read straight off the syntax tree.
 
-use std::collections::HashSet;
-
+use rustc_hash::FxHashSet;
 use vfl_syntax::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange, identifier_key};
 
 /// The kind of a design unit.
@@ -104,7 +103,7 @@ pub fn simple_name(node: &SyntaxNode) -> Option<SyntaxToken> {
 pub fn summarize(root: &SyntaxNode) -> FileSummary {
     let mut summary = FileSummary::default();
 
-    let mut libraries: HashSet<String> = HashSet::from(["work".to_owned()]);
+    let mut libraries: FxHashSet<String> = ["work".to_owned()].into_iter().collect();
     for clause in root
         .descendants()
         .filter(|n| n.kind() == SyntaxKind::LIBRARY_CLAUSE)

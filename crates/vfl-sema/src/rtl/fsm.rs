@@ -3,8 +3,7 @@
 //! next-state object. Reports states no transition reaches, and states
 //! nothing but a reset leaves.
 
-use std::collections::{HashMap, HashSet};
-
+use rustc_hash::{FxHashMap, FxHashSet};
 use vfl_syntax::{SyntaxKind, SyntaxNode, TextRange};
 
 use super::Checker;
@@ -74,7 +73,7 @@ impl Checker<'_> {
     }
 
     pub(super) fn state_machines(&mut self, root: &SyntaxNode) {
-        let mut machines: HashMap<DeclId, Vec<SyntaxNode>> = HashMap::new();
+        let mut machines: FxHashMap<DeclId, Vec<SyntaxNode>> = FxHashMap::default();
         for case in std::mem::take(&mut self.cases) {
             let Some(selector) = case.children().find(|n| n.kind() != SyntaxKind::LABEL) else {
                 continue;
@@ -169,7 +168,7 @@ impl Checker<'_> {
 
         // The state object and the next-state objects assigned in the
         // alternatives.
-        let mut group: HashSet<DeclId> = HashSet::from([state]);
+        let mut group: FxHashSet<DeclId> = [state].into_iter().collect();
         let in_alternative = |r: TextRange| alternatives.iter().any(|a| a.range.contains_range(r));
         for assignment in assignments {
             if in_alternative(assignment.text_range())
@@ -182,7 +181,7 @@ impl Checker<'_> {
         }
 
         // Every assignment to the group: a literal, or another member.
-        let mut accounted: HashSet<TextRange> = HashSet::new();
+        let mut accounted: FxHashSet<TextRange> = FxHashSet::default();
         let mut assigned: Vec<(TextRange, usize)> = Vec::new();
         for assignment in assignments {
             let Some(target) = Self::assignment_target(assignment) else {
@@ -226,7 +225,7 @@ impl Checker<'_> {
         }
 
         // Transitions.
-        let mut edges: Vec<HashSet<usize>> = vec![HashSet::new(); count];
+        let mut edges: Vec<FxHashSet<usize>> = vec![FxHashSet::default(); count];
         let mut any_edge = false;
         let mut roots: Vec<usize> = Vec::new();
         let mut global: Vec<usize> = Vec::new();
@@ -294,7 +293,7 @@ impl Checker<'_> {
                 .and_then(|id| self.decl(id))
                 .map_or_else(|| literals[literal].clone(), |d| d.spelling.clone())
         };
-        let mut reported: HashSet<usize> = HashSet::new();
+        let mut reported: FxHashSet<usize> = FxHashSet::default();
         let mut diags = Vec::new();
         for alternative in &alternatives {
             for &(literal, range) in &alternative.choices {
