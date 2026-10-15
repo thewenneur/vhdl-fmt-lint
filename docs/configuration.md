@@ -7,6 +7,9 @@ rules that `[lint.rules]` configures are described in [lints.md](lints.md).
 `vfl config show [path]` prints the effective configuration for a file or directory, with
 the config files it was built from.
 
+For a guided tour, [examples/config](../examples/config/README.md) has one folder per
+topic, each with a `vfl.toml` and a file before and after `vfl fmt` or `vfl lint --fix`.
+
 - [Config files](#config-files): where they are looked up and how they combine
 - [`[project]`](#project): sources, standard and libraries
 - [`[format]`](#format): the formatter

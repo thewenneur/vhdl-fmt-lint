@@ -1,0 +1,12 @@
+# Each aligned token has its own switch. Here ports and declarations line up,
+# but assignments, case choices and end-of-line comments do not.
+[format.align]
+port_colon = true
+port_mode = true
+generic_colon = true
+interface_default = true
+declaration = true
+assignment = false
+case_choice = false
+trailing_comment = false
+semicolon = false

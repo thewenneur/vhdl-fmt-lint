@@ -1,0 +1,9 @@
+[project]
+exclude = ["after.vhd"] # keep the two copies of the example from clashing
+
+# These rules are off in the default preset; their fixes are safe, so
+# `vfl lint --fix` applies them.
+[lint.rules]
+"style/trailing-whitespace" = "warn"
+"style/tabs" = "warn"
+"style/positional-association" = "warn"

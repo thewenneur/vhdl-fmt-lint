@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Configuration guide by example** in `examples/config`: one folder per formatter or lint
+  topic, each with a `vfl.toml`, a file before and after `vfl fmt` or `vfl lint --fix`, and
+  a README. A test keeps the `after` files in sync with vfl.
+
 ## [0.6.0] - 2026-10-15
 
 State machine diagrams follow their branches instead of a circle and stay readable at 50+

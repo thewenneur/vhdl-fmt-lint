@@ -1,0 +1,10 @@
+[project]
+exclude = ["after.vhd"] # keep the two copies of the example from clashing
+
+# Unsafe fixes may change behavior: `vfl lint --fix --unsafe-fixes` applies
+# them, `vfl lint --fix` alone does not. Editors offer them as quick fixes.
+[lint.rules]
+"style/clock-edge" = "warn"
+"sema/unneeded-sensitivity" = "warn"
+# Already on in the default preset:
+# "style/no-std-logic-arith", "sema/sensitivity-list", "sema/unused-signal"

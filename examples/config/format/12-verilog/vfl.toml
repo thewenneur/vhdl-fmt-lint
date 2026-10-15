@@ -1,0 +1,9 @@
+# Verilog and SystemVerilog files are formatted only with mode = "full".
+[verilog]
+mode = "full"
+
+# The [format] keys that have a meaning in Verilog apply to it too.
+[format]
+indent = 2
+association_list = "expand"       # instance connections one per line
+association_separator = "leading" # "," at the start of the line

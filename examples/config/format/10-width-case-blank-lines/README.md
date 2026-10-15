@@ -1,0 +1,25 @@
+# Line width, case alternatives, blank lines and spaces
+
+```toml
+[format]
+max_width = 60
+case_alternative = "break"
+max_blank_lines = 1
+space_after_keyword = false
+```
+
+- `max_width` (default 100): a line longer than this is broken. An instance first moves its
+  `port map` to the next line (`u_short`); a map still too long there gets one
+  association per line (`u_long`).
+- `case_alternative = "break"` starts every statement of a `when` on its own line;
+  `"preserve"` (default) keeps a statement written on the `when` line there.
+- `max_blank_lines` shortens longer runs of blank lines (default 2).
+- `space_after_keyword = false` writes `process(...)`, `port(...)` and `if(...)` without
+  a space. Calls and indexing never get one.
+
+To limit the line length in `vfl lint` too, see the `style/line-length` rule in
+[lint/01-presets-and-levels](../../lint/01-presets-and-levels).
+
+```sh
+vfl fmt before.vhd   # compare with after.vhd
+```
