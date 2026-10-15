@@ -40,22 +40,33 @@ struct Branch {
     statements: Vec<SyntaxNode>,
 }
 
+/// The `sema/missing-branch-assignment` findings of a file.
+#[derive(Debug, Default)]
+pub struct MissingBranches {
+    pub diagnostics: Vec<Diagnostic>,
+    /// The ranges of the `sema/inferred-latch` findings these explain: the
+    /// first assignment of each signal they name in a combinational
+    /// process, where the latch is reported.
+    pub latches: Vec<TextRange>,
+}
+
 impl Analysis {
     /// The `sema/missing-branch-assignment` findings of a file: in its
     /// combinational processes, and in the clocked branch of its clocked
     /// processes too when `clocked`.
-    pub fn missing_branch_assignments(&self, file: FileId, clocked: bool) -> Vec<Diagnostic> {
+    pub fn missing_branch_assignments(&self, file: FileId, clocked: bool) -> MissingBranches {
         let Some(analyzed) = self.files().get(file as usize) else {
-            return Vec::new();
+            return MissingBranches::default();
         };
         if analyzed.builtin || analyzed.foreign.is_some() {
-            return Vec::new();
+            return MissingBranches::default();
         }
         let mut checker = Branches {
             analysis: self,
             text: &analyzed.text,
             units: self.file_units(file).collect(),
             found: Vec::new(),
+            latches: Vec::new(),
         };
         let root = analyzed.syntax();
         // Processes are statements of architectures, entities, blocks and
@@ -75,7 +86,7 @@ impl Analysis {
         }
         let mut found = checker.found;
         found.sort_by_key(|(range, ..)| range.start());
-        found
+        let diagnostics = found
             .into_iter()
             .map(|(range, message, fix)| Diagnostic {
                 code: codes::MISSING_BRANCH_ASSIGNMENT,
@@ -84,7 +95,11 @@ impl Analysis {
                 message,
                 fix,
             })
-            .collect()
+            .collect();
+        MissingBranches {
+            diagnostics,
+            latches: checker.latches,
+        }
     }
 }
 
@@ -94,6 +109,8 @@ struct Branches<'a> {
     /// The file's units, whose references are sorted by range.
     units: Vec<UnitId>,
     found: Vec<Found>,
+    /// See [`MissingBranches::latches`].
+    latches: Vec<TextRange>,
 }
 
 impl<'a> Branches<'a> {
@@ -262,10 +279,19 @@ impl<'a> Branches<'a> {
             clocked,
             done: Vec::new(),
             found: Vec::new(),
+            flagged: Vec::new(),
         };
         let mut assigned = Vec::new();
         self.branch_sequence(body, &mut scan, &mut assigned);
         self.found.append(&mut scan.found);
+        // `assigned` holds the first assignment of each signal in the
+        // process, which is where a latch is reported.
+        self.latches.extend(
+            assigned
+                .iter()
+                .filter(|(id, _)| scan.flagged.contains(id))
+                .map(|(_, range)| *range),
+        );
     }
 
     /// Walks a sequence of statements, adding to `scan.done` the signals
@@ -401,6 +427,17 @@ impl<'a> Branches<'a> {
         let unassigned = no_else.then(|| first.iter().map(|(id, _)| *id).collect::<Vec<_>>());
         if gaps.is_empty() && unassigned.is_none() {
             return;
+        }
+        if !clocked {
+            let flagged = gaps
+                .iter()
+                .flat_map(|(_, ids)| ids)
+                .chain(unassigned.iter().flatten());
+            for id in flagged {
+                if !scan.flagged.contains(id) {
+                    scan.flagged.push(*id);
+                }
+            }
         }
 
         let text = self.text;
@@ -662,6 +699,8 @@ struct Scan<'p> {
     /// sequences: a stack, each branch truncating it back.
     done: Vec<DeclId>,
     found: Vec<Found>,
+    /// The signals reported in a combinational process.
+    flagged: Vec<DeclId>,
 }
 
 impl Scan<'_> {

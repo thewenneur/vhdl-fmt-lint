@@ -187,7 +187,7 @@ pub const RULES: &[Rule] = &[
     rule(
         codes::MISSING_BRANCH_ASSIGNMENT,
         "A branch of an `if` or `case` in a process does not assign a signal another branch assigns, and nothing before it does.",
-        Error,
+        Warn,
         Error,
         true,
     ),
@@ -520,7 +520,7 @@ mod tests {
         assert_eq!(clocked_branches(&config("")), Ok(false));
         let on = config("[rules]\n\"sema/missing-branch-assignment\" = { clocked = true }");
         assert_eq!(clocked_branches(&on), Ok(true));
-        assert_eq!(level(&on, codes::MISSING_BRANCH_ASSIGNMENT), Error);
+        assert_eq!(level(&on, codes::MISSING_BRANCH_ASSIGNMENT), Warn);
         let bad = config("[rules]\n\"sema/missing-branch-assignment\" = { clocked = 1 }");
         assert!(clocked_branches(&bad).is_err());
     }

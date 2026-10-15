@@ -158,7 +158,7 @@ fn branch_assignments_in_clocked_processes_are_an_option() {
     let rule = "\"sema/missing-branch-assignment\"";
     let on = format!("[lint.rules]\n{rule} = \"warn\"\n");
     let clocked = format!("[lint.rules]\n{rule} = {{ clocked = true }}\n");
-    for (config, expected) in [(on.as_str(), ""), (clocked.as_str(), "error")] {
+    for (config, expected) in [(on.as_str(), ""), (clocked.as_str(), "warning")] {
         let dir = project(&[("vfl.toml", config), ("r.vhd", source)]);
         let (_, stdout, _) = vfl(dir.path(), &["lint", "--output-format", "concise"]);
         assert_eq!(
@@ -167,6 +167,36 @@ fn branch_assignments_in_clocked_processes_are_an_option() {
             "{config}{stdout}"
         );
         assert!(!stdout.contains("#clocked"), "{stdout}");
+    }
+}
+
+#[test]
+fn missing_branch_assignments_take_precedence_over_latches() {
+    let source = "entity l is\n  port (s, d : in bit; q, r : out bit);\nend;\n\
+                  architecture rtl of l is\nbegin\n  process (all)\n  begin\n    \
+                  if s = '1' then\n      q <= d;\n    end if;\n  end process;\n  \
+                  process (all)\n  begin\n    for i in 0 to 0 loop\n      r <= d;\n    end loop;\n    \
+                  if s = '1' then\n      r <= '0';\n    end if;\n  end process;\nend;\n";
+    let latch = "q` is not assigned on every path";
+    for (config, branches, latches) in [
+        ("", 1, 0),
+        (
+            "[lint.rules]\n\"sema/missing-branch-assignment\" = \"off\"\n",
+            0,
+            1,
+        ),
+    ] {
+        let dir = project(&[("vfl.toml", config), ("l.vhd", source)]);
+        let (_, stdout, _) = vfl(dir.path(), &["lint", "--output-format", "concise"]);
+        assert_eq!(
+            stdout
+                .matches("warning[sema/missing-branch-assignment]")
+                .count(),
+            branches,
+            "{config}{stdout}"
+        );
+        assert_eq!(stdout.matches(latch).count(), latches, "{config}{stdout}");
+        assert!(!stdout.contains("`r`"), "{stdout}");
     }
 }
 

@@ -8,7 +8,7 @@
   `if` or `case` must be assigned in all its branches (and the `if` must have an `else`),
   unless it has a default before the statement. Reported at the branch that leaves it out.
   Combinational processes by default; `{ clocked = true }` checks clocked processes too,
-  leaving the reset branch out. Error in both presets, above `sema/inferred-latch`. Fixes: `q <= q;` in
+  leaving the reset branch out. Warn in `recommended`, error in `strict`; a latch it explains is reported by it only, not also as `sema/inferred-latch`. Fixes: `q <= q;` in
   clocked processes (safe), a default before the statement in combinational ones (unsafe).
 - **`style/case-others`** (strict): a `case` statement without `when others`; the fix adds
   `when others => null;`.

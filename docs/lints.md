@@ -77,7 +77,7 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`sema/unneeded-sensitivity`](#semaunneeded-sensitivity) | off | warn | unsafe |
 | [`sema/width-mismatch`](#semawidth-mismatch) | warn | error | |
 | [`sema/inferred-latch`](#semainferred-latch) | warn | error | |
-| [`sema/missing-branch-assignment`](#semamissing-branch-assignment) | error | error | safe, unsafe |
+| [`sema/missing-branch-assignment`](#semamissing-branch-assignment) | warn | error | safe, unsafe |
 | [`sema/clock-domain-crossing`](#semaclock-domain-crossing) | info | warn | |
 | [`sema/open-input`](#semaopen-input) | warn | error | |
 | [`sema/inout-port`](#semainout-port) | info | warn | |
@@ -364,7 +364,9 @@ end process;
 To fix it, assign a default at the top of the process or add the missing `else` / `when
 others`. Not reported: signals only assigned in part (an element or a slice), processes
 with `after` delays (simulation models), other `wait` statements, and processes that do not
-parse. `warn` in `recommended`, `error` in `strict`.
+parse. `warn` in `recommended`, `error` in `strict`. While
+[`sema/missing-branch-assignment`](#semamissing-branch-assignment) is on, a latch it reports
+a branch for is left to it.
 
 ### `sema/missing-branch-assignment`
 
@@ -411,8 +413,9 @@ A `case` without `when others` is complete by the language's rules, so only its
 alternatives are compared; [`style/case-others`](#stylecase-others) reports it in `strict`.
 Not reported: signals assigned only in part (an element or a slice), processes with `wait`
 (other than one trailing `wait on`) or `after` delays, and processes that do not parse.
-`error` in both presets, one level above [`sema/inferred-latch`](#semainferred-latch) in
-`recommended`: it names the branch to fix, where the latch finding names the signal.
+`warn` in `recommended`, `error` in `strict`. It takes precedence over
+[`sema/inferred-latch`](#semainferred-latch): a latch it explains is reported as this rule's
+findings only, which name the branches to fix, where the latch finding names the signal.
 
 ### `sema/clock-domain-crossing`
 

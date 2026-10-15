@@ -56,7 +56,7 @@ pub fn analyze(text: &str) -> String {
     }
     // On demand: with clocked processes.
     let branches: Vec<_> = (0..analysis.user_files().len() as u32)
-        .flat_map(|file| analysis.missing_branch_assignments(file, true))
+        .flat_map(|file| analysis.missing_branch_assignments(file, true).diagnostics)
         .collect();
     for d in analysis.diagnostics().iter().chain(&branches) {
         let file = &analysis.files()[d.file as usize];

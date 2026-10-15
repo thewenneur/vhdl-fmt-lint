@@ -316,9 +316,19 @@ fn lint_file(
         });
         analysis.missing_branch_assignments(settings.file, clocked)
     } else {
-        Vec::new()
+        vfl_sema::MissingBranches::default()
     };
-    for d in sema.iter().copied().chain(&branches) {
+    // A latch that a missing branch assignment explains is reported as the
+    // latter only.
+    let explained = |d: &vfl_sema::Diagnostic| {
+        d.code == vfl_sema::codes::INFERRED_LATCH && branches.latches.contains(&d.range)
+    };
+    for d in sema
+        .iter()
+        .copied()
+        .filter(|d| !explained(d))
+        .chain(&branches.diagnostics)
+    {
         let code = d.code;
         let mut finding = Finding::new(code, d.range, d.message.clone());
         finding.fix = d.fix.clone();

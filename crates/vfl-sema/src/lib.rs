@@ -46,6 +46,7 @@ mod syntax;
 mod typeck;
 
 pub use analysis::{Analysis, AnalyzedFile, FileInput, UnitInfo};
+pub use branches::MissingBranches;
 pub use decl::{
     Access, Decl, DeclId, DeclKind, Element, ElementRef, FileId, Mode, Reference, Region, Target,
     Targets, TypeDef, UnitId,
