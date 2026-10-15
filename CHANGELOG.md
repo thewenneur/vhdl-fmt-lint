@@ -10,7 +10,8 @@
   in Zed, and any `vfl.toml` key under `config` in the initialization options of other
   LSP clients. A `vfl.toml` replaces them.
 - **Generate project config (vfl.toml)** in VS Code and Notepad++, and as a code action in
-  other editors, writes the settings in effect to the project's `vfl.toml`, every key set.
+  other editors, writes the settings in effect to the project's `vfl.toml`;
+  keys at their default value are written as comments.
 
 ## [0.6.0] - 2026-10-15
 

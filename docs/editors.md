@@ -299,7 +299,7 @@ preset and the format style are the usual ones:
 A `vfl.toml` replaces them entirely, so that a project is linted and formatted the same for
 everyone. The code action **Generate project config (vfl.toml) from the settings in effect**
 (kind `source.vfl.generateConfig`, offered while the project has no `vfl.toml`) writes them
-to `vfl.toml` at the project root, every key set.
+to `vfl.toml` at the project root, with the keys at their default value as comments.
 
 | Editor | Lint preset and format style | Generate the config file |
 |--------|------------------------------|--------------------------|

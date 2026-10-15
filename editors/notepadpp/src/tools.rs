@@ -745,7 +745,7 @@ pub(crate) fn generate_config() {
                 && !confirm(
                     npp(),
                     &format!(
-                        "{} exists. Replace it with every setting in effect?",
+                        "{} exists. Replace it with the settings in effect?",
                         path.display()
                     ),
                 )

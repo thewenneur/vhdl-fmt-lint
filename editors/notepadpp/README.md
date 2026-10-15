@@ -98,7 +98,7 @@ Mapper > Plugin commands**.
 | Insert entity instantiation, Insert component instantiation, Insert component declaration | Lists the entities of the project, those of the current file first, and inserts the code for the one picked at the caret. |
 | Generate testbench | Lists the entities of the project and writes a testbench for the one picked next to it (`<entity>_tb.vhd`, see `[generate]` in `vfl.toml`), then opens it. |
 | Generate documentation | Writes the documentation of the current file's project as `vfl doc` does, where and how `[doc]` in `vfl.toml` says, then opens the index: an HTML one in the default browser, a Markdown or AsciiDoc one in Notepad++. It is written in the background, so Notepad++ stays responsive on large projects. |
-| Generate project config (vfl.toml) | Writes the settings in effect at the root of the current file's project to its `vfl.toml`, every key set, and opens it: the lint preset and format style below when the project has no `vfl.toml`. It asks before replacing one. |
+| Generate project config (vfl.toml) | Writes the settings in effect at the root of the current file's project to its `vfl.toml`, and opens it. Keys at their default value are written as comments, to uncomment and change: the lint preset and format style below when the project has no `vfl.toml`. It asks before replacing one. |
 | Show diagrams | Writes the HTML documentation of the current file's project to a temporary folder (`%TEMP%\vfl_npp\diagrams`) and opens the page of the first entity (else package) of the file in the default browser. |
 | Show type | Shows what the name at the caret is, as hovering it does. |
 | Show parameters | Shows the parameter hints of the call around the caret. |

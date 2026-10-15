@@ -47,7 +47,8 @@ the lint preset and format style of the VS Code, Notepad++ and Zed integrations,
 passed by another LSP client (see [editors.md](editors.md#editor-settings)). A config file
 replaces those editor settings entirely, so that a project is linted and formatted the same
 in every editor and on the command line. The editors' **Generate project config** command
-writes the settings in effect to `vfl.toml`, every key set.
+writes the settings in effect to `vfl.toml`, with every key at its default value as a
+comment.
 
 ### Special top-level keys
 

@@ -43,7 +43,8 @@ pub fn editor_config(settings: &Value) -> Option<Result<Config, String>> {
 pub struct ProjectConfig {
     /// The config file at the project root: the one there, or `vfl.toml`.
     pub path: PathBuf,
-    /// The settings in effect at the project root, every key set.
+    /// The settings in effect at the project root, the keys at their
+    /// default value as comments.
     pub text: String,
     /// Whether `path` exists, and would be replaced.
     pub exists: bool,
@@ -73,7 +74,7 @@ pub fn project_config(world: &mut World) -> Result<ProjectConfig, String> {
     };
     let comment = format!(
         "vfl configuration, generated from {source}.\n\
-         Every key is set to the value it had; delete the ones to leave at their default.\n\
+         Keys at their default value are comments: uncomment one to change it.\n\
          Reference: {REFERENCE}"
     );
     Ok(ProjectConfig {

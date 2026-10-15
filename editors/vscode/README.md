@@ -99,7 +99,7 @@ the line above; `on_type = false` under `[format]` in `vfl.toml` turns it off fo
   at the cursor.
 - `vfl: Generate Testbench...` writes `<entity>_tb.vhd` next to the entity and opens it.
 - `vfl: Generate Project Config (vfl.toml)` writes the settings in effect to `vfl.toml` at
-  the project root, every key set, and opens it: the preset and style settings above when
+  the project root and opens it, with the keys at their default value as comments: the preset and style settings above when
   the project has no `vfl.toml`. It asks before replacing one.
 
 - `vfl: Generate Documentation` (also in the explorer context menu of a folder) runs

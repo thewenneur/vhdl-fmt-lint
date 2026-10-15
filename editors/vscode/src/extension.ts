@@ -323,7 +323,7 @@ async function generateTestbench(entity?: string): Promise<void> {
 interface ProjectConfig {
   /** The config file at the project root: the one there, or `vfl.toml`. */
   path: string;
-  /** The settings in effect, every key set. */
+  /** The settings in effect, those at their default as comments. */
   text: string;
   exists: boolean;
 }
@@ -347,7 +347,7 @@ async function generateConfig(): Promise<string | undefined> {
   }
   if (generated.exists) {
     const choice = await vscode.window.showWarningMessage(
-      `${path.basename(generated.path)} exists. Replace it with every setting in effect?`,
+      `${path.basename(generated.path)} exists. Replace it with the settings in effect?`,
       { modal: true },
       "Replace",
     );

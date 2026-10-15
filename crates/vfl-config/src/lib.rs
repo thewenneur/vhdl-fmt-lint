@@ -86,8 +86,23 @@ impl Config {
         if !text.is_empty() {
             text.push('\n');
         }
-        // A `Config` always serializes.
-        text.push_str(&toml::to_string_pretty(self).unwrap_or_default());
+        // The defaults of `self`'s format style: the keys it sets itself
+        // are at their default too.
+        let defaults = Config {
+            format: FormatConfig {
+                style: Style::Default,
+                ..FormatConfig::preset(self.format.style)
+            },
+            ..Config::default()
+        };
+        // A `Config` always serializes, to a table; one value per line,
+        // in the order of the schema.
+        let defaults = match toml::Value::try_from(&defaults) {
+            Ok(toml::Value::Table(table)) => table,
+            _ => toml::Table::new(),
+        };
+        let serialized = toml::to_string(self).unwrap_or_default();
+        text.push_str(&comment_defaults(&serialized, &defaults));
         text
     }
 
@@ -95,6 +110,35 @@ impl Config {
     pub fn standard(&self) -> Standard {
         self.project.standard.into()
     }
+}
+
+/// Comments out the `key = value` lines of `text`, a serialized config,
+/// whose value is the same in `defaults`.
+fn comment_defaults(text: &str, defaults: &toml::Table) -> String {
+    let mut out = String::new();
+    // The table of the current `[section]` in `defaults`.
+    let mut section = Some(defaults);
+    for line in text.lines() {
+        // A header or a key line is a TOML document of its own.
+        let parsed: Option<toml::Table> = toml::from_str(line).ok();
+        if line.starts_with('[') {
+            section = Some(defaults);
+            let mut header = parsed.as_ref();
+            while let Some((key, value)) = header.and_then(|h| h.iter().next()) {
+                section = section
+                    .and_then(|s| s.get(key))
+                    .and_then(toml::Value::as_table);
+                header = value.as_table().filter(|t| !t.is_empty());
+            }
+        } else if let Some((key, value)) = parsed.as_ref().and_then(|p| p.iter().next())
+            && section.and_then(|s| s.get(key)) == Some(value)
+        {
+            out.push_str("# ");
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
 }
 
 /// `[project]`: what the project is made of.
@@ -1032,6 +1076,30 @@ mod tests {
         let text = config.file_text("Generated.\n\nSecond paragraph.");
         assert!(
             text.starts_with("# Generated.\n#\n# Second paragraph.\n\n"),
+            "{text}"
+        );
+        assert_eq!(Config::from_toml_str(&text).unwrap(), config);
+        // Keys at their default, the style's included, are comments.
+        assert!(text.contains("\n# max_width = 100\n"), "{text}");
+        assert!(text.contains("\n# indent = 2\n"), "{text}");
+        assert!(text.contains("\n# standard = \"2008\"\n"), "{text}");
+        let active: Vec<&str> = text
+            .lines()
+            .filter(|l| !l.starts_with('#') && l.contains('='))
+            .collect();
+        assert_eq!(
+            active,
+            ["style = \"compact\"", "preset = \"none\""],
+            "{text}"
+        );
+
+        let config = Config::from_toml_str(
+            "[lint.rules]\n\"sema/unused-signal\" = \"off\"\n\"naming/signal\" = { level = \"warn\", prefix = \"s_\" }\n",
+        )
+        .unwrap();
+        let text = config.file_text("");
+        assert!(
+            text.contains("\n\"sema/unused-signal\" = \"off\"\n"),
             "{text}"
         );
         assert_eq!(Config::from_toml_str(&text).unwrap(), config);
