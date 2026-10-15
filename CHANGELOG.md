@@ -6,8 +6,10 @@
 
 - **Quick fix for `sema/unassociated-port`**: editors offer to associate the ports or
   generics an instantiation leaves out, adding a port map or generic map when there is
-  none. The required ones get the object of the same name (`b => b`); a second fix also
-  associates every optional port or generic with `open`. The new associations follow the
+  none. A port gets the signal or constant of the same name when one is declared
+  (`b => b`), else `open` (or, with the rule's option `undeclared = "name"`, its own
+  name for a required port, to be filled in); a second fix associates every port left
+  out, not only the required ones. The new associations follow the
   map's layout: on its line, or one per line with the commas before or after and the
   arrows aligned, and a formatted instantiation stays formatted.
 - **Leading separators**: `interface_separator = "leading"` and
