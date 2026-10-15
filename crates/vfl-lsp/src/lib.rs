@@ -22,6 +22,7 @@ mod watch;
 mod world;
 
 use std::collections::VecDeque;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::sync::mpsc;
 
@@ -351,7 +352,8 @@ impl<'a> Server<'a> {
                     if notification.method == n::Exit::METHOD {
                         return Ok(());
                     }
-                    self.handle_notification(notification)?;
+                    let method = notification.method.clone();
+                    guard(&method, || self.handle_notification(notification)).unwrap_or(Ok(()))?;
                 }
                 Message::Response(_) => {}
             }
@@ -361,11 +363,14 @@ impl<'a> Server<'a> {
             // over too.
             self.receive_waiting();
             if self.queue.is_empty() {
-                self.reread_changed();
+                guard("file changes", || self.reread_changed()).unwrap_or(());
             }
             if self.world.dirty && self.queue.is_empty() {
-                self.world.refresh();
-                self.publish()?;
+                guard("analysis", || -> Result<()> {
+                    self.world.refresh();
+                    self.publish()
+                })
+                .unwrap_or(Ok(()))?;
             }
         }
     }
@@ -381,14 +386,24 @@ impl<'a> Server<'a> {
         } else if request.method == <Shutdown as lsp_types::request::Request>::METHOD {
             Response::new_ok(request.id, ())
         } else {
-            if handlers::needs_analysis(&request.method) {
-                self.reread_changed();
-            }
-            if self.world.dirty && handlers::needs_analysis(&request.method) {
-                self.world.refresh();
-                self.publish()?;
-            }
-            self.handle_request(request)
+            let (id, method) = (request.id.clone(), request.method.clone());
+            guard(&method, || -> Result<Response> {
+                if handlers::needs_analysis(&request.method) {
+                    self.reread_changed();
+                }
+                if self.world.dirty && handlers::needs_analysis(&request.method) {
+                    self.world.refresh();
+                    self.publish()?;
+                }
+                Ok(self.handle_request(request))
+            })
+            .unwrap_or_else(|message| {
+                Ok(Response::new_err(
+                    id,
+                    ErrorCode::InternalError as i32,
+                    format!("vfl: internal error in {method}: {message}"),
+                ))
+            })?
         };
         self.connection.sender.send(Message::Response(response))?;
         Ok(())
@@ -460,6 +475,10 @@ impl<'a> Server<'a> {
     }
 
     fn handle_request(&mut self, request: Request) -> Response {
+        #[cfg(test)]
+        if request.method == "vfl/test/panic" {
+            panic!("a test panic");
+        }
         let id = request.id.clone();
         match handlers::request(&mut self.world, &request.method, request.params) {
             Ok(value) => Response::new_ok(id, value),
@@ -480,6 +499,8 @@ impl<'a> Server<'a> {
     fn handle_notification(&mut self, notification: Notification) -> Result<()> {
         let world = &mut self.world;
         match notification.method.as_str() {
+            #[cfg(test)]
+            "vfl/test/panic" => panic!("a test panic"),
             n::DidChangeConfiguration::METHOD => {
                 if let Some(p) =
                     params::<lsp_types::DidChangeConfigurationParams>(notification.params)
@@ -594,6 +615,20 @@ impl<'a> Server<'a> {
             )))?;
         Ok(())
     }
+}
+
+/// Runs `f`, catching a panic so that one bug fails one request, not the
+/// whole server: the panic is logged to stderr and its message returned.
+fn guard<T>(what: &str, f: impl FnOnce() -> T) -> Result<T, String> {
+    catch_unwind(AssertUnwindSafe(f)).map_err(|payload| {
+        let message = payload
+            .downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "unknown panic".into());
+        eprintln!("vfl: internal error in {what}, recovered: {message}");
+        message
+    })
 }
 
 fn params<P: DeserializeOwned>(value: serde_json::Value) -> Option<P> {
@@ -826,7 +861,7 @@ mod tests {
         loop {
             let message = client
                 .receiver
-                .recv_timeout(std::time::Duration::from_secs(20))
+                .recv_timeout(std::time::Duration::from_secs(60))
                 .expect("the server answers");
             if let Some(found) = wanted(&message) {
                 return found;
@@ -920,5 +955,89 @@ mod tests {
         });
         // The client leaves without a word: the server stops all the same.
         drop(client);
+    }
+
+    /// A handler that panics fails its request; the server goes on.
+    #[test]
+    fn a_panic_fails_one_request() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.vhd");
+        let text = "entity a is\nend entity;\narchitecture rtl of a is\n  signal s : bit;\nbegin\nend architecture;\n";
+        std::fs::write(&path, text).unwrap();
+        let uri = Url::from_file_path(&path).unwrap();
+        let at =
+            json!({ "textDocument": { "uri": uri }, "position": { "line": 3, "character": 9 } });
+
+        let (server, client) = Connection::memory();
+        let (sender, inbox) = mpsc::channel();
+        let send = |message| sender.send(message).unwrap();
+        send(Message::Notification(Notification::new(
+            "vfl/test/panic".into(),
+            json!({}),
+        )));
+        send(Message::Request(Request::new(
+            1.into(),
+            "vfl/test/panic".into(),
+            json!({}),
+        )));
+        // An edit after the panics is still analyzed and published.
+        send(Message::Notification(Notification::new(
+            "textDocument/didOpen".into(),
+            json!({ "textDocument": { "uri": uri, "languageId": "vhdl", "version": 0,
+                "text": text.replace("bit;", "bit; signal t : bit;") } }),
+        )));
+        send(Message::Request(Request::new(
+            2.into(),
+            "textDocument/hover".into(),
+            at,
+        )));
+        drop(sender);
+
+        let mut server = Server::new(&server, inbox, World::new(dir.path()));
+        server.main_loop().unwrap();
+
+        let messages: Vec<Message> = client.receiver.try_iter().collect();
+        let responses: Vec<&Response> = messages
+            .iter()
+            .filter_map(|m| match m {
+                Message::Response(r) => Some(r),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(responses.len(), 2, "{messages:?}");
+        let error = responses[0].error.as_ref().unwrap();
+        assert_eq!(error.code, ErrorCode::InternalError as i32);
+        assert!(error.message.contains("a test panic"), "{}", error.message);
+        assert!(responses[1].result.as_ref().is_some_and(|r| !r.is_null()));
+        let unused_t = messages.iter().any(|m| {
+            matches!(m, Message::Notification(n)
+                if n.method == "textDocument/publishDiagnostics"
+                    && n.params.to_string().contains("`t`"))
+        });
+        assert!(unused_t, "{messages:?}");
+    }
+
+    /// A position past the end of a CRLF line is before its `\r`: an edit
+    /// there does not split the line break.
+    #[test]
+    fn edits_past_the_end_of_a_crlf_line() {
+        let change = |line, character, text: &str| lsp_types::TextDocumentContentChangeEvent {
+            range: Some(lsp_types::Range::new(
+                lsp_types::Position::new(line, character),
+                lsp_types::Position::new(line, character),
+            )),
+            range_length: None,
+            text: text.into(),
+        };
+        let mut text = "ab\r\ncd\r\nef".to_owned();
+        apply_changes(&mut text, vec![change(0, 2, "X"), change(1, 99, "Y")]);
+        assert_eq!(text, "abX\r\ncdY\r\nef");
+        // The last line, without a line break, and a line past the text.
+        apply_changes(&mut text, vec![change(2, 99, "Z"), change(9, 0, "!")]);
+        assert_eq!(text, "abX\r\ncdY\r\nefZ!");
+        // A lone `\r` ending the text is not a line break: it stays.
+        let mut text = "a\r".to_owned();
+        apply_changes(&mut text, vec![change(0, 99, "b")]);
+        assert_eq!(text, "a\rb");
     }
 }

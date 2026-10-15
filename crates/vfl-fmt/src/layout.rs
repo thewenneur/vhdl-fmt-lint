@@ -3,7 +3,9 @@
 use std::collections::HashMap;
 
 use rowan::{NodeOrToken, TextSize};
-use vfl_config::{CaseAlternative, CloseParen, FormatConfig, ListLayout, Separator};
+use vfl_config::{
+    CaseAlternative, CloseParen, FormatConfig, ListLayout, OperatorPosition, Separator,
+};
 
 use crate::elems::Elem;
 use crate::kinds::is_item;
@@ -21,6 +23,41 @@ pub(crate) struct List {
     pub src_multiline: bool,
     /// Whether its separators start lines rather than end them.
     pub leading: bool,
+    /// How many parentheses its `(` is in.
+    pub depth: i32,
+}
+
+/// What [`Lang::breakable_operator`] tells of an operator.
+pub(crate) struct Operator<L: Lang> {
+    /// How loosely it binds: the chains of the lowest class break first.
+    pub class: u8,
+    /// Whether the line always breaks after it, whatever
+    /// `operator_position` says (`else` of a conditional assignment).
+    pub after_only: bool,
+    /// The node of its chain: the operators of the same class in a row
+    /// (`a and b and c`), which break together.
+    pub chain: Node<L>,
+}
+
+/// The operators of an expression that break together when its line is
+/// too long.
+#[derive(Debug)]
+pub(crate) struct Chain {
+    pub ops: Vec<usize>,
+    pub class: u8,
+    pub after_only: bool,
+    /// How many parentheses its operators are in.
+    pub depth: i32,
+    /// The last element of the expression.
+    pub end: usize,
+    /// The list whose parentheses it is right inside (`f(a + b)`).
+    pub list: Option<usize>,
+}
+
+/// The lists and the chains of operators laid out over several lines.
+pub(crate) struct Expanded {
+    pub lists: Vec<bool>,
+    pub chains: Vec<bool>,
 }
 
 /// Facts about each element that do not depend on the line breaks.
@@ -54,6 +91,13 @@ pub(crate) struct Analysis<L: Lang> {
     /// Empty when no list has them.
     leading_sep: Vec<Option<usize>>,
     pub lists: Vec<List>,
+    /// The first element of each element of a list, and the leading
+    /// separators: the lines inside a list starting elsewhere continue an
+    /// element.
+    pub list_item_start: Vec<bool>,
+    pub chains: Vec<Chain>,
+    /// The chain of each operator.
+    pub chain_of: Vec<Option<usize>>,
     /// Source offset of each element to its index.
     pub index: HashMap<TextSize, usize>,
     _lang: std::marker::PhantomData<L>,
@@ -89,10 +133,29 @@ pub(crate) fn analyze<L: Lang>(elems: &[Elem<L>], config: &FormatConfig) -> Anal
             Vec::new()
         },
         lists: Vec::new(),
+        list_item_start: vec![false; n],
+        chains: Vec::new(),
+        chain_of: vec![None; n],
         index: HashMap::with_capacity(n),
         _lang: std::marker::PhantomData,
     };
     let mut list_of_node: HashMap<Node<L>, usize> = HashMap::new();
+    let mut chain_nodes: Vec<Node<L>> = Vec::new();
+    let mut chain_of_node: HashMap<Node<L>, usize> = HashMap::new();
+    // How many parentheses each element is in, and the innermost `(`.
+    let mut depth = Vec::with_capacity(n);
+    let mut inside = Vec::with_capacity(n);
+    let mut open: Vec<usize> = Vec::new();
+    for (i, elem) in elems.iter().enumerate() {
+        if elem.is_token(L::RPAREN) {
+            open.pop();
+        }
+        depth.push(open.len() as i32);
+        inside.push(open.last().copied());
+        if elem.is_token(L::LPAREN) {
+            open.push(i);
+        }
+    }
     let mut shifted: Vec<(usize, Node<L>)> = Vec::new();
     let mut prev_code: Option<usize> = None;
     for (i, elem) in elems.iter().enumerate() {
@@ -190,9 +253,28 @@ pub(crate) fn analyze<L: Lang>(elems: &[Elem<L>], config: &FormatConfig) -> Anal
                     layout,
                     src_multiline: false,
                     leading,
+                    depth: depth[i],
                 });
             }
-        } else if L::is_separator(kind) {
+            continue;
+        }
+        if let Some(op) = L::breakable_operator(token, &parent) {
+            let id = *chain_of_node.entry(op.chain.clone()).or_insert_with(|| {
+                chain_nodes.push(op.chain);
+                an.chains.push(Chain {
+                    ops: Vec::new(),
+                    class: op.class,
+                    after_only: op.after_only,
+                    depth: depth[i],
+                    end: i,
+                    list: inside[i].and_then(|p| an.opens[p]),
+                });
+                an.chains.len() - 1
+            });
+            an.chains[id].ops.push(i);
+            an.chain_of[i] = Some(id);
+        }
+        if L::is_separator(kind) {
             if let Some(&id) = list_of_node.get(&parent) {
                 an.lists[id].seps.push(i);
                 if an.lists[id].leading {
@@ -217,25 +299,46 @@ pub(crate) fn analyze<L: Lang>(elems: &[Elem<L>], config: &FormatConfig) -> Anal
             .iter()
             .find_map(|t| an.index.get(&t.text_range().start()).copied());
     }
+    for (chain, node) in an.chains.iter_mut().zip(chain_nodes) {
+        if let Some(last) = node.last_token()
+            && let Some(&end) = an.index.get(&last.text_range().start())
+        {
+            chain.end = end;
+        }
+    }
+    let next_code = |i: usize| (i + 1..n).find(|&j| !elems[j].is_comment());
     for list in &mut an.lists {
         let end = list.close.unwrap_or(list.open);
         list.src_multiline = elems[list.open + 1..=end]
             .iter()
             .any(|e| e.src_newlines > 0);
+        for &at in std::iter::once(&list.open).chain(&list.seps) {
+            if list.leading && at != list.open {
+                an.list_item_start[at] = true;
+            }
+            if let Some(j) = next_code(at) {
+                an.list_item_start[j] = true;
+            }
+        }
     }
     an
 }
 
-/// Which lists start out laid out one element per line.
-pub(crate) fn initially_expanded<L: Lang>(an: &Analysis<L>) -> Vec<bool> {
-    an.lists
-        .iter()
-        .map(|list| match list.layout {
-            ListLayout::Expand => true,
-            ListLayout::Auto => list.src_multiline,
-            ListLayout::Preserve => false,
-        })
-        .collect()
+/// Which lists start out laid out one element per line. No chain of
+/// operators does.
+pub(crate) fn initially_expanded<L: Lang>(an: &Analysis<L>) -> Expanded {
+    Expanded {
+        lists: an
+            .lists
+            .iter()
+            .map(|list| match list.layout {
+                ListLayout::Expand => true,
+                ListLayout::Auto => list.src_multiline,
+                ListLayout::Preserve => false,
+            })
+            .collect(),
+        chains: vec![false; an.chains.len()],
+    }
 }
 
 /// The number of line breaks before each element: 0 keeps it on the
@@ -243,7 +346,7 @@ pub(crate) fn initially_expanded<L: Lang>(an: &Analysis<L>) -> Vec<bool> {
 pub(crate) fn breaks<L: Lang>(
     elems: &[Elem<L>],
     an: &Analysis<L>,
-    expanded: &[bool],
+    expanded: &Expanded,
     config: &FormatConfig,
 ) -> Vec<u32> {
     let n = elems.len();
@@ -262,7 +365,7 @@ pub(crate) fn breaks<L: Lang>(
     // The element after `i`, skipping comments that stay on `i`'s line.
     let next =
         |i: usize| (i + 1..n).find(|&j| !(elems[j].is_comment() && elems[j].src_newlines == 0));
-    for (list, _) in an.lists.iter().zip(expanded).filter(|(_, e)| **e) {
+    for (list, _) in an.lists.iter().zip(&expanded.lists).filter(|(_, e)| **e) {
         if let Some(j) = next(list.open) {
             forced[j] = true;
         }
@@ -295,6 +398,27 @@ pub(crate) fn breaks<L: Lang>(
             forced[close] = true;
         }
     }
+    let position = config.operator_position;
+    for (chain, _) in an.chains.iter().zip(&expanded.chains).filter(|(_, e)| **e) {
+        for &op in &chain.ops {
+            let after = next(op);
+            let before = !chain.after_only
+                && match position {
+                    OperatorPosition::Leading => true,
+                    OperatorPosition::Trailing => false,
+                    // Written in the source on either side: kept there.
+                    OperatorPosition::Preserve => {
+                        elems[op].src_newlines > 0
+                            || after.is_some_and(|j| elems[j].src_newlines > 0)
+                    }
+                };
+            if before {
+                forced[op] |= position != OperatorPosition::Preserve;
+            } else if let Some(j) = after {
+                forced[j] = true;
+            }
+        }
+    }
     let mut nl = Vec::with_capacity(n);
     for (i, elem) in elems.iter().enumerate() {
         let mut count = elem.src_newlines.min(max);
@@ -309,7 +433,75 @@ pub(crate) fn breaks<L: Lang>(
         }
         nl.push(count);
     }
+    if position != OperatorPosition::Preserve {
+        place_operators(elems, an, &forced, position, &mut nl);
+    }
+    if !config.blank_lines.is_empty() {
+        blank_line_rules(elems, an, config, &mut nl);
+    }
     nl
+}
+
+/// Applies `[format.blank_lines]` to the line breaks.
+fn blank_line_rules<L: Lang>(
+    elems: &[Elem<L>],
+    an: &Analysis<L>,
+    config: &FormatConfig,
+    nl: &mut [u32],
+) {
+    for i in 1..elems.len() {
+        if nl[i] == 0 {
+            continue;
+        }
+        let Some((rule, above_comments)) = L::blank_line_rule(elems, an, i, &config.blank_lines)
+        else {
+            continue;
+        };
+        let mut at = i;
+        // The comment lines right above, with no blank line in between.
+        while above_comments && nl[at] == 1 {
+            let Some(start) = (0..at).rev().find(|&k| nl[k] > 0 || k == 0) else {
+                break;
+            };
+            if start == 0 || !elems[start..at].iter().all(Elem::is_comment) {
+                break;
+            }
+            at = start;
+        }
+        if at > 0 && nl[at] > 0 {
+            nl[at] = rule.apply(nl[at] - 1) + 1;
+        }
+    }
+}
+
+/// Moves the line breaks written next to operators to the side
+/// `position` puts them on. A break with a comment on the other side
+/// stays.
+fn place_operators<L: Lang>(
+    elems: &[Elem<L>],
+    an: &Analysis<L>,
+    forced: &[bool],
+    position: OperatorPosition,
+    nl: &mut [u32],
+) {
+    for chain in an.chains.iter().filter(|c| !c.after_only) {
+        for &op in &chain.ops {
+            let (Some(prev), Some(next)) = (op.checked_sub(1), elems.get(op + 1)) else {
+                continue;
+            };
+            if elems[prev].is_comment() || next.is_comment() {
+                continue;
+            }
+            let (from, to) = match position {
+                OperatorPosition::Leading => (op + 1, op),
+                _ => (op, op + 1),
+            };
+            if nl[from] > 0 && !forced[from] {
+                nl[to] = nl[to].max(nl[from]);
+                nl[from] = 0;
+            }
+        }
+    }
 }
 
 /// An output line: a run of elements.
@@ -350,8 +542,9 @@ pub(crate) fn lines<L: Lang>(
     let mut indented: Vec<bool> = Vec::new();
     // The indentation each element would get if it started a line.
     let mut would = vec![0u32; n];
-    // Lines holding the `(` not closed yet.
+    // Lines holding the `(` not closed yet, and the list each opens.
     let mut open: Vec<usize> = Vec::new();
+    let mut open_list: Vec<Option<usize>> = Vec::new();
     // Ends of the type bodies shifted in because their keyword starts a line.
     let mut shifts: Vec<usize> = Vec::new();
     for i in 0..n {
@@ -379,6 +572,7 @@ pub(crate) fn lines<L: Lang>(
         lines[li].comment_only = false;
         if an.item_start[i] {
             open.clear();
+            open_list.clear();
         }
         while shifts.last().is_some_and(|&end| end < i) {
             shifts.pop();
@@ -386,7 +580,16 @@ pub(crate) fn lines<L: Lang>(
         let closes = elem.is_token(L::RPAREN);
         would[i] = match open.last() {
             Some(&ol) if closes => lines[ol].indent + lines[ol].hanging,
-            Some(&ol) => lines[ol].indent + lines[ol].hanging + indent,
+            Some(&ol) => {
+                // A line continuing an element of a list goes further in
+                // than the elements.
+                let continues =
+                    open_list.last().is_some_and(Option::is_some) && !an.list_item_start[i];
+                lines[ol].indent
+                    + lines[ol].hanging
+                    + indent
+                    + if continues { continuation } else { 0 }
+            }
             None => {
                 let (nested, starts_body) = if L::NESTS_BODIES && !indented[li] {
                     body_nesting(elem, an, &line_of)
@@ -434,8 +637,10 @@ pub(crate) fn lines<L: Lang>(
         }
         if elem.is_token(L::LPAREN) {
             open.push(li);
+            open_list.push(an.opens[i]);
         } else if closes {
             open.pop();
+            open_list.pop();
         }
     }
     // A comment line takes the indentation of the code after it. One that is
@@ -500,7 +705,8 @@ fn body_nesting<L: Lang>(elem: &Elem<L>, an: &Analysis<L>, line_of: &[usize]) ->
     (nested, starts_body)
 }
 
-/// The column where element `e` of `line` starts.
+/// The column where element `e` of `line` starts. Without `pads`, before
+/// alignment.
 pub(crate) fn column<L: Lang>(
     line: &Line,
     e: usize,
@@ -509,12 +715,12 @@ pub(crate) fn column<L: Lang>(
     pads: &[u32],
 ) -> usize {
     let mut col = line.indent as usize;
-    for j in line.start..=e {
+    for (j, elem) in elems.iter().enumerate().take(e + 1).skip(line.start) {
         if j > line.start {
-            col += usize::from(an.space[j]) + pads[j] as usize;
+            col += usize::from(an.space[j]) + pads.get(j).map_or(0, |&p| p as usize);
         }
         if j < e {
-            col += elems[j].width();
+            col += elem.width();
         }
     }
     col
@@ -537,32 +743,85 @@ pub(crate) fn code_width<L: Lang>(line: &Line, elems: &[Elem<L>], an: &Analysis<
 }
 
 /// For each line that is too wide, picks a list on it to lay out one
-/// element per line. Returns whether anything changed.
+/// element per line, or a chain of operators to break the line at.
+/// Returns whether anything changed.
+///
+/// The outermost wins: what is in the fewest parentheses. At the same
+/// depth, a port or generic list or map comes first, then the operators
+/// that bind loosest (`else`, `and`, `=`, `+`, ...), then calls and
+/// aggregates. An expression that is the single index or argument in its
+/// parentheses comes last.
 pub(crate) fn expand_long_lines<L: Lang>(
     elems: &[Elem<L>],
     an: &Analysis<L>,
     lines: &[Line],
-    expanded: &mut [bool],
+    expanded: &mut Expanded,
     config: &FormatConfig,
 ) -> bool {
+    #[derive(Clone, Copy)]
+    enum Pick {
+        List(usize),
+        Chain(usize),
+    }
+    let max = config.max_width as usize;
     let mut changed = false;
     for line in lines {
-        if line.comment_only || code_width(line, elems, an) <= config.max_width as usize {
+        if line.comment_only || code_width(line, elems, an) <= max {
             continue;
         }
         // Breaking up a single index or argument (`v(7 downto 0)`) reads
         // worse than a long line, unless it is a port or generic list.
-        let pick = (line.start..line.end)
+        let lists = (line.start..line.end)
             .filter_map(|i| an.opens[i])
-            .filter(|&id| !expanded[id])
-            .find(|&id| {
+            .filter(|&id| !expanded.lists[id])
+            .filter(|&id| {
                 let list = &an.lists[id];
                 !list.seps.is_empty() || list.layout != ListLayout::Preserve
+            })
+            .map(|id| {
+                let list = &an.lists[id];
+                let rank = if list.layout == ListLayout::Preserve {
+                    u32::MAX
+                } else {
+                    0
+                };
+                ((false, list.depth, rank), Pick::List(id))
             });
-        if let Some(id) = pick {
-            expanded[id] = true;
-            changed = true;
+        // An expression breaks only when it runs past `max_width` itself.
+        // As the single index or argument in parentheses (`v(i + 1)`), only
+        // when nothing else on the line can break.
+        let past_width = |id: usize| {
+            let end = an.chains[id].end;
+            end >= line.end || column(line, end, elems, an, &[]) + elems[end].width() > max
+        };
+        let chains = (line.start..line.end)
+            .filter(|_| config.break_expressions)
+            .filter_map(|i| an.chain_of[i])
+            .filter(|&id| !expanded.chains[id])
+            .filter(|&id| past_width(id))
+            .map(|id| {
+                let chain = &an.chains[id];
+                let alone = chain.list.is_some_and(|l| an.lists[l].seps.is_empty());
+                (
+                    (alone, chain.depth, 1 + u32::from(chain.class)),
+                    Pick::Chain(id),
+                )
+            });
+        // The first of the best, in the order of the line.
+        let pick =
+            lists.chain(chains).fold(
+                None,
+                |best: Option<((bool, i32, u32), Pick)>, c| match best {
+                    Some(b) if b.0 <= c.0 => Some(b),
+                    _ => Some(c),
+                },
+            );
+        match pick {
+            Some((_, Pick::List(id))) => expanded.lists[id] = true,
+            Some((_, Pick::Chain(id))) => expanded.chains[id] = true,
+            None => continue,
         }
+        changed = true;
     }
     changed
 }

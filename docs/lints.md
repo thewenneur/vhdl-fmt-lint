@@ -162,7 +162,9 @@ If the unit exists but in another library, check that library's assignment with
 A `library` clause names a library that no file of the project is in, so nothing from it is
 checked. This is an `info` note: it often means a third-party library (OSVVM, UVVM, vendor
 primitives) is outside the project root or excluded. `std`, `ieee` and `work` are always
-known.
+known, and so are the vendor primitive libraries vfl bundles declarations of (`unisim`,
+`xpm`, `altera_mf`, Lattice's) once a file uses them, unless `[project]` `vendor-stubs` is
+off ([configuration.md](configuration.md#vendor-libraries)).
 
 ### `sema/duplicate-declaration`
 
@@ -792,7 +794,8 @@ written for the Synopsys packages may then need conversions.
 
 ### `style/line-length`
 
-A line is longer than `max` columns, counted in characters. Off in `recommended`.
+A line is longer than `max` columns. Columns are counted as displayed: wide characters
+(Chinese, Japanese, Korean) take two, as in the formatter's `max_width`. Off in `recommended`.
 
 | Option | Type | Default |
 |--------|------|---------|

@@ -216,11 +216,28 @@ pub(crate) fn lines(
         let start = offset;
         offset += line.len();
         if enabled("style/line-length") {
-            let width = content.chars().count();
+            // Columns on screen, as the formatter counts them: CJK and
+            // other wide characters take two.
+            let char_width = |c: char| {
+                if c.is_ascii() {
+                    1
+                } else {
+                    unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)
+                }
+            };
+            let width: usize = if content.is_ascii() {
+                content.len()
+            } else {
+                content.chars().map(char_width).sum()
+            };
             if width > max_line_length {
+                let mut col = 0;
                 let cut = content
                     .char_indices()
-                    .nth(max_line_length)
+                    .find(|&(_, c)| {
+                        col += char_width(c);
+                        col > max_line_length
+                    })
                     .map_or(content.len(), |(i, _)| i);
                 out.push(Finding::new(
                     "style/line-length",
@@ -404,5 +421,21 @@ fn file_name(ctx: &StyleContext, out: &mut Vec<Finding>) {
             *range,
             format!("file name does not match the unit it declares; expected `{first}.vhd`"),
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn line_length_counts_wide_characters_twice() {
+        let mut out = Vec::new();
+        let only = |rule: &str| rule == "style/line-length";
+        // 6 characters, 9 columns: past a limit of 6 from the second wide one.
+        lines("-- 日本語\n-- ab\n", 6, 4, &only, &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].message, "line is 9 characters long (max 6)");
+        assert_eq!(usize::from(out[0].range.start()), "-- 日".len());
     }
 }

@@ -407,6 +407,42 @@ impl Project {
         self.notes = notes;
     }
 
+    /// The vendor libraries whose bundled stubs the analysis needs: those a
+    /// VHDL file uses (`unisim.vcomponents`, `entity xpm.xpm_cdc_single`)
+    /// that no file of the project is in, unless `[project]` `vendor-stubs`
+    /// is off. In the order of [`vfl_sema::VENDOR_LIBRARIES`].
+    pub fn vendor_stubs(&self) -> Vec<&'static str> {
+        if !self.config.project.vendor_stubs {
+            return Vec::new();
+        }
+        let mut used = [false; vfl_sema::VENDOR_LIBRARIES.len()];
+        for r in self.files.iter().flat_map(|f| &f.summary.refs) {
+            if r.library != "work"
+                && let Some(i) = vfl_sema::VENDOR_LIBRARIES
+                    .iter()
+                    .position(|l| *l == r.library)
+            {
+                used[i] = true;
+            }
+        }
+        if !used.contains(&true) {
+            return Vec::new();
+        }
+        let held = |library: &str| {
+            self.libraries
+                .iter()
+                .chain(&self.verilog_libraries)
+                .flatten()
+                .any(|(l, _)| l == library)
+        };
+        vfl_sema::VENDOR_LIBRARIES
+            .iter()
+            .zip(used)
+            .filter(|&(library, used)| used && !held(library))
+            .map(|(library, _)| *library)
+            .collect()
+    }
+
     /// The index of the Verilog file at `path`.
     pub fn verilog_index(&self, path: &Path) -> Option<usize> {
         self.verilog.iter().position(|f| f.path == path)
@@ -670,6 +706,33 @@ mod tests {
         fs::write(root.join("vfl.toml"), "[project]\nvhdl-ls = \"off\"\n").unwrap();
         let project = load();
         assert_eq!(libs(&project, "uart/methods.vhd"), ["clk", "uart"]);
+    }
+
+    #[test]
+    fn vendor_stubs_for_used_libraries_the_project_lacks() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(
+            root.join("top.vhd"),
+            "library unisim, xpm, altera_mf; use unisim.vcomponents.all;\n\
+             entity top is end;\n\
+             architecture a of top is begin u : entity xpm.xpm_cdc_single; end;",
+        )
+        .unwrap();
+        let load = || {
+            Project::load(ProjectRoot {
+                dir: root.to_owned(),
+                kind: RootKind::Fallback,
+            })
+            .unwrap()
+        };
+        // `altera_mf` is named but not used.
+        assert_eq!(load().vendor_stubs(), ["unisim", "xpm"]);
+        // A real copy of a library wins.
+        fs::write(root.join("vcomponents.vhd"), "package vcomponents is end;").unwrap();
+        assert_eq!(load().vendor_stubs(), ["xpm"]);
+        fs::write(root.join("vfl.toml"), "[project]\nvendor-stubs = false\n").unwrap();
+        assert!(load().vendor_stubs().is_empty());
     }
 
     #[test]

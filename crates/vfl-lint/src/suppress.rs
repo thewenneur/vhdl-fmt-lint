@@ -74,7 +74,7 @@ impl Suppressions {
                 continue;
             }
             let start = range.start();
-            let line = index.line_col(text, start).line;
+            let line = index.line(start);
             let line_start = line_start(text, start);
             let alone = text[line_start..usize::from(start)].trim().is_empty();
             let target = if alone {
@@ -131,7 +131,7 @@ fn next_code_line(text: &str, from: usize, index: &LineIndex, comment: &str) -> 
             .map_or(text.len(), |i| offset + i + 1);
         let trimmed = text[offset..end].trim();
         if !trimmed.is_empty() && !trimmed.starts_with(comment) {
-            return Some(index.line_col(text, TextSize::from(offset as u32)).line);
+            return Some(index.line(TextSize::from(offset as u32)));
         }
         offset = end;
     }

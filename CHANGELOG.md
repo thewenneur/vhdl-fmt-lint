@@ -22,17 +22,23 @@
   opening its project take 6.4 s and each edit of it about 7 s; now 0.34 s and under
   0.3 s.
 
-### Changed
-
-- The language server reads files created or deleted outside the editor together: a
-  burst of watched-file events (a `git checkout`, a generator) costs one walk of the
-  project at most, and none when the new files are in directories the project already
-  has files in (300 new files: 13 ms instead of 300 walks, 370 ms on a 300-file project),
-  then one analysis.
-- Reading which units a file declares and uses no longer takes time quadratic in the
-  number of statements of an architecture: 28 ms instead of 3.7 s for a 3 MB netlist,
-  on every load and every edit of it.
-
+- **`vfl order`** prints the files of the project in compile order with their libraries:
+  as a list, as JSON, or as a script for GHDL (`ghdl -a --work=lib`), Questa/ModelSim
+  (`vlib`, `vmap`, `vcom`, `vlog`) or Vivado (`read_vhdl -library`). `--top unit` keeps only
+  what an entity or configuration needs. Files that use each other's units are reported
+  and make the command fail.
+- **More project imports**: library lists are also read from `.f` file lists (`-makelib`
+  and `-work` libraries, nested `-f`/`-F` lists, environment variables; `+incdir+`, `-v`,
+  `-y` and other options are skipped), Edalize EDAM files (`*.eda.yml`, `edam.json`),
+  hdlmake `Manifest.py` (`library` and `files`, read without running it) and
+  Questa/ModelSim `.mpf` projects (`compile_to`).
+- **Vendor primitive libraries**: declarations of the commonly used Xilinx `unisim` and
+  `xpm`, Intel `altera_mf` and Lattice (`ecp5u`, `machxo2`, `sb_ice40_components_syn`)
+  primitives are bundled and analyzed when the design uses one of these libraries and the
+  project has no copy of it. Their components and entities resolve (hover, go to
+  definition, type checks of the actuals) instead of the library being left unchecked;
+  primitives, ports and generics they do not declare are not reported. `[project]`
+  `vendor-stubs = false` turns them off.
 - **`sema/incomplete-case`** (error): a `case` statement or selected assignment whose
   choices leave out values of the selector's subtype (enumerations, integer subtypes with
   static bounds, `std_logic_vector` and other character arrays) and has no `when others`.
@@ -64,6 +70,49 @@
   changed lines.
 - **`vfl lint --fix-only RULES`** applies the fixes of some rules or categories only.
 - **`vfl rules --explain RULE`** prints a rule's levels and full description.
+- **Long expressions are broken**: a line still longer than `max_width` once its lists are
+  broken up is broken at the operators of its expressions that bind loosest (`else` of
+  conditional assignments, then `and`/`or`, relational, shift, `+`/`-`/`&`, `*`/`/`), in
+  conditions, assignments and port map actuals. `operator_position` (`"trailing"`,
+  `"leading"`, `"preserve"`) places the operator; `break_expressions = false` turns it off.
+  Lines that fit are not changed.
+- **`[format.declaration_case]`**: the case of identifiers by the kind of their declaration
+  (constants and generics in upper case, ports in lower case...), applied to every use of
+  the name in the file.
+- **`[format.blank_lines]`**: blank lines before and after `begin`, before `end`, before
+  processes and between declaration groups, as an exact number or a `{ min, max }` range.
+
+### Changed
+
+- The language server reads files created or deleted outside the editor together: a
+  burst of watched-file events (a `git checkout`, a generator) costs one walk of the
+  project at most, and none when the new files are in directories the project already
+  has files in (300 new files: 13 ms instead of 300 walks, 370 ms on a 300-file project),
+  then one analysis.
+- Reading which units a file declares and uses no longer takes time quadratic in the
+  number of statements of an architecture: 28 ms instead of 3.7 s for a 3 MB netlist,
+  on every load and every edit of it.
+- The formatter's `max_width` and the `style/line-length` rule count display columns:
+  Chinese, Japanese and Korean characters take two.
+- A line continuing an element of a list (a port map actual broken over lines) is indented
+  `continuation_indent` further than the elements.
+- LSP position conversion finds the line of an offset without scanning the line's text
+  twice.
+- The fuzzing dictionary and seeds include non-ASCII text (no-break and ideographic spaces,
+  accents, CJK, an emoji outside the BMP) and CRLF line breaks.
+
+### Fixed
+
+- **Language server crash on hover** over a declaration continued on lines indented with
+  no-break spaces (or other multi-byte spaces): the re-indentation sliced a line by a
+  character count. Adding port associations next to such indentation, or after an edit
+  that changes a multi-byte character, no longer panics either.
+- **The language server survives a bug in a handler**: a request that panics fails with
+  `InternalError` (and the panic is logged to stderr) instead of killing the server; a
+  notification or an analysis that panics is skipped the same way.
+- **Edits past the end of a CRLF line** are inserted before the `\r\n`, not between `\r`
+  and `\n`.
+- Name resolution no longer panics on an unbalanced scope (a bug); it degrades instead.
 
 ## [0.7.0] - 2026-10-15
 

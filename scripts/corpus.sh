@@ -87,9 +87,19 @@ printf '%s\n' \
   'association_list = "expand"' \
   'close_paren = "attached"' \
   'case_alternative = "break"' \
+  'operator_position = "trailing"' \
   '[format.align]' \
   'scope = "contiguous"' \
-  'block_boundary = "never"' >"$alt_config"
+  'block_boundary = "never"' \
+  '[format.declaration_case]' \
+  'constant = "upper"' \
+  'generic = "upper"' \
+  'enum_literal = "upper"' \
+  '[format.blank_lines]' \
+  'after_begin = 0' \
+  'before_end = { max = 0 }' \
+  'before_process = { min = 1 }' \
+  'between_declaration_groups = 1' >"$alt_config"
 # Leading separators, with lists broken up and laid out as written.
 leading_config=$(mktemp)
 trap 'rm -f "$alt_config" "$leading_config"' EXIT
@@ -97,6 +107,7 @@ printf '%s\n' \
   '[format]' \
   'style = "leading-comma"' \
   'max_width = 60' \
+  'operator_position = "leading"' \
   'association_list = "preserve"' >"$leading_config"
 for config in "" "--config $alt_config" "--config $leading_config"; do
   # shellcheck disable=SC2086 # $config is meant to split.

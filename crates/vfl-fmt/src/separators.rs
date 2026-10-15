@@ -65,8 +65,10 @@ pub(crate) fn place<L: Lang>(elems: &mut [Elem<L>], config: &FormatConfig, prote
                 while next < n && crossable(&elems[next]) {
                     next += 1;
                 }
+                // An empty last element (`f(a,\n)`) has nothing to lead.
                 if next >= n
                     || elems[next].is_comment()
+                    || elems[next].kind == L::RPAREN
                     || L::keeps_column(elems[next].kind)
                     || protected[i..=next].iter().any(|&p| p)
                     || !breaks(&elems[i + 1..=next], next - i - 1)
@@ -93,8 +95,10 @@ pub(crate) fn place<L: Lang>(elems: &mut [Elem<L>], config: &FormatConfig, prote
                 while prev > 0 && crossable(&elems[prev - 1]) {
                     prev -= 1;
                 }
+                // An empty first element (`#(\n,)`) has nothing to trail.
                 if prev == 0
                     || elems[prev - 1].is_comment()
+                    || elems[prev - 1].kind == L::LPAREN
                     || L::keeps_column(elems[prev - 1].kind)
                     || protected[prev - 1..=i].iter().any(|&p| p)
                     || !breaks(&elems[prev..=i], i - prev)

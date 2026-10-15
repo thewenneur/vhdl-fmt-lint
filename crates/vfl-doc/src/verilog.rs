@@ -14,7 +14,7 @@ pub fn entities(modules: &[Module], text: &str, path: &str, library: &str) -> Ve
     modules
         .iter()
         .map(|m| {
-            let line = |offset| lines.line_col(text, offset).line + 1;
+            let line = |offset| lines.line(offset) + 1;
             let instances: Vec<Instance> = m
                 .instances
                 .iter()

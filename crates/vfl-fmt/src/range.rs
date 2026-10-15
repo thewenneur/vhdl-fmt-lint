@@ -414,6 +414,15 @@ fn window<L: Lang>(
         }
         end = line_end(next);
     }
+    // The line break may end a token, as a directive continued by a `\`
+    // at the end of the file: the window holds all of it.
+    if let Some(token) = root
+        .token_at_offset(TextSize::from(end as u32))
+        .right_biased()
+        .filter(|t| t.kind() != L::WHITESPACE)
+    {
+        end = end.max(usize::from(token.text_range().end()));
+    }
     Some(start..end)
 }
 

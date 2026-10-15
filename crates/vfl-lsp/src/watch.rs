@@ -45,7 +45,11 @@ pub fn spawn(root: PathBuf, defaults: Config, server: mpsc::Sender<Message>) -> 
         // Waits, unless the server stopped.
         while let Err(mpsc::RecvTimeoutError::Timeout) = stopped.recv_timeout(interval) {
             let start = Instant::now();
-            let now = list(&root, &defaults);
+            // A bug in the walk skips this round rather than the watcher.
+            let walk = std::panic::AssertUnwindSafe(|| list(&root, &defaults));
+            let Ok(now) = std::panic::catch_unwind(walk) else {
+                continue;
+            };
             interval = MIN_INTERVAL.max(start.elapsed() * IDLE_FACTOR);
             let changes = changes(&listing, &now);
             listing = now;
