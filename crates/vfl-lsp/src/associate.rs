@@ -150,6 +150,19 @@ pub(crate) fn missing(world: &World, file: FileId, at: TextSize, ports: bool) ->
     })
 }
 
+/// Whether a declaration of `kind` can be an actual.
+fn is_object(kind: DeclKind) -> bool {
+    matches!(
+        kind,
+        DeclKind::Signal
+            | DeclKind::Variable
+            | DeclKind::Constant
+            | DeclKind::Port { .. }
+            | DeclKind::Generic { .. }
+            | DeclKind::Alias
+    )
+}
+
 fn has_arrow(element: &SyntaxNode) -> bool {
     element
         .children_with_tokens()
@@ -160,7 +173,7 @@ fn has_arrow(element: &SyntaxNode) -> bool {
 pub(crate) fn title(world: &World, missing: &Missing, all: bool) -> String {
     let kind = if missing.ports { "port" } else { "generic" };
     if all {
-        return format!("Associate every {kind}, the optional ones `open`");
+        return format!("Associate every {kind}");
     }
     let names: Vec<String> = missing
         .required
@@ -173,10 +186,12 @@ pub(crate) fn title(world: &World, missing: &Missing, all: bool) -> String {
 }
 
 /// The edits adding the missing associations (all of them with `all`, else
-/// the required ones) to the file. A required port gets the object of its
-/// own name, which is often the signal it is meant for and otherwise shows
-/// as undeclared, to be filled in; the others get `open`. When the
-/// instantiation was laid out as the formatter would, the result is too.
+/// the required ones) to the file. A port gets the object of its own name
+/// when one is declared where the instantiation is, which is often the
+/// signal it is meant for; otherwise `open`, or, with the rule's option
+/// `undeclared = "name"`, its own name for a required port, to be filled in.
+/// When the instantiation was laid out as the formatter would, the result
+/// is too.
 pub(crate) fn edits(
     world: &mut World,
     file: FileId,
@@ -185,41 +200,49 @@ pub(crate) fn edits(
     all: bool,
 ) -> Option<Edits> {
     let missing = missing(world, file, at, ports)?;
-    let analysis = &world.analysis;
-    let mut new: Vec<(String, String)> = missing
-        .required
-        .iter()
-        .filter_map(|&id| analysis.decl(id))
-        .map(|d| (d.spelling.clone(), d.spelling.clone()))
-        .collect();
+    let path = world.analysis.files()[file as usize].path.clone();
+    let config = world.config(&path).clone();
+    let name_undeclared =
+        vfl_lint::rules::undeclared(&config.lint) == Ok(vfl_lint::rules::Undeclared::Name);
+    // The objects named like the formals, where the instantiation is.
+    let mut ids: Vec<DeclId> = missing.required.clone();
     if all {
         // In declaration order, as written in the entity.
-        let mut ids: Vec<DeclId> = missing
-            .required
-            .iter()
-            .chain(&missing.optional)
-            .copied()
-            .collect();
+        ids.extend(&missing.optional);
         ids.sort();
-        new = ids
-            .into_iter()
-            .filter_map(|id| analysis.decl(id).map(|d| (id, d)))
-            .map(|(id, d)| {
-                let actual = if missing.required.contains(&id) {
-                    d.spelling.clone()
-                } else {
-                    "open".to_owned()
-                };
-                (d.spelling.clone(), actual)
-            })
-            .collect();
     }
+    let analysis = &world.analysis;
+    let mut keys: Vec<&str> = ids
+        .iter()
+        .filter_map(|&id| analysis.decl(id))
+        .map(|d| d.name.as_str())
+        .collect();
+    let mut declared: Vec<String> = Vec::new();
+    crate::handlers::visible_decls(world, file, missing.stmt.text_range().start(), |_, decl| {
+        if is_object(decl.kind)
+            && let Some(i) = keys.iter().position(|k| *k == decl.name)
+        {
+            declared.push(keys.swap_remove(i).to_owned());
+        }
+    });
+    let new: Vec<(String, String)> = ids
+        .iter()
+        .filter_map(|&id| analysis.decl(id).map(|d| (id, d)))
+        .map(|(id, d)| {
+            let actual = if declared.contains(&d.name)
+                || (name_undeclared && missing.required.contains(&id))
+            {
+                d.spelling.clone()
+            } else {
+                "open".to_owned()
+            };
+            (d.spelling.clone(), actual)
+        })
+        .collect();
     if new.is_empty() {
         return None;
     }
-    let path = analysis.files()[file as usize].path.clone();
     let text: String = world.doc(file).text.to_owned();
-    let config = world.config(&path).clone();
     let raw = layout(&text, &missing, &new, &config);
     let stmt = missing.stmt.text_range();
     Some(

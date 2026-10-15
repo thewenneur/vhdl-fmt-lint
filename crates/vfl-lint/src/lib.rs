@@ -317,6 +317,9 @@ fn lint_file(
         .and_then(|o| o.get("max"))
         .and_then(|v| v.as_integer())
         .map_or(120, |v| v.max(1) as usize);
+    if let Err(error) = rules::undeclared(lint_config) {
+        errors.push(error);
+    }
     let (conventions, naming_errors) = naming::conventions(lint_config);
     errors.extend(naming_errors);
     let suppressions = match (settings.verilog, project) {

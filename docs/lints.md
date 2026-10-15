@@ -184,11 +184,23 @@ Both must be associated (ports of other modes can be left out).
 u2 : entity work.sub port map (a => r, y => o2);  -- generic `N` of entity `sub` must be associated
 ```
 
-In an editor, a quick fix associates the ports (or generics) that must be, each with the
-object of the same name: `b => b`, which is often the signal meant and is otherwise
-reported as undeclared, to be replaced. A second quick fix associates every port left
-out, the outputs and the ones with a default value with `open`. An instantiation without
-a port map or generic map gets one. The new associations follow the layout of the map:
+In an editor, a quick fix associates the ports (or generics) that must be. A second quick
+fix associates every port left out, outputs and ports with a default value included. A
+port gets the object of the same name when one is declared where the instantiation is
+(`b => b`: a signal, port, constant, generic, variable or alias), else `open`. With the
+option `undeclared = "name"`, a port that must be associated gets its own name instead,
+reported as undeclared until it is replaced; the others still get `open`.
+
+| Option | Type | Default |
+|--------|------|---------|
+| `undeclared` | `"open"` or `"name"` | `"open"` |
+
+```toml
+[lint.rules]
+"sema/unassociated-port" = { undeclared = "name" }
+```
+
+An instantiation without a port map or generic map gets one. The new associations follow the layout of the map:
 on its line when it fits on one, else one per line with the commas where the map has them
 (or where `association_separator` puts them) and the arrows aligned when they are. An
 instantiation that was formatted is formatted again with them. `vfl lint --fix` leaves
