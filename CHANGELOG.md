@@ -83,6 +83,26 @@
   you do not trust cannot set `vfl.server.path` or `vfl.server.extraEnv`, and the extension
   has an icon and a changelog.
 
+### Changed
+
+- LSP position conversion finds the line of an offset without scanning the line's text
+  twice.
+- The fuzzing dictionary and seeds include non-ASCII text (no-break and ideographic spaces,
+  accents, CJK, an emoji outside the BMP) and CRLF line breaks.
+
+### Fixed
+
+- **Language server crash on hover** over a declaration continued on lines indented with
+  no-break spaces (or other multi-byte spaces): the re-indentation sliced a line by a
+  character count. Adding port associations next to such indentation, or after an edit
+  that changes a multi-byte character, no longer panics either.
+- **The language server survives a bug in a handler**: a request that panics fails with
+  `InternalError` (and the panic is logged to stderr) instead of killing the server; a
+  notification or an analysis that panics is skipped the same way.
+- **Edits past the end of a CRLF line** are inserted before the `\r\n`, not between `\r`
+  and `\n`.
+- Name resolution no longer panics on an unbalanced scope (a bug); it degrades instead.
+
 ## [0.7.0] - 2026-10-15
 
 Library inference ranks above `vhdl_ls.toml`, every editor action can take a keyboard
