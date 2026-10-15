@@ -26,6 +26,7 @@ vfl-syntax.workspace = true
 vfl-verilog-syntax.workspace = true
 anyhow.workspace = true
 clap.workspace = true
+serde_json.workspace = true
 toml.workspace = true
 
 [dev-dependencies]

@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`vfl order`** prints the files of the project in compile order with their libraries:
+  as a list, as JSON, or as a script for GHDL (`ghdl -a --work=lib`), Questa/ModelSim
+  (`vlib`, `vmap`, `vcom`, `vlog`) or Vivado (`read_vhdl -library`). `--top unit` keeps only
+  what an entity or configuration needs. Files that use each other's units are reported
+  and make the command fail.
+- **More project imports**: library lists are also read from `.f` file lists (`-makelib`
+  and `-work` libraries, nested `-f`/`-F` lists, environment variables; `+incdir+`, `-v`,
+  `-y` and other options are skipped), Edalize EDAM files (`*.eda.yml`, `edam.json`),
+  hdlmake `Manifest.py` (`library` and `files`, read without running it) and
+  Questa/ModelSim `.mpf` projects (`compile_to`).
+
 ## [0.7.0] - 2026-10-15
 
 Library inference ranks above `vhdl_ls.toml`, every editor action can take a keyboard

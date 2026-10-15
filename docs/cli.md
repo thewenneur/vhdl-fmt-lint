@@ -17,6 +17,7 @@ apply to each file ([configuration.md](configuration.md#lookup)).
 | [`vfl check`](#vfl-check) | Report syntax errors only |
 | [`vfl rules`](#vfl-rules) | List the lint rules and their level in each preset |
 | [`vfl project`](#vfl-project) | Show the project root, its sources and their libraries |
+| [`vfl order`](#vfl-order) | Print the files in compile order, as a list, JSON or a GHDL, Questa or Vivado script |
 | [`vfl config show`](#vfl-config-show) | Show the effective configuration and where each value came from |
 | [`vfl doc`](#vfl-doc) | Write the documentation of the design, with diagrams |
 | [`vfl schema`](#vfl-schema) | Draw one diagram |
@@ -127,13 +128,45 @@ vfl project [--vhdl-ls] [PATH]
 Shows what vfl discovers for the project around `PATH` (default: the current directory):
 its root, the config files that apply, every source file, the library each file is in and
 why (a `[project.libraries]` entry, a `vhdl_ls.toml`, a tool file such as VUnit's `run.py`,
-a FuseSoC `.core`, a Vivado or Quartus project, or inference from `library.unit`
-references). Verilog and SystemVerilog files (unless `[verilog]` `mode`
+a FuseSoC `.core` or Edalize EDAM file, a Vivado, Quartus or Questa project, a `.f` file
+list, an hdlmake `Manifest.py`, or inference from `library.unit` references). Verilog and SystemVerilog files (unless `[verilog]` `mode`
 is off) are listed apart, with the libraries of the units that instantiate their modules.
 
 | Option | |
 |--------|---|
 | `--vhdl-ls` | Print the libraries as a rust_hdl `vhdl_ls.toml` instead. |
+
+## `vfl order`
+
+```sh
+vfl order [OPTIONS] [PATH]
+```
+
+Prints the files of the project around `PATH` (default: the current directory) in compile
+order: each file, in each of its libraries (the ones `vfl project` shows), comes after the
+files declaring the units it uses (use clauses, `entity lib.e` instantiations, an
+architecture's entity, a package body's package). A component instantiation's default
+binding orders files too, unless that makes a cycle, since tools bind components at
+elaboration. Among files free to go in any order, paths sort alphabetically, so the output
+is stable. Verilog and SystemVerilog files are listed with the libraries of the units that
+instantiate their modules.
+
+Files that use each other's units (a package using a package that uses it) cannot be
+compiled in any order: each such group is reported on standard error, the order is still
+printed with the group in path order, and the command fails.
+
+| Option | |
+|--------|---|
+| `-f`, `--format FORMAT` | `list` (default): `library path` per line. `json`: an object with `root`, `standard`, `libraries`, `files` (each with `path`, `library` and `language`) and `cycles`. `ghdl`: a shell script of `ghdl -a --std=.. --work=lib` commands (with `-fsynopsys` when a file uses `ieee.std_logic_arith` and its family; Verilog files are left as comments). `questa`: a `.do` script for Questa or ModelSim, `vlib`/`vmap` for each library then `vcom` and `vlog`. `vivado`: a Tcl script of `read_vhdl -library` and `read_verilog -library` commands. The VHDL standard is `[project]` `standard`. |
+| `--top UNIT` | Keep only what this entity or configuration needs, as `name` or `library.name`: the files of the units it uses, transitively, with their architectures and package bodies. A package name works too. |
+| `--absolute` | Write absolute paths. By default paths are relative to the project root, and the scripts are run from there. |
+| `-o`, `--output FILE` | Write to `FILE` instead of standard output. |
+
+```sh
+vfl order --top tb_uart -f ghdl -o compile.sh && sh compile.sh && ghdl -e --std=08 tb_uart
+vfl order -f questa -o compile.do      # then `vsim -c -do compile.do`
+vfl order -f vivado -o sources.tcl     # then `source sources.tcl` in a Vivado Tcl shell
+```
 
 ## `vfl config show`
 
