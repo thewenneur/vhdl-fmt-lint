@@ -36,3 +36,11 @@ A crash is saved in `fuzz/artifacts/<target>/`; replay it with
 `cargo +nightly fuzz run -s none <target> <file>`, and shrink it with
 `cargo +nightly fuzz tmin -s none <target> <file>`. Once fixed, add the
 input as a regression test of the crate it was in.
+
+For a long campaign, run the **Fuzz campaign** workflow from the Actions
+tab: each target fuzzes in its own job, on every core, for `hours` (at
+most 5.75, as GitHub stops a job after 6 hours), and the workflow starts
+itself again until `rounds` runs are done; the defaults make about 12
+hours. The corpus carries over between runs through the cache. Crashes,
+timeouts and out-of-memory inputs don't stop it: each job uploads them as
+`fuzz-artifacts-<target>` and prints them in base64 in its log.
