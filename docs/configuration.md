@@ -440,6 +440,8 @@ y <= a when sel = '1' else
 |-----|------|---------|---------|
 | `preset` | string | `"recommended"` | The starting level of every rule: `"none"` (only `syntax/error`), `"recommended"` (likely bugs) or `"strict"` (everything except `naming/*`). The level of each rule in each preset is in [lints.md](lints.md). |
 | `rules` | table | `{}` | Per-rule settings, keyed by rule id; see below. |
+| `waiver` | array of tables | `[]` | Findings silenced from the config instead of the sources; see [`[[lint.waiver]]`](#lintwaiver). |
+| `baseline` | string | unset | A baseline file, relative to the project root, written by `vfl lint --write-baseline`: `vfl lint` does not report the findings it lists (see [cli.md](cli.md#baselines)). `--baseline` overrides it. |
 
 ### `[lint.rules]`
 
@@ -461,6 +463,42 @@ Each entry is either a level, or a table with an optional `level` and rule optio
 
 `info` findings are shown as notes. `vfl lint` exits with a failure status when there are
 `error` findings, or `warn` findings too with `--deny-warnings`.
+
+### `[[lint.waiver]]`
+
+A waiver silences the findings that match every key it sets, like a `-- vfl-ignore`
+comment but written outside the sources: for generated or vendor files, or to review
+exceptions in one place. Waivers apply on the command line and in editors.
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `files` | array of strings | `[]` (every file) | Gitignore-style globs, relative to the project root: `src/legacy/**`, `*_tb.vhd` (a pattern without `/` matches at any depth), `ip/` (a directory and what is under it). |
+| `rules` | array of strings | `[]` (every rule) | Rule ids or categories (`naming`, `style/*`). |
+| `lines` | array | `[]` (every line) | Lines the finding starts on: numbers (`12`) or inclusive ranges (`"40:52"`), one-based. |
+| `message` | string | unset | A regular expression ([Rust `regex` syntax](https://docs.rs/regex/latest/regex/#syntax)) that must match part of the message. |
+| `reason` | string | unset | Why the findings are waived. Not used by vfl; for the reader. |
+
+```toml
+[[lint.waiver]]
+files = ["ip/vendor/**"]
+reason = "vendor code, not ours to change"
+
+[[lint.waiver]]
+files = ["src/top.vhd"]
+rules = ["sema/unused-signal"]
+message = "`spare_"
+reason = "spare signals kept for the next board revision"
+
+[[lint.waiver]]
+files = ["src/legacy_fifo.vhd"]
+rules = ["style/line-length"]
+lines = ["120:180"]
+```
+
+An invalid waiver (a bad glob, regular expression or line range) is reported as a
+configuration warning and ignored. Like every array, the `waiver` list of a nested config
+replaces the outer one's (see [Lookup](#lookup)); a shared list can come from a file
+that the configs [`extends`](#special-top-level-keys).
 
 ## `[doc]`
 
@@ -655,6 +693,8 @@ comments with `//` (`// vfl-ignore sema/unused-signal // kept for the next board
 ```vhdl
 signal spare : std_logic;  -- vfl-ignore sema/unused-signal -- kept for the next board rev
 ```
+
+To silence findings without editing the sources, see [`[[lint.waiver]]`](#lintwaiver).
 
 Formatter regions:
 

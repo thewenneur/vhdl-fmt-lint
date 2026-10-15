@@ -11,14 +11,22 @@ use vfl_lint::{Diagnostic, FileSettings};
 use vfl_project::{Project, collect_all_sources, collect_project, encode, find_root};
 
 use crate::ConfigCache;
+use crate::baseline::{self, Baseline};
+use crate::changed::Changed;
 
 pub struct Options {
     pub paths: Vec<PathBuf>,
     pub fix: bool,
     pub unsafe_fixes: bool,
+    /// Rules or categories whose fixes alone are applied (all if empty).
+    pub fix_only: Vec<String>,
     pub format: Format,
     pub deny_warnings: bool,
     pub color: Option<bool>,
+    pub baseline: Option<PathBuf>,
+    pub write_baseline: Option<PathBuf>,
+    pub changed_since: Option<String>,
+    pub changed_lines: bool,
 }
 
 /// The files to report on, grouped by project root.
@@ -92,6 +100,7 @@ struct Totals {
     infos: usize,
     fixed: usize,
     fixable: usize,
+    baselined: usize,
 }
 
 pub fn run(options: Options) -> Result<bool> {
@@ -99,12 +108,30 @@ pub fn run(options: Options) -> Result<bool> {
     let color = options.color.unwrap_or_else(|| {
         std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
     });
+    for id in &options.fix_only {
+        let id = id.trim_end_matches("/*");
+        let known = vfl_lint::rules::exists(id)
+            || vfl_lint::RULES
+                .iter()
+                .any(|r| r.id.split('/').next() == Some(id))
+            || id == "naming";
+        if !known {
+            bail!("--fix-only: unknown rule `{id}`; `vfl rules` lists them");
+        }
+    }
     let mut totals = Totals::default();
     let mut output = String::new();
     let mut all: Vec<(Diagnostic, usize)> = Vec::new();
     let mut sources: Vec<(PathBuf, std::sync::Arc<str>, vfl_syntax::LineIndex)> = Vec::new();
     let mut configs = ConfigCache::default();
+    // Baselines by path, read once.
+    let mut baselines: Vec<(PathBuf, Baseline)> = Vec::new();
+    let mut new_baseline: Vec<baseline::Entry> = Vec::new();
     for (root, files) in requested(&options.paths)? {
+        let changed = match &options.changed_since {
+            Some(rev) => Some(Changed::since(&root, rev, options.changed_lines)?),
+            None => None,
+        };
         let mut passes = 0;
         loop {
             let project = load(&root, &files)?;
@@ -141,6 +168,7 @@ pub fn run(options: Options) -> Result<bool> {
                         syntax_errors: file.parse.errors(),
                         config,
                         verilog: None,
+                        root: Some(&project.root.dir),
                     })
                 })
                 .chain(verilog_configs.iter().filter_map(|(i, config)| {
@@ -150,13 +178,19 @@ pub fn run(options: Options) -> Result<bool> {
                         syntax_errors: file.parse.errors(),
                         config,
                         verilog: Some(&file.parse),
+                        root: Some(&project.root.dir),
                     })
                 }))
                 .collect();
             let mut result = vfl_lint::lint(&analysis, &settings);
-            result
-                .diagnostics
-                .retain(|d| files.contains(&analysis.files()[d.file as usize].path));
+            result.diagnostics.retain(|d| {
+                let file = &analysis.files()[d.file as usize];
+                files.contains(&file.path)
+                    && changed.as_ref().is_none_or(|changed| {
+                        let line = file.line_index.line_col(&file.text, d.range.start()).line;
+                        changed.contains(&file.path, line + 1)
+                    })
+            });
             if passes == 0 {
                 for error in &result.config_errors {
                     eprintln!("warning: {error}");
@@ -166,6 +200,8 @@ pub fn run(options: Options) -> Result<bool> {
                 d.fix
                     .as_ref()
                     .is_some_and(|f| f.safe || options.unsafe_fixes)
+                    && (options.fix_only.is_empty()
+                        || vfl_lint::rule_matches(&options.fix_only, d.rule))
             };
             if options.fix && passes < 4 {
                 let mut by_file: HashMap<u32, Vec<&vfl_lint::Fix>> = HashMap::new();
@@ -203,12 +239,53 @@ pub fn run(options: Options) -> Result<bool> {
                     continue;
                 }
             }
+            // The baseline: `--baseline`, else the project's.
+            let baseline_path = options.baseline.clone().or_else(|| {
+                let configured = project.config.lint.baseline.as_ref()?;
+                Some(project.root.dir.join(configured))
+            });
+            let baseline = match baseline_path.filter(|_| options.write_baseline.is_none()) {
+                Some(path) => {
+                    let path = std::path::absolute(&path)?;
+                    let i = match baselines.iter().position(|(p, _)| *p == path) {
+                        Some(i) => i,
+                        None => {
+                            baselines.push((path.clone(), Baseline::read(&path)?));
+                            baselines.len() - 1
+                        }
+                    };
+                    Some(&mut baselines[i].1)
+                }
+                None => None,
+            };
+            let mut baseline = baseline;
             for d in result.diagnostics {
                 let file = &analysis.files()[d.file as usize];
-                if d.fix
-                    .as_ref()
-                    .is_some_and(|f| f.safe || options.unsafe_fixes)
-                {
+                if baseline.is_some() || options.write_baseline.is_some() {
+                    let relative = display_path(&file.path, &root);
+                    let fingerprint = report::diagnostic_fingerprint(
+                        &d,
+                        &Source {
+                            path: &relative,
+                            text: &file.text,
+                            line_index: &file.line_index,
+                        },
+                    );
+                    if options.write_baseline.is_some() {
+                        new_baseline.push(baseline::Entry {
+                            file: relative.to_string_lossy().replace('\\', "/"),
+                            rule: d.rule.to_owned(),
+                            message: d.message.clone(),
+                            fingerprint,
+                        });
+                        continue;
+                    }
+                    if baseline.as_mut().is_some_and(|b| b.take(&fingerprint)) {
+                        totals.baselined += 1;
+                        continue;
+                    }
+                }
+                if fixable(&d) {
                     totals.fixable += 1;
                 }
                 match d.level {
@@ -235,6 +312,16 @@ pub fn run(options: Options) -> Result<bool> {
             break;
         }
     }
+    if let Some(path) = &options.write_baseline {
+        let count = new_baseline.len();
+        baseline::write(path, new_baseline)?;
+        eprintln!(
+            "wrote {} to the baseline {}",
+            plural(count, "finding"),
+            path.display()
+        );
+        return Ok(true);
+    }
     let diagnostics: Vec<Diagnostic> = all.iter().map(|(d, _)| d.clone()).collect();
     output.push_str(&report::render(
         options.format,
@@ -249,6 +336,11 @@ pub fn run(options: Options) -> Result<bool> {
     print!("{output}");
     if matches!(options.format, Format::Human | Format::Concise) {
         summary(&totals, options.fix);
+    } else if totals.baselined > 0 {
+        eprintln!(
+            "{} in the baseline not reported",
+            plural(totals.baselined, "finding")
+        );
     }
     Ok(totals.errors == 0 && !(options.deny_warnings && totals.warnings > 0))
 }
@@ -268,6 +360,9 @@ fn summary(totals: &Totals, fix: bool) {
     ];
     if totals.infos > 0 {
         parts.push(plural(totals.infos, "note"));
+    }
+    if totals.baselined > 0 {
+        parts.push(format!("{} in the baseline", totals.baselined));
     }
     let mut line = parts.join(", ");
     if fix {

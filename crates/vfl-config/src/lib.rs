@@ -775,6 +775,13 @@ pub struct LintConfig {
     pub preset: Preset,
     /// Per-rule overrides, keyed by rule id such as `naming/signal-prefix`.
     pub rules: BTreeMap<String, RuleSetting>,
+    /// The baseline file of `vfl lint`, relative to the project root:
+    /// findings it lists are not reported.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub baseline: Option<String>,
+    /// `[[lint.waiver]]`: findings silenced from outside the sources.
+    #[serde(rename = "waiver", skip_serializing_if = "Vec::is_empty")]
+    pub waivers: Vec<Waiver>,
 }
 
 impl Default for LintConfig {
@@ -782,6 +789,66 @@ impl Default for LintConfig {
         LintConfig {
             preset: Preset::Recommended,
             rules: BTreeMap::new(),
+            baseline: None,
+            waivers: Vec::new(),
+        }
+    }
+}
+
+/// A `[[lint.waiver]]`: silences the findings that match every key it
+/// sets.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Waiver {
+    /// Gitignore-style globs, relative to the project root, of the files
+    /// (all files if empty).
+    pub files: Vec<String>,
+    /// Rule ids or categories (all rules if empty).
+    pub rules: Vec<String>,
+    /// One-based line numbers (`12`) or inclusive ranges (`"40:52"`) the
+    /// finding starts on (any line if empty).
+    pub lines: Vec<WaiverLines>,
+    /// A regular expression the message must contain a match of.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// Why the findings are waived; not used by vfl.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// A line or a range of lines of a [`Waiver`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum WaiverLines {
+    Line(u32),
+    /// `"FIRST:LAST"`, or a single line as a string.
+    Range(String),
+}
+
+impl WaiverLines {
+    /// The one-based inclusive range, or an error for a bad range.
+    pub fn range(&self) -> Result<(u32, u32), String> {
+        let bad = || format!("invalid waiver line range `{self}`: expected `LINE` or `FIRST:LAST`");
+        match self {
+            WaiverLines::Line(line) => Ok((*line, *line)),
+            WaiverLines::Range(text) => {
+                let (first, last) = text.split_once(':').unwrap_or((text, text));
+                let first: u32 = first.trim().parse().map_err(|_| bad())?;
+                let last: u32 = last.trim().parse().map_err(|_| bad())?;
+                if first == 0 || first > last {
+                    return Err(bad());
+                }
+                Ok((first, last))
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for WaiverLines {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WaiverLines::Line(line) => write!(f, "{line}"),
+            WaiverLines::Range(text) => f.write_str(text),
         }
     }
 }
@@ -1127,6 +1194,25 @@ mod tests {
             "{text}"
         );
         assert_eq!(Config::from_toml_str(&text).unwrap(), config);
+    }
+
+    #[test]
+    fn waivers_and_baseline_parse_and_round_trip() {
+        let config = Config::from_toml_str(
+            "[lint]\nbaseline = \"b.json\"\n\
+             [[lint.waiver]]\nfiles = [\"ip/**\"]\nrules = [\"style\"]\nlines = [3, \"10:12\"]\n\
+             message = \"x\"\nreason = \"vendor\"\n",
+        )
+        .unwrap();
+        assert_eq!(config.lint.baseline.as_deref(), Some("b.json"));
+        let waiver = &config.lint.waivers[0];
+        assert_eq!(waiver.lines[0].range(), Ok((3, 3)));
+        assert_eq!(waiver.lines[1].range(), Ok((10, 12)));
+        assert!(WaiverLines::Range("4:2".into()).range().is_err());
+        assert!(WaiverLines::Range("0".into()).range().is_err());
+        let text = config.file_text("");
+        assert_eq!(Config::from_toml_str(&text).unwrap(), config, "{text}");
+        assert!(Config::from_toml_str("[[lint.waiver]]\nfile = \"a\"\n").is_err());
     }
 
     #[test]

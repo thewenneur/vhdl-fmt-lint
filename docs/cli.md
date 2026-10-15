@@ -46,6 +46,7 @@ or SystemVerilog by its extension, with `[verilog]` `mode = "full"` only (see
 | Option | |
 |--------|---|
 | `--check` | Do not write anything; list the files that would change and exit with `1` if any would. |
+| `--diff` | Do not write anything; print a unified diff of the changes (with `a/` and `b/` prefixes, as `git apply` takes it) and exit with `1` if there are any. Works with `-` too. |
 | `--stdin-filename PATH` | With `-`: the path of the text read, which decides its language and the `vfl.toml` that applies. Standard input is VHDL otherwise. |
 | `--lines FIRST:LAST` | Format only lines `FIRST` to `LAST` (1-based, inclusive), and the whole statements and aligned lines they are part of. Repeatable. Takes a single file or `-`. |
 
@@ -56,6 +57,7 @@ statement after `-- vfl: skip`, are left as they are.
 ```sh
 vfl fmt                       # the whole project
 vfl fmt --check src/          # in CI
+vfl fmt --diff                # in CI, showing what to change
 vfl fmt - < top.vhd           # from an editor
 vfl fmt --lines 40:52 top.vhd # one block
 vfl fmt - --stdin-filename fifo.sv < fifo.sv
@@ -80,19 +82,51 @@ every rule is described in [lints.md](lints.md).
 |--------|---|
 | `--fix` | Apply the safe fixes, then report what is left. |
 | `--unsafe-fixes` | With `--fix`, also apply fixes that may change behavior. |
-| `--output-format FORMAT` | `human` (default: source excerpts), `concise` (one line per finding), `json`, `sarif` (for code scanning dashboards) or `github` (annotations in GitHub Actions). |
+| `--fix-only RULES` | Apply the fixes of these rules only: a comma-separated list of rule ids or categories (`style`, `style/*`). Implies `--fix`. |
+| `--output-format FORMAT` | `human` (default: source excerpts), `concise` (one line per finding), `json`, `sarif` (for code scanning dashboards), `github` (annotations in GitHub Actions), `junit` (JUnit XML: a test suite per file, a failed test case per finding) or `gitlab` (a GitLab Code Quality report). |
 | `--deny-warnings` | Exit with `1` on warnings too, not only on errors. |
 | `--color WHEN` | `auto` (default: when printing to a terminal), `always` or `never`. |
+| `--baseline FILE` | Do not report the findings listed in this baseline file (default: [`lint.baseline`](configuration.md#lint)). See [Baselines](#baselines). |
+| `--write-baseline FILE` | Write every finding to this baseline file instead of reporting them, and exit with `0`. |
+| `--changed-since REF` | Report only the files changed since the git revision `REF`: committed, staged, unstaged or untracked. The whole project is still analyzed, so names resolve as usual. |
+| `--changed-lines` | With `--changed-since`: report only the findings that start on an added or changed line. |
 
 ```sh
 vfl lint                                  # the whole project
 vfl lint --fix src/uart                   # fix one directory
 vfl lint --output-format github           # in a GitHub Actions step
 vfl lint --output-format sarif > vfl.sarif
+vfl lint --output-format junit > vfl-junit.xml
+vfl lint --output-format gitlab > gl-code-quality-report.json
+vfl lint --fix-only style/case-others,naming
+vfl lint --changed-since origin/main --changed-lines   # in a pull request
 ```
 
 A finding can be silenced with `-- vfl-ignore rule-id` at the end of its line or on the
-line above, or for a whole file with `-- vfl-ignore-file rule-id`.
+line above, or for a whole file with `-- vfl-ignore-file rule-id`. Without touching the
+sources, [`[[lint.waiver]]`](configuration.md#lintwaiver) entries in `vfl.toml` silence
+findings by file, rule, line and message; editors apply them too.
+
+### Baselines
+
+To adopt vfl, or a stricter preset, on a code base with many findings, record them once
+and fail only on new ones:
+
+```sh
+vfl lint --write-baseline vfl-baseline.json   # commit this file
+vfl lint --baseline vfl-baseline.json         # or set lint.baseline in vfl.toml
+```
+
+The baseline lists each finding with a fingerprint of its file (relative to the project
+root), its rule, its message without digits and the text of its line, but not its line
+number: adding or removing lines elsewhere in a file does not make its findings new.
+Editing the line of a finding does. Each entry matches one finding, so a second identical
+finding in the same file is new. The summary counts the findings the baseline matched
+(`2 in the baseline`). Write the baseline again to drop the findings that were fixed.
+Editors do not read the baseline.
+
+`--changed-since` also limits the report to what a branch changed. It runs `git` in the
+project root.
 
 ## `vfl check`
 
@@ -113,11 +147,16 @@ the branches not compiled are not checked.
 ## `vfl rules`
 
 ```sh
-vfl rules
+vfl rules [--explain RULE]
 ```
 
 Prints every lint rule with its level in the `recommended` and `strict` presets, whether
-it has a fix, and a one-line summary.
+it has a fix, and a one-line summary. `--explain RULE` prints one rule's levels and its
+full description from [lints.md](lints.md): what it reports, its options and its fix.
+
+```sh
+vfl rules --explain style/line-length
+```
 
 ## `vfl project`
 

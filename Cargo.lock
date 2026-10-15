@@ -906,6 +906,7 @@ dependencies = [
  "anyhow",
  "clap",
  "serde_json",
+ "similar",
  "tempfile",
  "toml",
  "vfl-config",
@@ -970,6 +971,7 @@ dependencies = [
 name = "vfl-lint"
 version = "0.7.0"
 dependencies = [
+ "globset",
  "rayon",
  "regex",
  "rowan",
