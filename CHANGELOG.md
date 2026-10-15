@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **The Zed extension is a release download**: `vfl-zed-vX.Y.Z.zip`, its sources, to install
+  with **zed: install dev extension** without cloning the repository.
+
 ## [0.5.0] - 2026-10-15
 
 The formatter aligns every token across its whole block by default, the `;` ending the lines
