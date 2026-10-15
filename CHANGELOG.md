@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## [0.5.0] - 2026-10-15
+
+The formatter aligns every token across its whole block by default, the `;` ending the lines
+too, with 4-column indentation; editors beyond VS Code and Notepad++ get a Zed extension and
+ready-made setups.
 
 ### Added
 
