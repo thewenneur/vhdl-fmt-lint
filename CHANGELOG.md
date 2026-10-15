@@ -4,6 +4,21 @@
 
 ### Added
 
+- **`sema/incomplete-case`** (error): a `case` statement or selected assignment whose
+  choices leave out values of the selector's subtype (enumerations, integer subtypes with
+  static bounds, `std_logic_vector` and other character arrays) and has no `when others`.
+  The fix (unsafe, also an editor quick fix) adds the missing `when` alternatives with a
+  `null` body, or `when others => null;` when more than 8 are missing.
+- **`sema/duplicate-choice`** (error): a choice that names a value an earlier choice
+  covers, such as a literal listed twice or overlapping integer ranges.
+- **`sema/multiple-drivers`** (warn in `recommended`, error in `strict`): a signal, or an
+  overlapping static part of it, driven by more than one process, concurrent assignment
+  or instance output. The `resolved` option (`"rtl"` by default, `"always"`, `"never"`)
+  says when signals of resolved types such as `std_logic` are reported; tri-state drivers
+  (`'Z'`) never are.
+- **`sema/combinational-loop`** (warn in `recommended`, error in `strict`): a signal that
+  depends on itself through concurrent assignments and combinational processes without a
+  register, reported once per loop with its path (`a -> b -> a`).
 - **Waivers**: `[[lint.waiver]]` entries in `vfl.toml` silence findings by file glob, rule
   or category, line or line range, and message pattern, without touching the sources, on
   the command line and in editors.

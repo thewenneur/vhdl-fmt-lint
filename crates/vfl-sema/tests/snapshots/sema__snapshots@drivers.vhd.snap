@@ -1,0 +1,23 @@
+---
+source: crates/vfl-sema/tests/sema.rs
+expression: analyze(&text)
+input_file: crates/vfl-sema/tests/data/drivers.vhd
+---
+leaf.vhd: work
+drivers.vhd: work
+loops.vhd: work
+drivers.vhd:9:5: sema/inout-port: inout port `bus_io` is never read, so it could be `out`
+drivers.vhd:18:10: sema/unread-signal: signal `flag` is assigned but never read
+drivers.vhd:19:10: sema/unread-signal: signal `both` is assigned but never read
+drivers.vhd:21:10: sema/unread-signal: signal `v` is assigned but never read
+drivers.vhd:22:10: sema/unread-signal: signal `w` is assigned but never read
+drivers.vhd:23:10: sema/unread-signal: signal `r` is assigned but never read
+drivers.vhd:24:10: sema/unread-signal: signal `gen` is assigned but never read
+drivers.vhd:25:10: sema/unread-signal: signal `choice` is assigned but never read
+drivers.vhd:36:5: sema/multiple-drivers: `flag` is also driven by the statement at line 31; a signal of an unresolved type can have only one driver
+drivers.vhd:41:3: sema/multiple-drivers: `both` is also driven by the statement at line 40; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+drivers.vhd:45:3: sema/multiple-drivers: `inst` is also driven by the statement at line 44; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+drivers.vhd:51:3: sema/multiple-drivers: `w` is also driven by the statement at line 50; a signal of an unresolved type can have only one driver
+loops.vhd:18:3: sema/combinational-loop: combinational loop with no register on the way: `x1` -> `x2` -> `x3` -> `x1`
+loops.vhd:23:3: sema/combinational-loop: combinational loop: `s` depends on itself with no register on the way
+loops.vhd:49:7: sema/combinational-loop: combinational loop with no register on the way: `p` -> `q` -> `p`

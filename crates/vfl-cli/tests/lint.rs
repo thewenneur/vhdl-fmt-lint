@@ -71,7 +71,8 @@ fn config_levels_suppressions_and_fixes() {
     let dir = project(&[
         (
             "vfl.toml",
-            "[lint.rules]\n\"style/trailing-whitespace\" = \"warn\"\n\"naming/signal\" = { prefix = \"s_\" }\n",
+            "[lint.rules]\n\"style/trailing-whitespace\" = \"warn\"\n\"naming/signal\" = { prefix = \"s_\" }\n\
+             \"sema/combinational-loop\" = \"off\"\n",
         ),
         (
             "e.vhd",
@@ -247,4 +248,106 @@ fn case_without_others_is_reported_in_strict() {
         fixed.contains("      when '0' => null;\n      when others => null;\n    end case;"),
         "{fixed}"
     );
+}
+
+#[test]
+fn incomplete_cases_are_fixed() {
+    let source = "entity k is\n  port (n : in integer range 0 to 7; q : out bit);\nend;\n\
+                  architecture rtl of k is\n  type state_t is (idle, run, done);\n  \
+                  signal st : state_t;\nbegin\n  process (all)\n  begin\n    \
+                  case st is\n      when idle => q <= '0';\n    end case;\n    \
+                  case n is\n      when 0 to 2 => q <= '1';\n      when 2 => q <= '0';\n      \
+                  when 5 => q <= '0';\n    end case;\n  end process;\nend;\n";
+    let dir = project(&[("vfl.toml", ""), ("k.vhd", source)]);
+    let (ok, stdout, _) = vfl(dir.path(), &["lint", "--output-format", "concise"]);
+    assert!(!ok);
+    for expected in [
+        "k.vhd:10:5: error[sema/incomplete-case] the choices do not cover `run`, `done`",
+        "k.vhd:13:5: error[sema/incomplete-case] the choices do not cover `3 to 4`, `6 to 7`",
+        "k.vhd:15:12: error[sema/duplicate-choice] `2` is already covered by the choice at line 14",
+    ] {
+        assert!(stdout.contains(expected), "{expected}\n{stdout}");
+    }
+    // The new alternatives do nothing: only with `--unsafe-fixes`.
+    vfl(dir.path(), &["lint", "--fix"]);
+    let fixed = std::fs::read_to_string(dir.path().join("k.vhd")).unwrap();
+    assert_eq!(fixed, source);
+    vfl(dir.path(), &["lint", "--fix", "--unsafe-fixes"]);
+    let fixed = std::fs::read_to_string(dir.path().join("k.vhd")).unwrap();
+    assert!(
+        fixed.contains(
+            "      when idle => q <= '0';\n      when run => null;\n      when done => null;\n    end case;"
+        ),
+        "{fixed}"
+    );
+    assert!(
+        fixed.contains(
+            "      when 5 => q <= '0';\n      when 3 to 4 => null;\n      when 6 to 7 => null;\n    end case;"
+        ),
+        "{fixed}"
+    );
+}
+
+#[test]
+fn multiple_drivers_of_resolved_signals_are_an_option() {
+    let source = "library ieee;\nuse ieee.std_logic_1164.all;\n\
+                  entity m is\n  port (a, b : in std_logic; y : out std_logic);\nend;\n\
+                  architecture rtl of m is\n  signal u : std_ulogic;\nbegin\n  \
+                  y <= a;\n  y <= b;\n  u <= a;\n  u <= b;\nend;\n\
+                  library ieee;\nuse ieee.std_logic_1164.all;\n\
+                  entity tb is\nend;\n\
+                  architecture sim of tb is\n  signal s : std_logic;\nbegin\n  \
+                  s <= '0';\n  s <= '1';\nend;\n";
+    let rule = "\"sema/multiple-drivers\"";
+    let resolved_y = "m.vhd:10:3: warning[sema/multiple-drivers] `y` is also driven";
+    let unresolved_u = "m.vhd:12:3: warning[sema/multiple-drivers] `u` is also driven";
+    let testbench_s = "m.vhd:22:3: warning[sema/multiple-drivers] `s` is also driven";
+    for (config, y, s) in [
+        (String::new(), true, false),
+        (
+            format!("[lint.rules]\n{rule} = {{ resolved = \"always\" }}\n"),
+            true,
+            true,
+        ),
+        (
+            format!("[lint.rules]\n{rule} = {{ resolved = \"never\" }}\n"),
+            false,
+            false,
+        ),
+    ] {
+        let dir = project(&[("vfl.toml", &config), ("m.vhd", source)]);
+        let (_, stdout, _) = vfl(dir.path(), &["lint", "--output-format", "concise"]);
+        assert!(stdout.contains(unresolved_u), "{config}{stdout}");
+        assert_eq!(stdout.contains(resolved_y), y, "{config}{stdout}");
+        assert_eq!(stdout.contains(testbench_s), s, "{config}{stdout}");
+    }
+    let config = format!("[lint.rules]\n{rule} = {{ resolved = 1 }}\n");
+    let dir = project(&[("vfl.toml", &config), ("m.vhd", source)]);
+    let (_, stdout, stderr) = vfl(dir.path(), &["lint", "--output-format", "concise"]);
+    assert!(
+        format!("{stdout}{stderr}").contains("`resolved` of `sema/multiple-drivers` must be"),
+        "{stdout}{stderr}"
+    );
+}
+
+#[test]
+fn combinational_loops_are_reported() {
+    let source = "entity c is\n  port (a, b : in bit; y : out bit);\nend;\n\
+                  architecture rtl of c is\n  signal x1, x2 : bit;\nbegin\n  \
+                  x1 <= a and x2;\n  x2 <= x1 or b;\n  y <= x2;\nend;\n";
+    let dir = project(&[("vfl.toml", ""), ("c.vhd", source)]);
+    let (_, stdout, _) = vfl(dir.path(), &["lint", "--output-format", "concise"]);
+    assert!(
+        stdout.contains("c.vhd:7:3: warning[sema/combinational-loop] combinational loop with no register on the way: `x1` -> `x2` -> `x1`"),
+        "{stdout}"
+    );
+    let dir = project(&[
+        (
+            "vfl.toml",
+            "[lint.rules]\n\"sema/combinational-loop\" = \"off\"\n",
+        ),
+        ("c.vhd", source),
+    ]);
+    let (_, stdout, _) = vfl(dir.path(), &["lint", "--output-format", "concise"]);
+    assert!(!stdout.contains("combinational-loop"), "{stdout}");
 }
