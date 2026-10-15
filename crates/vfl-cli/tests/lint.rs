@@ -148,3 +148,103 @@ fn project_shows_inferred_libraries() {
     assert!(ok);
     assert!(stdout.contains("sema/unresolved-name"));
 }
+
+#[test]
+fn branch_assignments_in_clocked_processes_are_an_option() {
+    let source = "entity r is\n  port (clk, en, d : in bit; q : out bit);\nend;\n\
+                  architecture rtl of r is\nbegin\n  process (clk)\n  begin\n    \
+                  if clk'event and clk = '1' then\n      if en = '1' then\n        \
+                  q <= d;\n      end if;\n    end if;\n  end process;\nend;\n";
+    let rule = "\"sema/missing-branch-assignment\"";
+    let on = format!("[lint.rules]\n{rule} = \"warn\"\n");
+    let clocked = format!("[lint.rules]\n{rule} = {{ clocked = true }}\n");
+    for (config, expected) in [(on.as_str(), ""), (clocked.as_str(), "warning")] {
+        let dir = project(&[("vfl.toml", config), ("r.vhd", source)]);
+        let (_, stdout, _) = vfl(dir.path(), &["lint", "--output-format", "concise"]);
+        assert_eq!(
+            stdout.contains(&format!("r.vhd:9:7: {expected}[sema/missing-branch-assignment] this `if` has no `else`, so `q` is not assigned")),
+            !expected.is_empty(),
+            "{config}{stdout}"
+        );
+        assert!(!stdout.contains("#clocked"), "{stdout}");
+    }
+}
+
+#[test]
+fn missing_branch_assignments_take_precedence_over_latches() {
+    let source = "entity l is\n  port (s, d : in bit; q, r : out bit);\nend;\n\
+                  architecture rtl of l is\nbegin\n  process (all)\n  begin\n    \
+                  if s = '1' then\n      q <= d;\n    end if;\n  end process;\n  \
+                  process (all)\n  begin\n    for i in 0 to 0 loop\n      r <= d;\n    end loop;\n    \
+                  if s = '1' then\n      r <= '0';\n    end if;\n  end process;\nend;\n";
+    let latch = "q` is not assigned on every path";
+    for (config, branches, latches) in [
+        ("", 1, 0),
+        (
+            "[lint.rules]\n\"sema/missing-branch-assignment\" = \"off\"\n",
+            0,
+            1,
+        ),
+    ] {
+        let dir = project(&[("vfl.toml", config), ("l.vhd", source)]);
+        let (_, stdout, _) = vfl(dir.path(), &["lint", "--output-format", "concise"]);
+        assert_eq!(
+            stdout
+                .matches("warning[sema/missing-branch-assignment]")
+                .count(),
+            branches,
+            "{config}{stdout}"
+        );
+        assert_eq!(stdout.matches(latch).count(), latches, "{config}{stdout}");
+        assert!(!stdout.contains("`r`"), "{stdout}");
+    }
+}
+
+#[test]
+fn branch_assignments_are_fixed() {
+    let source = "entity f is\n  port (clk, en, d : in bit);\nend;\n\
+                  architecture rtl of f is\n  signal r, c : bit;\nbegin\n  \
+                  process (clk)\n  begin\n    if clk'event and clk = '1' then\n      \
+                  if en = '1' then\n        r <= d;\n      end if;\n    end if;\n  \
+                  end process;\n  process (all)\n  begin\n    if en = '1' then\n      \
+                  c <= d;\n    end if;\n  end process;\nend;\n";
+    let config = "[lint.rules]\n\"sema/missing-branch-assignment\" = { clocked = true }\n";
+    let dir = project(&[("vfl.toml", config), ("f.vhd", source)]);
+    vfl(dir.path(), &["lint", "--fix"]);
+    let fixed = std::fs::read_to_string(dir.path().join("f.vhd")).unwrap();
+    assert!(
+        fixed.contains("        r <= d;\n      else\n        r <= r;\n      end if;"),
+        "{fixed}"
+    );
+    // Defaults change the design: only with `--unsafe-fixes`.
+    assert!(!fixed.contains("c <= '0';"), "{fixed}");
+    vfl(dir.path(), &["lint", "--fix", "--unsafe-fixes"]);
+    let fixed = std::fs::read_to_string(dir.path().join("f.vhd")).unwrap();
+    assert!(
+        fixed.contains("  begin\n    c <= '0';\n    if en = '1' then"),
+        "{fixed}"
+    );
+}
+
+#[test]
+fn case_without_others_is_reported_in_strict() {
+    let source = "entity c is\n  port (s : in bit; q : out bit);\nend;\n\
+                  architecture rtl of c is\nbegin\n  process (all)\n  begin\n    \
+                  q <= '0';\n    case s is\n      when '1' => q <= '1';\n      \
+                  when '0' => null;\n    end case;\n  end process;\nend;\n";
+    let dir = project(&[
+        ("vfl.toml", "[lint]\npreset = \"strict\"\n"),
+        ("c.vhd", source),
+    ]);
+    let (_, stdout, _) = vfl(dir.path(), &["lint", "--output-format", "concise"]);
+    assert!(
+        stdout.contains("c.vhd:9:5: warning[style/case-others]"),
+        "{stdout}"
+    );
+    vfl(dir.path(), &["lint", "--fix"]);
+    let fixed = std::fs::read_to_string(dir.path().join("c.vhd")).unwrap();
+    assert!(
+        fixed.contains("      when '0' => null;\n      when others => null;\n    end case;"),
+        "{fixed}"
+    );
+}

@@ -77,6 +77,7 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`sema/unneeded-sensitivity`](#semaunneeded-sensitivity) | off | warn | unsafe |
 | [`sema/width-mismatch`](#semawidth-mismatch) | warn | error | |
 | [`sema/inferred-latch`](#semainferred-latch) | warn | error | |
+| [`sema/missing-branch-assignment`](#semamissing-branch-assignment) | warn | error | safe, unsafe |
 | [`sema/clock-domain-crossing`](#semaclock-domain-crossing) | info | warn | |
 | [`sema/open-input`](#semaopen-input) | warn | error | |
 | [`sema/inout-port`](#semainout-port) | info | warn | |
@@ -97,6 +98,7 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`style/line-length`](#styleline-length) | off | warn | |
 | [`style/trailing-whitespace`](#styletrailing-whitespace) | off | warn | safe |
 | [`style/tabs`](#styletabs) | off | warn | safe |
+| [`style/case-others`](#stylecase-others) | off | warn | safe |
 | [`style/process-label`](#styleprocess-label) | off | warn | |
 | [`style/positional-association`](#stylepositional-association) | off | warn | safe |
 | [`style/clock-edge`](#styleclock-edge) | off | warn | unsafe |
@@ -362,7 +364,58 @@ end process;
 To fix it, assign a default at the top of the process or add the missing `else` / `when
 others`. Not reported: signals only assigned in part (an element or a slice), processes
 with `after` delays (simulation models), other `wait` statements, and processes that do not
-parse. `warn` in `recommended`, `error` in `strict`.
+parse. `warn` in `recommended`, `error` in `strict`. While
+[`sema/missing-branch-assignment`](#semamissing-branch-assignment) is on, a latch it reports
+a branch for is left to it.
+
+### `sema/missing-branch-assignment`
+
+Every signal a process assigns in a branch of an `if` or `case` must be assigned in every
+branch of that statement, unless the process assigns it before the statement (a default).
+An `if` that assigns such a signal must have an `else`. Each branch that leaves a signal out
+is reported at its `if`, `elsif`, `else` or `when`, with the signals it misses; a gap in a
+nested statement is reported there and not again on the branches around it.
+
+```vhdl
+comb : process (all)
+begin
+  ready <= '0';                 -- a default: branches may leave `ready` out
+  if start = '1' then
+    load <= '1';
+    count <= 0;
+  elsif stop = '1' then         -- this `elsif` branch does not assign `count`
+    load <= '0';
+  else                          -- this `else` branch does not assign `load` and `count`
+    ready <= '1';
+  end if;
+end process;
+```
+
+In a combinational process (as defined for
+[`sema/inferred-latch`](#semainferred-latch)), each finding points at the branch behind a
+latch. With the `clocked` option, the clocked branch of clocked processes is checked too,
+where a missing assignment means the register keeps its value (a clock enable); the reset
+branch is left out, as it only sets the registers that have a reset value:
+
+```toml
+[lint.rules]
+"sema/missing-branch-assignment" = { clocked = true }
+```
+
+Fixes: in a clocked process, the branch that leaves a register out gets `q <= q;`, and an
+`if` without `else` gets an `else` with them, which keeps the design's meaning (safe, except
+for `out` ports, which can only be read from VHDL-2008 on). In a combinational process, the
+fix assigns the signals a default value before the statement: `'0'`, `(others => '0')`,
+`false`, `0`, or the type's `'left` / `'low`. That removes the latch, so it changes the
+design and is unsafe (`vfl lint --fix --unsafe-fixes`, or the quick fix in an editor).
+
+A `case` without `when others` is complete by the language's rules, so only its
+alternatives are compared; [`style/case-others`](#stylecase-others) reports it in `strict`.
+Not reported: signals assigned only in part (an element or a slice), processes with `wait`
+(other than one trailing `wait on`) or `after` delays, and processes that do not parse.
+`warn` in `recommended`, `error` in `strict`. It takes precedence over
+[`sema/inferred-latch`](#semainferred-latch): a latch it explains is reported as this rule's
+findings only, which name the branches to fix, where the latch finding names the signal.
 
 ### `sema/clock-domain-crossing`
 
@@ -641,6 +694,14 @@ re-indents with spaces.
 
 Fix (safe): replaces the indentation with spaces, a tab reaching the next multiple of
 `format.indent` columns.
+
+### `style/case-others`
+
+A `case` statement has no `when others` alternative. The choices must still cover every
+value, but a `when others` keeps the statement complete when the selector's type grows, and
+makes the default explicit. Reported at `case`. The fix adds `when others => null;` before
+`end case`, which is legal even when the other choices cover every value (safe). `off` in
+`recommended`, `warn` in `strict`.
 
 ### `style/process-label`
 

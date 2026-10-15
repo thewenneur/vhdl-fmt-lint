@@ -40,6 +40,7 @@ architecture rtl of top is
   signal latch_q, full_q, case_q, cond_q : std_logic;
   signal flag_a, sync_1, sync_2, used_b : std_logic;
   signal data_a : std_logic_vector(7 downto 0);
+  signal br_a, br_b, br_c, br_d, br_e : std_logic;
 begin
   -- Width mismatches, and widths that agree.
   w <= d;
@@ -83,6 +84,31 @@ begin
     case sel is
       when '1' => case_q <= en;
       when others => null;
+    end case;
+  end process;
+
+  -- Branches that leave out a signal.
+  branches : process (all)
+  begin
+    br_d <= '0';
+    if en = '1' then
+      br_a <= d(0);
+      br_b <= d(1);
+    elsif sel = '1' then
+      br_a <= d(2);
+      br_d <= '1';
+    else
+      br_b <= d(3);
+    end if;
+    case sel is
+      when '1' =>
+        br_c <= en;
+        if en = '1' then
+          br_e <= '1';
+        end if;
+      when others =>
+        br_c <= '0';
+        br_e <= '0';
     end case;
   end process;
 

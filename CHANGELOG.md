@@ -15,6 +15,14 @@
 - **Configuration guide by example** in `examples/config`: one folder per formatter or lint
   topic, each with a `vfl.toml`, a file before and after `vfl fmt` or `vfl lint --fix`, and
   a README. A test keeps the `after` files in sync with vfl.
+- **`sema/missing-branch-assignment`**: every signal a process assigns in a branch of an
+  `if` or `case` must be assigned in all its branches (and the `if` must have an `else`),
+  unless it has a default before the statement. Reported at the branch that leaves it out.
+  Combinational processes by default; `{ clocked = true }` checks clocked processes too,
+  leaving the reset branch out. Warn in `recommended`, error in `strict`; a latch it explains is reported by it only, not also as `sema/inferred-latch`. Fixes: `q <= q;` in
+  clocked processes (safe), a default before the statement in combinational ones (unsafe).
+- **`style/case-others`** (strict): a `case` statement without `when others`; the fix adds
+  `when others => null;`.
 
 ### Changed
 

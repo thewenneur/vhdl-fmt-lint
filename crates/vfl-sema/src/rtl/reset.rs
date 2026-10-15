@@ -26,7 +26,7 @@ pub(super) struct ResetUse {
 
 /// The branches of an `if` statement: each condition (`None` for `else`)
 /// with its statements.
-pub(super) fn if_branches(node: &SyntaxNode) -> Vec<(Option<SyntaxNode>, Vec<SyntaxNode>)> {
+pub(crate) fn if_branches(node: &SyntaxNode) -> Vec<(Option<SyntaxNode>, Vec<SyntaxNode>)> {
     use SyntaxKind::*;
     let mut branches: Vec<(Option<SyntaxNode>, Vec<SyntaxNode>)> = Vec::new();
     let mut in_condition = false;
@@ -55,7 +55,7 @@ pub(super) fn if_branches(node: &SyntaxNode) -> Vec<(Option<SyntaxNode>, Vec<Syn
 }
 
 /// The statements of a process body.
-pub(super) fn process_body(process: &SyntaxNode) -> Vec<SyntaxNode> {
+pub(crate) fn process_body(process: &SyntaxNode) -> Vec<SyntaxNode> {
     process
         .children_with_tokens()
         .skip_while(|e| e.kind() != SyntaxKind::BEGIN_KW)

@@ -308,8 +308,29 @@ fn lint_file(
             error.message.clone(),
         ));
     }
-    for d in sema {
-        let mut finding = Finding::new(d.code, d.range, d.message.clone());
+    // Computed on demand: it costs nothing where the rule is off.
+    let branches = if enabled(vfl_sema::codes::MISSING_BRANCH_ASSIGNMENT) {
+        let clocked = rules::clocked_branches(lint_config).unwrap_or_else(|error| {
+            errors.push(error);
+            false
+        });
+        analysis.missing_branch_assignments(settings.file, clocked)
+    } else {
+        vfl_sema::MissingBranches::default()
+    };
+    // A latch that a missing branch assignment explains is reported as the
+    // latter only.
+    let explained = |d: &vfl_sema::Diagnostic| {
+        d.code == vfl_sema::codes::INFERRED_LATCH && branches.latches.contains(&d.range)
+    };
+    for d in sema
+        .iter()
+        .copied()
+        .filter(|d| !explained(d))
+        .chain(&branches.diagnostics)
+    {
+        let code = d.code;
+        let mut finding = Finding::new(code, d.range, d.message.clone());
         finding.fix = d.fix.clone();
         findings.push(finding);
     }

@@ -4,7 +4,7 @@
 //! machines.
 
 mod fsm;
-mod reset;
+pub(crate) mod reset;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use vfl_syntax::green_walk::ChildTokens;
@@ -820,23 +820,9 @@ impl<'a> Checker<'a> {
         use SyntaxKind::*;
         match node.kind() {
             SIGNAL_ASSIGN_STMT | SELECTED_ASSIGN_STMT => {
-                let selected = node.kind() == SELECTED_ASSIGN_STMT;
-                let target = node
-                    .children_with_tokens()
-                    .skip_while(|e| selected && e.kind() != SELECT_KW)
-                    .filter_map(|e| e.into_node())
-                    .find(|n| n.kind() != LABEL);
-                let Some(target) = target else {
+                let Some((target, complete)) = assignment_target(node) else {
                     return FxHashSet::default();
                 };
-                // `s <= a when c;` without a final `else` may not assign.
-                let complete = node
-                    .children()
-                    .find(|n| n.kind() == CONDITIONAL_WAVEFORMS)
-                    .is_none_or(|w| {
-                        let count = |k| w.children_with_tokens().filter(|e| e.kind() == k).count();
-                        count(ELSE_KW) >= count(WHEN_KW)
-                    });
                 self.assigned(&target, complete, paths)
             }
             PROCEDURE_CALL_STMT => {
@@ -1093,6 +1079,26 @@ impl<'a> Checker<'a> {
 struct Paths {
     first: FxHashMap<DeclId, TextRange>,
     partial: FxHashSet<DeclId>,
+}
+
+/// The target of a signal assignment, and whether it is assigned whenever
+/// the statement runs: `s <= a when c;` without a final `else` may not.
+pub(crate) fn assignment_target(node: &SyntaxNode) -> Option<(SyntaxNode, bool)> {
+    use SyntaxKind::*;
+    let selected = node.kind() == SELECTED_ASSIGN_STMT;
+    let target = node
+        .children_with_tokens()
+        .skip_while(|e| selected && e.kind() != SELECT_KW)
+        .filter_map(|e| e.into_node())
+        .find(|n| n.kind() != LABEL)?;
+    let complete = node
+        .children()
+        .find(|n| n.kind() == CONDITIONAL_WAVEFORMS)
+        .is_none_or(|w| {
+            let count = |k| w.children_with_tokens().filter(|e| e.kind() == k).count();
+            count(ELSE_KW) >= count(WHEN_KW)
+        });
+    Some((target, complete))
 }
 
 fn intersection(sets: Vec<FxHashSet<DeclId>>) -> FxHashSet<DeclId> {
