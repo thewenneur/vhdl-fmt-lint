@@ -18,7 +18,7 @@ use std::sync::Arc;
 use vfl_lsp::editor::{FileEdits, Location, QuickFix, Use};
 use vfl_lsp::generate::Kind;
 
-use vfl_config::Level;
+use vfl_config::{Level, Preset, Style};
 
 use crate::engine::{BufferText, Severity};
 use crate::plugin::{
@@ -64,6 +64,10 @@ enum Action {
     Fix(QuickFix),
     /// Generate code from an entity, by qualified name.
     Generate(Kind, String),
+    /// Lint files no `vfl.toml` applies to with a preset.
+    Preset(Preset),
+    /// Format files no `vfl.toml` applies to in a style.
+    Style(Style),
 }
 
 fn tell(text: &str) {
@@ -152,6 +156,8 @@ pub(crate) fn list_selected(n: &ScNotification) {
             apply_fix(here, fix);
         }
         Action::Generate(kind, entity) => generate_from(kind, &entity),
+        Action::Preset(preset) => crate::plugin::change_defaults(|s| s.lint_preset = preset),
+        Action::Style(style) => crate::plugin::change_defaults(|s| s.format_style = style),
     }
 }
 
@@ -686,6 +692,76 @@ fn insert_at_caret(here: &Here, text: &str) {
     apply_edits(here.sci, &here.buffer, &[(offset..offset, text.clone())]);
     let end = here.buffer.position(offset) + here.buffer.encoded_len(&text);
     send(here.sci, SCI_GOTOPOS, end, 0);
+}
+
+// Settings without a `vfl.toml`, and the project's config file.
+
+/// A choice's label, marking the current one.
+fn choice(name: &str, current: bool) -> String {
+    if current {
+        format!("{name}  (current)")
+    } else {
+        name.to_owned()
+    }
+}
+
+/// Asks for the lint preset of files no `vfl.toml` applies to.
+pub(crate) fn choose_preset() {
+    let current = with(|s| s.settings.get().lint_preset);
+    let items = Preset::ALL
+        .into_iter()
+        .map(|p| (choice(p.name(), p == current), Action::Preset(p)))
+        .collect();
+    show_list(&here(), items);
+}
+
+/// Asks for the format style of files no `vfl.toml` applies to.
+pub(crate) fn choose_style() {
+    let current = with(|s| s.settings.get().format_style);
+    let items = Style::ALL
+        .into_iter()
+        .map(|st| (choice(st.name(), st == current), Action::Style(st)))
+        .collect();
+    show_list(&here(), items);
+}
+
+/// Writes the settings in effect at the root of the current file's project
+/// (the lint preset and format style of this menu, or its `vfl.toml`) to
+/// the project's `vfl.toml`, and opens it.
+pub(crate) fn generate_config() {
+    here().ask(
+        Key::Command,
+        |engine, path, buffer, _| engine.project_config(path, &buffer.text),
+        |_, generated| {
+            let generated = match generated {
+                Ok(generated) => generated,
+                Err(why) => {
+                    tell(&format!("Cannot generate the project config: {why}."));
+                    return;
+                }
+            };
+            let path = &generated.path;
+            if generated.exists
+                && !confirm(
+                    npp(),
+                    &format!(
+                        "{} exists. Replace it with the settings in effect?",
+                        path.display()
+                    ),
+                )
+            {
+                return;
+            }
+            if let Err(err) = std::fs::write(path, &generated.text) {
+                tell(&format!("Could not write {}: {err}.", path.display()));
+                return;
+            }
+            crate::plugin::reload();
+            if !open(path) {
+                tell(&format!("Wrote {}.", path.display()));
+            }
+        },
+    );
 }
 
 // Highlighting the uses of the name at the caret.

@@ -21,13 +21,14 @@ use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::Arc;
 
+use vfl_config::{Config, Preset, Style};
 use vfl_lsp::editor::CompletionKind;
 use vfl_lsp::generate::Kind;
 
 use crate::engine::{
     BufferText, Engine, FormatFailure, NameColor, Severity, completes_after_dot, completion_list,
-    is_library_copy, is_project_file, is_verilog_path, is_vhdl_path, minimal_edit, plain_text,
-    signature_tip,
+    editor_config, is_library_copy, is_project_file, is_verilog_path, is_vhdl_path, minimal_edit,
+    plain_text, signature_tip,
 };
 use crate::menu;
 use crate::tools;
@@ -78,6 +79,14 @@ const MENU: &[(&str, Option<extern "C" fn()>)] = &[
     ("", None),
     ("Reload project", Some(cmd_reload)),
     ("About", Some(cmd_about)),
+    // Notepad++ keeps shortcuts by menu position: new entries go last.
+    ("", None),
+    ("Lint preset without vfl.toml...", Some(cmd_lint_preset)),
+    ("Format style without vfl.toml...", Some(cmd_format_style)),
+    (
+        "Generate project config (vfl.toml)",
+        Some(cmd_generate_config),
+    ),
 ];
 
 // The entries are those of `menu::NAMES`, in its order, which keeps the
@@ -205,6 +214,9 @@ pub(crate) struct Settings {
     pub(crate) highlight: bool,
     /// Color signals, ports, constants, ... by what the analysis found.
     name_colors: bool,
+    /// The lint preset and format style of files no `vfl.toml` applies to.
+    pub(crate) lint_preset: Preset,
+    pub(crate) format_style: Style,
 }
 
 impl Default for Settings {
@@ -217,6 +229,8 @@ impl Default for Settings {
             assist: true,
             highlight: true,
             name_colors: true,
+            lint_preset: Preset::Recommended,
+            format_style: Style::Default,
         }
     }
 }
@@ -524,6 +538,7 @@ pub extern "C" fn setInfo(data: NppData) {
         pin_module();
         let window = message_window("vfl_npp_results", on_window_message);
         with(|s| s.window.set(window));
+        apply_defaults();
     })
 }
 
@@ -791,6 +806,18 @@ extern "C" fn cmd_generate_docs() {
     guard(tools::generate_docs);
 }
 
+extern "C" fn cmd_generate_config() {
+    guard(tools::generate_config);
+}
+
+extern "C" fn cmd_lint_preset() {
+    guard(tools::choose_preset);
+}
+
+extern "C" fn cmd_format_style() {
+    guard(tools::choose_style);
+}
+
 extern "C" fn cmd_show_diagrams() {
     guard(tools::show_diagrams);
 }
@@ -867,7 +894,8 @@ extern "C" fn cmd_about() {
             &format!(
                 "vfl {} for Notepad++\n\
                  VHDL formatter, linter, navigation and code assistance.\n\n\
-                 Settings come from vfl.toml, found like the vfl command does.\n\n\
+                 Settings come from vfl.toml, found like the vfl command does; \
+                 without one, from the lint preset and format style in this menu.\n\n\
                  https://github.com/thewenneur/vhdl-fmt-lint",
                 env!("CARGO_PKG_VERSION")
             ),
@@ -1854,8 +1882,31 @@ fn rescan(lint: bool) {
     });
 }
 
+/// Changes the lint preset or format style of files no `vfl.toml` applies
+/// to, and shows the current buffer's problems with it.
+pub(crate) fn change_defaults(change: impl FnOnce(&mut Settings)) {
+    let mut settings = with(|s| s.settings.get());
+    change(&mut settings);
+    with(|s| s.settings.set(settings));
+    save_settings();
+    apply_defaults();
+    lint_current(Trigger::Refresh);
+}
+
+/// Hands the lint preset and format style to both engines.
+fn apply_defaults() {
+    let settings = with(|s| s.settings.get());
+    let config = editor_config(settings.lint_preset, settings.format_style);
+    with(|s| s.formatter.borrow_mut().set_defaults(config.clone()));
+    // A worker not started yet has the default config: start it only for
+    // another one.
+    if with(|s| s.worker.borrow().is_some()) || config != Config::default() {
+        post(move |engine| engine.set_defaults(config));
+    }
+}
+
 /// Drops the loaded projects and configurations.
-fn reload() {
+pub(crate) fn reload() {
     with(|s| s.formatter.borrow_mut().reload());
     post(Engine::reload);
 }
@@ -1971,7 +2022,23 @@ fn load_settings() {
             let Some((key, value)) = line.split_once('=') else {
                 continue;
             };
-            let value = value.trim() == "1";
+            let value = value.trim();
+            match key.trim() {
+                "lint_preset" => {
+                    if let Some(p) = Preset::ALL.into_iter().find(|p| p.name() == value) {
+                        settings.lint_preset = p;
+                    }
+                    continue;
+                }
+                "format_style" => {
+                    if let Some(s) = Style::ALL.into_iter().find(|s| s.name() == value) {
+                        settings.format_style = s;
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+            let value = value == "1";
             match key.trim() {
                 "format_on_save" => settings.format_on_save = value,
                 "format_on_type" => settings.format_on_type = value,
@@ -1994,14 +2061,17 @@ fn save_settings() {
     let s = with(|s| s.settings.get());
     let text = format!(
         "format_on_save={}\nformat_on_type={}\nlint_automatically={}\nmessages_under_lines={}\n\
-         code_assistance={}\nhighlight_uses={}\ncolor_names={}\n",
+         code_assistance={}\nhighlight_uses={}\ncolor_names={}\nlint_preset={}\n\
+         format_style={}\n",
         s.format_on_save as u8,
         s.format_on_type as u8,
         s.auto_lint as u8,
         s.inline_messages as u8,
         s.assist as u8,
         s.highlight as u8,
-        s.name_colors as u8
+        s.name_colors as u8,
+        s.lint_preset.name(),
+        s.format_style.name()
     );
     // A settings file that cannot be written only loses the settings.
     let _ = std::fs::write(path, text);

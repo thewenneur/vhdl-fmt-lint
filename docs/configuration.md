@@ -43,6 +43,16 @@ Files under `tb/` are linted with the strict preset, without `sema/unused-signal
 Tables merge key by key. Any other value, arrays included, replaces the value from the
 outer file: an inner `exclude = ["a/**"]` replaces an outer `exclude`, it does not add to it.
 
+### Without a config file
+
+Where no config file applies, every key has its default, except the ones the editor sets:
+the lint preset and format style of the VS Code, Notepad++ and Zed integrations, or any key
+passed by another LSP client (see [editors.md](editors.md#editor-settings)). A config file
+replaces those editor settings entirely, so that a project is linted and formatted the same
+in every editor and on the command line. The editors' **Generate project config** command
+writes the settings in effect to `vfl.toml`, with every key at its default value as a
+comment.
+
 ### Special top-level keys
 
 | Key | Type | Meaning |
@@ -731,6 +741,6 @@ include_dirs = []
 defines = []
 ```
 
-Editor settings (the path to `vfl`, tracing) belong to the editor integration, not to
-`vfl.toml`; see the [VS Code extension](../editors/vscode/README.md) and the
+Editor settings (the path to `vfl`, tracing, and the lint preset and format style of
+projects without a config file) belong to the editor integration, not to `vfl.toml`; see the [VS Code extension](../editors/vscode/README.md) and the
 [Notepad++ plugin](../editors/notepadpp/README.md).

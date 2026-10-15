@@ -343,6 +343,40 @@
           "scope": "machine-overridable",
           "markdownDescription": "Extra environment variables for the language server, such as `{ \"RUST_BACKTRACE\": \"1\" }`."
         },
+        "vfl.lint.preset": {
+          "type": "string",
+          "enum": [
+            "none",
+            "recommended",
+            "strict"
+          ],
+          "enumDescriptions": [
+            "Only syntax errors.",
+            "Likely bugs.",
+            "Every rule except the naming conventions."
+          ],
+          "default": "recommended",
+          "scope": "window",
+          "markdownDescription": "The lint preset of projects without a `vfl.toml`. A `vfl.toml` replaces this setting and `#vfl.format.style#`; **vfl: Generate Project Config (vfl.toml)** writes one from them."
+        },
+        "vfl.format.style": {
+          "type": "string",
+          "enum": [
+            "default",
+            "leading-comma",
+            "compact",
+            "classic"
+          ],
+          "enumDescriptions": [
+            "The defaults of every key.",
+            "`,` and `;` start the next line instead of ending the line; maps one element per line.",
+            "Lists stay on one line when they fit; only trailing comments are aligned.",
+            "Upper case keywords, `end` repeating the construct keyword and name, maps one element per line."
+          ],
+          "default": "default",
+          "scope": "window",
+          "markdownDescription": "The format style of projects without a `vfl.toml`. A `vfl.toml` replaces this setting and `#vfl.lint.preset#`; **vfl: Generate Project Config (vfl.toml)** writes one from them."
+        },
         "vfl.format.onType": {
           "type": "boolean",
           "default": false,
@@ -411,6 +445,11 @@
       {
         "command": "vfl.generateTestbench",
         "title": "Generate Testbench...",
+        "category": "vfl"
+      },
+      {
+        "command": "vfl.generateConfig",
+        "title": "Generate Project Config (vfl.toml)",
         "category": "vfl"
       },
       {

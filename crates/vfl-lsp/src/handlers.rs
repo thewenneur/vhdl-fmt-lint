@@ -77,13 +77,16 @@ pub fn request(world: &mut World, method: &str, params: Value) -> Result<Value, 
             let data = action.data.clone().unwrap_or_default();
             if let Ok(rename) = serde_json::from_value(data.clone()) {
                 json(resolve_rename(world, action, rename).map_err(Error::Failed)?)
-            } else if let Ok(associate) = serde_json::from_value(data) {
+            } else if let Ok(associate) = serde_json::from_value(data.clone()) {
                 json(resolve_associate(world, action, associate).map_err(Error::Failed)?)
+            } else if let Ok(config) = serde_json::from_value(data) {
+                json(crate::settings::resolve(world, action, config).map_err(Error::Failed)?)
             } else {
                 json(crate::generate::resolve(world, action).map_err(Error::Failed)?)
             }
         }
         "vfl/entities" => json(crate::generate::entities(world)),
+        "vfl/projectConfig" => json(crate::settings::project_config(world).map_err(Error::Failed)?),
         "vfl/generate" => {
             json(crate::generate::generate_request(world, parse(params)?).map_err(Error::Failed)?)
         }
@@ -1427,6 +1430,9 @@ fn code_actions(world: &mut World, params: CodeActionParams) -> Option<Vec<CodeA
     }
     if world.is_vhdl(file) && wants(&CodeActionKind::new(crate::generate::TESTBENCH_KIND)) {
         out.extend(crate::generate::code_actions(world, file, start, end));
+    }
+    if wants(&CodeActionKind::new(crate::settings::GENERATE_CONFIG_KIND)) {
+        out.extend(crate::settings::code_actions(world));
     }
     Some(out)
 }

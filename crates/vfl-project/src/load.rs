@@ -158,7 +158,13 @@ impl Project {
     /// Loads the project at `root`: collects sources, parses them in
     /// parallel and infers libraries.
     pub fn load(root: ProjectRoot) -> Result<Project, LoadError> {
-        let config = vfl_config::load_for_dir(&root.dir)?;
+        Self::load_or(root, &Config::default())
+    }
+
+    /// Like [`Project::load`], with `defaults` as the config when no config
+    /// file applies: the settings of an editor.
+    pub fn load_or(root: ProjectRoot, defaults: &Config) -> Result<Project, LoadError> {
+        let config = vfl_config::load_for_dir_or(&root.dir, defaults)?;
         let (paths, tool_files) =
             collect_project(&root.dir, &config).map_err(|source| LoadError::Walk {
                 path: root.dir.clone(),

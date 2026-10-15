@@ -254,6 +254,10 @@ client. It offers:
   instances and named generate blocks), folding ranges, and semantic highlighting of the
   names declared in the file;
 - code actions that insert an instantiation or a component declaration, or generate a
-  testbench, from an entity.
+  testbench, from an entity;
+- settings from the editor for projects without a config file: `vfl.toml` keys under
+  `config` in the initialization options or in `workspace/didChangeConfiguration`
+  ([editors.md](editors.md#editor-settings)), and a `source.vfl.generateConfig` code action
+  (with the `vfl/projectConfig` request) that writes the settings in effect to `vfl.toml`.
 
 Setup for each editor is in [editors.md](editors.md).

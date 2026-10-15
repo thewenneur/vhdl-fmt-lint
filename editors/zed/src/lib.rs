@@ -4,6 +4,11 @@
 //! The server binary is, in order: `lsp.vfl.binary.path` from the Zed
 //! settings, `vfl` on the `PATH` of the worktree's shell, or the binary of
 //! the latest GitHub release, downloaded into the extension's directory.
+//!
+//! `lsp.vfl.initialization_options` goes to the server as is: its `config`
+//! object holds `vfl.toml` keys for projects without a `vfl.toml`, such as
+//! the lint preset and format style. It is also the workspace configuration,
+//! so that a change applies without restarting the server.
 
 use std::fs;
 
@@ -124,6 +129,29 @@ impl zed::Extension for Vfl {
         };
         Ok(zed::Command { command, args, env })
     }
+
+    fn language_server_initialization_options(
+        &mut self,
+        _id: &LanguageServerId,
+        worktree: &Worktree,
+    ) -> Result<Option<zed::serde_json::Value>> {
+        Ok(editor_settings(worktree))
+    }
+
+    fn language_server_workspace_configuration(
+        &mut self,
+        _id: &LanguageServerId,
+        worktree: &Worktree,
+    ) -> Result<Option<zed::serde_json::Value>> {
+        Ok(editor_settings(worktree))
+    }
+}
+
+/// `lsp.vfl.initialization_options` from the Zed settings.
+fn editor_settings(worktree: &Worktree) -> Option<zed::serde_json::Value> {
+    LspSettings::for_worktree(SERVER, worktree)
+        .ok()
+        .and_then(|settings| settings.initialization_options)
 }
 
 /// The target triple of the release archive for this platform.

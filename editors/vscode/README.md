@@ -66,8 +66,14 @@ It is looked up in `vfl.server.path`, then on `PATH`, then in `~/.cargo/bin`.
 |---------|---------|---|
 | `vfl.server.path` | `""` | Path to `vfl`. `~` and `${workspaceFolder}` are expanded. |
 | `vfl.server.extraEnv` | `{}` | Extra environment variables for the server. |
+| `vfl.lint.preset` | `"recommended"` | Lint preset of projects without a `vfl.toml`: `none`, `recommended` or `strict`. |
+| `vfl.format.style` | `"default"` | Format style of projects without a `vfl.toml`: `default`, `leading-comma`, `compact` or `classic`. |
 | `vfl.format.onType` | `false` | Format the line you just finished as you type (`;` or Enter). |
 | `vfl.trace.server` | `"off"` | Log LSP traffic (`messages` or `verbose`). |
+
+`vfl.lint.preset` and `vfl.format.style` apply only where no `vfl.toml` does: a project's
+`vfl.toml` replaces them, so that it is linted and formatted the same for everyone. To share
+them with the project, run `vfl: Generate Project Config (vfl.toml)`.
 
 The extension makes itself the default formatter for VHDL. To
 format and fix on save:
@@ -94,6 +100,9 @@ the line above; `on_type = false` under `[format]` in `vfl.toml` turns it off fo
   `vfl: Insert Component Declaration...` ask for an entity of the project and insert the code
   at the cursor.
 - `vfl: Generate Testbench...` writes `<entity>_tb.vhd` next to the entity and opens it.
+- `vfl: Generate Project Config (vfl.toml)` writes the settings in effect to `vfl.toml` at
+  the project root and opens it, with the keys at their default value as comments: the preset and style settings above when
+  the project has no `vfl.toml`. It asks before replacing one.
 
 - `vfl: Generate Documentation` (also in the explorer context menu of a folder) runs
   `vfl doc` on the project and offers to open the index: an HTML one in the browser, a

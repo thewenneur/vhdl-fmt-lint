@@ -47,12 +47,21 @@ pub struct World {
     pub(crate) semantic: crate::semantic::Sent,
     /// Whether every file has the project's config.
     fixed_config: bool,
+    /// The config of files no config file applies to: the editor's
+    /// settings.
+    defaults: Config,
 }
 
 impl World {
     pub fn new(root: &Path) -> World {
+        World::with_defaults(root, Config::default())
+    }
+
+    /// Like [`World::new`], with `defaults` as the config of the files no
+    /// config file applies to: the settings of the editor.
+    pub fn with_defaults(root: &Path, defaults: Config) -> World {
         let root = find_root(root);
-        let (project, load_error) = load(&root);
+        let (project, load_error) = load(&root, &defaults);
         let mut world = World {
             load_error,
             root,
@@ -70,6 +79,7 @@ impl World {
             dirty: true,
             semantic: Default::default(),
             fixed_config: false,
+            defaults,
         };
         world.refresh();
         world
@@ -91,6 +101,7 @@ impl World {
         };
         World {
             fixed_config: everywhere,
+            defaults: config.clone(),
             project: empty(&root, config),
             load_error: None,
             root,
@@ -113,7 +124,7 @@ impl World {
     pub fn reload(&mut self) {
         self.configs.clear();
         self.root = find_root(&self.root.dir);
-        (self.project, self.load_error) = load(&self.root);
+        (self.project, self.load_error) = load(&self.root, &self.defaults);
         self.outside.clear();
         self.sources = None;
         self.inferred_from.clear();
@@ -124,22 +135,43 @@ impl World {
         self.dirty = true;
     }
 
-    /// The config for a file.
     /// The config for a file. A relative path names a document that is not
     /// saved anywhere, which gets the defaults.
     pub fn config(&mut self, path: &Path) -> &Config {
         let dir = config_dir(path);
         let project = &self.project.config;
         let fixed = self.fixed_config;
+        let defaults = &self.defaults;
         self.configs.entry(dir.clone()).or_insert_with(|| {
             if fixed {
                 project.clone()
             } else if dir.as_os_str().is_empty() {
-                Config::default()
+                defaults.clone()
             } else {
-                vfl_config::load_for_dir(&dir).unwrap_or_default()
+                vfl_config::load_for_dir_or(&dir, defaults).unwrap_or_default()
             }
         })
+    }
+
+    /// The config of the files no config file applies to.
+    pub fn defaults(&self) -> &Config {
+        &self.defaults
+    }
+
+    /// Changes the config of the files no config file applies to, and
+    /// reloads the project when that changes anything.
+    pub fn set_defaults(&mut self, defaults: Config) {
+        if defaults != self.defaults {
+            self.defaults = defaults;
+            // A world with no project only has the open documents.
+            if self.fixed_config || self.root.dir.as_os_str().is_empty() {
+                self.project.config = self.defaults.clone();
+                self.configs.clear();
+                self.dirty = true;
+            } else {
+                self.reload();
+            }
+        }
     }
 
     /// Sets the text of an open document. Opening a document that matches
@@ -453,11 +485,11 @@ fn config_dir(path: &Path) -> PathBuf {
 /// Loads the project. When that fails, an invalid `vfl.toml` say, the
 /// sources are still loaded with the default settings, and the error is
 /// returned to be reported.
-fn load(root: &ProjectRoot) -> (Project, Option<String>) {
-    match Project::load(root.clone()) {
+fn load(root: &ProjectRoot, defaults: &Config) -> (Project, Option<String>) {
+    match Project::load_or(root.clone(), defaults) {
         Ok(project) => (project, None),
         Err(error) => {
-            let config = vfl_config::load_for_dir(&root.dir).unwrap_or_default();
+            let config = vfl_config::load_for_dir_or(&root.dir, defaults).unwrap_or_default();
             let project = collect_sources(&root.dir, &config.project)
                 .ok()
                 .and_then(|paths| Project::from_paths(root.clone(), config.clone(), paths).ok())
