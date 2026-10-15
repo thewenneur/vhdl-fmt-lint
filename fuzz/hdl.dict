@@ -260,3 +260,22 @@
 "$clog2"
 "inc1.vh"
 "inc2.vh"
+# Non-ASCII text, in UTF-8: positions are UTF-16 in the language server and
+# characters in columns, so multi-byte text finds byte/char mix-ups.
+# No-break space (U+00A0), as indentation or between tokens.
+"\xC2\xA0"
+"\xC2\xA0\xC2\xA0"
+# Ideographic space (U+3000), whitespace of three bytes.
+"\xE3\x80\x80"
+# Accented letters (e, a with accents; German sharp s).
+"\xC3\xA9"
+"\xC3\xA0"
+"\xC3\x9F"
+"caf\xC3\xA9"
+# CJK (U+4E2D U+6587).
+"\xE4\xB8\xAD\xE6\x96\x87"
+# An emoji outside the BMP: a UTF-16 surrogate pair (U+1F600).
+"\xF0\x9F\x98\x80"
+# Line breaks other than \n.
+"\x0D\x0A"
+"\x0D"
