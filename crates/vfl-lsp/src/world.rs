@@ -8,6 +8,7 @@
 //! cannot have affected.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use vfl_config::Config;
@@ -34,7 +35,12 @@ pub struct World {
     pub notices: Vec<String>,
     /// Why the project could not be loaded as configured.
     load_error: Option<String>,
+    /// The config files left out because they are invalid, with where
+    /// in each the problem is: shown on the file itself.
+    pub config_file_errors: Vec<vfl_config::FileError>,
     configs: FxHashMap<PathBuf, Config>,
+    /// The files over `max-file-size`, by path, as they are analyzed.
+    outlines: FxHashMap<PathBuf, Outline>,
     lint_cache: vfl_lint::LintCache,
     /// The library lists the libraries were last inferred from.
     sources: Option<LibrarySources>,
@@ -60,10 +66,25 @@ impl World {
     /// Like [`World::new`], with `defaults` as the config of the files no
     /// config file applies to: the settings of the editor.
     pub fn with_defaults(root: &Path, defaults: Config) -> World {
+        World::with_progress(root, defaults, &|_| {})
+    }
+
+    /// Like [`World::with_defaults`], telling `progress` how loading the
+    /// project goes, from the threads that do it.
+    pub fn with_progress(
+        root: &Path,
+        defaults: Config,
+        progress: &(dyn Fn(Progress) + Sync),
+    ) -> World {
         let root = find_root(root);
-        let (project, load_error) = load(&root, &defaults);
+        let mut config_file_errors = Vec::new();
+        let (project, load_error) = load(&root, &defaults, &mut config_file_errors, progress);
+        progress(Progress::Analyzing {
+            files: project.files.len() + project.verilog.len(),
+        });
         let mut world = World {
             load_error,
+            config_file_errors,
             root,
             analysis: Analysis::empty(),
             project,
@@ -73,6 +94,7 @@ impl World {
             config_errors: Vec::new(),
             notices: Vec::new(),
             configs: FxHashMap::default(),
+            outlines: FxHashMap::default(),
             lint_cache: vfl_lint::LintCache::default(),
             sources: None,
             inferred_from: Vec::new(),
@@ -104,6 +126,7 @@ impl World {
             defaults: config.clone(),
             project: empty(&root, config),
             load_error: None,
+            config_file_errors: Vec::new(),
             root,
             analysis: Analysis::empty(),
             overlays: FxHashMap::default(),
@@ -112,6 +135,7 @@ impl World {
             config_errors: Vec::new(),
             notices: Vec::new(),
             configs: FxHashMap::default(),
+            outlines: FxHashMap::default(),
             lint_cache: vfl_lint::LintCache::default(),
             sources: None,
             inferred_from: Vec::new(),
@@ -123,8 +147,14 @@ impl World {
     /// Reloads every file from disk, keeping open documents.
     pub fn reload(&mut self) {
         self.configs.clear();
+        self.config_file_errors.clear();
         self.root = find_root(&self.root.dir);
-        (self.project, self.load_error) = load(&self.root, &self.defaults);
+        (self.project, self.load_error) = load(
+            &self.root,
+            &self.defaults,
+            &mut self.config_file_errors,
+            &|_| {},
+        );
         self.outside.clear();
         self.sources = None;
         self.inferred_from.clear();
@@ -136,19 +166,23 @@ impl World {
     }
 
     /// The config for a file. A relative path names a document that is not
-    /// saved anywhere, which gets the defaults.
+    /// saved anywhere, which gets the defaults. An invalid config file is
+    /// left out, as if it were not there, and reported.
     pub fn config(&mut self, path: &Path) -> &Config {
         let dir = config_dir(path);
         let project = &self.project.config;
         let fixed = self.fixed_config;
         let defaults = &self.defaults;
+        let errors = &mut self.config_file_errors;
         self.configs.entry(dir.clone()).or_insert_with(|| {
             if fixed {
                 project.clone()
             } else if dir.as_os_str().is_empty() {
                 defaults.clone()
             } else {
-                vfl_config::load_for_dir_or(&dir, defaults).unwrap_or_default()
+                let (config, found) = vfl_config::load_for_dir_checked(&dir, defaults);
+                add_errors(errors, found);
+                config
             }
         })
     }
@@ -242,7 +276,8 @@ impl World {
     }
 
     /// Re-reads a Verilog file from disk (created, changed or deleted).
-    fn reread_verilog(&mut self, path: &Path) {
+    /// `members` are the new files the project's patterns take.
+    fn reread_verilog(&mut self, path: &Path, members: &FxHashSet<PathBuf>) {
         let index = self.project.verilog_index(path);
         let known = index.is_some() && !self.outside.remove(path);
         let read = std::fs::read(path).ok().map(decode);
@@ -251,11 +286,7 @@ impl World {
         {
             return;
         }
-        let in_project = read.is_some()
-            && (known
-                || path.starts_with(&self.root.dir)
-                    && collect_project(&self.root.dir, &self.project.config)
-                        .is_ok_and(|(paths, _)| paths.iter().any(|p| p == path)));
+        let in_project = read.is_some() && (known || members.contains(path));
         let file = match read.filter(|_| in_project) {
             Some((text, encoding)) => self.verilog_file(path.to_owned(), text, encoding),
             None => None,
@@ -281,11 +312,73 @@ impl World {
     /// Re-reads a file from disk (created, changed or deleted). A file
     /// whose text did not change is left as it is.
     pub fn reread(&mut self, path: &Path) {
+        self.reread_all(&[path.to_owned()]);
+    }
+
+    /// Re-reads files from disk (created, changed or deleted), such as
+    /// those a `git checkout` changed. Whether new files belong to the
+    /// project takes one walk of it at most, for all of them.
+    pub fn reread_all(&mut self, paths: &[PathBuf]) {
+        let members = self.members(paths);
+        for path in paths {
+            self.reread_one(path, &members);
+        }
+    }
+
+    /// Those of `paths` that the project does not have yet and its file
+    /// patterns take. Where the project already has files in the
+    /// directory of each, the directories are listed alone; otherwise
+    /// the project is walked once.
+    fn members(&self, paths: &[PathBuf]) -> FxHashSet<PathBuf> {
+        let project = &self.project;
+        let loaded = |p: &Path| {
+            (project.file_index(p).is_some() || project.verilog_index(p).is_some())
+                && !self.outside.contains(p)
+        };
+        let new: Vec<&PathBuf> = paths
+            .iter()
+            .filter(|p| {
+                !self.overlays.contains_key(*p)
+                    && p.starts_with(&self.root.dir)
+                    && !loaded(p)
+                    && p.is_file()
+            })
+            .collect();
+        if new.is_empty() {
+            return FxHashSet::default();
+        }
+        // The directories the project's walk went into.
+        let walked: FxHashSet<&Path> = project
+            .files
+            .iter()
+            .map(|f| &f.path)
+            .chain(project.verilog.iter().map(|f| &f.path))
+            .filter(|p| !self.outside.contains(*p))
+            .filter_map(|p| p.parent())
+            .collect();
+        let dirs: FxHashSet<&Path> = new.iter().filter_map(|p| p.parent()).collect();
+        let root = &self.root.dir;
+        let found: Vec<PathBuf> = if dirs.iter().all(|d| walked.contains(d)) {
+            dirs.iter()
+                .flat_map(|dir| {
+                    vfl_project::collect_project_in(root, dir, &project.config).unwrap_or_default()
+                })
+                .collect()
+        } else {
+            collect_project(root, &project.config)
+                .map(|(paths, _)| paths)
+                .unwrap_or_default()
+        };
+        let new: FxHashSet<&PathBuf> = new.into_iter().collect();
+        found.into_iter().filter(|p| new.contains(p)).collect()
+    }
+
+    fn reread_one(&mut self, path: &Path, members: &FxHashSet<PathBuf>) {
         if self.overlays.contains_key(path) {
             return;
         }
         if verilog_standard(self.config(path), path).is_some() {
-            self.reread_verilog(path);
+            self.reread_verilog(path, members);
             return;
         }
         let index = self.project.file_index(path);
@@ -300,11 +393,7 @@ impl World {
         }
         // Whether the file belongs to the project: a file loaded with it
         // does; another one, if the project's file patterns take it.
-        let in_project = read.is_some()
-            && (known
-                || path.starts_with(&self.root.dir)
-                    && collect_sources(&self.root.dir, &self.project.config.project)
-                        .is_ok_and(|paths| paths.iter().any(|p| p == path)));
+        let in_project = read.is_some() && (known || members.contains(path));
         let standard = self.config(path).standard();
         let file = read
             .filter(|_| in_project)
@@ -327,8 +416,6 @@ impl World {
         }
         self.dirty = false;
         self.infer();
-        let previous = std::mem::replace(&mut self.analysis, Analysis::empty());
-        self.analysis = vfl_lint::reanalyze(&self.project, previous);
         let paths: Vec<PathBuf> = self
             .project
             .files
@@ -339,13 +426,19 @@ impl World {
         for path in &paths {
             self.config(path);
         }
+        let inputs = self.analysis_inputs();
+        let previous = std::mem::replace(&mut self.analysis, Analysis::empty());
+        self.analysis =
+            previous.into_update_with_foreign(inputs, vfl_lint::foreign_inputs(&self.project));
         let configs: Vec<&Config> = paths
             .iter()
             .map(|p| &self.configs[&config_dir(p)])
             .collect();
         // Verilog files follow the VHDL ones in the analysis, linted only
-        // with `[verilog]` `mode = "full"`.
+        // with `[verilog]` `mode = "full"`. Files over the size limit are
+        // not linted.
         let vhdl = self.project.files.len();
+        let outlines = &self.outlines;
         let settings: Vec<FileSettings> = self
             .project
             .files
@@ -359,7 +452,13 @@ impl World {
             )
             .zip(&configs)
             .enumerate()
-            .filter(|(i, (_, config))| *i < vhdl || config.verilog.full())
+            .filter(|(i, (_, config))| {
+                if *i < vhdl {
+                    !outlines.contains_key(&paths[*i])
+                } else {
+                    config.verilog.full()
+                }
+            })
             .map(|(i, ((syntax_errors, verilog), config))| FileSettings {
                 file: i as FileId,
                 syntax_errors,
@@ -369,16 +468,45 @@ impl World {
             })
             .collect();
         self.notices.clear();
-        if settings.len() > vhdl {
+        if settings.iter().any(|s| s.verilog.is_some()) {
             self.notices
                 .push(vfl_config::VerilogConfig::IN_PROGRESS.to_owned());
         }
         let result = vfl_lint::lint_cached(&self.analysis, &settings, &mut self.lint_cache);
         self.lint = result.diagnostics;
-        self.config_errors = result.config_errors;
-        if let Some(error) = &self.load_error {
-            self.config_errors.insert(0, error.clone());
+        for (i, path) in paths[..vhdl].iter().enumerate() {
+            if outlines.contains_key(path) {
+                let config = configs[i];
+                let size = self.project.files[i].text.len();
+                self.lint.push(too_large(i as FileId, size, config));
+            }
         }
+        self.config_errors = result.config_errors;
+        let files = self.config_file_errors.iter().map(ToString::to_string);
+        self.config_errors
+            .splice(0..0, self.load_error.iter().cloned().chain(files));
+    }
+
+    /// The VHDL files as the analysis takes them: those over their
+    /// `max-file-size` as outlines, which an edit elsewhere does not
+    /// build again. Every file's config must be loaded.
+    fn analysis_inputs(&mut self) -> Vec<vfl_sema::FileInput> {
+        let mut inputs = vfl_lint::analysis_inputs(&self.project);
+        let mut previous = std::mem::take(&mut self.outlines);
+        for (input, file) in inputs.iter_mut().zip(&self.project.files) {
+            let config = &self.configs[&config_dir(&file.path)];
+            if !config.project.max_file_size.exceeded_by(file.text.len()) {
+                continue;
+            }
+            let outline = match previous.remove(&file.path) {
+                Some(outline) if Arc::ptr_eq(&outline.source, &file.text) => outline,
+                _ => Outline::new(file, config.standard()),
+            };
+            input.text = outline.text.clone();
+            input.green = outline.green.clone();
+            self.outlines.insert(file.path.clone(), outline);
+        }
+        inputs
     }
 
     /// Infers libraries again if what they depend on changed.
@@ -474,6 +602,73 @@ impl World {
     }
 }
 
+/// The code of the information diagnostic on a file over `max-file-size`.
+pub const TOO_LARGE: &str = "vfl/max-file-size";
+
+/// What a file over `max-file-size`, a generated netlist say, is analyzed
+/// as: its text with the design units that hold an architecture or a
+/// package body blanked out, so that its entities and packages are still
+/// there for other files, at the same places, without the cost of
+/// analyzing (and linting) the rest.
+struct Outline {
+    /// The text of the file the outline is of.
+    source: Arc<str>,
+    text: Arc<str>,
+    green: vfl_syntax::GreenNode,
+}
+
+impl Outline {
+    fn new(file: &SourceFile, standard: vfl_syntax::Standard) -> Outline {
+        use vfl_syntax::SyntaxKind;
+        let mut bytes = file.text.as_bytes().to_vec();
+        for unit in file.parse.syntax().children() {
+            let body = unit.kind() == SyntaxKind::DESIGN_UNIT
+                && unit.children().any(|c| {
+                    matches!(
+                        c.kind(),
+                        SyntaxKind::ARCHITECTURE_BODY | SyntaxKind::PACKAGE_BODY
+                    )
+                });
+            if body {
+                // Spaces keep every offset, and line breaks every line.
+                let range = std::ops::Range::<usize>::from(unit.text_range());
+                for b in &mut bytes[range] {
+                    if *b != b'\n' && *b != b'\r' {
+                        *b = b' ';
+                    }
+                }
+            }
+        }
+        let text = String::from_utf8(bytes).unwrap_or_default();
+        let green = vfl_syntax::parse(&text, standard).green().clone();
+        Outline {
+            source: file.text.clone(),
+            text: text.into(),
+            green,
+        }
+    }
+}
+
+/// The information diagnostic saying that a file is over its
+/// `max-file-size`.
+fn too_large(file: FileId, size: usize, config: &Config) -> vfl_lint::Diagnostic {
+    vfl_lint::Diagnostic {
+        rule: TOO_LARGE,
+        level: vfl_config::Level::Info,
+        file,
+        range: vfl_syntax::TextRange::empty(TextSize::from(0)),
+        message: format!(
+            "This file ({:.1} MB) is over `max-file-size` ({}): only its entities and \
+             packages are analyzed, and it is not linted. Raise `[project] max-file-size` \
+             in vfl.toml to analyze it.",
+            size as f64 / (1024.0 * 1024.0),
+            config.project.max_file_size,
+        ),
+        fix: None,
+        rename: None,
+    }
+}
+
 /// The directory whose config applies to `path`; empty for a document
 /// that is not saved anywhere.
 fn config_dir(path: &Path) -> PathBuf {
@@ -483,19 +678,45 @@ fn config_dir(path: &Path) -> PathBuf {
     }
 }
 
-/// Loads the project. When that fails, an invalid `vfl.toml` say, the
-/// sources are still loaded with the default settings, and the error is
-/// returned to be reported.
-fn load(root: &ProjectRoot, defaults: &Config) -> (Project, Option<String>) {
-    match Project::load_or(root.clone(), defaults) {
+/// How loading a project goes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Progress {
+    /// `done` of the project's `total` files are read and parsed.
+    Parsing { done: usize, total: usize },
+    /// The project's files are read; their analysis starts.
+    Analyzing { files: usize },
+}
+
+/// Loads the project. When its config is invalid, it is loaded with the
+/// valid config files that apply (the editor's settings if none), and
+/// `errors` says what was left out. When it fails otherwise, its sources
+/// are still loaded, and the error is returned to be reported.
+fn load(
+    root: &ProjectRoot,
+    defaults: &Config,
+    errors: &mut Vec<vfl_config::FileError>,
+    progress: &(dyn Fn(Progress) + Sync),
+) -> (Project, Option<String>) {
+    let (config, found) = vfl_config::load_for_dir_checked(&root.dir, defaults);
+    add_errors(errors, found);
+    let report = |done, total| progress(Progress::Parsing { done, total });
+    match Project::load_with(root.clone(), config.clone(), &report) {
         Ok(project) => (project, None),
         Err(error) => {
-            let config = vfl_config::load_for_dir_or(&root.dir, defaults).unwrap_or_default();
             let project = collect_sources(&root.dir, &config.project)
                 .ok()
                 .and_then(|paths| Project::from_paths(root.clone(), config.clone(), paths).ok())
                 .unwrap_or_else(|| empty(root, config));
             (project, Some(error.to_string()))
+        }
+    }
+}
+
+/// Adds the errors of `found` that `errors` does not have yet.
+fn add_errors(errors: &mut Vec<vfl_config::FileError>, found: Vec<vfl_config::FileError>) {
+    for error in found {
+        if !errors.contains(&error) {
+            errors.push(error);
         }
     }
 }
@@ -567,6 +788,124 @@ mod tests {
         let world = World::new(dir.path());
         assert_eq!(world.project.files.len(), 1);
         assert_eq!(world.config_errors.len(), 1, "{:?}", world.config_errors);
+    }
+
+    #[test]
+    fn an_invalid_nested_config_falls_back_to_the_parent_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::write(root.join("vfl.toml"), "[format]\nindent = 3\n").unwrap();
+        std::fs::create_dir(root.join("sub")).unwrap();
+        std::fs::write(root.join("sub/vfl.toml"), "[format\nindent = 5\n").unwrap();
+        std::fs::write(root.join("sub/b.vhd"), "entity b is\nend entity;\n").unwrap();
+        let mut world = World::new(&root);
+        assert_eq!(world.config(&root.join("sub/b.vhd")).format.indent, 3);
+        assert_eq!(world.config_file_errors.len(), 1);
+        assert_eq!(world.config_file_errors[0].path, root.join("sub/vfl.toml"));
+        assert!(
+            world.config_errors[0].contains("sub"),
+            "{:?}",
+            world.config_errors
+        );
+
+        // Fixed: the errors go once the configs are read again.
+        std::fs::write(root.join("sub/vfl.toml"), "[format]\nindent = 5\n").unwrap();
+        world.reload();
+        world.refresh();
+        assert!(world.config_file_errors.is_empty());
+        assert!(world.config_errors.is_empty(), "{:?}", world.config_errors);
+        assert_eq!(world.config(&root.join("sub/b.vhd")).format.indent, 5);
+    }
+
+    #[test]
+    fn new_files_in_known_directories_join_without_a_walk() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::create_dir(root.join("rtl")).unwrap();
+        std::fs::write(root.join("rtl/a.vhd"), TOP).unwrap();
+        std::fs::write(root.join(".gitignore"), "*_netlist.vhd\n").unwrap();
+        std::fs::write(
+            root.join("vfl.toml"),
+            "[project]\nexclude = [\"rtl/skip_*\"]\n",
+        )
+        .unwrap();
+        let mut world = World::new(&root);
+        let new = [
+            root.join("rtl/b.vhd"),
+            root.join("rtl/b_netlist.vhd"),
+            root.join("rtl/skip_c.vhd"),
+            root.join("rtl/sub/d.vhd"),
+        ];
+        for path in &new {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, PKG).unwrap();
+        }
+        // Known directories only: listed alone.
+        assert_eq!(
+            world.members(&new[..3]),
+            FxHashSet::from_iter([root.join("rtl/b.vhd")])
+        );
+        // A new directory: one walk.
+        assert_eq!(
+            world.members(&new),
+            FxHashSet::from_iter([root.join("rtl/b.vhd"), root.join("rtl/sub/d.vhd")])
+        );
+        world.reread_all(&new);
+        assert_eq!(world.project.files.len(), 3);
+    }
+
+    #[test]
+    fn files_over_the_size_limit_are_outlined() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::write(root.join("vfl.toml"), "[project]\nmax-file-size = 400\n").unwrap();
+        let mut netlist = String::from(
+            "library ieee;\nuse ieee.std_logic_1164.all;\n\
+             entity net is\n  port (a : in std_logic; y : out std_logic);\nend entity;\n\
+             architecture structure of net is\n",
+        );
+        for i in 0..20 {
+            netlist.push_str(&format!("  signal \\n{i}~q\\ : std_logic;\n"));
+        }
+        netlist.push_str("begin\n  y <= undeclared;\nend architecture;\n");
+        assert!(netlist.len() > 400);
+        std::fs::write(root.join("net.vhd"), &netlist).unwrap();
+        std::fs::write(
+            root.join("top.vhd"),
+            "library ieee;\nuse ieee.std_logic_1164.all;\nentity top is\nend entity;\n\
+             architecture rtl of top is\n  signal a, y : std_logic;\nbegin\n\
+             u : entity work.net port map (a => a, y => y);\nend architecture;\n",
+        )
+        .unwrap();
+        let world = World::new(&root);
+        let net = world.file_id(&root.join("net.vhd")).unwrap();
+        // Only the information that says so, not the undeclared name.
+        let found: Vec<&str> = world
+            .lint
+            .iter()
+            .filter(|d| d.file == net)
+            .map(|d| d.rule)
+            .collect();
+        assert_eq!(found, [TOO_LARGE]);
+        // The entity is there for the instantiation, at its place.
+        let top = world.file_id(&root.join("top.vhd")).unwrap();
+        assert!(
+            world
+                .lint
+                .iter()
+                .all(|d| d.file != top || d.level != vfl_config::Level::Error),
+            "{:?}",
+            world.lint
+        );
+        let doc = world.doc(net);
+        assert_eq!(doc.text.len(), netlist.len());
+        assert!(doc.text.contains("entity net is"));
+        assert!(!doc.text.contains("undeclared"));
+        // The project keeps the text, for formatting.
+        assert_eq!(
+            &*world.project.files[world.project.file_index(&root.join("net.vhd")).unwrap()].text,
+            netlist
+        );
     }
 
     #[test]

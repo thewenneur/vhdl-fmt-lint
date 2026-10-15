@@ -4,6 +4,35 @@
 
 ### Added
 
+- **Language server: invalid `vfl.toml` diagnostics.** A syntax error, unknown key or
+  invalid value in a config file is shown on the file itself, with its range, besides the
+  message. The message comes again if the file is fixed and then broken again. An invalid
+  nested config no longer silently gives the files under it the default settings: it is
+  reported, and they get the config of the valid files above it (or the editor's
+  settings).
+- **Language server: loading progress.** Editors that support `$/progress` show how many
+  files are parsed while the project loads.
+- **Language server: file watching without the editor's watcher.** In editors that cannot
+  watch files for the server (no dynamic registration of
+  `workspace/didChangeWatchedFiles`), the server now looks for new, changed and deleted
+  sources and config files itself, every few seconds (more seldom in large projects).
+- **`[project]` `max-file-size`** (2 MB by default): the language server analyzes only the
+  entities and packages of larger VHDL files, generated netlists say, and does not lint
+  them, with an information diagnostic saying so. A 3 MB netlist (16,000 instances) made
+  opening its project take 6.4 s and each edit of it about 7 s; now 0.34 s and under
+  0.3 s.
+
+### Changed
+
+- The language server reads files created or deleted outside the editor together: a
+  burst of watched-file events (a `git checkout`, a generator) costs one walk of the
+  project at most, and none when the new files are in directories the project already
+  has files in (300 new files: 13 ms instead of 300 walks, 370 ms on a 300-file project),
+  then one analysis.
+- Reading which units a file declares and uses no longer takes time quadratic in the
+  number of statements of an architecture: 28 ms instead of 3.7 s for a 3 MB netlist,
+  on every load and every edit of it.
+
 - **`sema/incomplete-case`** (error): a `case` statement or selected assignment whose
   choices leave out values of the selector's subtype (enumerations, integer subtypes with
   static bounds, `std_logic_vector` and other character arrays) and has no `when others`.

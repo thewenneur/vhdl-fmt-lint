@@ -165,12 +165,23 @@ impl Project {
     /// file applies: the settings of an editor.
     pub fn load_or(root: ProjectRoot, defaults: &Config) -> Result<Project, LoadError> {
         let config = vfl_config::load_for_dir_or(&root.dir, defaults)?;
+        Self::load_with(root, config, &|_, _| {})
+    }
+
+    /// Loads the project at `root` with `config`, telling `progress` how
+    /// many of how many files are read and parsed so far, from the
+    /// threads that parse them.
+    pub fn load_with(
+        root: ProjectRoot,
+        config: Config,
+        progress: &(dyn Fn(usize, usize) + Sync),
+    ) -> Result<Project, LoadError> {
         let (paths, tool_files) =
             collect_project(&root.dir, &config).map_err(|source| LoadError::Walk {
                 path: root.dir.clone(),
                 source,
             })?;
-        Self::from_parts(root, config, paths, tool_files)
+        Self::from_parts(root, config, paths, tool_files, progress)
     }
 
     /// Loads the given files as a project rooted at `root`. Verilog and
@@ -184,7 +195,7 @@ impl Project {
         let tool_files = collect_project(&root.dir, &config)
             .map(|(_, tools)| tools)
             .unwrap_or_default();
-        Self::from_parts(root, config, paths, tool_files)
+        Self::from_parts(root, config, paths, tool_files, &|_, _| {})
     }
 
     fn from_parts(
@@ -192,20 +203,27 @@ impl Project {
         config: Config,
         paths: Vec<PathBuf>,
         tool_files: Vec<PathBuf>,
+        progress: &(dyn Fn(usize, usize) + Sync),
     ) -> Result<Project, LoadError> {
         let standard = config.standard();
+        let total = paths.len();
+        let done = std::sync::atomic::AtomicUsize::new(0);
         // With `[verilog]` `mode` off, Verilog files are left out, not
         // read as VHDL.
         let results: Vec<_> = paths
             .into_par_iter()
             .filter_map(|path| {
                 let read = match verilog_standard(&config, &path) {
-                    Some(_) if !config.verilog.loaded() => return None,
-                    Some(std) => VerilogFile::read(path.clone(), &config, &root.dir, std)
-                        .map(Loaded::Verilog),
-                    None => SourceFile::read(path.clone(), standard).map(Loaded::Vhdl),
+                    Some(_) if !config.verilog.loaded() => None,
+                    Some(std) => Some(
+                        VerilogFile::read(path.clone(), &config, &root.dir, std)
+                            .map(Loaded::Verilog),
+                    ),
+                    None => Some(SourceFile::read(path.clone(), standard).map(Loaded::Vhdl)),
                 };
-                Some(read.map_err(|err| (path, err.to_string())))
+                let done = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                progress(done, total);
+                Some(read?.map_err(|err| (path, err.to_string())))
             })
             .collect();
         let mut files = Vec::new();

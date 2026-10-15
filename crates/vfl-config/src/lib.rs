@@ -15,7 +15,10 @@ use vfl_syntax::Standard;
 
 mod layering;
 
-pub use layering::{config_chain, find_config, load_for_dir, load_for_dir_or, load_layered};
+pub use layering::{
+    FileError, check_file, config_chain, find_config, load_for_dir, load_for_dir_checked,
+    load_for_dir_or, load_layered,
+};
 
 /// File names recognised as configuration, in priority order.
 pub const CONFIG_FILE_NAMES: [&str; 2] = ["vfl.toml", ".vfl.toml"];
@@ -36,6 +39,48 @@ pub enum ConfigError {
     Invalid(Box<toml::de::Error>),
     #[error("config {path} extends itself")]
     ExtendsCycle { path: PathBuf },
+}
+
+/// One config file as written: the schema of [`Config`], with the keys
+/// that control loading. For checking a file on its own, where its text
+/// gives each error a place.
+// Only deserialized, to check the file: its sections are never read.
+#[allow(dead_code)]
+#[derive(Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub(crate) struct ConfigFile {
+    project: ProjectConfig,
+    format: FormatConfig,
+    lint: LintConfig,
+    doc: DocConfig,
+    generate: GenerateConfig,
+    verilog: VerilogConfig,
+    extends: Option<String>,
+    pub root: bool,
+}
+
+impl Default for ConfigFile {
+    fn default() -> Self {
+        // Every field of `Config`: one added there must be added here.
+        let Config {
+            project,
+            format,
+            lint,
+            doc,
+            generate,
+            verilog,
+        } = Config::default();
+        ConfigFile {
+            project,
+            format,
+            lint,
+            doc,
+            generate,
+            verilog,
+            extends: None,
+            root: false,
+        }
+    }
 }
 
 /// The effective configuration for a file or directory.
@@ -156,6 +201,10 @@ pub struct ProjectConfig {
     /// How rust_hdl's `vhdl_ls.toml` library lists are used.
     #[serde(rename = "vhdl-ls")]
     pub vhdl_ls: VhdlLsMode,
+    /// The size above which the language server analyzes only a file's
+    /// entities and packages, and does not lint it: generated netlists.
+    #[serde(rename = "max-file-size")]
+    pub max_file_size: FileSize,
 }
 
 impl Default for ProjectConfig {
@@ -166,6 +215,76 @@ impl Default for ProjectConfig {
             exclude: Vec::new(),
             libraries: BTreeMap::new(),
             vhdl_ls: VhdlLsMode::default(),
+            max_file_size: FileSize::DEFAULT_MAX,
+        }
+    }
+}
+
+/// A size in bytes, written as a number of bytes or as a string with a
+/// `KB` or `MB` unit (of 1024 bytes and 1024 KB): `"2MB"`. 0 means no
+/// limit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FileSize(pub u64);
+
+impl FileSize {
+    pub const DEFAULT_MAX: FileSize = FileSize(2 * 1024 * 1024);
+
+    /// Whether `len` bytes are over this limit.
+    pub fn exceeded_by(self, len: usize) -> bool {
+        self.0 != 0 && len as u64 > self.0
+    }
+}
+
+impl std::fmt::Display for FileSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        const KB: u64 = 1024;
+        match self.0 {
+            0 => write!(f, "0"),
+            n if n % (KB * KB) == 0 => write!(f, "{}MB", n / (KB * KB)),
+            n if n % KB == 0 => write!(f, "{}KB", n / KB),
+            n => write!(f, "{n} bytes"),
+        }
+    }
+}
+
+impl Serialize for FileSize {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.to_string() {
+            text if text.ends_with('B') => serializer.serialize_str(&text),
+            _ => serializer.serialize_u64(self.0),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for FileSize {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Written {
+            Bytes(u64),
+            Text(String),
+        }
+        let invalid = |text: &str| {
+            serde::de::Error::custom(format!(
+                "invalid size `{text}`: expected a number of bytes or a string such as \"2MB\" or \"512KB\""
+            ))
+        };
+        match Written::deserialize(deserializer)? {
+            Written::Bytes(n) => Ok(FileSize(n)),
+            Written::Text(text) => {
+                let upper = text.trim().to_ascii_uppercase();
+                let (digits, unit) = match upper.strip_suffix("MB") {
+                    Some(digits) => (digits, 1024 * 1024),
+                    None => match upper.strip_suffix("KB") {
+                        Some(digits) => (digits, 1024),
+                        None => (upper.strip_suffix('B').unwrap_or(&upper), 1),
+                    },
+                };
+                let n: u64 = digits.trim().parse().map_err(|_| invalid(&text))?;
+                n.checked_mul(unit)
+                    .map(FileSize)
+                    .ok_or_else(|| invalid(&text))
+            }
         }
     }
 }
@@ -1139,6 +1258,37 @@ mod tests {
             let config =
                 Config::from_toml_str(&format!("format.style = \"{}\"", style.name())).unwrap();
             assert_eq!(config.format.style, style);
+        }
+    }
+
+    #[test]
+    fn file_sizes_take_units() {
+        let size = |text: &str| {
+            Config::from_toml_str(&format!("project.max-file-size = {text}"))
+                .map(|c| c.project.max_file_size.0)
+        };
+        assert_eq!(size("1000").unwrap(), 1000);
+        assert_eq!(size("\"2MB\"").unwrap(), 2 * 1024 * 1024);
+        assert_eq!(size("\"512 kb\"").unwrap(), 512 * 1024);
+        assert_eq!(size("0").unwrap(), 0);
+        assert!(size("\"big\"").is_err());
+        assert!(!FileSize(0).exceeded_by(usize::MAX));
+        assert!(FileSize(10).exceeded_by(11));
+        assert!(!FileSize(10).exceeded_by(10));
+        for written in [
+            FileSize(3 * 1024 * 1024),
+            FileSize(5 * 1024),
+            FileSize(1001),
+        ] {
+            let config = Config {
+                project: ProjectConfig {
+                    max_file_size: written,
+                    ..ProjectConfig::default()
+                },
+                ..Config::default()
+            };
+            let text = toml::to_string(&config).unwrap();
+            assert_eq!(Config::from_toml_str(&text).unwrap(), config);
         }
     }
 

@@ -55,6 +55,99 @@ pub fn load_for_dir_or(dir: &Path, defaults: &Config) -> Result<Config, ConfigEr
     load_layered(&chain)
 }
 
+/// A problem with one config file, and where in its text it is when that
+/// is known: for an editor to show it on the file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileError {
+    pub path: PathBuf,
+    pub message: String,
+    /// The byte range of the problem in the file's text.
+    pub span: Option<std::ops::Range<usize>>,
+}
+
+impl std::fmt::Display for FileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "invalid config {}: {}",
+            self.path.display(),
+            self.message
+        )
+    }
+}
+
+impl FileError {
+    /// The error of loading a config, on the file it names, else on `path`.
+    fn new(error: ConfigError, path: &Path) -> FileError {
+        let (path, message, span) = match error {
+            ConfigError::Parse { path, source } => {
+                (path, source.message().trim().to_owned(), source.span())
+            }
+            ConfigError::Invalid(source) => {
+                (path.to_owned(), source.message().trim().to_owned(), None)
+            }
+            ConfigError::Io { path, source } => (path, format!("cannot read: {source}"), None),
+            ConfigError::ExtendsCycle { path } => (path, "extends itself".to_owned(), None),
+        };
+        FileError {
+            path,
+            message,
+            span,
+        }
+    }
+}
+
+/// Checks one config file on its own: its syntax, and that it sets only
+/// known keys, to valid values. Returns whether it sets `root = true`.
+pub fn check_file(path: &Path) -> Result<bool, FileError> {
+    let error = |message: String, span| FileError {
+        path: path.to_owned(),
+        message,
+        span,
+    };
+    let text = fs::read_to_string(path).map_err(|e| error(format!("cannot read: {e}"), None))?;
+    let file: crate::ConfigFile =
+        toml::from_str(&text).map_err(|e| error(e.message().trim().to_owned(), e.span()))?;
+    Ok(file.root)
+}
+
+/// Like [`load_for_dir_or`], but an invalid config file is left out rather
+/// than failing: the config is that of the valid files that apply to `dir`
+/// (`defaults` if there are none), and the errors say what was left out,
+/// nearest file first. For an editor, which must go on with the closest
+/// config it can get.
+pub fn load_for_dir_checked(dir: &Path, defaults: &Config) -> (Config, Vec<FileError>) {
+    let mut errors = Vec::new();
+    let mut chain = Vec::new();
+    for ancestor in dir.ancestors() {
+        let Some(path) = find_config(ancestor) else {
+            continue;
+        };
+        match check_file(&path) {
+            Ok(root) => {
+                chain.push(path);
+                if root {
+                    break;
+                }
+            }
+            Err(error) => errors.push(error),
+        }
+    }
+    chain.reverse();
+    let Some(nearest) = chain.last() else {
+        return (defaults.clone(), errors);
+    };
+    // Each file is valid on its own; what can still fail is a file one
+    // of them extends.
+    match load_layered(&chain) {
+        Ok(config) => (config, errors),
+        Err(error) => {
+            errors.push(FileError::new(error, nearest));
+            (defaults.clone(), errors)
+        }
+    }
+}
+
 /// Merges `files` in order (later files override earlier ones) and applies
 /// the schema to the result.
 pub fn load_layered(files: &[PathBuf]) -> Result<Config, ConfigError> {

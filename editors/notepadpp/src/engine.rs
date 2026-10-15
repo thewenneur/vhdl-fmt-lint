@@ -484,24 +484,23 @@ impl Engine {
                 changed = true;
                 continue;
             }
-            let mut differ: Vec<&PathBuf> = now
+            let mut differ: Vec<PathBuf> = now
                 .sources
                 .iter()
                 .filter(|(p, t)| before.sources.get(*p) != Some(t))
-                .map(|(p, _)| p)
+                .map(|(p, _)| p.clone())
                 .collect();
             differ.extend(
                 before
                     .sources
                     .keys()
-                    .filter(|p| !now.sources.contains_key(*p)),
+                    .filter(|p| !now.sources.contains_key(*p))
+                    .cloned(),
             );
             if differ.len() > MAX_REREADS {
                 world.reload();
             } else {
-                for path in &differ {
-                    world.reread(path);
-                }
+                world.reread_all(&differ);
             }
             changed |= !differ.is_empty();
         }
