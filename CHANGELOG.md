@@ -2,10 +2,29 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-15
+
+State machine diagrams follow their branches instead of a circle and stay readable at 50+
+states; every diagram of the HTML documentation zooms and pans.
+
 ### Added
 
+- **Zoom and pan on every diagram** of the HTML documentation and of the VS Code diagrams
+  view: buttons over the diagram (−, Fit, +, 1:1), Ctrl or Cmd + wheel at the pointer, `+`
+  `-` `0` while hovering, and drag to pan.
 - **The Zed extension is a release download**: `vfl-zed-vX.Y.Z.zip`, its sources, to install
   with **zed: install dev extension** without cloning the repository.
+
+### Changed
+
+- **State machine diagrams are laid out in layers** from the initial state down: a state with
+  several successors opens branches that run side by side, loops go back up and merge into
+  one line, edges route between states, and labels never overlap. A 58-state machine draws
+  at 1152×757 instead of 3195×3207.
+- **Notepad++ colors input and output ports differently**: inputs blue, outputs red,
+  inout, buffer and linkage stay pink.
+- The Zed setup tells users to remove the VHDL and Verilog extensions, which would otherwise
+  start a second language server.
 
 ## [0.5.0] - 2026-10-15
 
