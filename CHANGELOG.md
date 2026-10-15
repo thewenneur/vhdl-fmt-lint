@@ -12,6 +12,14 @@
 - **Generate project config (vfl.toml)** in VS Code and Notepad++, and as a code action in
   other editors, writes the settings in effect to the project's `vfl.toml`;
   keys at their default value are written as comments.
+- **Configuration guide by example** in `examples/config`: one folder per formatter or lint
+  topic, each with a `vfl.toml`, a file before and after `vfl fmt` or `vfl lint --fix`, and
+  a README. A test keeps the `after` files in sync with vfl.
+
+### Fixed
+
+- **`-- vfl: skip` keeps the comment at the end of the skipped statement** as written; the
+  formatter used to change the spaces before it.
 
 ## [0.6.0] - 2026-10-15
 

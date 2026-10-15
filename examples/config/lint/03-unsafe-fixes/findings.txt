@@ -1,0 +1,5 @@
+before.vhd:3:5: warning[style/no-std-logic-arith] `std_logic_unsigned` is not a standard package; use `ieee.numeric_std`
+before.vhd:18:12: warning[sema/unused-signal] signal `spare` is never used
+before.vhd:22:12: warning[style/clock-edge] use `rising_edge(clk)` instead of testing `'event`
+before.vhd:31:22: warning[sema/sensitivity-list] the process reads `load` but its sensitivity list does not name it
+before.vhd:31:34: warning[sema/unneeded-sensitivity] `value` is in the sensitivity list but the process never reads it

@@ -53,6 +53,8 @@ Documentation:
   and what the language server offers.
 - [Configuration reference](docs/configuration.md): every `vfl.toml` key, config lookup and
   layering, suppression comments.
+- [Configuration guide by example](examples/config/README.md): one folder per topic with a
+  `vfl.toml` and a file before and after `vfl fmt` or `vfl lint --fix`.
 - [Lint rules](docs/lints.md): what each rule reports, its level in each preset, its fix and
   its options.
 - [VS Code extension](editors/vscode/README.md) and [Notepad++ plugin](editors/notepadpp/README.md):
@@ -149,7 +151,8 @@ Every command and option is described in the [command-line reference](docs/cli.m
 Optional. Put a `vfl.toml` at the project root; nested `vfl.toml` files override only the
 keys they set, `extends = "path.toml"` pulls in a shared file, and `root = true` stops the
 search for parent configs. Every key is described in the
-[configuration reference](docs/configuration.md), and every rule in [lints.md](docs/lints.md).
+[configuration reference](docs/configuration.md), and every rule in [lints.md](docs/lints.md);
+[examples/config](examples/config/README.md) shows them at work, before and after.
 
 ```toml
 [format]

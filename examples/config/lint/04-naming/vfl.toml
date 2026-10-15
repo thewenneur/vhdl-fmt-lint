@@ -1,0 +1,12 @@
+[project]
+exclude = ["after.vhd"] # keep the two copies of the example from clashing
+
+# naming/* rules are off in every preset; giving one options turns it on at "warn".
+[lint.rules]
+"naming/signal" = { prefix = "s_", case = "snake" }
+"naming/constant" = { prefix = "C_", case = "upper" }
+"naming/type" = { suffix = "_t" }
+"naming/input-port" = { suffix = "_i" }
+"naming/output-port" = { suffix = "_o" }
+"naming/process" = { prefix = "p_" }
+"naming/instance" = { level = "error", pattern = "u_[a-z0-9_]+" }

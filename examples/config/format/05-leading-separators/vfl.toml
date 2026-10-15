@@ -1,0 +1,4 @@
+[format]
+interface_separator = "leading"   # ";" of generic/port clauses starts the next line
+association_separator = "leading" # "," of maps, calls and aggregates starts the next line
+association_list = "expand"       # one association per line, so the commas show

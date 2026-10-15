@@ -1,0 +1,10 @@
+[project]
+exclude = ["after.vhd"] # keep the two copies of the example from clashing
+
+[lint]
+preset = "strict" # "none" | "recommended" (default) | "strict"
+
+[lint.rules]
+"style/file-name" = "off"                         # turn a rule off
+"sema/unused-port" = "error"                      # change a level: "off" | "info" | "warn" | "error"
+"style/line-length" = { level = "warn", max = 80 } # a level and an option

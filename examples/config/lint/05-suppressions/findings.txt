@@ -1,0 +1,4 @@
+before.vhd:8:19: warning[style/no-buffer-ports] port of mode `buffer`; use `out` (readable since VHDL-2008) or an internal signal
+before.vhd:15:12: warning[sema/unused-signal] signal `spare` is never used
+before.vhd:17:5: warning[style/process-label] process without a label
+before.vhd:24:5: warning[style/process-label] process without a label

@@ -76,8 +76,17 @@ pub(crate) fn regions<L: Lang>(elems: &[Elem<L>], src_len: usize) -> Vec<Region>
                     .find(|&k| !elems[k].is_comment())
                     .and_then(|k| {
                         let end = item_end(&elems[k])?;
-                        let m = (k..elems.len())
+                        let mut m = (k..elems.len())
                             .find(|&m| elems[m].src.is_some_and(|r| r.end() == end))?;
+                        let mut end = end;
+                        // A comment ending the item's last line is kept with it.
+                        while let Some(next) = elems.get(m + 1).filter(|e| {
+                            e.is_comment() && e.src_newlines == 0 && directive(e).is_none()
+                        }) {
+                            let Some(range) = next.src else { break };
+                            m += 1;
+                            end = range.end();
+                        }
                         Some((m, end))
                     });
                 match found {
