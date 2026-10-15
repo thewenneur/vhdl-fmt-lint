@@ -7,7 +7,7 @@
 use std::fmt::Debug;
 use std::hash::Hash;
 
-use vfl_config::{Case, FormatConfig, ListLayout};
+use vfl_config::{Case, FormatConfig, ListLayout, Separator};
 use vfl_syntax::SyntaxError;
 
 use crate::align::{Context, Kind};
@@ -130,6 +130,13 @@ pub(crate) trait Lang:
 
     /// Separators between the elements of a list.
     fn is_separator(kind: Self::Kind) -> bool;
+
+    /// Nodes that may be lists [`opens_list`](Lang::opens_list) accepts.
+    fn is_list(kind: Self::Kind) -> bool;
+
+    /// Where the separators of `list` (the parent of the `(` that
+    /// [`opens_list`](Lang::opens_list)) go.
+    fn separator(list: &Node<Self>, config: &FormatConfig) -> Separator;
 
     /// Whether the list element starting at `elem` may stay on the line of
     /// the one before it when the list is laid out one element per line.

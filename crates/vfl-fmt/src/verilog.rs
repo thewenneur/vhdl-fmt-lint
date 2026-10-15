@@ -15,7 +15,7 @@
 //! kept as written.
 
 use rowan::{Language, NodeOrToken};
-use vfl_config::{AlignConfig, Case, FormatConfig, ListLayout};
+use vfl_config::{AlignConfig, Case, FormatConfig, ListLayout, Separator};
 use vfl_syntax::SyntaxError;
 use vfl_verilog_syntax::SyntaxKind::{self, *};
 use vfl_verilog_syntax::{Options, SyntaxNode, SyntaxToken, Verilog};
@@ -293,6 +293,20 @@ impl Lang for Verilog {
 
     fn is_separator(kind: SyntaxKind) -> bool {
         kind == COMMA
+    }
+
+    fn is_list(kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            PORT_LIST | PARAM_PORT_LIST | INSTANCE | PARAM_VALUES | ARG_LIST
+        )
+    }
+
+    fn separator(list: &SyntaxNode, config: &FormatConfig) -> Separator {
+        match list.kind() {
+            PORT_LIST | PARAM_PORT_LIST => config.interface_separator,
+            _ => config.association_separator,
+        }
     }
 
     fn joins_previous_element(elem: &Elem<Verilog>) -> bool {

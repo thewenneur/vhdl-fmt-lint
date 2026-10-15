@@ -62,6 +62,9 @@ fn parser_test_files_are_stable() {
                 "interface_list = \"preserve\"\nassociation_list = \"expand\"\nclose_paren = \"attached\"",
             ),
             config("[format.align]\nblock_boundary = \"never\""),
+            config("style = \"leading-comma\""),
+            config("style = \"leading-comma\"\nmax_width = 40\nassociation_list = \"preserve\""),
+            config("style = \"compact\""),
         ] {
             let options = options(&path);
             let out = format_verilog(&text, &config, &options).unwrap_or_else(|e| panic!("{e}"));
@@ -205,5 +208,15 @@ fn operators_written_apart_stay_apart() {
     assert_eq!(
         fmt("module m; assign a = - -b; assign c = ~ &d; endmodule"),
         "module m;\n  assign a = - -b;\n  assign c = ~ &d;\nendmodule\n"
+    );
+}
+
+#[test]
+fn leading_separators() {
+    let text =
+        "module m (input a, // first\n  output b);\n  sub u (.x(a),\n    .y(b));\nendmodule\n";
+    assert_eq!(
+        fmt_with(text, &config("style = \"leading-comma\"")),
+        "module m (\n  input  a // first\n, output b\n);\n  sub u (\n    .x(a)\n  , .y(b)\n  );\nendmodule\n"
     );
 }

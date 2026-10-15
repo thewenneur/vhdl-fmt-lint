@@ -221,3 +221,25 @@ fn files_with_lone_carriage_returns_are_formatted_whole() {
     let at = text.find("  z").unwrap();
     assert_eq!(fmt_range(text, at..at), whole);
 }
+
+#[test]
+fn a_moved_separator_takes_in_the_lines_it_moved_between() {
+    let config = vfl_config::Config::from_toml_str("[format]\nstyle = \"leading-comma\"")
+        .unwrap()
+        .format;
+    let text = "entity e is\n  port (\n    a : in bit;\n\n    /* outputs */\n    q : out bit\n  );\nend;\n";
+    let whole = format(text, &config, Standard::Vhdl2019).unwrap();
+    for n in 1..=8 {
+        let edits = format_ranges_in(text, &[line(text, n)], &config, Standard::Vhdl2019, true)
+            .unwrap_or_else(|e| panic!("line {n}: {e}"));
+        let out = apply_edits(text, &edits);
+        // Each line the separator moves past is formatted with it.
+        if [3, 5, 6].contains(&n) {
+            assert_eq!(out, whole, "line {n}");
+        }
+    }
+    assert_eq!(
+        whole,
+        "entity e is\n  port (\n    a : in bit\n\n    /* outputs */\n  ; q : out bit\n  );\nend;\n"
+    );
+}

@@ -24,6 +24,12 @@ fn directive<L: Lang>(elem: &Elem<L>) -> Option<Directive> {
     }
 }
 
+/// Whether `elem` is a `vfl:` directive comment.
+#[inline]
+pub(crate) fn is_directive<L: Lang>(elem: &Elem<L>) -> bool {
+    directive(elem).is_some()
+}
+
 /// The elements of the regions kept as written: each is the range of
 /// elements after a directive comment, and the source text it spans.
 pub(crate) struct Region {
