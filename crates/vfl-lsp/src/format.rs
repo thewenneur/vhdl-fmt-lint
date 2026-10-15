@@ -10,18 +10,26 @@ use vfl_fmt::{Edit, FormatError};
 use vfl_project::{verilog_standard, with_verilog_options};
 
 /// Runs `vhdl`, or `verilog` with the parse options of the Verilog file at
-/// `path`. `root` gives the project directory include directories are
-/// relative to; it is only asked for Verilog files.
+/// `path`, or `None` for a Verilog file without `[verilog]` `mode = "full"`.
+/// `root` gives the project directory include directories are relative
+/// to; it is only asked for Verilog files.
 fn in_language<R>(
     path: Option<&Path>,
     config: &Config,
     root: impl FnOnce() -> PathBuf,
     vhdl: impl FnOnce() -> R,
     verilog: impl FnOnce(&vfl_verilog_syntax::Options) -> R,
-) -> R {
+) -> Option<R> {
     match path.and_then(|p| Some((p, verilog_standard(config, p)?))) {
-        Some((path, standard)) => with_verilog_options(path, config, &root(), standard, verilog),
-        None => vhdl(),
+        Some(_) if !config.verilog.full() => None,
+        Some((path, standard)) => Some(with_verilog_options(
+            path,
+            config,
+            &root(),
+            standard,
+            verilog,
+        )),
+        None => Some(vhdl()),
     }
 }
 
@@ -40,6 +48,7 @@ pub fn document(
         || vfl_fmt::format(text, &config.format, config.standard()),
         |options| vfl_fmt::format_verilog(text, &config.format, options),
     )
+    .unwrap_or_else(|| Ok(text.to_owned()))
 }
 
 /// The edits formatting the lines that bytes `range` of `text` touch.
@@ -64,6 +73,7 @@ pub fn range(
             )
         },
     )
+    .unwrap_or(Ok(Vec::new()))
 }
 
 /// The edits formatting the line just finished after `ch` was typed at
@@ -83,4 +93,5 @@ pub fn typed(
         || vfl_fmt::format_typed(text, cursor, ch, &config.format, config.standard()),
         |options| vfl_fmt::format_typed_verilog(text, cursor, ch, &config.format, options),
     )
+    .unwrap_or(Ok(Vec::new()))
 }

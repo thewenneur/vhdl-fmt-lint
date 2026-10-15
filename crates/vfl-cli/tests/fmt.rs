@@ -94,6 +94,14 @@ fn fmt_formats_verilog_by_extension() {
     std::fs::write(&sv, "module top;assign a=b;endmodule\n").unwrap();
     // A VHDL file of the same project, formatted in the same run.
     std::fs::write(dir.path().join("e.vhd"), "ENTITY e IS END;\n").unwrap();
+    // Names only by default: left as it is, even when named.
+    assert!(vfl(dir.path(), &["fmt", "top.sv"]).status.success());
+    assert!(vfl(dir.path(), &["fmt"]).status.success());
+    assert_eq!(
+        std::fs::read_to_string(&sv).unwrap(),
+        "module top;assign a=b;endmodule\n"
+    );
+    std::fs::write(dir.path().join("vfl.toml"), "[verilog]\nmode = \"full\"\n").unwrap();
     assert!(vfl(dir.path(), &["fmt"]).status.success());
     assert_eq!(
         std::fs::read_to_string(&sv).unwrap(),

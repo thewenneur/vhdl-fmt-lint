@@ -1,0 +1,3 @@
+# The SystemVerilog part of the e2e test needs every Verilog feature.
+[verilog]
+mode = "full"

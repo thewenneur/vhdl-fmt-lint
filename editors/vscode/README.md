@@ -32,12 +32,16 @@ language server:
   `editor.semanticTokenColorCustomizations`, for example
   `"rules": { "signal": "#c586c0", "port.out": { "bold": true } }`.
 
-**Verilog and SystemVerilog** files (`.v`, `.vh`, `.sv`, `.svh`) get syntax errors as you
-type, formatting (whole file, selection and on type), syntax and semantic highlighting, an
-outline of their modules, parameters, ports, declarations and instances, and folding. VHDL
-that instantiates their modules resolves their ports and parameters, with hover and go to
-definition. If another extension also handles Verilog, pick vfl as the formatter with
-**Format Document With...**.
+**Verilog and SystemVerilog** files (`.v`, `.vh`, `.sv`, `.svh`) get syntax highlighting.
+The rest is set by `mode` under `[verilog]` in `vfl.toml` (see
+[configuration](https://github.com/thewenneur/vhdl-fmt-lint/blob/main/docs/configuration.md#verilog)):
+by default (`mode = "names"`), VHDL that instantiates their modules resolves their ports and
+parameters, with hover and go to definition; with `mode = "full"`, which is in progress and
+says so once in a message, they also get syntax errors and lint findings as you type,
+formatting (whole file, selection and on type), semantic highlighting, an outline of their
+modules, parameters, ports, declarations and instances, and folding. To format them with
+vfl, pick it with **Format Document With...**, or set it as `editor.defaultFormatter` under
+`"[verilog]"` and `"[systemverilog]"`.
 
 The project root, sources and libraries are discovered from the code, so there is nothing to
 set up. Configuration lives in `vfl.toml`, shared with the `vfl` command line; see the
@@ -64,7 +68,7 @@ It is looked up in `vfl.server.path`, then on `PATH`, then in `~/.cargo/bin`.
 | `vfl.format.onType` | `false` | Format the line you just finished as you type (`;` or Enter). |
 | `vfl.trace.server` | `"off"` | Log LSP traffic (`messages` or `verbose`). |
 
-The extension makes itself the default formatter for VHDL, Verilog and SystemVerilog. To
+The extension makes itself the default formatter for VHDL. To
 format and fix on save:
 
 ```json

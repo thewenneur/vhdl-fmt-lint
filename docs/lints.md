@@ -715,6 +715,7 @@ would clash with another declaration.
 
 ## Verilog and SystemVerilog
 
+With `[verilog]` `mode = "full"` (see [configuration.md](configuration.md#verilog)),
 Verilog and SystemVerilog files are linted with the [`verilog/*`](#verilog) rules and these
 shared ones:
 

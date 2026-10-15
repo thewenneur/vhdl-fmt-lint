@@ -1090,6 +1090,7 @@ struct Linted {
     /// Ranges to color, with the index of their color in [`NameColor::ALL`].
     names: Vec<(usize, usize, usize)>,
     config_errors: Vec<String>,
+    notices: Vec<String>,
 }
 
 /// Lints a buffer, on the worker's thread.
@@ -1134,6 +1135,7 @@ fn lint(engine: &mut Engine, path: Option<&Path>, buffer: &BufferText, colors: b
         problems,
         names,
         config_errors: output.config_errors,
+        notices: output.notices,
     }
 }
 
@@ -1152,11 +1154,24 @@ fn show_lint(here: Here, trigger: Trigger, linted: Linted) {
         problems,
         names,
         config_errors,
+        notices,
     } = linted;
     quietly(sci, || show_problems(sci, view, id, &problems));
     show_name_colors(sci, id, here.edits, names);
     let count = problems.len();
     with(|s| s.problems.borrow_mut().insert(id, problems));
+
+    // Each notice once, like the language server.
+    let new: Vec<String> = with(|s| {
+        let mut shown = s.shown_errors.borrow_mut();
+        notices
+            .into_iter()
+            .filter(|n| shown.insert(n.clone()))
+            .collect()
+    });
+    if !new.is_empty() {
+        message_box(npp(), &new.join("\n\n"), MB_ICONWARNING);
+    }
 
     if trigger != Trigger::Command {
         // Show each configuration error once, like the language server.

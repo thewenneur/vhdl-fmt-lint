@@ -131,19 +131,19 @@ pub fn collect(
     walk(root, config, &config.extensions, true)
 }
 
-/// Lists the sources of a project under `root`, VHDL and Verilog together,
-/// and the files of other tools that may list libraries, in one walk,
-/// both sorted.
+/// Lists the sources of a project under `root`, VHDL and Verilog together
+/// (Verilog unless `[verilog]` `mode` is off), and the files of other tools
+/// that may list libraries, in one walk, both sorted.
 pub fn collect_project(
     root: &Path,
     config: &Config,
 ) -> Result<(Vec<PathBuf>, Vec<PathBuf>), ignore::Error> {
+    let verilog = config.verilog.loaded();
     let extensions: Vec<String> = config
         .project
         .extensions
         .iter()
-        .chain(&config.verilog.extensions)
-        .chain(&config.verilog.sv_extensions)
+        .chain(verilog_extensions(&config.verilog, verilog))
         .cloned()
         .collect();
     walk(root, &config.project, &extensions, true)
@@ -151,7 +151,9 @@ pub fn collect_project(
 
 /// Lists the VHDL sources and the Verilog and SystemVerilog sources under
 /// `root` in one walk, each sorted, honouring `.gitignore`, the project's
-/// `exclude`, its `extensions` and those of `[verilog]`.
+/// `exclude`, its `extensions` and those of `[verilog]`. These are the
+/// files to check, format or lint, so Verilog ones are listed only when
+/// `[verilog]` `mode` is full.
 pub fn collect_all_sources(
     root: &Path,
     project: &ProjectConfig,
@@ -160,8 +162,7 @@ pub fn collect_all_sources(
     let extensions: Vec<String> = project
         .extensions
         .iter()
-        .chain(&verilog.extensions)
-        .chain(&verilog.sv_extensions)
+        .chain(verilog_extensions(verilog, verilog.full()))
         .cloned()
         .collect();
     let (all, _) = walk(root, project, &extensions, false)?;
@@ -175,6 +176,15 @@ pub fn collect_all_sources(
                     .any(|e| e.eq_ignore_ascii_case(ext))
             })
     }))
+}
+
+/// The Verilog and SystemVerilog extensions, when `wanted`.
+fn verilog_extensions(verilog: &VerilogConfig, wanted: bool) -> impl Iterator<Item = &String> {
+    verilog
+        .extensions
+        .iter()
+        .chain(&verilog.sv_extensions)
+        .filter(move |_| wanted)
 }
 
 /// Lists the Verilog and SystemVerilog sources under `root`, sorted,
@@ -386,8 +396,17 @@ mod tests {
         );
         let vhdl = collect_sources(root, &config).unwrap();
         assert_eq!(vhdl.len(), 1);
+        // The Verilog files to check, format and lint: with
+        // `[verilog]` `mode = "full"` only.
         let (vhdl_too, verilog) =
             collect_all_sources(root, &config, &VerilogConfig::default()).unwrap();
+        assert_eq!(vhdl_too, vhdl);
+        assert!(verilog.is_empty());
+        let full = VerilogConfig {
+            mode: vfl_config::VerilogMode::Full,
+            ..VerilogConfig::default()
+        };
+        let (vhdl_too, verilog) = collect_all_sources(root, &config, &full).unwrap();
         assert_eq!(vhdl_too, vhdl);
         assert_eq!(verilog.len(), 3);
     }

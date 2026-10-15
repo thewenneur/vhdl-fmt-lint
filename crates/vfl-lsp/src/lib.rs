@@ -412,7 +412,11 @@ impl Server<'_> {
                 version: None,
             })?;
         }
-        for error in std::mem::take(&mut self.world.config_errors) {
+        let notices = self.world.notices.clone();
+        for error in std::mem::take(&mut self.world.config_errors)
+            .into_iter()
+            .chain(notices)
+        {
             if self.shown_errors.contains(&error) {
                 continue;
             }

@@ -40,10 +40,18 @@ fn requested(paths: &[PathBuf]) -> Result<Vec<(PathBuf, Vec<PathBuf>)>> {
             let config = vfl_config::load_for_dir(&path)?;
             let (mut vhdl, verilog) = collect_all_sources(&path, &config.project, &config.verilog)
                 .with_context(|| format!("scanning {}", path.display()))?;
+            if let Some(first) = verilog.first() {
+                // Says that Verilog support is in progress.
+                crate::language(&config, first);
+            }
             vhdl.extend(verilog);
             vhdl
         } else {
-            vec![path.clone()]
+            let config = vfl_config::load_for_dir(path.parent().unwrap_or(&path))?;
+            match crate::language(&config, &path) {
+                crate::Language::Skipped => Vec::new(),
+                _ => vec![path.clone()],
+            }
         };
         match groups.iter_mut().find(|(r, _)| *r == root.dir) {
             Some((_, list)) => list.extend(files),
@@ -114,10 +122,16 @@ pub fn run(options: Options) -> Result<bool> {
             }
             // Every Verilog file is linted, for what each declares for the
             // others; only the requested ones are reported.
+            // With `[verilog]` `mode = "full"` only: otherwise they are
+            // there for the modules VHDL instantiates.
             let mut verilog_configs: Vec<(usize, Config)> = Vec::new();
             for (i, file) in project.verilog.iter().enumerate() {
-                verilog_configs.push((i, configs.for_file(&file.path)?.clone()));
+                let config = configs.for_file(&file.path)?;
+                if config.verilog.full() {
+                    verilog_configs.push((i, config.clone()));
+                }
             }
+
             let settings: Vec<FileSettings> = file_configs
                 .iter()
                 .filter_map(|(i, config)| {

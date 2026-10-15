@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [Unreleased]
 
 ### Added
 
@@ -11,6 +11,17 @@
   alignment still line up. Verilog port lists and connections follow the same keys.
 - **Format styles**: `style = "leading-comma"`, `"compact"` or `"classic"` in `[format]`
   picks a set of defaults; keys set explicitly still win.
+
+### Changed
+
+- **Verilog and SystemVerilog files are only read for VHDL name resolution by default**,
+  set by the new `[verilog]` `mode`: `"names"` (the default) reads them only so that VHDL
+  resolves the modules it instantiates, with nothing reported, formatted or colored in
+  the Verilog files; `"off"` ignores them; `"full"` turns on everything 0.3 did, and says once that this
+  support is in progress (on standard error, and in a message in VS Code and Notepad++).
+  To keep 0.3's behavior, add `mode = "full"` under `[verilog]` in `vfl.toml`.
+- The VS Code extension no longer makes itself the default formatter of Verilog and
+  SystemVerilog.
 
 ### Fixed
 
