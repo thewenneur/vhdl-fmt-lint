@@ -156,6 +156,11 @@ pub struct ProjectConfig {
     /// How rust_hdl's `vhdl_ls.toml` library lists are used.
     #[serde(rename = "vhdl-ls")]
     pub vhdl_ls: VhdlLsMode,
+    /// Whether the bundled declarations of vendor primitive libraries
+    /// (`unisim`, `xpm`, `altera_mf`, Lattice's) are loaded for a library
+    /// the design uses and the project does not hold.
+    #[serde(rename = "vendor-stubs")]
+    pub vendor_stubs: bool,
 }
 
 impl Default for ProjectConfig {
@@ -166,6 +171,7 @@ impl Default for ProjectConfig {
             exclude: Vec::new(),
             libraries: BTreeMap::new(),
             vhdl_ls: VhdlLsMode::default(),
+            vendor_stubs: true,
         }
     }
 }

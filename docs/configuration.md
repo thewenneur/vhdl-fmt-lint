@@ -122,6 +122,7 @@ standard (the semantic analysis of `vfl lint` uses the root's).
 | `exclude` | array of strings | `[]` | Gitignore-style globs, relative to the project root, of files and directories to skip. `.gitignore` files are honoured as well. |
 | `libraries` | table | `{}` | Explicit library assignments; see below. |
 | `vhdl-ls` | string | `"fallback"` | How rust_hdl's `vhdl_ls.toml` places files in libraries: `"fallback"` (only the files inference places nowhere, or over inference when that leaves fewer library conflicts), `"prefer"` (over inference and tool files, below `[project.libraries]`) or `"off"` (not read). See below. |
+| `vendor-stubs` | boolean | `true` | Load vfl's bundled declarations of vendor primitive libraries (`unisim`, `xpm`, `altera_mf`, `ecp5u`, `machxo2`, `sb_ice40_components_syn`) for a library the design uses and the project does not hold. See [Vendor libraries](#vendor-libraries). |
 
 ### `[project.libraries]`
 
@@ -129,8 +130,11 @@ Normally not needed: vfl puts each file in a library by itself. In order of prio
 
 1. `[project.libraries]` in `vfl.toml`.
 2. Library lists of other tools found in the tree, read without running them: VUnit
-   `run.py`, FuseSoC `.core`, Vivado `.xpr` and Tcl `read_vhdl -library` scripts, Quartus
-   `.qsf` / `.qip`.
+   `run.py`, FuseSoC `.core`, Edalize EDAM (`*.eda.yml`, `edam.json`), Vivado `.xpr` and Tcl
+   `read_vhdl -library` scripts, Quartus `.qsf` / `.qip`, `.f` file lists (`-makelib` and
+   `-work` libraries, nested `-f`/`-F`), hdlmake `Manifest.py` (`library` and `files`) and
+   Questa/ModelSim `.mpf` projects (`compile_to`). See
+   [design.md](design.md#project-autodiscovery) for what each one is read for.
 3. Inference from the code: a unit referenced as `lib.unit` puts the file that declares it
    in `lib`, and `work.unit` references keep files together.
 4. rust_hdl's `vhdl_ls.toml` (or `.vhdl_ls.toml`) in the project root, with `$VAR`
@@ -163,6 +167,30 @@ entry matches is still placed by the lower-priority sources.
 
 `vfl project --vhdl-ls` prints the libraries vfl found as a `vhdl_ls.toml`, for use with
 rust_hdl.
+
+### Vendor libraries
+
+Designs instantiate FPGA primitives from libraries the project does not hold: they come
+with the vendor's tools. Without them, names from such a library are not checked, and
+`sema/unknown-library` says so. vfl bundles declarations of the commonly used primitives,
+written from the vendors' public documentation, and analyzes them when a file uses the
+library (`use unisim.vcomponents.all`, `entity unisim.bufg`) and no file of the project
+is in it:
+
+| Library | Package | Primitives |
+|---------|---------|------------|
+| `unisim` | `vcomponents` | Xilinx 7 series and later: clock buffers (`BUFG`, `BUFGCE`, `BUFGMUX`, `BUFR`, ...), I/O buffers (`IBUF`, `OBUF`, `IOBUF`, `IBUFDS`, `OBUFDS`, ...), flip-flops (`FDRE`, `FDSE`, `FDCE`, `FDPE`), `LUT1`-`LUT6`, `SRL16E`, `SRLC32E`, `CARRY4`, `MUXF7/8`, `ODDR`, `IDDR`, `IDELAYE2`, `ODELAYE2`, `IDELAYCTRL`, `ISERDESE2`, `OSERDESE2`, `MMCME2_BASE/ADV`, `PLLE2_BASE/ADV`, `RAMB18E1`, `RAMB36E1`, `FIFO36E1`, `DSP48E1`, `STARTUPE2`, `DNA_PORT` |
+| `xpm` | `vcomponents` | `xpm_cdc_*`, `xpm_fifo_sync`, `xpm_fifo_async`, `xpm_memory_spram/sdpram/tdpram/sprom/dprom` |
+| `altera_mf` | `altera_mf_components` | `altsyncram`, `scfifo`, `dcfifo`, `altpll`, `altddio_in`, `altddio_out` |
+| `ecp5u`, `machxo2` | `components` | Lattice I/O buffers, flip-flops, `DCCA`, `GSR`, `PUR`, PLLs (`EHXPLLL`, `EHXPLLJ`), oscillators, DDR registers, block RAM (`DP16KD`, `DP8KC`) |
+| `sb_ice40_components_syn` | `components` | Lattice iCE40: `SB_IO`, `SB_GB`, `SB_PLL40_CORE`, `SB_RAM40_4K`, oscillators, `SB_LUT4`, `SB_CARRY`, flip-flops |
+
+The components and the entities of the same names then resolve: hover, go to definition and
+completion work, and an actual of the wrong type is reported. The declarations hold each
+primitive's ports and the generics most often set, not all of them: a primitive, port or
+generic they lack is not reported, and port widths are not checked against them. A project
+holding a copy of the library (its sources, in that library) uses that instead. Set
+`vendor-stubs = false` to go back to leaving these libraries unchecked.
 
 ## `[format]`
 
@@ -437,7 +465,8 @@ Each entry is either a level, or a table with an optional `level` and rule optio
   has the rule off. This is how `naming/*` rules are turned on.
 - Rules with options: `style/line-length` (`max`), `sema/unassociated-port` (`undeclared`,
   for its quick fix), `sema/missing-branch-assignment` (`clocked`, to check clocked
-  processes too) and every `naming/<kind>` rule (`prefix`, `suffix`, `case`, `pattern`). See [lints.md](lints.md) for what they do.
+  processes too), `sema/multiple-drivers` (`resolved`: `"rtl"`, `"always"` or `"never"`,
+  for signals of resolved types such as `std_logic`) and every `naming/<kind>` rule (`prefix`, `suffix`, `case`, `pattern`). See [lints.md](lints.md) for what they do.
 
 `info` findings are shown as notes. `vfl lint` exits with a failure status when there are
 `error` findings, or `warn` findings too with `--deny-warnings`.

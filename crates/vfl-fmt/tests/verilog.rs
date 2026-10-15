@@ -283,3 +283,34 @@ fn a_continuation_before_a_lone_cr() {
     let text = "`define F(q) \\\r\r\rmodule m; endmodule\n";
     assert_eq!(fmt(text), fmt(&text.replace('\r', "\n")));
 }
+
+/// Found by the `format_verilog` fuzz target: the line break after an empty
+/// first element went to the `)`, and back the second time.
+#[test]
+fn an_empty_first_element_stays_after_its_paren() {
+    let text = "module top;\n  counter #(,) u0 (.clk(clk), .q(q));\nendmodule\n";
+    let out = fmt_with(
+        text,
+        &config("association_list = \"expand\"\nclose_paren = \"attached\""),
+    );
+    assert!(out.contains("#(\n    ,) u0 ("), "{out}");
+    let out = fmt_with(text, &config("association_list = \"expand\""));
+    assert!(out.contains("#(\n    ,\n  ) u0 ("), "{out}");
+}
+
+/// Found by the `format_verilog` fuzz target: range formatting cut a
+/// directive continued by a `\` at the end of the file before its line
+/// break.
+#[test]
+fn a_range_ending_in_a_continued_directive() {
+    let text = "`x`define F s\\\n";
+    let options = Options::default();
+    let edits =
+        format_ranges_verilog(text, std::slice::from_ref(&(0..0)), &legacy(), &options).unwrap();
+    let ranged = apply_edits(text, &edits);
+    assert_eq!(ranged, "`x\n  `define F s\\\n");
+    assert_eq!(
+        format_verilog(&ranged, &legacy(), &options).unwrap(),
+        fmt(text)
+    );
+}

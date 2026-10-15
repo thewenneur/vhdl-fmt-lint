@@ -38,6 +38,7 @@ mod branches;
 mod checks;
 mod decl;
 mod diagnostic;
+mod drivers;
 mod foreign;
 mod resolver;
 mod rtl;
@@ -52,4 +53,6 @@ pub use decl::{
     Targets, TypeDef, UnitId,
 };
 pub use diagnostic::{Diagnostic, Edit, Fix, codes};
+pub use drivers::{DriverChecks, ResolvedDrivers};
 pub use foreign::{ForeignInput, ForeignModule, ForeignObject, foreign_key};
+pub use stdlib::{VENDOR, VENDOR_LIBRARIES};

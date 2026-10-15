@@ -86,6 +86,10 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`sema/reset-polarity`](#semareset-polarity) | warn | error | |
 | [`sema/fsm-unreachable-state`](#semafsm-unreachable-state) | warn | warn | |
 | [`sema/fsm-stuck-state`](#semafsm-stuck-state) | info | warn | |
+| [`sema/incomplete-case`](#semaincomplete-case) | error | error | unsafe |
+| [`sema/duplicate-choice`](#semaduplicate-choice) | error | error | |
+| [`sema/multiple-drivers`](#semamultiple-drivers) | warn | error | |
+| [`sema/combinational-loop`](#semacombinational-loop) | warn | error | |
 | [`verilog/blocking-in-clocked`](#verilogblocking-in-clocked) | warn | warn | unsafe |
 | [`verilog/nonblocking-in-combinational`](#verilognonblocking-in-combinational) | warn | warn | unsafe |
 | [`verilog/multiple-drivers`](#verilogmultiple-drivers) | warn | error | |
@@ -158,7 +162,9 @@ If the unit exists but in another library, check that library's assignment with
 A `library` clause names a library that no file of the project is in, so nothing from it is
 checked. This is an `info` note: it often means a third-party library (OSVVM, UVVM, vendor
 primitives) is outside the project root or excluded. `std`, `ieee` and `work` are always
-known.
+known, and so are the vendor primitive libraries vfl bundles declarations of (`unisim`,
+`xpm`, `altera_mf`, Lattice's) once a file uses them, unless `[project]` `vendor-stubs` is
+off ([configuration.md](configuration.md#vendor-libraries)).
 
 ### `sema/duplicate-declaration`
 
@@ -574,6 +580,124 @@ State machines are found as for
 [`sema/fsm-unreachable-state`](#semafsm-unreachable-state). Nothing is reported when the
 state is assigned a literal outside the `case` other than by a reset. A final state that
 waits for a reset is sometimes intended, hence `info` in `recommended`; `warn` in `strict`.
+
+### `sema/incomplete-case`
+
+The choices of a `case` statement or a selected assignment (`with s select`) must cover
+every value of the selector's subtype once, or end with `when others`. This rule reports
+the ones that leave values out, at their `case` (or `with`) keyword, with the missing
+values. VHDL tools reject such a statement.
+
+```vhdl
+type state_t is (IDLE, LOAD, RUN, DONE);
+...
+case state is            -- the choices do not cover `DONE`
+  when IDLE        => ...
+  when LOAD | RUN  => ...
+end case;
+```
+
+Selectors that are checked: objects (and slices or elements of array objects) of an
+enumeration type (`state_t`, `std_logic`, `boolean`), of an integer subtype with static
+bounds (`integer range 0 to 3`, `subtype idx_t is natural range 0 to 7`, bounds given by
+constants of known value included), and one-dimensional arrays of characters of static
+width (`std_logic_vector(1 downto 0)`, `bit_vector`, `unsigned`). An array of `std_logic`
+has 9 values per element, so a `case` on one needs `when others` even when it lists every
+combination of `'0'` and `'1'`.
+
+Left alone: a `case` with a choice that is not a literal or a static value (a constant of
+unknown value, a subtype name, `t'range`), selectors of other types or of non-static
+bounds (`natural`, a generic range, a function result), matching `case?`, and statements
+that do not parse.
+
+Fix (unsafe, `case` statements only): adds the missing alternatives before `end case`, with
+a `null` body to fill in: one `when` per missing literal or integer range when there are at
+most 8, otherwise `when others => null;`, which also covers arrays and character
+enumerations such as `std_logic`. `error` in every preset.
+
+### `sema/duplicate-choice`
+
+A choice of a `case` statement or a selected assignment names a value an earlier choice
+already covers: the same literal twice, overlapping integer ranges, or the same array value
+written twice (`"1010"` and `x"A"`). VHDL tools reject it. The selectors and choices checked
+are those of [`sema/incomplete-case`](#semaincomplete-case). `error` in every preset.
+
+```vhdl
+case n is              -- n : integer range 0 to 3
+  when 0      => ...
+  when 1 to 2 => ...
+  when 2      => ...   -- `2` is already covered by the choice at line 3
+  when 3      => ...
+end case;
+```
+
+### `sema/multiple-drivers`
+
+A signal, or an overlapping part of it, is driven by more than one statement of an
+architecture: two processes, a process and a concurrent assignment, two concurrent
+assignments, or an instance whose `out` port is associated with it. Each driver after the
+first is reported, with the line of the first.
+
+```vhdl
+flag <= a = '1';           -- flag : boolean
+...
+p : process (clk)
+begin
+  if rising_edge(clk) then
+    flag <= true;           -- `flag` is also driven by the statement at line 1
+  end if;
+end process;
+```
+
+A signal of an unresolved type (`boolean`, `std_ulogic`, `bit_vector`, a record of these)
+can have only one driver: VHDL tools reject the design. A signal of a resolved type
+(`std_logic`, `std_logic_vector`) gets a resolved value, which is what a tri-state bus
+needs but rarely what RTL means. The `resolved` option says when such signals are
+reported:
+
+```toml
+[lint.rules]
+"sema/multiple-drivers" = { resolved = "always" }   # "rtl" (default), "always" or "never"
+```
+
+- `"rtl"` (default): except in testbenches, the architectures of entities without ports,
+  where several processes often drive one bus.
+- `"always"`: in every architecture.
+- `"never"`: only signals of unresolved types are reported.
+
+A resolved signal that a driver may set to `'Z'` (a tri-state bus) is never reported.
+
+Parts: drivers of different elements, slices or record fields (`v(3 downto 0)` and
+`v(7 downto 4)`, `r.f` and `r.g`) do not overlap, when their indexes are static. A part
+whose index is not static (`v(i)` in a `for` generate or a loop) is taken not to overlap any
+other part. Statements in an `if` or `case` generate are left out, as their alternatives
+never coexist, as are procedure calls (the modes of their parameters are not always known)
+and `inout` ports of instances. `warn` in `recommended`, `error` in `strict`.
+
+### `sema/combinational-loop`
+
+A signal depends on itself through concurrent assignments and combinational processes,
+with no register on the way. Synthesis builds a loop that oscillates or holds a value
+like an unintended latch, and simulation may never settle. Reported once per loop, at its
+first assignment, with the path:
+
+```vhdl
+x1 <= a and x3;   -- combinational loop with no register on the way: `x1` -> `x2` -> `x3` -> `x1`
+x2 <= not x1;
+x3 <= x2 or b;
+```
+
+An assignment depends on the signals it reads (values and indexes) and, in a process, on
+the signals of the conditions, selectors and loop ranges it is under. Statements that
+count: concurrent assignments without a clock edge or a delay, and combinational processes
+(as defined for [`sema/inferred-latch`](#semainferred-latch)). Clocked processes break
+every loop, as do `after` delays (`clk <= not clk after 5 ns` is a clock generator).
+
+Not followed: variables, procedure calls, instances and statements in an `if` or `case`
+generate. `q <= q` and `q <= d when en = '1' else q` keep a value, which is a latch
+([`sema/inferred-latch`](#semainferred-latch)) rather than a loop. Parts of a signal are
+told apart as for [`sema/multiple-drivers`](#semamultiple-drivers): `c(1) <= c(0) and b`
+is not a loop. `warn` in `recommended`, `error` in `strict`.
 
 ## `verilog`
 

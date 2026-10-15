@@ -1,8 +1,9 @@
 //! Hardware checks on resolved units: width mismatches in assignments and
 //! associations, latches inferred by combinational processes, signals
-//! that cross clock domains, input ports left open, resets, and state
-//! machines.
+//! that cross clock domains, input ports left open, resets, state
+//! machines, and the choices of `case` statements.
 
+mod cases;
 mod fsm;
 pub(crate) mod reset;
 
@@ -11,7 +12,7 @@ use vfl_syntax::green_walk::ChildTokens;
 use vfl_syntax::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange};
 
 use crate::analysis::{Ctx, UnitResult};
-use crate::decl::{Decl, DeclId, DeclKind, Target, TypeDef, UnitId};
+use crate::decl::{Decl, DeclId, DeclKind, ElementRef, Target, TypeDef, UnitId};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::resolver::{is_clock_edge, mark_token};
 
@@ -164,7 +165,8 @@ fn literal_width(token: &SyntaxToken) -> Option<u32> {
 // ---- The checks --------------------------------------------------------
 
 /// Runs the checks on one unit; `refs_at` and `decls_at` are the type
-/// checker's tables of references and declarations by range.
+/// checker's tables of references and declarations by range, `elements`
+/// its names of record elements.
 pub(crate) fn check_unit(
     ctx: &Ctx,
     unit: UnitId,
@@ -172,6 +174,7 @@ pub(crate) fn check_unit(
     result: &UnitResult,
     refs_at: &FxHashMap<TextRange, usize>,
     decls_at: &FxHashMap<TextRange, DeclId>,
+    elements: &[ElementRef],
 ) -> Vec<Diagnostic> {
     let file = ctx.units[unit as usize].file;
     let mut checker = Checker {
@@ -181,6 +184,7 @@ pub(crate) fn check_unit(
         result,
         refs_at,
         decls_at,
+        elements,
         by_start: std::cell::OnceCell::new(),
         clocked: Vec::new(),
         reset_uses: Vec::new(),
@@ -203,6 +207,8 @@ struct Checker<'a> {
     refs_at: &'a FxHashMap<TextRange, usize>,
     /// This unit's declarations by name range.
     decls_at: &'a FxHashMap<TextRange, DeclId>,
+    /// The type checker's names of record elements.
+    elements: &'a [ElementRef],
     /// Reference indexes in source order, built when needed.
     by_start: std::cell::OnceCell<Vec<usize>>,
     /// Clocked processes without `wait`, with their clock.
@@ -633,6 +639,12 @@ impl<'a> Checker<'a> {
                 self.decl(id)
                     .is_some_and(|d| matches!(d.kind, DeclKind::Entity | DeclKind::Component))
             });
+        // Not a vendor primitive's stub, whose port widths depend on
+        // generics it may not declare.
+        let unit = unit.filter(|&u| {
+            self.decl(u)
+                .is_some_and(|d| !self.ctx.files[d.file as usize].builtin)
+        });
         let members = unit.and_then(|u| self.decl(u)?.members.clone());
         for aspect in node.children() {
             let ports = match aspect.kind() {
@@ -673,6 +685,9 @@ impl<'a> Checker<'a> {
             };
             match node.kind() {
                 SIGNAL_ASSIGN_STMT | VARIABLE_ASSIGN_STMT | SELECTED_ASSIGN_STMT => {
+                    if node.kind() == SELECTED_ASSIGN_STMT {
+                        self.case_choices(&node);
+                    }
                     self.assignment(&node);
                     events.skip_subtree();
                 }
@@ -685,7 +700,10 @@ impl<'a> Checker<'a> {
                     events.skip_subtree();
                 }
                 PROCESS_STMT => self.process(&node),
-                CASE_STMT => self.cases.push(node.clone()),
+                CASE_STMT => {
+                    self.case_choices(&node);
+                    self.cases.push(node.clone());
+                }
                 // Nothing checked inside expressions and the like.
                 ERROR | BINARY_EXPR | UNARY_EXPR | PAREN_EXPR | AGGREGATE | LITERAL | NAME
                 | SELECTED_NAME | CALL_EXPR | ATTRIBUTE_NAME | QUALIFIED_EXPR
