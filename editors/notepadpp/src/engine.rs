@@ -94,6 +94,9 @@ pub struct LintOutput {
     pub findings: Vec<Finding>,
     /// Problems with the configuration (unknown rules, bad options).
     pub config_errors: Vec<String>,
+    /// What to tell the user once, such as that Verilog support is in
+    /// progress.
+    pub notices: Vec<String>,
 }
 
 fn format_failure(err: FormatError) -> FormatFailure {
@@ -232,6 +235,7 @@ impl Engine {
         let mut output = LintOutput {
             findings: Vec::new(),
             config_errors: world.config_errors.clone(),
+            notices: world.notices.clone(),
         };
         // VHDL and Verilog files alike.
         if let Some(id) = world.any_file_id(&file_path) {
@@ -796,6 +800,15 @@ end architecture;
     fn verilog_buffers() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("top.sv");
+        // Names only by default: left alone.
+        let mut engine = Engine::default();
+        assert_eq!(
+            engine.format(Some(&path), "module top;assign a=b;endmodule\n"),
+            Ok(None)
+        );
+        let text = "module top;\n  assign a = ;\nendmodule\n";
+        assert!(engine.lint(Some(&path), text).findings.is_empty());
+        std::fs::write(dir.path().join("vfl.toml"), "[verilog]\nmode = \"full\"\n").unwrap();
         let mut engine = Engine::default();
         let out = engine
             .format(Some(&path), "module top;assign a=b;endmodule\n")
@@ -805,7 +818,9 @@ end architecture;
             Some("module top;\n  assign a = b;\nendmodule\n")
         );
         let text = "module top;\n  assign a = ;\nendmodule\n";
-        let findings = engine.lint(Some(&path), text).findings;
+        let output = engine.lint(Some(&path), text);
+        assert_eq!(output.notices, [vfl_config::VerilogConfig::IN_PROGRESS]);
+        let findings = output.findings;
         assert_eq!(findings.len(), 1, "{findings:?}");
         assert_eq!(findings[0].rule, "syntax/error");
         assert_eq!(&text[..findings[0].start].matches('\n').count(), &1);

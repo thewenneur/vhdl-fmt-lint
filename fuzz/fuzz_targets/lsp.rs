@@ -74,7 +74,7 @@ fn requests(world: &mut World, uri: &Url, at: Position) {
 fuzz_target!(|data: &[u8]| {
     let (mut files, script) = vfl_fuzz::split(data);
     let edits = vfl_fuzz::edits(script);
-    let mut world = World::detached();
+    let mut world = vfl_fuzz::world();
     for (i, file) in files.iter().enumerate() {
         world.set_text(file.path(i), file.text.clone());
     }
@@ -107,7 +107,7 @@ fuzz_target!(|data: &[u8]| {
         }
         return;
     }
-    let mut fresh = World::detached();
+    let mut fresh = vfl_fuzz::world();
     for (i, file) in files.iter().enumerate() {
         fresh.set_text(file.path(i), file.text.clone());
     }

@@ -11,7 +11,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
-use vfl_config::Config;
+use vfl_config::{Config, VerilogConfig, VerilogStandard};
 use vfl_fmt::FormatError;
 use vfl_lint::report::Format;
 use vfl_project::{
@@ -323,6 +323,41 @@ fn config_dir(path: &Path) -> &Path {
     }
 }
 
+/// What vfl does with a source file.
+#[derive(Clone, Copy)]
+enum Language {
+    Vhdl,
+    /// A Verilog or SystemVerilog file, with `[verilog]` `mode = "full"`.
+    Verilog(VerilogStandard),
+    /// A Verilog or SystemVerilog file vfl does not check, format or lint.
+    Skipped,
+}
+
+/// The language of the file at `path`, by its extension. The first Verilog
+/// file says, once, that Verilog support is in progress; the first skipped
+/// one, how to turn it on.
+fn language(config: &Config, path: &Path) -> Language {
+    static IN_PROGRESS: std::sync::Once = std::sync::Once::new();
+    static SKIPPED: std::sync::Once = std::sync::Once::new();
+    match verilog_standard(config, path) {
+        None => Language::Vhdl,
+        Some(standard) if config.verilog.full() => {
+            IN_PROGRESS.call_once(|| eprintln!("warning: {}", VerilogConfig::IN_PROGRESS));
+            Language::Verilog(standard)
+        }
+        Some(_) => {
+            SKIPPED.call_once(|| {
+                eprintln!(
+                    "note: skipping {} and other Verilog files; set `mode = \"full\"` under \
+                     [verilog] in vfl.toml to check, format and lint them",
+                    path.display()
+                )
+            });
+            Language::Skipped
+        }
+    }
+}
+
 /// Loads each directory's effective config once.
 #[derive(Default)]
 struct ConfigCache(HashMap<PathBuf, Config>);
@@ -345,20 +380,20 @@ fn check(paths: &[PathBuf], tree: bool) -> Result<()> {
     let mut configs = ConfigCache::default();
     for file in all_source_files(paths)? {
         let config = configs.for_file(&file)?;
+        let language = language(config, &file);
+        if let Language::Skipped = language {
+            continue;
+        }
         file_count += 1;
         let bytes = std::fs::read(&file).with_context(|| format!("reading {}", file.display()))?;
         let (text, _) = decode(bytes);
-        let verilog = file
-            .extension()
-            .and_then(|e| e.to_str())
-            .and_then(|e| config.verilog.standard_for_extension(e));
-        let (dump, errors) = match verilog {
-            Some(standard) => {
+        let (dump, errors) = match language {
+            Language::Verilog(standard) => {
                 let root = find_root(file.parent().unwrap_or(Path::new("."))).dir;
                 let parsed = parse_verilog(&file, &text, config, &root, standard);
                 (tree.then(|| parsed.debug_tree()), parsed.errors().to_vec())
             }
-            None => {
+            _ => {
                 let parsed = vfl_syntax::parse(&text, config.standard());
                 (tree.then(|| parsed.debug_tree()), parsed.errors().to_vec())
             }
@@ -425,14 +460,19 @@ fn parse_lines(arg: &str) -> Result<(usize, usize), String> {
 }
 
 /// Formats `text`, the text of `path`, or only `lines` of it when there
-/// are some.
+/// are some. A Verilog file is left as it is unless `[verilog]` `mode` is
+/// full.
 fn format_text(
     path: &Path,
     text: &str,
     config: &Config,
     lines: &[(usize, usize)],
 ) -> Result<String, FormatError> {
-    if let Some(standard) = verilog_standard(config, path) {
+    let language = language(config, path);
+    if let Language::Skipped = language {
+        return Ok(text.to_owned());
+    }
+    if let Language::Verilog(standard) = language {
         let root = find_root(path.parent().unwrap_or(Path::new("."))).dir;
         return with_verilog_options(path, config, &root, standard, |options| {
             if lines.is_empty() {
@@ -485,6 +525,9 @@ fn fmt(
     let mut failed = 0usize;
     for file in all_source_files(paths)? {
         let config = configs.for_file(&file)?;
+        if let Language::Skipped = language(config, &file) {
+            continue;
+        }
         let bytes = std::fs::read(&file).with_context(|| format!("reading {}", file.display()))?;
         let (text, encoding) = decode(bytes);
         match format_text(&file, &text, config, lines) {

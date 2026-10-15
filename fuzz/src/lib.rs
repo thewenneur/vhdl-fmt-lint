@@ -195,3 +195,11 @@ pub fn apply(text: &mut String, edit: &Edit) {
     let end = floor(text, start + edit.len).max(start);
     text.replace_range(start..end, &edit.text);
 }
+
+/// A language server world with no project, where every file has
+/// `[verilog]` `mode = "full"` so that Verilog files get every feature.
+pub fn world() -> vfl_lsp::World {
+    let mut config = Config::default();
+    config.verilog.mode = vfl_config::VerilogMode::Full;
+    vfl_lsp::World::detached_with(config, true)
+}
