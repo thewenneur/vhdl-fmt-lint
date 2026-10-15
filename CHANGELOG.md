@@ -117,6 +117,10 @@
 
 ### Fixed
 
+- Verilog: an empty position in an instance's connections (`sub u (a, , c)`) leaves its
+  input unconnected, which `verilog/unconnected-input` now reports, and the fix of
+  `style/positional-association` names it (`.b()`) instead of leaving an empty position
+  among named connections, which did not parse.
 - `vfl lint` run in `examples/` no longer mixes the configuration lessons with the UART
   design (15 errors from duplicate entities): each lesson of `examples/config` is a
   project of its own (`root = true`), and `examples/uart` is formatted with the default
