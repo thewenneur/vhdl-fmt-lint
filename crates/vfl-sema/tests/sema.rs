@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use vfl_project::{infer_libraries, summarize};
-use vfl_sema::{Analysis, FileInput};
+use vfl_sema::{Analysis, DriverChecks, FileInput, ResolvedDrivers};
 use vfl_syntax::{Standard, parse};
 
 fn split(text: &str) -> Vec<(String, String)> {
@@ -54,9 +54,17 @@ pub fn analyze(text: &str) -> String {
         )
         .unwrap();
     }
-    // On demand: with clocked processes.
+    // On demand: with clocked processes, and the driver checks.
     let branches: Vec<_> = (0..analysis.user_files().len() as u32)
-        .flat_map(|file| analysis.missing_branch_assignments(file, true).diagnostics)
+        .flat_map(|file| {
+            let mut found = analysis.missing_branch_assignments(file, true).diagnostics;
+            let checks = DriverChecks {
+                multiple: Some(ResolvedDrivers::Rtl),
+                loops: true,
+            };
+            found.extend(analysis.driver_checks(file, checks));
+            found
+        })
         .collect();
     for d in analysis.diagnostics().iter().chain(&branches) {
         let file = &analysis.files()[d.file as usize];

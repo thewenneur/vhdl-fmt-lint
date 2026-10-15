@@ -151,6 +151,22 @@ Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
     to it or to a same-type next-state object. Any other kind of assignment to these
     objects leaves the machine alone. States no transition reaches, and reachable states
     no transition leaves, are reported.
+  - Case choices (`sema/incomplete-case`, `sema/duplicate-choice`): the choices of a
+    `case` or selected assignment on an object of an enumeration, an integer subtype
+    with static bounds, or a character array of static width, as positions, integer
+    spans or array values. Missing spans and overlaps are found by sorting them; a
+    choice that is not static leaves the statement alone. The fix of a missing choice
+    is built with the finding, which only exists for the few statements reported.
+  - `sema/multiple-drivers` and `sema/combinational-loop` run on demand
+    (`Analysis::driver_checks`), only for files one of them is on for. They walk the
+    statements of each architecture (and its blocks and `for` generates) and read what
+    each writes and reads from the references already resolved, with the static part
+    of each name (`v(3)`, `v(7 downto 4)`, `r.f`). Drivers are grouped by signal; a
+    signal with several drivers whose parts overlap is reported. For loops, each
+    assignment of a combinational statement is a node, with an edge to the
+    assignments that read what it writes (values, indexes, and the conditions they
+    are under); the strongly connected components (Tarjan's algorithm) are the loops.
+    Both are linear in the references of the file.
 - Unknown things degrade to "unknown" instead of cascading errors: a library that is not in
   the project (vendor primitives such as `unisim`) makes its names unchecked and is reported
   once as info, and names that may come from it are not reported.
