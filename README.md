@@ -23,8 +23,9 @@ A fast, fully configurable VHDL formatter, linter and language server, in pure R
 - **Language server** for any LSP editor: diagnostics as you type, quick fixes, formatting,
   hover with types, signature help, completion, go to definition, references, rename across
   bodies and components, symbols, and semantic highlighting of names by what they resolve
-  to. Plugins for [VS Code](editors/vscode/README.md) and
-  [Notepad++](editors/notepadpp/README.md).
+  to. Plugins for [VS Code](editors/vscode/README.md),
+  [Notepad++](editors/notepadpp/README.md) and [Zed](editors/zed/README.md), and setup for
+  [Neovim, Vim, Emacs, Helix, Sublime Text, Kate and JetBrains IDEs](docs/editors.md).
 - **Code generation**: instantiations, component declarations and testbench skeletons from
   an entity, from the command line (`vfl new`) or the editor.
 - **Zero config**: the project root, sources and libraries are discovered from the code.
@@ -55,6 +56,8 @@ Documentation:
   its options.
 - [VS Code extension](editors/vscode/README.md) and [Notepad++ plugin](editors/notepadpp/README.md):
   features, commands and settings.
+- [Editor setup](docs/editors.md): Zed, Neovim, Vim, Emacs, Helix, Sublime Text, Kate,
+  JetBrains IDEs and any other LSP client.
 - [Benchmarks](docs/benchmarks.md) against rust_hdl, and the [design](docs/design.md) of the
   parser, the analysis and the project discovery.
 
@@ -102,12 +105,14 @@ unzip it into the `plugins` folder of its install directory (usually
 `C:\Program Files\Notepad++\plugins`, giving `plugins\vfl_npp\vfl_npp.dll`) and start it again.
 The plugin's README covers building it and its commands.
 
-### Other editors
+### Zed, Neovim, Vim, Emacs, Helix, Sublime Text, Kate, JetBrains and others
 
-Any editor with LSP support can use `vfl lsp` (over stdio) as the VHDL language server, and
-for Verilog and SystemVerilog files too.
-
-Neovim 0.11+:
+Any editor with LSP support can use `vfl lsp` (over stdio) as the language server for VHDL,
+Verilog and SystemVerilog files. [docs/editors.md](docs/editors.md) has the setup for each,
+with ready-made files in [editors/](editors): a [Zed extension](editors/zed/README.md), a
+Neovim config, an Emacs package for Eglot and lsp-mode, Vim plugin settings, Helix, Sublime
+Text and Kate settings, and an LSP4IJ template for JetBrains IDEs. For Neovim 0.11+, for
+instance:
 
 ```lua
 vim.lsp.config("vfl", {
@@ -116,22 +121,6 @@ vim.lsp.config("vfl", {
   root_markers = { "vfl.toml", ".git" },
 })
 vim.lsp.enable("vfl")
-```
-
-Helix (`languages.toml`):
-
-```toml
-[language-server.vfl]
-command = "vfl"
-args = ["lsp"]
-
-[[language]]
-name = "vhdl"
-language-servers = ["vfl"]
-
-[[language]]
-name = "verilog"
-language-servers = ["vfl"]
 ```
 
 ## Usage

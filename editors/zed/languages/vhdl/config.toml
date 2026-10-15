@@ -1,0 +1,10 @@
+name = "VHDL"
+grammar = "vhdl"
+path_suffixes = ["vhd", "vhdl", "vho", "vht"]
+line_comments = ["-- "]
+tab_size = 2
+brackets = [
+  { start = "(", end = ")", close = true, newline = true },
+  { start = "[", end = "]", close = true, newline = false },
+  { start = "\"", end = "\"", close = true, newline = false, not_in = ["string", "comment"] },
+]
