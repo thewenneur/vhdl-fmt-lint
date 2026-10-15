@@ -10,7 +10,7 @@
 //! subtype name, an attribute) is left alone, as is a matching `case?`.
 
 use rustc_hash::FxHashMap;
-use vfl_syntax::green_walk::ChildTokens;
+use vfl_syntax::green_walk::{ChildTokens, descendants_where};
 use vfl_syntax::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange, TextSize};
 
 use super::{Checker, static_int};
@@ -45,7 +45,7 @@ impl<'a> Checker<'a> {
     pub(super) fn case_choices(&mut self, node: &SyntaxNode) {
         use SyntaxKind::*;
         // `case?` and `select?` match don't-care values.
-        if node.has_child(|k| k == QUESTION) || node.descendants().any(|n| n.kind() == ERROR) {
+        if node.has_child(|k| k == QUESTION) {
             return;
         }
         let (selector, keyword) = match node.kind() {
@@ -79,6 +79,10 @@ impl<'a> Checker<'a> {
         let Some(domain) = self.selector_domain(&selector) else {
             return;
         };
+        // A syntax error may hide alternatives.
+        if !descendants_where(node, |k| k == ERROR).is_empty() {
+            return;
+        }
         // Every choice, in source order.
         let mut values: Vec<(Values, TextRange)> = Vec::new();
         let mut others = false;

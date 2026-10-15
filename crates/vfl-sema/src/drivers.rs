@@ -23,8 +23,10 @@
 //! reads and on those of the conditions it is under. Dependencies through
 //! variables and procedure calls are not followed.
 
+use std::cell::OnceCell;
+
 use rustc_hash::FxHashMap;
-use vfl_syntax::green_walk::{ChildTokens, for_each_token};
+use vfl_syntax::green_walk::{ChildTokens, descendants_where, for_each_token};
 use vfl_syntax::{SyntaxKind, SyntaxNode, SyntaxToken, TextRange};
 
 use crate::analysis::Analysis;
@@ -86,7 +88,11 @@ fn overlap(a: &[Step], b: &[Step]) -> bool {
 /// A signal a statement accesses, and which part.
 struct Named {
     signal: DeclId,
-    part: Vec<Step>,
+    /// The statement the name is in.
+    statement: SyntaxNode,
+    /// Worked out when needed: most signals have one driver and are not
+    /// read where they are written.
+    part: OnceCell<Vec<Step>>,
     /// The name's range.
     range: TextRange,
 }
@@ -136,7 +142,7 @@ impl Analysis {
             }) else {
                 continue;
             };
-            if body.descendants().any(|n| n.kind() == SyntaxKind::ERROR) {
+            if !descendants_where(&body, |k| k == SyntaxKind::ERROR).is_empty() {
                 continue;
             }
             let mut arch = Architecture {
@@ -240,69 +246,21 @@ impl<'a> Architecture<'a> {
                 let signal = self.signal_of(r)?;
                 Some(Named {
                     signal,
-                    part: self.part(node, r.range),
+                    statement: node.clone(),
+                    part: OnceCell::new(),
                     range: r.range,
                 })
             })
             .collect()
     }
 
-    /// The part of its signal that the name at `range` denotes, inside
-    /// `node`.
-    fn part(&self, node: &SyntaxNode, range: TextRange) -> Vec<Step> {
-        use SyntaxKind::*;
-        let token = match node.covering_element(range) {
-            rowan::NodeOrToken::Token(t) => t,
-            rowan::NodeOrToken::Node(n) => match n.first_token() {
-                Some(t) => t,
-                None => return Vec::new(),
-            },
-        };
-        let Some(mut name) = token.parent() else {
-            return Vec::new();
-        };
-        let mut part = Vec::new();
-        for _ in 0..MAX_DEPTH {
-            let Some(parent) = name.parent() else {
-                break;
-            };
-            // Only the prefix of an index, a slice or a selected name.
-            if parent.first_child().as_ref() != Some(&name) {
-                break;
-            }
-            match parent.kind() {
-                SELECTED_NAME => {
-                    let Some(field) = parent
-                        .children_with_tokens()
-                        .filter_map(|e| e.into_token())
-                        .filter(|t| matches!(t.kind(), IDENT | EXT_IDENT))
-                        .last()
-                    else {
-                        break;
-                    };
-                    part.push(Step::Field(key(&field)));
-                }
-                CALL_EXPR => {
-                    let Some(list) = parent.children().find(|n| n.kind() == ASSOCIATION_LIST)
-                    else {
-                        break;
-                    };
-                    let mut elements = list.children();
-                    let step = match (elements.next(), elements.next()) {
-                        (Some(element), None) => element
-                            .children()
-                            .next()
-                            .and_then(|index| self.index_step(&index))
-                            .unwrap_or(Step::Unknown),
-                        _ => Step::Unknown,
-                    };
-                    part.push(step);
-                }
-                _ => break,
-            }
-            name = parent;
-        }
-        part
+    /// The part of its signal that an access denotes.
+    fn part_of<'n>(&self, named: &'n Named) -> &'n [Step] {
+        named.part.get_or_init(|| {
+            part(&named.statement, named.range, |index| {
+                self.index_step(index)
+            })
+        })
     }
 
     /// The indexes an index or a discrete range denotes, when static.
@@ -381,7 +339,7 @@ impl<'a> Architecture<'a> {
                                 .writes
                                 .iter()
                                 .filter(|e| e.signal == signal)
-                                .find(|e| overlap(&e.part, &w.part))
+                                .find(|e| overlap(self.part_of(e), self.part_of(w)))
                                 .map(|e| (w.range, e.range))
                         })
                     });
@@ -610,7 +568,9 @@ impl<'a> Architecture<'a> {
                     continue;
                 };
                 for &i in list {
-                    if overlap(&assignments[i].write.part, &read.part) && !edges[i].contains(&j) {
+                    if overlap(self.part_of(&assignments[i].write), self.part_of(read))
+                        && !edges[i].contains(&j)
+                    {
                         edges[i].push(j);
                     }
                 }
@@ -659,6 +619,67 @@ impl<'a> Architecture<'a> {
     }
 }
 
+/// The part of its signal that the name at `range` of `statement`
+/// denotes, with `index_step` for the steps of an index or a slice.
+fn part(
+    statement: &SyntaxNode,
+    range: TextRange,
+    index_step: impl Fn(&SyntaxNode) -> Option<Step>,
+) -> Vec<Step> {
+    use SyntaxKind::*;
+    let token = match statement.covering_element(range) {
+        rowan::NodeOrToken::Token(t) => t,
+        rowan::NodeOrToken::Node(n) => match n.first_token() {
+            Some(t) => t,
+            None => return Vec::new(),
+        },
+    };
+    let Some(mut name) = token.parent() else {
+        return Vec::new();
+    };
+    let mut part = Vec::new();
+    for _ in 0..MAX_DEPTH {
+        let Some(parent) = name.parent() else {
+            break;
+        };
+        // Only the prefix of an index, a slice or a selected name.
+        if parent.first_child().as_ref() != Some(&name) {
+            break;
+        }
+        match parent.kind() {
+            SELECTED_NAME => {
+                let Some(field) = parent
+                    .children_with_tokens()
+                    .filter_map(|e| e.into_token())
+                    .filter(|t| matches!(t.kind(), IDENT | EXT_IDENT))
+                    .last()
+                else {
+                    break;
+                };
+                part.push(Step::Field(key(&field)));
+            }
+            CALL_EXPR => {
+                let Some(list) = parent.children().find(|n| n.kind() == ASSOCIATION_LIST) else {
+                    break;
+                };
+                let mut elements = list.children();
+                let step = match (elements.next(), elements.next()) {
+                    (Some(element), None) => element
+                        .children()
+                        .next()
+                        .and_then(|index| index_step(&index))
+                        .unwrap_or(Step::Unknown),
+                    _ => Step::Unknown,
+                };
+                part.push(step);
+            }
+            _ => break,
+        }
+        name = parent;
+    }
+    part
+}
+
 /// The lookup key of an identifier.
 fn key(token: &SyntaxToken) -> String {
     if token.kind() == SyntaxKind::EXT_IDENT {
@@ -704,44 +725,48 @@ fn tri_state(node: &SyntaxNode) -> bool {
     z
 }
 
-/// Whether a concurrent assignment is combinational: no clock edge and no
-/// delay (`clk <= not clk after 5 ns` is a clock generator).
-fn combinational(node: &SyntaxNode) -> bool {
+/// Whether a statement has neither a clock edge nor a delay, and its
+/// number of `wait` statements, in one pass over its tokens.
+fn timing(node: &SyntaxNode) -> (bool, u32) {
     let mut previous = SyntaxKind::ERROR;
     let mut combinational = true;
+    let mut waits = 0;
     for_each_token(node, |kind, _, text| {
         use SyntaxKind::*;
-        if kind.is_trivia() {
-            return;
-        }
-        if kind == AFTER_KW
-            || (kind == IDENT
-                && (text.eq_ignore_ascii_case("rising_edge")
+        match kind {
+            k if k.is_trivia() => return,
+            WAIT_KW => waits += 1,
+            AFTER_KW => combinational = false,
+            IDENT
+                if text.eq_ignore_ascii_case("rising_edge")
                     || text.eq_ignore_ascii_case("falling_edge")
                     || (previous == TICK
                         && (text.eq_ignore_ascii_case("event")
-                            || text.eq_ignore_ascii_case("stable")))))
-        {
-            combinational = false;
+                            || text.eq_ignore_ascii_case("stable"))) =>
+            {
+                combinational = false
+            }
+            _ => {}
         }
         previous = kind;
     });
-    combinational
+    (combinational, waits)
+}
+
+/// Whether a concurrent assignment is combinational: no clock edge and no
+/// delay (`clk <= not clk after 5 ns` is a clock generator).
+fn combinational(node: &SyntaxNode) -> bool {
+    timing(node).0
 }
 
 /// Whether a process is combinational: a sensitivity list and no `wait`,
 /// or one trailing `wait on`; no clock edge, no delay.
 fn combinational_process(process: &SyntaxNode) -> bool {
     use SyntaxKind::*;
-    if !combinational(process) {
+    let (combinational, waits) = timing(process);
+    if !combinational {
         return false;
     }
-    let mut waits = 0;
-    for_each_token(process, |kind, _, _| {
-        if kind == WAIT_KW {
-            waits += 1;
-        }
-    });
     if process.children().any(|n| n.kind() == SENSITIVITY_LIST) {
         return waits == 0;
     }
