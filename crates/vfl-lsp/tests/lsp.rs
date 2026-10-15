@@ -1509,3 +1509,338 @@ fn quick_fixes_add_missing_case_alternatives() {
             .contains("      when '0' => q <= '1';\n      when others => null;\n    end case;")
     );
 }
+
+const NAV_PKG: &str = "\
+package util is
+  type pair is record
+    lo : bit;
+  end record pair;
+  function f(a : integer; b : bit) return integer;
+  procedure p(x : integer);
+end package util;
+package body util is
+  function f(a : integer; b : bit) return integer is
+  begin
+    return a;
+  end function f;
+  procedure p(x : integer) is
+    variable v : integer;
+  begin
+    v := f(x, '1');
+  end procedure p;
+end package body util;
+";
+
+const NAV_SUB: &str = "\
+entity sub is
+  generic (w : natural := 1);
+  port (i : in bit; o : out bit);
+end entity sub;
+architecture rtl of sub is
+begin
+  o <= i;
+end architecture rtl;
+";
+
+const NAV_TOP: &str = "\
+use work.util.all;
+entity top is
+end entity top;
+architecture rtl of top is
+  component sub is
+    generic (w : natural := 1);
+    port (i : in bit; o : out bit);
+  end component;
+  signal i, t : bit;
+  signal n : integer;
+  signal r : pair;
+begin
+  u1: entity work.sub generic map (2) port map (i, t);
+  u2: sub port map (i => i, o => t);
+  main: process
+  begin
+    n <= f(1, '0');
+    p(n);
+    wait;
+  end process main;
+end architecture rtl;
+";
+
+fn nav_setup(config: &str, options: Value) -> (tempfile::TempDir, Client, [String; 3]) {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("vfl.toml"), config).unwrap();
+    std::fs::write(dir.path().join("util.vhd"), NAV_PKG).unwrap();
+    std::fs::write(dir.path().join("sub.vhd"), NAV_SUB).unwrap();
+    std::fs::write(dir.path().join("top.vhd"), NAV_TOP).unwrap();
+    let client = Client::start_with(dir.path(), options);
+    let uris = ["util.vhd", "sub.vhd", "top.vhd"].map(|f| url(&dir.path().join(f)));
+    (dir, client, uris)
+}
+
+fn hints(client: &mut Client, uri: &str, lines: std::ops::Range<u32>) -> Vec<(u32, u32, String)> {
+    let result = client.request(
+        "textDocument/inlayHint",
+        json!({
+            "textDocument": { "uri": uri },
+            "range": {
+                "start": { "line": lines.start, "character": 0 },
+                "end": { "line": lines.end, "character": 0 },
+            },
+        }),
+    );
+    result
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| {
+            (
+                h["position"]["line"].as_u64().unwrap() as u32,
+                h["position"]["character"].as_u64().unwrap() as u32,
+                h["label"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect()
+}
+
+fn hint_labels(client: &mut Client, uri: &str, lines: std::ops::Range<u32>) -> Vec<String> {
+    hints(client, uri, lines)
+        .into_iter()
+        .map(|(_, _, l)| l)
+        .collect()
+}
+
+#[test]
+fn inlay_hints_name_positional_formals() {
+    let (_dir, mut client, [util, _, top]) = nav_setup("", Value::Null);
+    let all = hints(&mut client, &top, 0..30);
+    let labels: Vec<&str> = all.iter().map(|(_, _, l)| l.as_str()).collect();
+    // `i` is already the port's name; named associations need no hint.
+    assert_eq!(labels, ["w:", "o:", "a:", "b:", "x:"], "{all:?}");
+    assert_eq!(all[0], (12, 35, "w:".into()));
+    // Only the lines asked for.
+    let line = hints(&mut client, &top, 16..17);
+    assert_eq!(line, [(16, 11, "a:".into()), (16, 14, "b:".into())]);
+    let body = hints(&mut client, &util, 15..16);
+    assert_eq!(body, [(15, 11, "a:".into()), (15, 14, "b:".into())]);
+
+    // The project turns some off and port types on.
+    let (_dir, mut client, [_, _, top]) = nav_setup(
+        "[lsp.inlay_hints]\nparameters = false\nport_types = true\n",
+        Value::Null,
+    );
+    assert_eq!(
+        hint_labels(&mut client, &top, 12..14),
+        ["w:", ": in bit", "o:", ": out bit", ": in bit", ": out bit"]
+    );
+    assert!(hints(&mut client, &top, 16..18).is_empty());
+
+    // The editor's settings win over the project's.
+    let (_dir, mut client, [_, _, top]) = nav_setup(
+        "[lsp.inlay_hints]\nparameters = false\n",
+        json!({ "inlayHints": { "parameters": true, "ports": false, "generics": false } }),
+    );
+    assert_eq!(hint_labels(&mut client, &top, 0..30), ["a:", "b:", "x:"]);
+    client.notify(
+        "workspace/didChangeConfiguration",
+        json!({ "settings": { "inlayHints": { "parameters": false } } }),
+    );
+    assert_eq!(hint_labels(&mut client, &top, 0..30), ["w:", "o:"]);
+}
+
+/// File name, line and character of each location.
+fn targets(result: &Value) -> Vec<(String, u64, u64)> {
+    result
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|l| {
+                    let uri = l["uri"].as_str().unwrap();
+                    (
+                        uri.rsplit('/').next().unwrap().to_owned(),
+                        l["range"]["start"]["line"].as_u64().unwrap(),
+                        l["range"]["start"]["character"].as_u64().unwrap(),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn implementation_declaration_and_type_definition() {
+    let (_dir, mut client, [util, sub, top]) = nav_setup("", Value::Null);
+    let to = |file: &str, line, character| vec![(file.to_owned(), line, character)];
+    let mut go = |method: &str, position: Value| targets(&client.request(method, position));
+    // Entity to architecture, from its declaration and from an instance.
+    let implementation = "textDocument/implementation";
+    assert_eq!(go(implementation, at(&sub, 0, 8)), to("sub.vhd", 4, 13));
+    let instance = find(&top, NAV_TOP, "work.sub", 0, 6);
+    assert_eq!(go(implementation, instance), to("sub.vhd", 4, 13));
+    // Component to entity.
+    assert_eq!(go(implementation, at(&top, 13, 7)), to("sub.vhd", 0, 7));
+    // Package to body, subprogram to body.
+    assert_eq!(go(implementation, at(&top, 0, 10)), to("util.vhd", 7, 13));
+    assert_eq!(go(implementation, at(&top, 16, 9)), to("util.vhd", 8, 11));
+
+    // Body to declaration; architecture to entity.
+    let declaration = "textDocument/declaration";
+    assert_eq!(go(declaration, at(&util, 12, 12)), to("util.vhd", 5, 12));
+    assert_eq!(go(declaration, at(&sub, 4, 14)), to("sub.vhd", 0, 7));
+
+    // An object to its type; a record element to its type.
+    let type_definition = "textDocument/typeDefinition";
+    assert_eq!(go(type_definition, at(&top, 10, 9)), to("util.vhd", 1, 7));
+    let element = go(type_definition, at(&util, 2, 4));
+    assert!(element[0].0.ends_with("standard.vhd"), "{element:?}");
+}
+
+fn linked(client: &mut Client, uri: &str, line: u32, character: u32) -> Vec<(u64, u64)> {
+    let r = client.request("textDocument/linkedEditingRange", at(uri, line, character));
+    r["ranges"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|r| {
+                    let start = &r["start"];
+                    (
+                        start["line"].as_u64().unwrap(),
+                        start["character"].as_u64().unwrap(),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn linked_editing_and_selection_ranges() {
+    let (_dir, mut client, [util, sub, top]) = nav_setup("", Value::Null);
+    // A label, from either end.
+    assert_eq!(linked(&mut client, &top, 14, 3), [(14, 2), (19, 14)]);
+    assert_eq!(linked(&mut client, &top, 19, 15), [(14, 2), (19, 14)]);
+    // Units, subprogram bodies, record types.
+    assert_eq!(linked(&mut client, &sub, 0, 8), [(0, 7), (3, 11)]);
+    assert_eq!(linked(&mut client, &sub, 4, 13), [(4, 13), (7, 17)]);
+    assert_eq!(linked(&mut client, &util, 12, 13), [(12, 12), (16, 16)]);
+    assert_eq!(linked(&mut client, &util, 1, 8), [(1, 7), (3, 13)]);
+    // Not a name with an `end` name.
+    assert!(linked(&mut client, &top, 8, 9).is_empty());
+    assert!(linked(&mut client, &sub, 4, 21).is_empty());
+
+    let result = client.request(
+        "textDocument/selectionRange",
+        json!({
+            "textDocument": { "uri": top },
+            "positions": [{ "line": 16, "character": 11 }],
+        }),
+    );
+    let mut chain = Vec::new();
+    let mut node = &result[0];
+    while !node.is_null() {
+        let r = &node["range"];
+        chain.push((
+            r["start"]["line"].as_u64().unwrap(),
+            r["start"]["character"].as_u64().unwrap(),
+            r["end"]["line"].as_u64().unwrap(),
+            r["end"]["character"].as_u64().unwrap(),
+        ));
+        node = &node["parent"];
+    }
+    // `1`, then the call, the assignment, the process, the architecture.
+    assert_eq!(chain[0], (16, 11, 16, 12));
+    for wanted in [
+        (16, 9, 16, 18),
+        (16, 4, 16, 19),
+        (14, 2, 19, 19),
+        (3, 0, 20, 21),
+    ] {
+        assert!(chain.contains(&wanted), "{wanted:?} not in {chain:?}");
+    }
+    for pair in chain.windows(2) {
+        assert!(pair[0] != pair[1], "{chain:?}");
+    }
+}
+
+#[test]
+fn code_lenses_count_instances() {
+    let (_dir, mut client, [_, sub, top]) = nav_setup("", Value::Null);
+    let document = |uri: &str| json!({ "textDocument": { "uri": uri } });
+    let lenses = client.request("textDocument/codeLens", document(&sub));
+    let lenses = lenses.as_array().unwrap();
+    assert_eq!(lenses.len(), 1);
+    assert!(lenses[0].get("command").is_none());
+    let resolved = client.request("codeLens/resolve", lenses[0].clone());
+    // One entity instantiation, one through the component named after it.
+    assert_eq!(resolved["command"]["title"], "2 instances");
+    assert_eq!(resolved["command"]["command"], vfl_lsp::SHOW_REFERENCES);
+    let arguments = &resolved["command"]["arguments"];
+    assert_eq!(arguments[0], sub);
+    assert_eq!(arguments[1], json!({ "line": 0, "character": 7 }));
+    assert_eq!(
+        targets(&arguments[2]),
+        [
+            ("top.vhd".to_owned(), 12, 18),
+            ("top.vhd".to_owned(), 13, 6)
+        ]
+    );
+
+    let lenses = client.request("textDocument/codeLens", document(&top));
+    let mut titles = Vec::new();
+    for lens in lenses.as_array().unwrap() {
+        let resolved = client.request("codeLens/resolve", lens.clone());
+        titles.push(resolved["command"]["title"].as_str().unwrap().to_owned());
+    }
+    // `top`, then the component.
+    assert_eq!(titles, ["0 instances", "1 instance"]);
+}
+
+/// The name of the `key` item of each call, and how many ranges it has.
+fn calls(calls: &Value, key: &str) -> Vec<(String, usize)> {
+    calls
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            (
+                c[key]["name"].as_str().unwrap().to_owned(),
+                c["fromRanges"].as_array().unwrap().len(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn call_hierarchy_of_subprograms_and_instances() {
+    let (_dir, mut client, [util, sub, top]) = nav_setup("", Value::Null);
+
+    // `f`, from a call: the item is its body.
+    let items = client.request("textDocument/prepareCallHierarchy", at(&top, 16, 9));
+    assert_eq!(items[0]["name"], "f");
+    assert_eq!(items[0]["uri"], util);
+    let selection = &items[0]["selectionRange"]["start"];
+    assert_eq!(*selection, json!({ "line": 8, "character": 11 }));
+    let incoming = client.request("callHierarchy/incomingCalls", json!({ "item": items[0] }));
+    // By file: top.vhd, then util.vhd.
+    assert_eq!(
+        calls(&incoming, "from"),
+        [("main".into(), 1), ("p".into(), 1)]
+    );
+    // What `p` calls, and what the process calls.
+    let p = json!({ "item": incoming[1]["from"] });
+    let outgoing = client.request("callHierarchy/outgoingCalls", p);
+    assert_eq!(calls(&outgoing, "to"), [("f".into(), 1)]);
+    let main = json!({ "item": incoming[0]["from"] });
+    let outgoing = client.request("callHierarchy/outgoingCalls", main);
+    assert_eq!(calls(&outgoing, "to"), [("f".into(), 1), ("p".into(), 1)]);
+
+    // The instance tree: `top` instantiates `sub` twice.
+    let items = client.request("textDocument/prepareCallHierarchy", at(&sub, 0, 8));
+    assert_eq!(items[0]["name"], "sub");
+    assert_eq!(items[0]["detail"], "architecture rtl");
+    let incoming = client.request("callHierarchy/incomingCalls", json!({ "item": items[0] }));
+    assert_eq!(calls(&incoming, "from"), [("top".into(), 2)]);
+    let from = json!({ "item": incoming[0]["from"] });
+    let outgoing = client.request("callHierarchy/outgoingCalls", from);
+    assert_eq!(calls(&outgoing, "to"), [("sub".into(), 2)]);
+    assert_eq!(outgoing[0]["to"]["uri"], sub);
+}

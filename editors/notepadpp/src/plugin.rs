@@ -87,6 +87,11 @@ const MENU: &[(&str, Option<extern "C" fn()>)] = &[
         "Generate project config (vfl.toml)",
         Some(cmd_generate_config),
     ),
+    ("", None),
+    ("Go to implementation", Some(cmd_implementation)),
+    ("Go to type definition", Some(cmd_type_definition)),
+    ("Show call hierarchy", Some(cmd_call_hierarchy)),
+    ("Expand selection", Some(cmd_expand_selection)),
 ];
 
 // The entries are those of `menu::NAMES`, in its order, which keeps the
@@ -808,6 +813,22 @@ extern "C" fn cmd_generate_docs() {
 
 extern "C" fn cmd_generate_config() {
     guard(tools::generate_config);
+}
+
+extern "C" fn cmd_implementation() {
+    guard(tools::go_to_implementation);
+}
+
+extern "C" fn cmd_type_definition() {
+    guard(tools::go_to_type_definition);
+}
+
+extern "C" fn cmd_call_hierarchy() {
+    guard(tools::call_hierarchy);
+}
+
+extern "C" fn cmd_expand_selection() {
+    guard(tools::expand_selection);
 }
 
 extern "C" fn cmd_lint_preset() {

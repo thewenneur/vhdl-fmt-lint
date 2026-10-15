@@ -48,6 +48,11 @@ are ready, and are dropped if the file changed in the meantime.
   the file with a `-- vfl-ignore` comment. **Fix all problems** applies every safe fix in
   the file.
 - **Go to definition**, also into the bundled `ieee` and `std` sources, and **Go back**.
+  **Go to implementation** (an entity's architectures, a component's entity, a package's or
+  subprogram's body) and **Go to type definition**.
+- **Show call hierarchy** lists the callers and callees of a subprogram, or the
+  architectures that instantiate an entity and what it instantiates. **Expand selection**
+  grows the selection to the enclosing name, expression, statement or declaration.
 - **Find references** lists every use of a name across the project; choosing one opens it.
   **Highlight uses** marks the uses of the name at the caret in the file, reads and writes in
   two colors.
@@ -95,10 +100,10 @@ commands when the plugin is upgraded.
 | Fix problem at caret | Lists the fixes for the problems at the caret (or in the selection), and comments that silence their rules; a single safe fix is applied directly. |
 | Fix all problems | Applies every fix that can be applied safely to the current file, as one undo step. |
 | Clear problems | Removes the underlines and messages from the current file. |
-| Go to definition | Opens the declaration of the name at the caret. Library units such as `ieee.std_logic_1164` open as read-only copies of the bundled sources. |
+| Go to definition | Opens the declaration of the name at the caret; on the name of a body (a subprogram's, a package's), what it completes. Library units such as `ieee.std_logic_1164` open as read-only copies of the bundled sources. |
 | Go back | Returns to where Go to definition, Find references or a symbol list jumped from. |
 | Find references | Lists every use of the name at the caret, in the whole project. |
-| Rename symbol | Asks for a new name and renames the name at the caret everywhere. Files that change on disk since they were analyzed are skipped. |
+| Rename symbol | Asks for a new name and renames the name at the caret everywhere, the `end` names that repeat it included. Files that change on disk since they were analyzed are skipped. |
 | Go to symbol in file | Lists the declarations of the current file. |
 | Fold code | Notepad++ folds VHDL and Verilog itself, from the fold margin or the **View** menu; the language server's folding is for editors that have none. |
 | Go to symbol in project | Searches the declarations of the project by name, starting from the word at the caret. |
@@ -108,7 +113,7 @@ commands when the plugin is upgraded.
 | Generate project config (vfl.toml) | Writes the settings in effect at the root of the current file's project to its `vfl.toml`, and opens it. Keys at their default value are written as comments, to uncomment and change: the lint preset and format style below when the project has no `vfl.toml`. It asks before replacing one. |
 | Show diagrams | Writes the HTML documentation of the current file's project to a temporary folder (`%TEMP%\vfl_npp\diagrams`) and opens the page of the first entity (else package) of the file in the default browser. |
 | Show type | Shows what the name at the caret is, as hovering it does. |
-| Show parameters | Shows the parameter hints of the call around the caret. |
+| Show parameters | Shows the parameter hints of the call around the caret. Notepad++ cannot show the formal names inline as other editors do (inlay hints); this shows them for one call or map. |
 | Complete word | Lists the completions at the caret. Notepad++ keeps **Ctrl+Space** for its own completion, so map this to another key if you use it often. |
 | Format on type | Formats the line of a `;` just typed, or the line above a new line (off by default). `on_type = false` under `[format]` in `vfl.toml` turns it off for a project. |
 | Format on save | Formats VHDL and Verilog files when they are saved (off by default). With **Save All**, only the file in front is formatted. |
@@ -120,6 +125,10 @@ commands when the plugin is upgraded.
 | Lint preset without vfl.toml... | Lists the lint presets (`none`, `recommended`, `strict`) for files no `vfl.toml` applies to; `recommended` by default. A `vfl.toml` replaces it, so that a project is linted the same for everyone. |
 | Format style without vfl.toml... | Lists the format styles (`default`, `leading-comma`, `compact`, `classic`) for files no `vfl.toml` applies to; `default` by default. A `vfl.toml` replaces it too. |
 | Reload project | Re-reads the whole project from disk. Changed files are normally picked up by themselves, so this is rarely needed. |
+| Go to implementation | Opens the architectures of the entity at the caret, the entity a component binds to, the body of a package, or the body of a subprogram; lists them when there are several. |
+| Go to type definition | Opens the declaration of the type of the object, port, record element or function at the caret. |
+| Show call hierarchy | For a subprogram at the caret, lists what calls it (subprograms and processes) and what it calls. For an entity, component or architecture, lists the architectures that instantiate it, with how many times, and what it instantiates. Choosing one opens the call or instance. |
+| Expand selection | Grows the selection to the name, expression, statement, declaration or unit around it; repeat to grow it further. |
 
 The settings are kept in `plugins\Config\vfl_npp.ini`. Problems in `vfl.toml` are
 shown in a message box, once per problem.

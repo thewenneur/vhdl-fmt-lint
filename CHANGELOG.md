@@ -35,6 +35,22 @@
   changed lines.
 - **`vfl lint --fix-only RULES`** applies the fixes of some rules or categories only.
 - **`vfl rules --explain RULE`** prints a rule's levels and full description.
+- **Inlay hints** in the language server: the port, generic or parameter name before each
+  positional actual of a port map, generic map or subprogram call, and optionally the
+  mode and type of each port map actual. Only the range on screen is worked out, from the
+  existing analysis. Each kind can be turned on or off under `[lsp.inlay_hints]` in
+  `vfl.toml`, and per user from the editor (`inlayHints` in the initialization options;
+  `vfl.inlayHints.*` in VS Code).
+- **Go to implementation** (entity to architectures, component to entity, package and
+  subprogram to body), **go to type definition** and **go to declaration** (body to what it
+  completes) in the language server; **Go to implementation** and **Go to type
+  definition** in Notepad++.
+- **Linked editing** of a name and its `end` name, and **selection ranges** (VS Code's
+  expand selection; **Expand selection** in Notepad++).
+- **Call hierarchy** for subprograms (callers and callees) and for the instance tree
+  (which architectures instantiate an entity, what an architecture instantiates), and an
+  **"N instances" code lens** on entities and components, counted only when shown and
+  listing the instances when clicked in VS Code; **Show call hierarchy** in Notepad++.
 
 ## [0.7.0] - 2026-10-15
 

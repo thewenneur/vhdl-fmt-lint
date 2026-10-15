@@ -383,6 +383,30 @@
           "scope": "resource",
           "markdownDescription": "Format the line you just finished as you type: the line of a `;`, or the line above a new line. A project can turn it off for everyone with `on_type = false` under `[format]` in `vfl.toml`."
         },
+        "vfl.inlayHints.ports": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "markdownDescription": "Show the port name before each positional actual of a port map. Unless set here, `ports` under `[lsp.inlay_hints]` in `vfl.toml` decides. `#editor.inlayHints.enabled#` turns every inlay hint off."
+        },
+        "vfl.inlayHints.generics": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "markdownDescription": "Show the generic name before each positional actual of a generic map. Unless set here, `generics` under `[lsp.inlay_hints]` in `vfl.toml` decides."
+        },
+        "vfl.inlayHints.parameters": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "markdownDescription": "Show the parameter name before each positional argument of a function or procedure call. Unless set here, `parameters` under `[lsp.inlay_hints]` in `vfl.toml` decides."
+        },
+        "vfl.inlayHints.portTypes": {
+          "type": "boolean",
+          "default": false,
+          "scope": "window",
+          "markdownDescription": "Show the mode and type of the port after each actual of a port map. Unless set here, `port_types` under `[lsp.inlay_hints]` in `vfl.toml` decides."
+        },
         "vfl.trace.server": {
           "type": "string",
           "enum": [

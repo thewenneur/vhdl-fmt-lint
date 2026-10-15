@@ -22,9 +22,11 @@ A fast, fully configurable VHDL formatter, linter and language server, in pure R
   editor title bar, showing the current file's entity in a view beside it); in Notepad++,
   **Generate documentation** and **Show diagrams** in the plugin's menu.
 - **Language server** for any LSP editor: diagnostics as you type, quick fixes, formatting,
-  hover with types, signature help, completion, go to definition, references, rename across
-  bodies and components, symbols, and semantic highlighting of names by what they resolve
-  to. Plugins for [VS Code](editors/vscode/README.md),
+  hover with types, signature help, completion, go to definition, implementation and type
+  definition, references, rename across bodies and components, symbols, inlay hints with
+  the formal names of positional maps and calls, call hierarchy and instance tree, "N
+  instances" code lenses, linked editing of `end` names, and semantic highlighting of names
+  by what they resolve to. Plugins for [VS Code](editors/vscode/README.md),
   [Notepad++](editors/notepadpp/README.md) and [Zed](editors/zed/README.md), and setup for
   [Neovim, Vim, Emacs, Helix, Sublime Text, Kate and JetBrains IDEs](docs/editors.md).
 - **Code generation**: instantiations, component declarations and testbench skeletons from
