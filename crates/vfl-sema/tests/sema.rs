@@ -31,7 +31,7 @@ pub fn analyze(text: &str) -> String {
         .collect();
     let paths: Vec<PathBuf> = files.iter().map(|(p, _)| PathBuf::from(p)).collect();
     let summaries: Vec<_> = parses.iter().map(|p| summarize(&p.syntax())).collect();
-    let inference = infer_libraries(&paths, &summaries, &vec![None; files.len()]);
+    let inference = infer_libraries(&paths, &summaries, &vec![None; files.len()], &[]);
     let inputs: Vec<FileInput> = files
         .iter()
         .zip(&parses)

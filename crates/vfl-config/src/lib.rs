@@ -91,6 +91,9 @@ pub struct ProjectConfig {
     /// Explicit library assignments: library name to file globs. These
     /// override library inference and are only needed when it guesses wrong.
     pub libraries: BTreeMap<String, Vec<String>>,
+    /// How rust_hdl's `vhdl_ls.toml` library lists are used.
+    #[serde(rename = "vhdl-ls")]
+    pub vhdl_ls: VhdlLsMode,
 }
 
 impl Default for ProjectConfig {
@@ -100,8 +103,23 @@ impl Default for ProjectConfig {
             extensions: vec!["vhd".into(), "vhdl".into()],
             exclude: Vec::new(),
             libraries: BTreeMap::new(),
+            vhdl_ls: VhdlLsMode::default(),
         }
     }
+}
+
+/// The `[project]` `vhdl-ls` key: how a `vhdl_ls.toml` in the project root
+/// takes part in placing files in libraries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VhdlLsMode {
+    /// Only for the files library inference places nowhere.
+    #[default]
+    Fallback,
+    /// Over inference, as `[project.libraries]` entries are.
+    Prefer,
+    /// Not read.
+    Off,
 }
 
 /// The `standard` key, spelled as in config files.

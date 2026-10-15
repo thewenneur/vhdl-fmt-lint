@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use rayon::prelude::*;
-use vfl_config::Config;
+use vfl_config::{Config, VhdlLsMode};
 use vfl_syntax::{Parse, Standard};
 
 use crate::explicit::{LibraryGlobs, VHDL_LS_FILES, path_to_slash, vhdl_ls_libraries};
@@ -109,6 +109,8 @@ pub struct Project {
 /// them, with when each file they come from was last modified.
 pub struct LibrarySources {
     globs: Vec<LibraryGlobs>,
+    /// Lists that only place the files inference places nowhere.
+    fallback: Vec<LibraryGlobs>,
     stamps: Vec<(PathBuf, Option<SystemTime>)>,
 }
 
@@ -224,10 +226,12 @@ impl Project {
     }
 
     /// Reads the library lists that assign files to libraries: the
-    /// config's, `vhdl_ls.toml` and those of tool files.
+    /// config's, those of tool files and `vhdl_ls.toml` (a fallback unless
+    /// `[project]` `vhdl-ls` says otherwise).
     pub fn library_sources(&self) -> Result<LibrarySources, LoadError> {
         let root = self.root.dir.clone();
         let mut globs = Vec::new();
+        let mut fallback = Vec::new();
         if !self.config.project.libraries.is_empty() {
             let source = vfl_config::find_config(&root)
                 .map(|p| p.display().to_string())
@@ -240,13 +244,21 @@ impl Project {
                     })?,
             );
         }
-        if let Some((path, libraries)) = vhdl_ls_libraries(&root) {
+        let vhdl_ls = match self.config.project.vhdl_ls {
+            VhdlLsMode::Off => None,
+            VhdlLsMode::Fallback | VhdlLsMode::Prefer => vhdl_ls_libraries(&root),
+        }
+        .and_then(|(path, libraries)| {
             let source = path.display().to_string();
             let base = path.parent().unwrap_or(&root).to_owned();
             // A broken vhdl_ls.toml is not ours to reject; skip it.
-            if let Ok(g) = LibraryGlobs::new(source, &base, &root, &libraries) {
-                globs.push(g);
-            }
+            LibraryGlobs::new(source, &base, &root, &libraries).ok()
+        });
+        // Preferred, it ranks below the config and above tool files.
+        if self.config.project.vhdl_ls == VhdlLsMode::Prefer {
+            globs.extend(vhdl_ls);
+        } else {
+            fallback.extend(vhdl_ls);
         }
         for (path, libraries) in crate::import::import_all(&self.tool_files) {
             let source = path.display().to_string();
@@ -264,7 +276,11 @@ impl Project {
                 (path, time)
             })
             .collect();
-        Ok(LibrarySources { globs, stamps })
+        Ok(LibrarySources {
+            globs,
+            fallback,
+            stamps,
+        })
     }
 
     /// Computes every file's libraries from `sources` and what the files
@@ -278,16 +294,25 @@ impl Project {
             .map(|f| f.path.clone())
             .chain(self.verilog.iter().map(|f| f.path.clone()))
             .collect();
-        let explicit: Vec<Option<Vec<(String, Reason)>>> = paths
+        let relative: Vec<String> = paths
             .iter()
             .map(|path| {
-                let relative = path
-                    .strip_prefix(root)
+                path.strip_prefix(root)
                     .map(path_to_slash)
-                    .unwrap_or_else(|_| path_to_slash(path));
-                sources.globs.iter().find_map(|s| s.assign(&relative))
+                    .unwrap_or_else(|_| path_to_slash(path))
             })
             .collect();
+        let assign = |lists: &[LibraryGlobs]| -> Vec<Option<Vec<(String, Reason)>>> {
+            if lists.is_empty() {
+                return vec![None; relative.len()];
+            }
+            relative
+                .iter()
+                .map(|r| lists.iter().find_map(|s| s.assign(r)))
+                .collect()
+        };
+        let explicit = assign(&sources.globs);
+        let fallback = assign(&sources.fallback);
         let summaries: Vec<FileSummary> = self
             .files
             .iter()
@@ -297,7 +322,7 @@ impl Project {
         let Inference {
             mut libraries,
             notes,
-        } = infer_libraries(&paths, &summaries, &explicit);
+        } = infer_libraries(&paths, &summaries, &explicit, &fallback);
         self.verilog_libraries = libraries.split_off(self.files.len());
         self.libraries = libraries;
         self.notes = notes;
@@ -437,6 +462,71 @@ mod tests {
         })
         .unwrap();
         assert_eq!(project.libraries[0][0].0, "mylib");
+    }
+
+    #[test]
+    fn inference_ranks_above_vhdl_ls_toml_by_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(root.join("tb")).unwrap();
+        fs::write(root.join("src/pkg.vhd"), "package pkg is end;").unwrap();
+        fs::write(
+            root.join("src/core.vhd"),
+            "use work.pkg.all; entity core is end;",
+        )
+        .unwrap();
+        fs::write(root.join("src/top.vhd"), "entity top is end;").unwrap();
+        fs::write(
+            root.join("src/arch.vhd"),
+            "architecture a of top is begin end;",
+        )
+        .unwrap();
+        fs::write(
+            root.join("tb/tb.vhd"),
+            "library real_lib; use real_lib.pkg.all; entity tb is end;",
+        )
+        .unwrap();
+        // Stale: lists the sources in a library nothing uses, and not
+        // src/arch.vhd.
+        fs::write(
+            root.join("vhdl_ls.toml"),
+            "[libraries]\nold_lib.files = ['src/pkg.vhd', 'src/core.vhd', 'src/top.vhd']\n",
+        )
+        .unwrap();
+        let load = || {
+            Project::load(ProjectRoot {
+                dir: root.to_owned(),
+                kind: RootKind::Vcs,
+            })
+            .unwrap()
+        };
+        let libs = |project: &Project, name: &str| {
+            let i = project.file_index(&root.join(name)).unwrap();
+            project.libraries[i]
+                .iter()
+                .map(|(l, _)| l.clone())
+                .collect::<Vec<_>>()
+        };
+        let project = load();
+        // What the code says wins.
+        assert_eq!(libs(&project, "src/pkg.vhd"), ["real_lib"]);
+        // core.vhd follows the pkg it uses through `work`.
+        assert_eq!(libs(&project, "src/core.vhd"), ["real_lib"]);
+        // Nothing in the code places top.vhd: the list does.
+        assert_eq!(libs(&project, "src/top.vhd"), ["old_lib"]);
+        // Placed by the list, top's architecture follows it.
+        assert_eq!(libs(&project, "src/arch.vhd"), ["old_lib"]);
+        assert_eq!(libs(&project, "tb/tb.vhd"), ["work"]);
+
+        fs::write(root.join("vfl.toml"), "[project]\nvhdl-ls = \"prefer\"\n").unwrap();
+        let project = load();
+        assert_eq!(libs(&project, "src/pkg.vhd"), ["old_lib"]);
+
+        fs::write(root.join("vfl.toml"), "[project]\nvhdl-ls = \"off\"\n").unwrap();
+        let project = load();
+        assert_eq!(libs(&project, "src/pkg.vhd"), ["real_lib"]);
+        assert_eq!(libs(&project, "src/top.vhd"), ["work"]);
     }
 
     #[test]

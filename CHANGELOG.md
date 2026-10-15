@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Library inference ranks above `vhdl_ls.toml`**: a rust_hdl `vhdl_ls.toml` now only
+  places the files inference leaves in no library, so a stale one no longer overrides what
+  the code says. The new `[project]` `vhdl-ls` key sets this: `"fallback"` (default),
+  `"prefer"` (the old behavior, for projects such as UVVM whose `vhdl_ls.toml` is the
+  reference) or `"off"`.
+
 ## [0.6.0] - 2026-10-15
 
 State machine diagrams follow their branches instead of a circle and stay readable at 50+

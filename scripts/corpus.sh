@@ -13,7 +13,10 @@ set -euo pipefail
 cache=${1:-.corpus}
 mkdir -p "$cache"
 # Every project gets all of vfl's Verilog support, which is off by default.
-printf '[verilog]\nmode = "full"\n' >"$cache/vfl.toml"
+# UVVM's vhdl_ls.toml is its reference library list (its target-dependent
+# files go in every VIP library, which inference cannot tell), so it ranks
+# above inference; the other projects have none.
+printf '[project]\nvhdl-ls = "prefer"\n\n[verilog]\nmode = "full"\n' >"$cache/vfl.toml"
 
 # name  url  commit
 repos=(

@@ -102,20 +102,28 @@ standard (the semantic analysis of `vfl lint` uses the root's).
 | `extensions` | array of strings | `["vhd", "vhdl"]` | File extensions, without the dot, of the files treated as VHDL sources. |
 | `exclude` | array of strings | `[]` | Gitignore-style globs, relative to the project root, of files and directories to skip. `.gitignore` files are honoured as well. |
 | `libraries` | table | `{}` | Explicit library assignments; see below. |
+| `vhdl-ls` | string | `"fallback"` | How rust_hdl's `vhdl_ls.toml` places files in libraries: `"fallback"` (only the files inference places nowhere), `"prefer"` (over inference and tool files, below `[project.libraries]`) or `"off"` (not read). See below. |
 
 ### `[project.libraries]`
 
 Normally not needed: vfl puts each file in a library by itself. In order of priority:
 
 1. `[project.libraries]` in `vfl.toml`.
-2. rust_hdl's `vhdl_ls.toml` (or `.vhdl_ls.toml`) in the project root, with `$VAR`
-   expansion.
-3. Library lists of other tools found in the tree, read without running them: VUnit
+2. Library lists of other tools found in the tree, read without running them: VUnit
    `run.py`, FuseSoC `.core`, Vivado `.xpr` and Tcl `read_vhdl -library` scripts, Quartus
    `.qsf` / `.qip`.
-4. Inference from the code: a unit referenced as `lib.unit` puts the file that declares it
-   in `lib`, `work.unit` references keep files together, and files nothing names stay in
-   `work`.
+3. Inference from the code: a unit referenced as `lib.unit` puts the file that declares it
+   in `lib`, and `work.unit` references keep files together.
+4. rust_hdl's `vhdl_ls.toml` (or `.vhdl_ls.toml`) in the project root, with `$VAR`
+   expansion, for the files inference placed nowhere. The libraries it gives them spread
+   along `work.unit` references in turn.
+5. Files nothing places stay in `work`.
+
+A `vhdl_ls.toml` written by hand often lags behind the code, so by default it only fills
+the gaps. If yours is the reference for the project (UVVM's is, for example: its
+target-dependent files are compiled into every VIP library, which inference cannot tell),
+set `vhdl-ls = "prefer"` to rank it above tool files and inference, as earlier versions
+did. `vhdl-ls = "off"` ignores it.
 
 `vfl project` shows the library of each file and why it was chosen. Add an entry here only
 when that guess is wrong. Each key is a library name and its value a list of globs,
