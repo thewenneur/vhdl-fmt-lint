@@ -159,7 +159,7 @@ Settings of `vfl fmt` and of formatting in the language server.
 | `association_separator` | string | `"trailing"` | Where the `,` between the elements of `generic map (...)`, `port map (...)`, calls, aggregates and enumeration types goes when they are on separate lines: `"trailing"` or `"leading"`; see [Separators](#separators). |
 | `case_alternative` | string | `"preserve"` | `"preserve"` keeps a first statement written on the `when ... =>` line there; `"break"` starts every statement of a case alternative on its own line. |
 | `line_ending` | string | `"auto"` | `"auto"` keeps the line endings the file uses (LF for new files), `"lf"` or `"crlf"` converts. |
-| `on_type` | boolean | `true` | Lets editors format the line you just finished as you type: the line of a `;`, or the line above a new line. Editors have their own switch as well (`vfl.format.onType` in VS Code, **Format on type** in Notepad++), off by default; `false` here turns it off for everyone working on the project. |
+| `on_type` | boolean | `true` | Lets editors format the line you just finished as you type: the line of a `;`, or the line above a new line. Editors have their own switch as well (`vfl.format.onType` in VS Code, **Format on type** in Notepad++), off by default; `false` here turns it off for everyone working on the project. In a block larger than 16 KB (with `[format.align] scope = "block"`), the line aligns with the lines near it rather than the whole block, to stay fast; formatting the file or a selection aligns the rest. |
 
 `end_label` and `end_keyword` apply to entities, architectures, packages, package bodies,
 contexts, configurations, components, subprogram bodies, processes, blocks, `if`, `case`,

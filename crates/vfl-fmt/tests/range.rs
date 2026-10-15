@@ -128,6 +128,29 @@ fn block_alignment_reaches_across_the_block() {
 }
 
 #[test]
+fn typing_in_a_large_block_aligns_with_the_lines_near_it() {
+    let config = FormatConfig::default();
+    let mut text =
+        String::from("architecture a of e is\nbegin\n    a_very_long_signal_name <= x;\n");
+    for i in 0..2000 {
+        text.push_str(&format!("\n    s{i} <= x;\n"));
+    }
+    text.push_str("    y<=z;\nend;\n");
+    let cursor = text.find("y<=z;").unwrap() + 5;
+    let edits = format_typed(&text, cursor, ';', &config, Standard::Vhdl2019).unwrap();
+    // Not the whole architecture: only the line typed changes.
+    assert_eq!(edits.len(), 1, "{edits:?}");
+    assert!(edits[0].range.start > text.len() - 40, "{edits:?}");
+    // A selection is formatted as in the whole file.
+    let r = cursor - 5..cursor;
+    let exact = format_ranges_in(&text, &[r.clone()], &config, Standard::Vhdl2019, true).unwrap();
+    assert_eq!(
+        exact,
+        format_ranges_in(&text, &[r], &config, Standard::Vhdl2019, false).unwrap()
+    );
+}
+
+#[test]
 fn alignment_runs_are_formatted_whole() {
     let text = "entity e is\n  port (\n    clk : in bit;\n    data_valid : in bit;\n    q : out bit\n  );\nend;\n";
     assert_eq!(

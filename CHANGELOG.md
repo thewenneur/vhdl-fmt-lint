@@ -31,7 +31,9 @@
   `classic` styles keep aligning consecutive lines only, without the `;`.
 - Range and on-type formatting follow the wider alignment: when the edited line has an
   aligned token, its whole block is laid out, and only the lines that change are in the
-  edits.
+  edits. To stay fast while typing, format on type does this only for blocks up to 16 KB;
+  in a larger one the line aligns with the lines near it, and formatting the file or a
+  selection aligns the rest.
 
 To format as 0.4 did:
 

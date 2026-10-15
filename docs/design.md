@@ -233,7 +233,8 @@ Guarantees, enforced in tests, in the corpus job and at runtime:
   between the items of a construct, and not after a comment line, whose indentation follows
   the code below it. With `scope = "block"`, when a line to change holds an aligned token,
   the part grows to the whole block of that token (the process, the interface list, ...)
-  and is laid out again; the lines of an edit that stay as they are are left out of it.
+  and is laid out again (format on type: only blocks up to 16 KB, else the line aligns with
+  the lines near it); the lines of an edit that stay as they are are left out of it.
   Files with `-- vfl:` directives, `max_blank_lines = 0`, or `block_boundary = "never"` with
   `scope = "contiguous"`, are laid out whole. The corpus job checks that both give the same
   edits.

@@ -110,7 +110,7 @@ fn typed<L: Lang>(
             std::slice::from_ref(&(cursor..cursor)),
             config,
             std,
-            true,
+            Mode::Typed,
         ),
         '\n' if line_start > 0 => {
             let above = line_start - 1;
@@ -119,7 +119,7 @@ fn typed<L: Lang>(
                 std::slice::from_ref(&(above..above)),
                 config,
                 std,
-                true,
+                Mode::Typed,
             )?;
             let line_end = text[cursor..].find('\n').map_or(text.len(), |i| cursor + i);
             edits.retain(|e| e.range.end < line_start || e.range.start > line_end);
@@ -154,7 +154,7 @@ pub fn format_ranges_in(
     std: Standard,
     incremental: bool,
 ) -> Result<Vec<Edit>, FormatError> {
-    ranges_with::<Vhdl>(text, ranges, config, std, incremental)
+    ranges_with::<Vhdl>(text, ranges, config, std, Mode::new(incremental))
 }
 
 /// [`format_ranges`] for a Verilog or SystemVerilog file.
@@ -177,16 +177,42 @@ pub fn format_ranges_verilog_in(
     options: &Options,
     incremental: bool,
 ) -> Result<Vec<Edit>, FormatError> {
-    ranges_with::<Verilog>(text, ranges, config, *options, incremental)
+    ranges_with::<Verilog>(text, ranges, config, *options, Mode::new(incremental))
 }
+
+/// How much of the file range formatting lays out.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    /// The whole file, for tests.
+    Whole,
+    /// The part around the selection, growing to whole alignment blocks.
+    Exact,
+    /// As `Exact`, but on typing a block larger than [`TYPED_BLOCK`] is not
+    /// laid out whole: the line aligns with the lines near it, and the
+    /// next formatting of the file aligns the rest.
+    Typed,
+}
+
+impl Mode {
+    fn new(incremental: bool) -> Self {
+        match incremental {
+            true => Mode::Exact,
+            false => Mode::Whole,
+        }
+    }
+}
+
+/// The largest block, in bytes, laid out whole for format on type.
+const TYPED_BLOCK: usize = 16 * 1024;
 
 fn ranges_with<L: Lang>(
     text: &str,
     ranges: &[Range<usize>],
     config: &FormatConfig,
     std: L::Std<'_>,
-    incremental: bool,
+    mode: Mode,
 ) -> Result<Vec<Edit>, FormatError> {
+    let incremental = mode != Mode::Whole;
     if ranges.is_empty() {
         return Ok(Vec::new());
     }
@@ -263,6 +289,7 @@ fn ranges_with<L: Lang>(
                 .reduce(|x, y| (x.0.min(y.0), x.1.max(y.1)));
             if let Some((a, b)) = needed
                 && (a < window.start || b > window.end)
+                && (mode != Mode::Typed || b - a <= TYPED_BLOCK)
             {
                 around = (around.0.min(a), around.1.max(b));
                 continue;
