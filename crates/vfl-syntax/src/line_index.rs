@@ -33,13 +33,18 @@ impl LineIndex {
     /// The line and column of `offset` in `text`, which must be the text
     /// this index was built from.
     pub fn line_col(&self, text: &str, offset: TextSize) -> LineCol {
-        let line = self.starts.partition_point(|&start| start <= offset) - 1;
-        let start = usize::from(self.starts[line]);
+        let line = self.line(offset);
+        let start = usize::from(self.starts[line as usize]);
         let col = text[start..usize::from(offset)].chars().count();
         LineCol {
-            line: line as u32,
+            line,
             col: col as u32,
         }
+    }
+
+    /// The zero-based line of `offset`, without scanning the text.
+    pub fn line(&self, offset: TextSize) -> u32 {
+        (self.starts.partition_point(|&start| start <= offset) - 1) as u32
     }
 
     /// The offset where zero-based `line` starts.
@@ -66,5 +71,7 @@ mod tests {
         assert_eq!(at(3), LineCol { line: 1, col: 0 });
         assert_eq!(at(7), LineCol { line: 1, col: 3 });
         assert_eq!(at(9), LineCol { line: 3, col: 0 });
+        let lines: Vec<u32> = (0..=10u32).map(|o| index.line(o.into())).collect();
+        assert_eq!(lines, [0, 0, 0, 1, 1, 1, 1, 1, 2, 3, 3]);
     }
 }
