@@ -240,7 +240,7 @@ fn location(world: &World, file: FileId, range: vfl_syntax::TextRange) -> Option
 }
 
 fn location_in(path: PathBuf, doc: crate::world::Doc, range: vfl_syntax::TextRange) -> Location {
-    let line = doc.index.line_col(doc.text, range.start()).line;
+    let line = doc.index.line(range.start());
     let start = usize::from(doc.index.line_start(line).unwrap_or_default());
     let end = doc.text[start..]
         .find('\n')

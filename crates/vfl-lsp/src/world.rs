@@ -523,7 +523,7 @@ pub struct Doc<'a> {
 
 impl Doc<'_> {
     pub fn position(&self, offset: TextSize) -> lsp_types::Position {
-        let line = self.index.line_col(self.text, offset).line;
+        let line = self.index.line(offset);
         let start = usize::from(self.index.line_start(line).unwrap_or_default());
         let character = self.text[start..usize::from(offset)].encode_utf16().count();
         lsp_types::Position::new(line, character as u32)
@@ -538,13 +538,18 @@ impl Doc<'_> {
     }
 }
 
-/// The offset of a UTF-16 `position` in `text`, clamped to the text.
+/// The offset of a UTF-16 `position` in `text`, clamped to the line, its
+/// line break (`\r\n` or `\n`) excluded, and to the text.
 pub fn offset(text: &str, index: &LineIndex, position: lsp_types::Position) -> TextSize {
     let Some(start) = index.line_start(position.line) else {
         return TextSize::of(text);
     };
     let start = usize::from(start);
-    let line_end = text[start..].find('\n').map_or(text.len(), |i| start + i);
+    let line_end = match text[start..].find('\n') {
+        Some(i) if text[start..start + i].ends_with('\r') => start + i - 1,
+        Some(i) => start + i,
+        None => text.len(),
+    };
     let mut units = 0u32;
     for (i, c) in text[start..line_end].char_indices() {
         if units >= position.character {

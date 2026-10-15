@@ -172,7 +172,7 @@ impl Ctx<'_> {
     /// The one-based line of `offset` in `file`.
     pub fn line_of(&self, file: FileId, offset: TextSize) -> u32 {
         let file = &self.files[file as usize];
-        file.line_index.line_col(&file.text, offset).line + 1
+        file.line_index.line(offset) + 1
     }
 }
 
