@@ -491,7 +491,8 @@ fn declaration_text(world: &World, decl: &Decl) -> String {
             break;
         }
     }
-    // Re-indent relative to the first line's column.
+    // Re-indent relative to the first line's column, which counts
+    // characters: the indentation may hold multi-byte spaces.
     let column = doc.index.line_col(doc.text, decl.full_range.start()).col as usize;
     lines
         .iter()
@@ -500,8 +501,13 @@ fn declaration_text(world: &World, decl: &Decl) -> String {
             if i == 0 {
                 line.to_string()
             } else {
-                let strip = line.len() - line.trim_start().len();
-                line[strip.min(column)..].to_string()
+                let strip: usize = line
+                    .chars()
+                    .take(column)
+                    .take_while(|c| c.is_whitespace())
+                    .map(char::len_utf8)
+                    .sum();
+                line[strip..].to_string()
             }
         })
         .collect::<Vec<_>>()
@@ -725,7 +731,7 @@ fn folding_ranges(world: &mut World, params: FoldingRangeParams) -> Option<Vec<F
     let file = crate::verilog::file(world, &path)?;
     let text = &*file.text;
     let index = LineIndex::new(text);
-    let line = |offset: TextSize| index.line_col(text, offset).line;
+    let line = |offset: TextSize| index.line(offset);
     let mut out = Vec::new();
     for (range, fold) in crate::verilog::folds(&file.parse.syntax()) {
         let start = line(range.start());

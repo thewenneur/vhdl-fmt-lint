@@ -1461,3 +1461,123 @@ fn editor_settings_apply_without_a_config_file() {
     );
     assert_eq!(actions, json!([]));
 }
+
+/// Multi-byte text before names: no-break spaces (two bytes, one UTF-16
+/// unit), an ideographic space (three bytes), accents and an emoji (four
+/// bytes, a UTF-16 surrogate pair).
+const UNICODE: &str = concat!(
+    "entity u is\nend entity;\narchitecture rtl of u is\n",
+    "  -- caf\u{e9} \u{4e2d}\u{6587} \u{1f600}\n",
+    "  function f(a : integer;\n",
+    " \u{a0}\u{a0}b : integer)\n",
+    " \u{a0}return integer is\n",
+    "  begin\n    return a + b;\n  end function;\n",
+    "  constant s : string := \"\u{e9}t\u{e9}\";\n",
+    "  constant s2 : string := \"\u{e9}\u{1f600}\" & s;\n",
+    "begin\n",
+    "\u{3000}assert f(1, 2) = 3; -- \u{1f600}\n",
+    "end architecture;\n",
+);
+
+/// The LSP position (UTF-16) of the `nth` occurrence of `needle`, plus
+/// `delta` bytes.
+fn find_utf16(uri: &str, text: &str, needle: &str, nth: usize, delta: usize) -> Value {
+    let offset = text.match_indices(needle).nth(nth).unwrap().0 + delta;
+    let line_start = text[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let line = text[..offset].matches('\n').count() as u32;
+    at(
+        uri,
+        line,
+        text[line_start..offset].encode_utf16().count() as u32,
+    )
+}
+
+/// Applies the edits of a workspace edit, with UTF-16 positions.
+fn apply_utf16(original: &str, edit: &Value, uri: &str) -> String {
+    let starts: Vec<usize> = std::iter::once(0)
+        .chain(original.match_indices('\n').map(|(i, _)| i + 1))
+        .collect();
+    let offset = |p: &Value| {
+        let mut at = starts[p["line"].as_u64().unwrap() as usize];
+        let mut units = p["character"].as_u64().unwrap() as usize;
+        for c in original[at..].chars() {
+            if units == 0 {
+                break;
+            }
+            units -= c.len_utf16();
+            at += c.len_utf8();
+        }
+        at
+    };
+    let mut edits: Vec<(usize, usize, String)> = edit["changes"][uri]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| {
+            (
+                offset(&e["range"]["start"]),
+                offset(&e["range"]["end"]),
+                e["newText"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    edits.sort_by_key(|e| std::cmp::Reverse(e.0));
+    let mut text = original.to_owned();
+    for (start, end, new) in edits {
+        text.replace_range(start..end, &new);
+    }
+    text
+}
+
+#[test]
+fn positions_on_lines_with_multi_byte_text() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("u.vhd");
+    std::fs::write(&path, UNICODE).unwrap();
+    let uri = url(&path);
+    let mut client = Client::start(dir.path());
+
+    // A function whose declaration continues on lines indented with
+    // no-break spaces: the hover re-indents it (it crashed the server).
+    let call = find_utf16(&uri, UNICODE, "f(1", 0, 0);
+    assert_eq!(call["position"], json!({ "line": 13, "character": 8 }));
+    let hover = client.request("textDocument/hover", call.clone());
+    let value = hover["contents"]["value"].as_str().unwrap();
+    assert!(
+        value.contains("function f(a : integer;\n\u{a0}b : integer)\nreturn integer is\n"),
+        "{value}"
+    );
+    assert_eq!(hover["range"]["start"], call["position"]);
+
+    // `s` after an emoji: one more UTF-16 unit than characters.
+    let s = find_utf16(&uri, UNICODE, "& s;", 0, 2);
+    let hover = client.request("textDocument/hover", s.clone());
+    assert_eq!(hover["range"]["start"], s["position"]);
+    let value = hover["contents"]["value"].as_str().unwrap();
+    assert!(value.contains("constant s : string"), "{value}");
+
+    // Semantic tokens start at UTF-16 columns.
+    let full = client.request(
+        "textDocument/semanticTokens/full",
+        json!({ "textDocument": { "uri": uri } }),
+    );
+    let tokens = decode(&full["data"]);
+    for position in [&s["position"], &call["position"]] {
+        let (line, character) = (position["line"].as_u64(), position["character"].as_u64());
+        assert!(
+            tokens
+                .iter()
+                .any(|t| Some(t[0]) == line && Some(t[1]) == character && t[2] == 1),
+            "{position} in {tokens:?}"
+        );
+    }
+
+    // Renaming `s` edits its declaration and the use after the emoji.
+    let edit = rename(&mut client, s, "text");
+    assert_eq!(
+        apply_utf16(UNICODE, &edit, &uri),
+        UNICODE
+            .replace("constant s :", "constant text :")
+            .replace("& s;", "& text;")
+    );
+}
