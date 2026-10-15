@@ -16,6 +16,7 @@ pub mod fields;
 pub mod fsm;
 pub mod graph;
 pub mod hierarchy;
+mod layered;
 pub mod model;
 mod page;
 mod pages;
