@@ -611,7 +611,7 @@ Formatter regions:
 | Comment | Effect |
 |---------|--------|
 | `-- vfl: off` ... `-- vfl: on` | The lines between are kept exactly as written. |
-| `-- vfl: skip` | The next statement or declaration is kept exactly as written. |
+| `-- vfl: skip` | The next statement or declaration is kept exactly as written, with the comment ending its last line. |
 
 ## Default configuration
 

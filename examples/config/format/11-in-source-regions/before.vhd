@@ -19,5 +19,5 @@ begin
 addr_q<=addr when rising_edge(clk);
     -- The next statement is kept exactly as written:
     -- vfl: skip
-    data <= ROM(addr_q)  ;
+    data <= ROM(addr_q)  ;   -- even the spaces before this comment
 end;

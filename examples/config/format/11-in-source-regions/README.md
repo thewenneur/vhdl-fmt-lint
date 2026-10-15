@@ -5,7 +5,8 @@ says:
 
 - `-- vfl: off` ... `-- vfl: on`: the lines between are kept exactly as written. Here the
   ROM table keeps its four values per line.
-- `-- vfl: skip`: the next statement or declaration is kept exactly as written.
+- `-- vfl: skip`: the next statement or declaration is kept exactly as written, with
+  the comment at the end of its last line.
 
 The rest of the file is formatted as usual (the config is empty: the defaults).
 
