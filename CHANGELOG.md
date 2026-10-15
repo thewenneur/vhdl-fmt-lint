@@ -2,7 +2,19 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-15
+
+Library inference ranks above `vhdl_ls.toml`, every editor action can take a keyboard
+shortcut, and projects without a `vfl.toml` pick their lint preset and format style in the
+editor.
+
 ### Added
+
+- **Keyboard shortcuts for every editor action**: every VS Code command (in **Preferences:
+  Open Keyboard Shortcuts**, search `vfl`) and every Notepad++ menu command, settings
+  included (**Settings > Shortcut Mapper > Plugin commands**). New Notepad++ commands are
+  only added at the end of the menu, so shortcuts survive upgrades. Zed gets example
+  `tasks.json` and `keymap.json` for the actions it has no command for.
 
 - **Lint preset and format style from the editor** for projects without a `vfl.toml`:
   `vfl.lint.preset` and `vfl.format.style` in VS Code, **Lint preset without vfl.toml...**
