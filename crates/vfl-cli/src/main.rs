@@ -1,5 +1,7 @@
 //! The `vfl` command-line tool.
 
+mod baseline;
+mod changed;
 mod doc;
 mod lint;
 mod new;
@@ -40,6 +42,10 @@ enum Command {
         /// Report files that would change instead of rewriting them.
         #[arg(long)]
         check: bool,
+        /// Print a unified diff of the changes instead of rewriting the
+        /// files; fails if there are any, like `--check`.
+        #[arg(long)]
+        diff: bool,
         /// Format only lines FIRST to LAST (1-based, inclusive), and the
         /// statements and aligned lines they are part of. Repeatable; takes
         /// a single file or `-`.
@@ -59,6 +65,9 @@ enum Command {
         /// Also apply fixes that may change behavior (with `--fix`).
         #[arg(long)]
         unsafe_fixes: bool,
+        /// Apply the fixes of these rules or categories only (implies `--fix`).
+        #[arg(long, value_name = "RULES", value_delimiter = ',')]
+        fix_only: Vec<String>,
         /// How to print diagnostics.
         #[arg(long, value_enum, default_value_t = OutputFormat::Human)]
         output_format: OutputFormat,
@@ -68,9 +77,27 @@ enum Command {
         /// Colorize output (default: when printing to a terminal).
         #[arg(long, value_name = "WHEN", default_value = "auto")]
         color: ColorChoice,
+        /// Do not report the findings this baseline file lists (default:
+        /// `lint.baseline`).
+        #[arg(long, value_name = "FILE")]
+        baseline: Option<PathBuf>,
+        /// Write the findings to this baseline file instead of reporting them.
+        #[arg(long, value_name = "FILE", conflicts_with = "baseline")]
+        write_baseline: Option<PathBuf>,
+        /// Report only the files changed since this git revision (the
+        /// whole project is still analyzed).
+        #[arg(long, value_name = "REF")]
+        changed_since: Option<String>,
+        /// With `--changed-since`: report only the findings on changed lines.
+        #[arg(long, requires = "changed_since")]
+        changed_lines: bool,
     },
     /// List the lint rules and their levels in each preset.
-    Rules,
+    Rules {
+        /// Describe one rule in full: what it reports, its options and its fix.
+        #[arg(long, value_name = "RULE")]
+        explain: Option<String>,
+    },
     /// Parse VHDL, Verilog and SystemVerilog files and report syntax errors.
     Check {
         /// Files or directories (default: the project around the current directory).
@@ -187,6 +214,8 @@ enum OutputFormat {
     Json,
     Sarif,
     Github,
+    Junit,
+    Gitlab,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -223,25 +252,34 @@ fn run(cli: Cli) -> Result<bool> {
             paths,
             stdin_filename,
             check,
+            diff,
             lines,
-        } => fmt(&paths, stdin_filename.as_deref(), check, &lines).map(|()| true),
+        } => fmt(&paths, stdin_filename.as_deref(), check, diff, &lines).map(|()| true),
         Command::Lint {
             paths,
             fix,
             unsafe_fixes,
+            fix_only,
             output_format,
             deny_warnings,
             color,
+            baseline,
+            write_baseline,
+            changed_since,
+            changed_lines,
         } => lint::run(lint::Options {
             paths,
-            fix,
+            fix: fix || !fix_only.is_empty(),
             unsafe_fixes,
+            fix_only,
             format: match output_format {
                 OutputFormat::Human => Format::Human,
                 OutputFormat::Concise => Format::Concise,
                 OutputFormat::Json => Format::Json,
                 OutputFormat::Sarif => Format::Sarif,
                 OutputFormat::Github => Format::Github,
+                OutputFormat::Junit => Format::Junit,
+                OutputFormat::Gitlab => Format::Gitlab,
             },
             deny_warnings,
             color: match color {
@@ -249,11 +287,18 @@ fn run(cli: Cli) -> Result<bool> {
                 ColorChoice::Always => Some(true),
                 ColorChoice::Never => Some(false),
             },
+            baseline,
+            write_baseline,
+            changed_since,
+            changed_lines,
         }),
-        Command::Rules => {
-            show_rules();
-            Ok(true)
-        }
+        Command::Rules { explain } => match explain {
+            Some(id) => explain_rule(&id).map(|()| true),
+            None => {
+                show_rules();
+                Ok(true)
+            }
+        },
         Command::Lsp => vfl_lsp::run_stdio().map(|()| true),
         Command::Doc {
             path,
@@ -506,19 +551,35 @@ fn line_ranges(text: &str, lines: &[(usize, usize)]) -> Vec<std::ops::Range<usiz
         .collect()
 }
 
-/// Formats files in place, or reports which would change with `check`.
+/// A unified diff from `old` to `new`, the texts of `path`, with `a/` and
+/// `b/` prefixes as in git.
+fn unified_diff(path: &Path, old: &str, new: &str) -> String {
+    let name = path.to_string_lossy().replace('\\', "/");
+    let name = name.trim_start_matches("./");
+    similar::TextDiff::from_lines(old, new)
+        .unified_diff()
+        .context_radius(3)
+        .header(&format!("a/{name}"), &format!("b/{name}"))
+        .missing_newline_hint(true)
+        .to_string()
+}
+
+/// Formats files in place, or reports which would change with `check`,
+/// or prints how with `diff`.
 fn fmt(
     paths: &[PathBuf],
     stdin_filename: Option<&Path>,
     check: bool,
+    diff: bool,
     lines: &[(usize, usize)],
 ) -> Result<()> {
     if !lines.is_empty() && (paths.len() != 1 || paths[0].is_dir()) {
         bail!("--lines takes a single file");
     }
     if paths.len() == 1 && paths[0] == Path::new("-") {
-        return fmt_stdin(stdin_filename, lines);
+        return fmt_stdin(stdin_filename, diff, lines);
     }
+    let check = check || diff;
     let mut configs = ConfigCache::default();
     let mut changed = 0usize;
     let mut unchanged = 0usize;
@@ -534,7 +595,9 @@ fn fmt(
             Ok(out) if out == text => unchanged += 1,
             Ok(out) => {
                 changed += 1;
-                if check {
+                if diff {
+                    print!("{}", unified_diff(&file, &text, &out));
+                } else if check {
                     println!("{}: would reformat", file.display());
                 } else {
                     std::fs::write(&file, encode(&out, encoding))
@@ -575,7 +638,7 @@ fn fmt(
     Ok(())
 }
 
-fn fmt_stdin(filename: Option<&Path>, lines: &[(usize, usize)]) -> Result<()> {
+fn fmt_stdin(filename: Option<&Path>, diff: bool, lines: &[(usize, usize)]) -> Result<()> {
     let mut bytes = Vec::new();
     std::io::stdin().read_to_end(&mut bytes)?;
     let (text, encoding) = decode(bytes);
@@ -583,6 +646,13 @@ fn fmt_stdin(filename: Option<&Path>, lines: &[(usize, usize)]) -> Result<()> {
     let dir = path.parent().filter(|d| !d.as_os_str().is_empty());
     let config = vfl_config::load_for_dir(dir.unwrap_or(Path::new(".")))?;
     let out = format_text(path, &text, &config, lines)?;
+    if diff {
+        if out != text {
+            print!("{}", unified_diff(path, &text, &out));
+            bail!("{} is not formatted", path.display());
+        }
+        return Ok(());
+    }
     std::io::stdout().write_all(&encode(&out, encoding))?;
     Ok(())
 }
@@ -691,6 +761,81 @@ fn show_rules() {
             ""
         );
     }
+}
+
+/// The rules' descriptions, from the lint reference.
+const LINTS_DOC: &str = include_str!("../../../docs/lints.md");
+
+/// Prints a rule's levels and its section of the lint reference.
+fn explain_rule(id: &str) -> Result<()> {
+    if !vfl_lint::rules::exists(id) {
+        bail!("unknown rule `{id}`; `vfl rules` lists them");
+    }
+    let doc = LINTS_DOC.replace("\r\n", "\n");
+    let heading = match vfl_lint::rules::find(id) {
+        Some(rule) => {
+            let name = |level: vfl_config::Level| format!("{level:?}").to_lowercase();
+            println!("{}: {}", rule.id, rule.summary);
+            println!(
+                "recommended: {}, strict: {}, fix: {}",
+                name(rule.recommended),
+                name(rule.strict),
+                if rule.fixable { "yes" } else { "no" }
+            );
+            format!("### `{id}`")
+        }
+        None => {
+            let kind = id.trim_start_matches("naming/");
+            let what = vfl_lint::NAMING_KINDS
+                .iter()
+                .find(|(k, _)| *k == kind)
+                .map_or("", |(_, what)| what);
+            println!("{id}: Naming convention for {what}.");
+            println!("recommended: off, strict: off, fix: no (editors rename)");
+            "## `naming`".to_owned()
+        }
+    };
+    let level = heading.split(' ').next().unwrap_or("##");
+    if let Some(start) = doc.find(&format!("\n{heading}\n")) {
+        let body = &doc[start + heading.len() + 2..];
+        // Up to the next heading of the same level or above.
+        let end = body
+            .match_indices('\n')
+            .map(|(i, _)| i + 1)
+            .find(|&i| {
+                let line = &body[i..];
+                line.starts_with("## ") || (level == "###" && line.starts_with("### "))
+            })
+            .unwrap_or(body.len());
+        println!();
+        print!("{}", strip_links(body[..end].trim_matches('\n')));
+        println!();
+    }
+    Ok(())
+}
+
+/// `[text](target)` written as `text`.
+fn strip_links(markdown: &str) -> String {
+    let mut out = String::with_capacity(markdown.len());
+    let mut rest = markdown;
+    while let Some(open) = rest.find('[') {
+        let Some(close) = rest[open..].find("](").map(|i| open + i) else {
+            break;
+        };
+        let Some(end) = rest[close..].find(')').map(|i| close + i) else {
+            break;
+        };
+        if rest[open + 1..close].contains(['[', '\n']) {
+            out.push_str(&rest[..=open]);
+            rest = &rest[open + 1..];
+            continue;
+        }
+        out.push_str(&rest[..open]);
+        out.push_str(&rest[open + 1..close]);
+        rest = &rest[end + 1..];
+    }
+    out.push_str(rest);
+    out
 }
 
 fn show_config(path: &Path) -> Result<()> {

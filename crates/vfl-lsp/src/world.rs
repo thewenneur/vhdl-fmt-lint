@@ -365,6 +365,7 @@ impl World {
                 syntax_errors,
                 config,
                 verilog,
+                root: Some(&self.root.dir),
             })
             .collect();
         self.notices.clear();
