@@ -86,7 +86,10 @@ def main() -> int:
     failures = []
     checked = 0
     for path in sorted(EDITORS.rglob("*")):
-        if SKIP.intersection(path.relative_to(EDITORS).parts) or not path.is_file():
+        dirs = path.relative_to(EDITORS).parts[:-1]
+        # Dependencies, build output, and hidden directories such as the
+        # VS Code the end-to-end tests download.
+        if SKIP.intersection(dirs) or any(d.startswith(".") for d in dirs) or not path.is_file():
             continue
         if path.suffix not in (".json", ".toml", ".sublime-settings") or path.name.endswith(
             "-lock.json"
