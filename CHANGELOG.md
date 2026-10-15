@@ -20,6 +20,8 @@
   changed lines.
 - **`vfl lint --fix-only RULES`** applies the fixes of some rules or categories only.
 - **`vfl rules --explain RULE`** prints a rule's levels and full description.
+- **32-bit and ARM64 Notepad++**: releases have `vfl_npp-vX.Y.Z-x86.zip` and `-arm64.zip`
+  next to the 64-bit plugin, and a `vfl` binary for Windows on ARM.
 
 ### Changed
 
@@ -28,6 +30,9 @@
   gets a binary too. The example tasks run from the worktree root (`$ZED_WORKTREE_ROOT`)
   instead of the current file's directory, and the README says they need `vfl` on the
   `PATH`.
+- **Notepad++ format on save skips files larger than 512 KB**, with a note in the status
+  bar, since it formats before the file is written and holds up the save;
+  `format_on_save_max_kb` in `vfl_npp.ini` sets the limit.
 
 ## [0.7.0] - 2026-10-15
 

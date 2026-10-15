@@ -51,8 +51,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+          targets: i686-pc-windows-msvc, aarch64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy -p vfl-npp --all-targets
+      # The 32-bit and ARM64 plugins of the release.
+      - run: cargo check -p vfl-npp --target i686-pc-windows-msvc --target aarch64-pc-windows-msvc
       - run: cargo build --release -p vfl-npp
       - uses: actions/upload-artifact@v4
         with:
