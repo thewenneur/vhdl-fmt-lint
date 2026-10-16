@@ -6,6 +6,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::SystemTime;
 
 use rayon::prelude::*;
+use rustc_hash::FxHashMap;
 use vfl_config::{Config, VhdlLsMode};
 use vfl_syntax::{Parse, Standard};
 
@@ -57,12 +58,18 @@ pub struct SourceFile {
 
 impl SourceFile {
     /// Parses `text` and summarizes it.
-    pub fn new(path: PathBuf, text: String, encoding: Encoding, standard: Standard) -> Self {
+    pub fn new(
+        path: PathBuf,
+        text: impl Into<Arc<str>>,
+        encoding: Encoding,
+        standard: Standard,
+    ) -> Self {
+        let text = text.into();
         let parse = vfl_syntax::parse(&text, standard);
         let summary = summarize(&parse.syntax());
         SourceFile {
             path,
-            text: text.into(),
+            text,
             encoding,
             parse,
             summary,
@@ -103,6 +110,8 @@ pub struct Project {
     /// FuseSoC `.core`, Vivado and Quartus projects), read on each
     /// inference.
     pub tool_files: Vec<PathBuf>,
+    /// Where each file is in `files` and `verilog`, by path.
+    pub paths: PathIndex,
 }
 
 /// The library lists of a project, as [`Project::library_sources`] read
@@ -246,6 +255,7 @@ impl Project {
             unreadable,
             notes: Vec::new(),
             tool_files,
+            paths: PathIndex::default(),
         };
         project.infer()?;
         Ok(project)
@@ -445,12 +455,57 @@ impl Project {
 
     /// The index of the Verilog file at `path`.
     pub fn verilog_index(&self, path: &Path) -> Option<usize> {
-        self.verilog.iter().position(|f| f.path == path)
+        self.paths.verilog.find(&self.verilog, |f| &f.path, path)
     }
 
     /// The index of the file at `path`.
     pub fn file_index(&self, path: &Path) -> Option<usize> {
-        self.files.iter().position(|f| f.path == path)
+        self.paths.vhdl.find(&self.files, |f| &f.path, path)
+    }
+}
+
+/// Where each file of a [`Project`] is in its lists, for
+/// [`Project::file_index`] and [`Project::verilog_index`], which the
+/// language server calls on every edit. The lists can change without it
+/// knowing, so each index found is checked, and the map is built again
+/// when one is wrong or a file is not in it but is in the list.
+#[derive(Default)]
+pub struct PathIndex {
+    vhdl: PathMap,
+    verilog: PathMap,
+}
+
+impl Clone for PathIndex {
+    fn clone(&self) -> Self {
+        PathIndex::default()
+    }
+}
+
+impl std::fmt::Debug for PathIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PathIndex")
+    }
+}
+
+#[derive(Default)]
+struct PathMap(std::sync::Mutex<FxHashMap<PathBuf, usize>>);
+
+impl PathMap {
+    fn find<T>(&self, items: &[T], path_of: fn(&T) -> &PathBuf, path: &Path) -> Option<usize> {
+        let mut map = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(&i) = map.get(path)
+            && items.get(i).is_some_and(|item| path_of(item) == path)
+        {
+            return Some(i);
+        }
+        // Not in the map, or elsewhere in the list: searched as before,
+        // and the map is built again when that finds it.
+        let found = items.iter().position(|item| path_of(item) == path)?;
+        map.clear();
+        for (i, item) in items.iter().enumerate() {
+            map.entry(path_of(item).clone()).or_insert(i);
+        }
+        Some(found)
     }
 }
 
@@ -459,6 +514,54 @@ mod tests {
     use super::*;
     use crate::RootKind;
     use std::fs;
+
+    /// Files are found by path whatever was done to the list since.
+    #[test]
+    fn file_index_follows_changes_to_the_list() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["a", "b", "c"] {
+            fs::write(dir.path().join(format!("{name}.vhd")), "entity e is end;").unwrap();
+        }
+        let mut project = Project::load(ProjectRoot {
+            dir: dir.path().to_owned(),
+            kind: RootKind::Fallback,
+        })
+        .unwrap();
+        let path = |name: &str| dir.path().join(format!("{name}.vhd"));
+        let index = |project: &Project, name: &str| {
+            let found = project.file_index(&path(name));
+            assert_eq!(
+                found,
+                project.files.iter().position(|f| f.path == path(name)),
+                "{name}"
+            );
+            found
+        };
+        assert!(index(&project, "b").is_some());
+        assert_eq!(index(&project, "d"), None);
+        let a = project.files.remove(index(&project, "a").unwrap());
+        assert_eq!(index(&project, "a"), None);
+        index(&project, "b");
+        index(&project, "c");
+        let standard = project.config.standard();
+        project
+            .files
+            .push(SourceFile::new(path("d"), "", Encoding::Utf8, standard));
+        project.files.insert(0, a);
+        for name in ["a", "b", "c", "d"] {
+            index(&project, name);
+        }
+        // Another file in the place of one.
+        let i = index(&project, "c").unwrap();
+        project.files[i] = SourceFile::new(path("e"), "", Encoding::Utf8, standard);
+        assert_eq!(index(&project, "c"), None);
+        assert_eq!(index(&project, "e"), Some(i));
+        // A copy finds them too.
+        let copy = project.clone();
+        for name in ["a", "b", "d", "e"] {
+            index(&copy, name);
+        }
+    }
 
     #[test]
     fn loads_and_infers_with_explicit_entries() {

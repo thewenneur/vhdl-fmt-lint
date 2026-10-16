@@ -20,6 +20,7 @@ mod handlers;
 mod hierarchy;
 mod inlay;
 mod navigate;
+mod publish;
 mod refactor;
 mod semantic;
 pub mod settings;
@@ -40,12 +41,13 @@ use lsp_types::{
     CodeActionKind, CodeActionOptions, CodeActionProviderCapability, CompletionOptions,
     DidChangeWatchedFilesRegistrationOptions, FileSystemWatcher, GlobPattern, InitializeParams,
     OneOf, Registration, RegistrationParams, RenameOptions, ServerCapabilities, ServerInfo,
-    TextDocumentSyncCapability, TextDocumentSyncKind, Url, notification as n, request::Shutdown,
+    TextDocumentSyncCapability, TextDocumentSyncKind, notification as n, request::Shutdown,
 };
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashSet;
 use serde::de::DeserializeOwned;
 
 pub use hierarchy::SHOW_REFERENCES;
+pub use publish::Published;
 pub use world::World;
 
 /// Answers one request against `world`, as the server would: for
@@ -132,17 +134,63 @@ pub fn capabilities() -> ServerCapabilities {
 /// text of a document. Positions past a line or the text are clamped.
 #[doc(hidden)]
 pub fn apply_changes(text: &mut String, changes: Vec<lsp_types::TextDocumentContentChangeEvent>) {
-    for change in changes {
+    // Where each line starts: found once for all the changes, then kept up
+    // to date after each.
+    let mut starts: Option<Vec<usize>> = None;
+    let count = changes.len();
+    for (i, change) in changes.into_iter().enumerate() {
         match change.range {
             Some(range) => {
-                let index = vfl_syntax::LineIndex::new(text);
-                let start = usize::from(world::offset(text, &index, range.start));
-                let end = usize::from(world::offset(text, &index, range.end));
-                text.replace_range(start..end.max(start), &change.text);
+                let lines = starts.get_or_insert_with(|| {
+                    std::iter::once(0)
+                        .chain(text.match_indices('\n').map(|(i, _)| i + 1))
+                        .collect()
+                });
+                let offset = |p: lsp_types::Position| {
+                    let start = lines.get(p.line as usize).copied();
+                    usize::from(world::offset_from(text, start, p))
+                };
+                let start = offset(range.start);
+                let end = offset(range.end).max(start);
+                text.replace_range(start..end, &change.text);
+                if i + 1 < count {
+                    shift_lines(lines, start, end, &change.text);
+                }
             }
-            None => *text = change.text,
+            None => {
+                *text = change.text;
+                starts = None;
+            }
         }
     }
+}
+
+/// Updates the line starts of a text after `start..end` was replaced by
+/// `new`.
+fn shift_lines(starts: &mut Vec<usize>, start: usize, end: usize, new: &str) {
+    let low = starts.partition_point(|&s| s <= start);
+    let high = starts.partition_point(|&s| s <= end);
+    let added = new.match_indices('\n').map(|(i, _)| start + i + 1);
+    starts.splice(low..high, added);
+    let after = low + new.matches('\n').count();
+    for s in &mut starts[after..] {
+        *s = *s + new.len() - (end - start);
+    }
+}
+
+/// Applies the changes of a `textDocument/didChange` notification to the
+/// open document at `path`, as the server does.
+#[doc(hidden)]
+pub fn did_change(
+    world: &mut World,
+    path: PathBuf,
+    changes: Vec<lsp_types::TextDocumentContentChangeEvent>,
+) {
+    // The document's text is changed in place, then parsed: its only copy
+    // is the one the parse keeps.
+    let mut text = world.overlays.remove(&path).unwrap_or_default();
+    apply_changes(&mut text, changes);
+    world.set_text(path, text);
 }
 
 /// Runs the server on stdin and stdout until the client shuts it down.
@@ -190,6 +238,7 @@ pub fn run(connection: &Connection) -> Result<()> {
     // the edits that are already waiting and analyze once after them.
     let (sender, inbox) = mpsc::channel();
     let events = sender.clone();
+    let sender_for_analyzer = sender.clone();
     let receiver = connection.receiver.clone();
     std::thread::spawn(move || {
         for message in receiver {
@@ -231,6 +280,7 @@ pub fn run(connection: &Connection) -> Result<()> {
         World::with_defaults(&root, defaults)
     };
     let mut server = Server::new(connection, inbox, world);
+    server.analyzer = Some(Analyzer::spawn(sender_for_analyzer));
     if let Some(options) = &params.initialization_options {
         inlay::editor_settings(&mut server.world, options);
     }
@@ -320,8 +370,8 @@ struct Server<'a> {
     /// Queued requests the client cancelled.
     cancelled: FxHashSet<RequestId>,
     world: World,
-    /// The diagnostics shown in the client, by file.
-    published: FxHashMap<Url, Vec<lsp_types::Diagnostic>>,
+    /// The diagnostics shown in the client.
+    published: Published,
     /// Configuration errors already shown, while they last.
     shown_errors: Vec<String>,
     next_request: i32,
@@ -331,6 +381,47 @@ struct Server<'a> {
     /// Whether a config or library list changed on disk, which reloads
     /// the project.
     reload: bool,
+    /// The thread that analyzes, if any: without one, the server analyzes
+    /// itself, and answers nothing meanwhile.
+    analyzer: Option<Analyzer>,
+    /// Whether the analyzer is analyzing. The world has no analysis
+    /// meanwhile: requests that need one wait for it.
+    analyzing: bool,
+}
+
+/// The internal notification the analyzer wakes the server with when an
+/// analysis is done.
+const ANALYZED: &str = "vfl/analyzed";
+
+/// A thread that analyzes the project, so that the server reads edits,
+/// formats and takes cancellations while it does.
+struct Analyzer {
+    jobs: mpsc::Sender<world::Refresh>,
+    /// The result of each job, or the message of the panic it hit.
+    done: mpsc::Receiver<Result<world::Refreshed, String>>,
+}
+
+impl Analyzer {
+    /// Starts the thread, which sends `ANALYZED` to `wake` after each job.
+    fn spawn(wake: mpsc::Sender<Message>) -> Analyzer {
+        let (jobs, inbox) = mpsc::channel::<world::Refresh>();
+        let (outbox, done) = mpsc::channel();
+        // Without the thread, sending a job fails, and the server runs it.
+        let _ = std::thread::Builder::new()
+            .name("vfl-analysis".into())
+            .spawn(move || {
+                for job in inbox {
+                    if outbox.send(guard("analysis", || job.run())).is_err() {
+                        return;
+                    }
+                    let wakeup = Notification::new(ANALYZED.into(), serde_json::Value::Null);
+                    if wake.send(Message::Notification(wakeup)).is_err() {
+                        return;
+                    }
+                }
+            });
+        Analyzer { jobs, done }
+    }
 }
 
 impl<'a> Server<'a> {
@@ -341,11 +432,13 @@ impl<'a> Server<'a> {
             queue: VecDeque::new(),
             cancelled: FxHashSet::default(),
             world,
-            published: FxHashMap::default(),
+            published: Published::default(),
             shown_errors: Vec::new(),
             next_request: 0,
             changed_files: Vec::new(),
             reload: false,
+            analyzer: None,
+            analyzing: false,
         }
     }
 
@@ -365,11 +458,28 @@ impl<'a> Server<'a> {
     fn main_loop(&mut self) -> Result<()> {
         loop {
             self.receive_waiting();
-            while self.queue.is_empty() {
+            self.take_analysis()?;
+            // Analyze once the burst of edits is over: typing faster than
+            // the project analyzes must not queue one analysis per key.
+            // Files changed on disk are re-read once a burst of them is
+            // over too. A request that needs the latest edits analyzed
+            // waits for that.
+            let waits = self.waits();
+            if !self.analyzing && (self.queue.is_empty() || waits) {
+                guard("file changes", || self.reread_changed()).unwrap_or(());
+                if self.world.dirty {
+                    self.analyze()?;
+                    continue;
+                }
+            }
+            // Meanwhile edits are read and documents formatted, but not
+            // past a request that waits: what follows it comes after it.
+            if self.queue.is_empty() || waits {
                 let Ok(message) = self.inbox.recv() else {
                     return Ok(());
                 };
                 self.accept(message);
+                continue;
             }
             let Some(message) = self.queue.pop_front() else {
                 unreachable!("the queue is not empty");
@@ -385,25 +495,79 @@ impl<'a> Server<'a> {
                 }
                 Message::Response(_) => {}
             }
-            // Analyze once the burst of edits is over: typing faster than
-            // the project analyzes must not queue one analysis per key.
-            // Files changed on disk are re-read once a burst of them is
-            // over too.
-            self.receive_waiting();
-            if self.queue.is_empty() {
-                guard("file changes", || self.reread_changed()).unwrap_or(());
+        }
+    }
+
+    /// Whether the next message is a request that waits for the analysis
+    /// of the latest edits, those on disk included.
+    fn waits(&self) -> bool {
+        (self.analyzing || self.world.dirty || self.reload || !self.changed_files.is_empty())
+            && matches!(self.queue.front(), Some(Message::Request(r))
+                if handlers::needs_analysis(&r.method)
+                    && !self.cancelled.contains(&r.id)
+                    && r.method != <Shutdown as lsp_types::request::Request>::METHOD)
+    }
+
+    /// Analyzes the latest edits: starts the analyzer on them, or, without
+    /// one, analyzes them now.
+    fn analyze(&mut self) -> Result<()> {
+        let Ok(Some(job)) = guard("analysis", || self.world.start_refresh()) else {
+            return Ok(());
+        };
+        let job = match &self.analyzer {
+            Some(analyzer) => match analyzer.jobs.send(job) {
+                Ok(()) => {
+                    self.analyzing = true;
+                    return Ok(());
+                }
+                Err(mpsc::SendError(job)) => job,
+            },
+            None => job,
+        };
+        self.analyzed(guard("analysis", || job.run()))
+    }
+
+    /// Takes the analysis the analyzer finished, if it did.
+    fn take_analysis(&mut self) -> Result<()> {
+        if !self.analyzing {
+            return Ok(());
+        }
+        let Some(analyzer) = &self.analyzer else {
+            return Ok(());
+        };
+        match analyzer.done.try_recv() {
+            Ok(done) => {
+                self.analyzing = false;
+                self.analyzed(done)
             }
-            if self.world.dirty && self.queue.is_empty() {
-                guard("analysis", || -> Result<()> {
-                    self.world.refresh();
-                    self.publish()
-                })
-                .unwrap_or(Ok(()))?;
+            Err(mpsc::TryRecvError::Empty) => Ok(()),
+            Err(mpsc::TryRecvError::Disconnected) => {
+                // The thread is gone: the server analyzes from now on.
+                self.analyzing = false;
+                self.analyzer = None;
+                self.world.refresh_failed();
+                self.world.dirty = true;
+                Ok(())
             }
         }
     }
 
-    /// Answers a request, after analyzing the latest edits if it needs them.
+    /// Takes the result of an analysis and publishes its diagnostics. A
+    /// failed one leaves those shown as they were.
+    fn analyzed(&mut self, done: Result<world::Refreshed, String>) -> Result<()> {
+        match done {
+            Ok(done) => {
+                self.world.finish_refresh(done);
+                guard("analysis", || self.publish()).unwrap_or(Ok(()))
+            }
+            Err(_) => {
+                self.world.refresh_failed();
+                Ok(())
+            }
+        }
+    }
+
+    /// Answers a request; one that needs the analysis has it up to date.
     fn answer(&mut self, request: Request) -> Result<()> {
         let response = if self.cancelled.remove(&request.id) {
             Response::new_err(
@@ -415,23 +579,13 @@ impl<'a> Server<'a> {
             Response::new_ok(request.id, ())
         } else {
             let (id, method) = (request.id.clone(), request.method.clone());
-            guard(&method, || -> Result<Response> {
-                if handlers::needs_analysis(&request.method) {
-                    self.reread_changed();
-                }
-                if self.world.dirty && handlers::needs_analysis(&request.method) {
-                    self.world.refresh();
-                    self.publish()?;
-                }
-                Ok(self.handle_request(request))
-            })
-            .unwrap_or_else(|message| {
-                Ok(Response::new_err(
+            guard(&method, || self.handle_request(request)).unwrap_or_else(|message| {
+                Response::new_err(
                     id,
                     ErrorCode::InternalError as i32,
                     format!("vfl: internal error in {method}: {message}"),
-                ))
-            })?
+                )
+            })
         };
         self.connection.sender.send(Message::Response(response))?;
         Ok(())
@@ -448,6 +602,12 @@ impl<'a> Server<'a> {
     /// editor cancels the requests it no longer needs, such as the
     /// completion of each previous key.
     fn accept(&mut self, message: Message) {
+        if let Message::Notification(notification) = &message
+            && notification.method == ANALYZED
+        {
+            // It only woke the server: the main loop takes the analysis.
+            return;
+        }
         if let Message::Notification(notification) = &message
             && notification.method == n::Cancel::METHOD
         {
@@ -553,9 +713,7 @@ impl<'a> Server<'a> {
                     params::<lsp_types::DidChangeTextDocumentParams>(notification.params)
                     && let Ok(path) = p.text_document.uri.to_file_path()
                 {
-                    let mut text = world.overlays.get(&path).cloned().unwrap_or_default();
-                    apply_changes(&mut text, p.content_changes);
-                    world.set_text(path, text);
+                    did_change(world, path, p.content_changes);
                 }
             }
             n::DidCloseTextDocument::METHOD => {
@@ -600,23 +758,8 @@ impl<'a> Server<'a> {
     /// Sends the diagnostics of every file whose diagnostics changed, and
     /// clears those of files that no longer have any.
     fn publish(&mut self) -> Result<()> {
-        let mut previous = std::mem::take(&mut self.published);
-        for (uri, diagnostics) in handlers::diagnostics(&self.world) {
-            if previous.remove(&uri).as_ref() != Some(&diagnostics) {
-                self.notify::<n::PublishDiagnostics>(lsp_types::PublishDiagnosticsParams {
-                    uri: uri.clone(),
-                    diagnostics: diagnostics.clone(),
-                    version: None,
-                })?;
-            }
-            self.published.insert(uri, diagnostics);
-        }
-        for uri in previous.into_keys() {
-            self.notify::<n::PublishDiagnostics>(lsp_types::PublishDiagnosticsParams {
-                uri,
-                diagnostics: Vec::new(),
-                version: None,
-            })?;
+        for params in self.published.update(&self.world) {
+            self.notify::<n::PublishDiagnostics>(params)?;
         }
         // Each error is shown once while it lasts: fixed, then broken
         // again, it is shown again.
@@ -667,6 +810,7 @@ fn params<P: DeserializeOwned>(value: serde_json::Value) -> Option<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lsp_types::Url;
     use serde_json::json;
 
     /// Edits that wait in the queue are analyzed once, and cancelled
@@ -742,6 +886,89 @@ mod tests {
         );
         assert_eq!(responses[1].id, 2.into());
         assert!(responses[1].result.as_ref().is_some_and(|r| !r.is_null()));
+    }
+
+    /// While the analyzer analyzes, edits are read, documents formatted
+    /// and requests waiting for the analysis cancelled; those that are
+    /// not get the analysis of the latest edits.
+    #[test]
+    fn the_server_answers_while_it_analyzes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.vhd");
+        let text = "entity a is\nend entity;\narchitecture rtl of a is\n  signal s : bit;\nbegin\nend architecture;\n";
+        std::fs::write(&path, text).unwrap();
+        let uri = Url::from_file_path(&path).unwrap();
+        let (server, client) = Connection::memory();
+        let (sender, inbox) = mpsc::channel();
+        let mut server = Server::new(&server, inbox, World::new(dir.path()));
+        // An analyzer the test runs the jobs of.
+        let (jobs, started) = mpsc::channel();
+        let (finished, done) = mpsc::channel();
+        server.analyzer = Some(Analyzer { jobs, done });
+
+        let notify = |method: &str, params: serde_json::Value| {
+            let message = Message::Notification(Notification::new(method.into(), params));
+            sender.send(message).unwrap();
+        };
+        let request = |id: i32, method: &str, params: serde_json::Value| {
+            let message = Message::Request(Request::new(id.into(), method.into(), params));
+            sender.send(message).unwrap();
+        };
+        let response = || loop {
+            match client.receiver.recv().unwrap() {
+                Message::Response(r) => return r,
+                _ => continue,
+            }
+        };
+        let hover =
+            json!({ "textDocument": { "uri": uri }, "position": { "line": 3, "character": 9 } });
+        std::thread::scope(|scope| {
+            scope.spawn(|| server.main_loop().unwrap());
+            notify(
+                "textDocument/didOpen",
+                json!({ "textDocument": { "uri": uri, "languageId": "vhdl", "version": 0,
+                    "text": format!("{text}-- 1\n") } }),
+            );
+            let job: world::Refresh = started.recv().unwrap();
+            request(1, "textDocument/hover", hover.clone());
+            request(2, "textDocument/hover", hover.clone());
+            // Not past the waiting hovers: edits after them wait too.
+            notify(
+                "textDocument/didChange",
+                json!({ "textDocument": { "uri": uri, "version": 1 },
+                    "contentChanges": [{ "text": format!("{text}-- 2\n") }] }),
+            );
+            notify("$/cancelRequest", json!({ "id": 1 }));
+            let cancelled = response();
+            assert_eq!(cancelled.id, 1.into());
+            assert_eq!(
+                cancelled.error.map(|e| e.code),
+                Some(ErrorCode::RequestCanceled as i32)
+            );
+            finished.send(Ok(job.run())).unwrap();
+            notify(ANALYZED, serde_json::Value::Null);
+            let answered = response();
+            assert_eq!(answered.id, 2.into());
+            assert!(answered.result.is_some_and(|r| !r.is_null()));
+
+            // The edit after the hover starts another analysis, during
+            // which formatting, which needs none, is answered.
+            let job: world::Refresh = started.recv().unwrap();
+            request(
+                3,
+                "textDocument/formatting",
+                json!({ "textDocument": { "uri": uri }, "options": { "tabSize": 2, "insertSpaces": true } }),
+            );
+            let formatted = response();
+            assert_eq!(formatted.id, 3.into());
+            assert!(formatted.result.is_some());
+            finished.send(Ok(job.run())).unwrap();
+            notify(ANALYZED, serde_json::Value::Null);
+            request(4, "textDocument/hover", hover.clone());
+            assert_eq!(response().id, 4.into());
+            notify("exit", serde_json::Value::Null);
+        });
+        assert!(server.world.overlays[&path].ends_with("-- 2\n"));
     }
 
     /// Runs `server` on `messages`, as if they had just arrived, and
@@ -1044,6 +1271,46 @@ mod tests {
                     && n.params.to_string().contains("`t`"))
         });
         assert!(unused_t, "{messages:?}");
+    }
+
+    /// Several changes in one notification, each against the text the
+    /// previous ones left, give the same text as one at a time.
+    #[test]
+    fn batched_changes_apply_in_order() {
+        let mut text = "entity a is\r\nend entity;\nℵ -- é\n\narchitecture\n".to_owned();
+        // A small deterministic generator of positions and texts.
+        let mut seed = 7u32;
+        let mut next = |n: u32| {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            (seed >> 16) % n.max(1)
+        };
+        let inserts = ["", "x", "\n", "a\nb", "\r\n", "--\n\nℵ", "é"];
+        for _ in 0..200 {
+            let changes: Vec<lsp_types::TextDocumentContentChangeEvent> = (0..1 + next(5))
+                .map(|_| {
+                    let at = |next: &mut dyn FnMut(u32) -> u32| {
+                        lsp_types::Position::new(next(8), next(14))
+                    };
+                    let (a, b) = (at(&mut next), at(&mut next));
+                    let (start, end) = if (a.line, a.character) <= (b.line, b.character) {
+                        (a, b)
+                    } else {
+                        (b, a)
+                    };
+                    lsp_types::TextDocumentContentChangeEvent {
+                        range: Some(lsp_types::Range::new(start, end)),
+                        range_length: None,
+                        text: inserts[next(inserts.len() as u32) as usize].into(),
+                    }
+                })
+                .collect();
+            let mut one_by_one = text.clone();
+            for change in changes.clone() {
+                apply_changes(&mut one_by_one, vec![change]);
+            }
+            apply_changes(&mut text, changes);
+            assert_eq!(text, one_by_one);
+        }
     }
 
     /// A position past the end of a CRLF line is before its `\r`: an edit

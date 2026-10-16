@@ -38,7 +38,7 @@ pub struct World {
     /// The config files left out because they are invalid, with where
     /// in each the problem is: shown on the file itself.
     pub config_file_errors: Vec<vfl_config::FileError>,
-    configs: FxHashMap<PathBuf, Config>,
+    configs: FxHashMap<PathBuf, Arc<Config>>,
     /// The files over `max-file-size`, by path, as they are analyzed.
     outlines: FxHashMap<PathBuf, Outline>,
     lint_cache: vfl_lint::LintCache,
@@ -190,7 +190,7 @@ impl World {
         let defaults = &self.defaults;
         let errors = &mut self.config_file_errors;
         self.configs.entry(dir.clone()).or_insert_with(|| {
-            if fixed {
+            Arc::new(if fixed {
                 project.clone()
             } else if dir.as_os_str().is_empty() {
                 defaults.clone()
@@ -198,7 +198,7 @@ impl World {
                 let (config, found) = vfl_config::load_for_dir_checked(&dir, defaults);
                 add_errors(errors, found);
                 config
-            }
+            })
         })
     }
 
@@ -230,17 +230,14 @@ impl World {
             self.set_verilog_text(path, text);
             return;
         }
-        if self
-            .project
-            .file_index(&path)
-            .is_some_and(|i| *self.project.files[i].text == *text)
-        {
+        let index = self.project.file_index(&path);
+        if index.is_some_and(|i| *self.project.files[i].text == *text) {
             self.overlays.insert(path, text);
             return;
         }
         let standard = self.config(&path).standard();
-        let file = SourceFile::new(path.clone(), text.clone(), Encoding::Utf8, standard);
-        match self.project.file_index(&path) {
+        let file = SourceFile::new(path.clone(), &*text, Encoding::Utf8, standard);
+        match index {
             Some(i) => self.project.files[i] = file,
             None => {
                 self.project.files.push(file);
@@ -426,26 +423,36 @@ impl World {
 
     /// Re-analyzes and re-lints the project if anything changed.
     pub fn refresh(&mut self) {
+        if let Some(job) = self.start_refresh() {
+            self.finish_refresh(job.run());
+        }
+    }
+
+    /// Starts re-analyzing the project if anything changed: what is left
+    /// to do needs nothing of the world and can run on another thread,
+    /// while edits go on. The analysis is the job's until
+    /// [`World::finish_refresh`] takes its result; meanwhile the world has
+    /// none.
+    pub fn start_refresh(&mut self) -> Option<Refresh> {
         if !self.dirty {
-            return;
+            return None;
         }
         self.dirty = false;
         self.infer();
-        let paths: Vec<PathBuf> = self
-            .project
-            .files
-            .iter()
-            .map(|f| f.path.clone())
-            .chain(self.project.verilog.iter().map(|f| f.path.clone()))
+        // Every file's config, loaded first.
+        let unloaded: Vec<PathBuf> = (self.project.files.iter().map(|f| &f.path))
+            .chain(self.project.verilog.iter().map(|f| &f.path))
+            .filter(|path| !self.configs.contains_key(&config_dir(path)))
+            .cloned()
             .collect();
-        for path in &paths {
+        for path in &unloaded {
             self.config(path);
         }
         let inputs = self.analysis_inputs();
-        let previous = std::mem::replace(&mut self.analysis, Analysis::empty());
-        self.analysis =
-            previous.into_update_with_foreign(inputs, vfl_lint::foreign_inputs(&self.project));
-        let configs: Vec<&Config> = paths
+        let paths: Vec<&PathBuf> = (self.project.files.iter().map(|f| &f.path))
+            .chain(self.project.verilog.iter().map(|f| &f.path))
+            .collect();
+        let configs: Vec<&Arc<Config>> = paths
             .iter()
             .map(|p| &self.configs[&config_dir(p)])
             .collect();
@@ -454,52 +461,64 @@ impl World {
         // not linted.
         let vhdl = self.project.files.len();
         let outlines = &self.outlines;
-        let settings: Vec<FileSettings> = self
-            .project
-            .files
-            .iter()
+        let files: Vec<LintFile> = (self.project.files.iter())
             .map(|file| (file.parse.errors(), None))
             .chain(
-                self.project
-                    .verilog
-                    .iter()
-                    .map(|file| (file.parse.errors(), Some(&file.parse))),
+                (self.project.verilog.iter()).map(|file| (file.parse.errors(), Some(&file.parse))),
             )
             .zip(&configs)
             .enumerate()
             .filter(|(i, (_, config))| {
                 if *i < vhdl {
-                    !outlines.contains_key(&paths[*i])
+                    !outlines.contains_key(paths[*i])
                 } else {
                     config.verilog.full()
                 }
             })
-            .map(|(i, ((syntax_errors, verilog), config))| FileSettings {
+            .map(|(i, ((syntax_errors, verilog), config))| LintFile {
                 file: i as FileId,
-                syntax_errors,
-                config,
-                verilog,
-                root: Some(&self.root.dir),
+                syntax_errors: syntax_errors.to_vec(),
+                config: Arc::clone(config),
+                verilog: verilog.cloned(),
             })
             .collect();
+        let too_large: Vec<vfl_lint::Diagnostic> = (paths[..vhdl].iter().enumerate())
+            .filter(|(_, path)| outlines.contains_key(**path))
+            .map(|(i, _)| too_large(i as FileId, self.project.files[i].text.len(), configs[i]))
+            .collect();
         self.notices.clear();
-        if settings.iter().any(|s| s.verilog.is_some()) {
+        if files.iter().any(|f| f.verilog.is_some()) {
             self.notices
                 .push(vfl_config::VerilogConfig::IN_PROGRESS.to_owned());
         }
-        let result = vfl_lint::lint_cached(&self.analysis, &settings, &mut self.lint_cache);
-        self.lint = result.diagnostics;
-        for (i, path) in paths[..vhdl].iter().enumerate() {
-            if outlines.contains_key(path) {
-                let config = configs[i];
-                let size = self.project.files[i].text.len();
-                self.lint.push(too_large(i as FileId, size, config));
-            }
-        }
-        self.config_errors = result.config_errors;
+        let foreign = vfl_lint::foreign_inputs(&self.project);
+        Some(Refresh {
+            previous: std::mem::replace(&mut self.analysis, Analysis::empty()),
+            inputs,
+            foreign,
+            files,
+            too_large,
+            root: self.root.dir.clone(),
+            cache: std::mem::take(&mut self.lint_cache),
+        })
+    }
+
+    /// Takes the result of a [`Refresh`].
+    pub fn finish_refresh(&mut self, done: Refreshed) {
+        self.analysis = done.analysis;
+        self.lint_cache = done.cache;
+        self.lint = done.lint;
+        self.config_errors = done.config_errors;
         let files = self.config_file_errors.iter().map(ToString::to_string);
         self.config_errors
             .splice(0..0, self.load_error.iter().cloned().chain(files));
+    }
+
+    /// A refresh that failed (a bug): the next one analyzes everything.
+    pub fn refresh_failed(&mut self) {
+        self.analysis = Analysis::empty();
+        self.lint.clear();
+        self.lint_cache = vfl_lint::LintCache::default();
     }
 
     /// The VHDL files as the analysis takes them: those over their
@@ -597,7 +616,7 @@ impl World {
     pub fn verilog_features(&self, path: &Path) -> bool {
         self.configs
             .get(&config_dir(path))
-            .unwrap_or(&self.project.config)
+            .map_or(&self.project.config, |c| &**c)
             .verilog
             .full()
     }
@@ -613,6 +632,71 @@ impl World {
         Doc {
             text: &f.text,
             index: &f.line_index,
+        }
+    }
+}
+
+/// The analysis and lint of a refresh, which needs nothing of the world:
+/// [`World::start_refresh`] gives it, [`Refresh::run`] does it and
+/// [`World::finish_refresh`] takes the result.
+pub struct Refresh {
+    previous: Analysis,
+    inputs: Vec<vfl_sema::FileInput>,
+    foreign: Vec<vfl_sema::ForeignInput>,
+    files: Vec<LintFile>,
+    /// The findings on files over `max-file-size`, which are not linted.
+    too_large: Vec<vfl_lint::Diagnostic>,
+    root: PathBuf,
+    cache: vfl_lint::LintCache,
+}
+
+/// What linting a file needs.
+struct LintFile {
+    file: FileId,
+    syntax_errors: Vec<vfl_syntax::SyntaxError>,
+    config: Arc<Config>,
+    verilog: Option<vfl_verilog_syntax::Parse>,
+}
+
+/// The result of a [`Refresh`].
+pub struct Refreshed {
+    analysis: Analysis,
+    cache: vfl_lint::LintCache,
+    lint: Vec<vfl_lint::Diagnostic>,
+    config_errors: Vec<String>,
+}
+
+impl Refresh {
+    pub fn run(self) -> Refreshed {
+        let Refresh {
+            previous,
+            inputs,
+            foreign,
+            files,
+            too_large,
+            root,
+            mut cache,
+        } = self;
+        let analysis = previous.into_update_with_foreign(inputs, foreign);
+        let settings: Vec<FileSettings> = files
+            .iter()
+            .map(|f| FileSettings {
+                file: f.file,
+                syntax_errors: &f.syntax_errors,
+                config: &f.config,
+                verilog: f.verilog.as_ref(),
+                root: Some(&root),
+            })
+            .collect();
+        let result = vfl_lint::lint_cached(&analysis, &settings, &mut cache);
+        drop(settings);
+        let mut lint = result.diagnostics;
+        lint.extend(too_large);
+        Refreshed {
+            analysis,
+            cache,
+            lint,
+            config_errors: result.config_errors,
         }
     }
 }
@@ -747,6 +831,7 @@ fn empty(root: &ProjectRoot, config: Config) -> Project {
         unreadable: Vec::new(),
         notes: Vec::new(),
         tool_files: Vec::new(),
+        paths: Default::default(),
     }
 }
 
@@ -777,10 +862,16 @@ impl Doc<'_> {
 /// The offset of a UTF-16 `position` in `text`, clamped to the line, its
 /// line break (`\r\n` or `\n`) excluded, and to the text.
 pub fn offset(text: &str, index: &LineIndex, position: lsp_types::Position) -> TextSize {
-    let Some(start) = index.line_start(position.line) else {
+    let start = index.line_start(position.line).map(usize::from);
+    offset_from(text, start, position)
+}
+
+/// [`offset`], given where the position's line starts, if it is in the
+/// text.
+pub fn offset_from(text: &str, start: Option<usize>, position: lsp_types::Position) -> TextSize {
+    let Some(start) = start else {
         return TextSize::of(text);
     };
-    let start = usize::from(start);
     let line_end = match text[start..].find('\n') {
         Some(i) if text[start..start + i].ends_with('\r') => start + i - 1,
         Some(i) => start + i,

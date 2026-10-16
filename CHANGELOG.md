@@ -157,6 +157,16 @@
 
 ### Changed
 
+- **Language server: analysis on its own thread.** The server reads edits, formats
+  documents and takes cancellations while it analyzes: formatting another file during the
+  re-analysis that follows an edit of UVVM's `types_pkg` takes 14 ms instead of 330 ms, and
+  a cancelled request waiting for that analysis is answered at once instead of after it
+  (6 ms instead of 330 ms). Requests that need the analysis still wait for the analysis of
+  the latest edits.
+- The language server converts and sends only the diagnostics of files whose findings
+  changed (3 times faster: 0.08 ms instead of 0.25 ms after an edit in UVVM), applies the
+  changes of an edit without copying the document twice or indexing its lines once per
+  change, and finds a file by its path in a map rather than by a search of the project.
 - The language server reads files created or deleted outside the editor together: a
   burst of watched-file events (a `git checkout`, a generator) costs one walk of the
   project at most, and none when the new files are in directories the project already

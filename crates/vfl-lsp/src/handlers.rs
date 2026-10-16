@@ -127,12 +127,12 @@ fn file_of(world: &World, uri: &Url) -> Option<FileId> {
     world.file_id(&uri.to_file_path().ok()?)
 }
 
-fn uri(path: &Path) -> Option<Url> {
+pub(crate) fn uri(path: &Path) -> Option<Url> {
     Url::from_file_path(path).ok()
 }
 
 /// A problem as an LSP diagnostic.
-fn lsp_diagnostic(world: &World, d: &vfl_lint::Diagnostic) -> lsp_types::Diagnostic {
+pub(crate) fn lsp_diagnostic(world: &World, d: &vfl_lint::Diagnostic) -> lsp_types::Diagnostic {
     let tags = d
         .rule
         .starts_with("sema/unused-")
@@ -154,6 +154,7 @@ fn lsp_diagnostic(world: &World, d: &vfl_lint::Diagnostic) -> lsp_types::Diagnos
 
 /// The diagnostics of every user file that has some, Verilog files
 /// included.
+#[cfg(test)]
 pub fn diagnostics(world: &World) -> Vec<(Url, Vec<lsp_types::Diagnostic>)> {
     let mut by_file: FxHashMap<FileId, Vec<lsp_types::Diagnostic>> = FxHashMap::default();
     for d in &world.lint {
@@ -177,7 +178,7 @@ pub fn diagnostics(world: &World) -> Vec<(Url, Vec<lsp_types::Diagnostic>)> {
 }
 
 /// The errors of invalid config files, on each file.
-fn config_diagnostics(world: &World) -> Vec<(Url, Vec<lsp_types::Diagnostic>)> {
+pub(crate) fn config_diagnostics(world: &World) -> Vec<(Url, Vec<lsp_types::Diagnostic>)> {
     let mut by_file: FxHashMap<&Path, Vec<&vfl_config::FileError>> = FxHashMap::default();
     for error in &world.config_file_errors {
         by_file.entry(&error.path).or_default().push(error);
