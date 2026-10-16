@@ -68,6 +68,9 @@ enum Action {
     Preset(Preset),
     /// Format files no `vfl.toml` applies to in a style.
     Style(Style),
+    /// A line that goes nowhere, such as an instance of a vendor
+    /// primitive.
+    Nothing,
 }
 
 fn tell(text: &str) {
@@ -158,6 +161,7 @@ pub(crate) fn list_selected(n: &ScNotification) {
         Action::Generate(kind, entity) => generate_from(kind, &entity),
         Action::Preset(preset) => crate::plugin::change_defaults(|s| s.lint_preset = preset),
         Action::Style(style) => crate::plugin::change_defaults(|s| s.format_style = style),
+        Action::Nothing => {}
     }
 }
 
@@ -442,6 +446,36 @@ pub(crate) fn project_problems() {
                         ),
                         Action::Go(p.location),
                     )
+                })
+                .collect();
+            show_list(&here, items);
+        },
+    );
+}
+
+/// Lists the design hierarchy of the project, from every entity no other
+/// entity instantiates, indented by depth; picking a line goes to the
+/// instance (a top's entity).
+pub(crate) fn design_hierarchy() {
+    here().ask(
+        Key::Command,
+        |engine, path, buffer, _| {
+            let tree = engine.hierarchy(path, &buffer.text);
+            crate::engine::hierarchy_lines(&tree)
+        },
+        |here, lines| {
+            if lines.is_empty() {
+                tell("No entity found in the project.");
+                return;
+            }
+            let items = lines
+                .into_iter()
+                .map(|(label, place)| {
+                    let action = match place {
+                        Some(location) => Action::Go(location),
+                        None => Action::Nothing,
+                    };
+                    (label, action)
                 })
                 .collect();
             show_list(&here, items);

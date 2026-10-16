@@ -58,6 +58,7 @@ pub const NAMES: &[&str] = &[
     "Go to type definition",
     "Show call hierarchy",
     "Expand selection",
+    "Show design hierarchy",
 ];
 
 #[cfg(test)]

@@ -7,8 +7,8 @@
 //! hints (for the 50 lines from each position, a screen) and the preparing
 //! of a call hierarchy with its incoming and outgoing calls. Then the code
 //! lenses of every file, each resolved, the inlay hints of every whole
-//! file, and the semantic tokens of every file, whole and as a delta after
-//! the first.
+//! file, the semantic tokens of every file, whole and as a delta after
+//! the first, and the design hierarchy of the project.
 //! Usage: request_latency DIR
 
 use std::path::PathBuf;
@@ -197,6 +197,27 @@ fn main() {
             path.display()
         );
     }
+    // The design hierarchy, built on demand for the whole project.
+    let mut times: Vec<Duration> = Vec::new();
+    let mut nodes = 0;
+    for _ in 0..5 {
+        let start = Instant::now();
+        let tree = vfl_lsp::handle(&mut world, "vfl/hierarchy", json!({})).unwrap_or_default();
+        times.push(start.elapsed());
+        nodes = count_nodes(&tree["roots"]);
+    }
+    times.sort();
+    println!(
+        "vfl/hierarchy: {nodes} nodes, median {:?}, max {:?}",
+        times[times.len() / 2],
+        times[times.len() - 1]
+    );
+}
+
+fn count_nodes(nodes: &serde_json::Value) -> usize {
+    nodes.as_array().map_or(0, |nodes| {
+        nodes.iter().map(|n| 1 + count_nodes(&n["children"])).sum()
+    })
 }
 
 /// Prepares a call hierarchy at a position, and asks for the incoming and

@@ -108,6 +108,14 @@ pub fn request(world: &mut World, method: &str, params: Value) -> Result<Value, 
         "callHierarchy/outgoingCalls" => json(crate::hierarchy::outgoing(world, parse(params)?)),
         "vfl/entities" => json(crate::generate::entities(world)),
         "vfl/projectConfig" => json(crate::settings::project_config(world).map_err(Error::Failed)?),
+        "vfl/hierarchy" => {
+            let params = if params.is_null() {
+                Default::default()
+            } else {
+                parse(params)?
+            };
+            json(crate::design_tree::request(world, params))
+        }
         "vfl/generate" => {
             json(crate::generate::generate_request(world, parse(params)?).map_err(Error::Failed)?)
         }

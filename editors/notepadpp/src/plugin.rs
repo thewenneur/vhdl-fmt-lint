@@ -92,6 +92,7 @@ const MENU: &[(&str, Option<extern "C" fn()>)] = &[
     ("Go to type definition", Some(cmd_type_definition)),
     ("Show call hierarchy", Some(cmd_call_hierarchy)),
     ("Expand selection", Some(cmd_expand_selection)),
+    ("Show design hierarchy", Some(cmd_hierarchy)),
 ];
 
 // The entries are those of `menu::NAMES`, in its order, which keeps the
@@ -827,6 +828,10 @@ extern "C" fn cmd_testbench() {
 
 extern "C" fn cmd_generate_docs() {
     guard(tools::generate_docs);
+}
+
+extern "C" fn cmd_hierarchy() {
+    guard(tools::design_hierarchy);
 }
 
 extern "C" fn cmd_generate_config() {
