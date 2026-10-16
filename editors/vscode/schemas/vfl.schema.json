@@ -1576,6 +1576,329 @@
                 }
               ]
             },
+            "sema/index-range": {
+              "description": "An index or slice of an array is outside its static range, goes the other direction, or is a null range.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "generics": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "Use the default values of generics as bounds."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/value-range": {
+              "description": "A static integer value is outside the range of the integer subtype it is given to.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unreachable-code": {
+              "description": "A statement follows a `return`, `exit`, `next` or `wait;` in the same sequence, so it never runs.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/constant-condition": {
+              "description": "A condition of an `if`, `elsif`, `if` generate or conditional assignment is the literal `true` or `false`.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "constants": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "Report conditions that are boolean constants too."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unused-subprogram": {
+              "description": "A function or procedure declared in an architecture, process, subprogram or package body is never called.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "public": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "Check the subprograms of packages too, against the whole project."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/comparison-width": {
+              "description": "Two arrays of different static widths are compared with a predefined `=`, `/=`, `<`, `<=`, `>` or `>=`.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/synthesis-delay": {
+              "description": "An `after` delay or a `wait for` in the architecture of an entity with ports.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/synthesis-file-io": {
+              "description": "A process of the architecture of an entity with ports reads or writes files.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/synthesis-loop": {
+              "description": "A loop of a process of the architecture of an entity with ports has bounds or a condition that read a signal or variable.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/synthesis-initial-value": {
+              "description": "A signal of the architecture of an entity with ports has an initial value.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/synthesis-real-port": {
+              "description": "A port has type `real` or an array of `real`.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
             "verilog/blocking-in-clocked": {
               "description": "A clocked `always` block assigns a signal with a blocking assignment (`=`).",
               "anyOf": [
@@ -2052,6 +2375,292 @@
                         "error"
                       ],
                       "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/identifier-case": {
+              "description": "A name is written with another case than its declaration.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "libraries": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "Check names declared in `std` and `ieee` too."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/boolean-comparison": {
+              "description": "A boolean is compared with `true` or `false`.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/magic-number": {
+              "description": "A number other than those of `allow` is written in a statement instead of a named constant.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "allow": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      },
+                      "default": [
+                        0,
+                        1,
+                        2
+                      ],
+                      "description": "The numbers that may be written in statements."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/file-header": {
+              "description": "The comments at the top of a file do not match the `pattern` option.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression the comments at the top of each file must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/one-unit-per-file": {
+              "description": "A file declares more than one primary unit.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/generic-default": {
+              "description": "A generic of an entity or component has no default value.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/port-order": {
+              "description": "A clock or reset port comes after another port.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "clocks": {
+                      "type": "string",
+                      "description": "A regular expression for clock port names; `[generate] clock_pattern` by default."
+                    },
+                    "resets": {
+                      "type": "string",
+                      "description": "A regular expression for reset port names; `[generate] reset_pattern` by default."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/process-all": {
+              "description": "A combinational process lists its signals instead of using `process (all)` (VHDL-2008).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/shared-variable": {
+              "description": "A shared variable is declared (of a protected type too with the `protected` option).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "protected": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "Report shared variables of protected types too."
                     }
                   },
                   "additionalProperties": false
