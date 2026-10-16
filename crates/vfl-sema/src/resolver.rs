@@ -259,6 +259,15 @@ impl<'a> Resolver<'a> {
                 Arc::new(Region::default())
             }
         };
+        // A vendor stub declares the primitives most often used: names it
+        // lacks are not reported.
+        let region = if self.ctx.is_stub(self.file) {
+            let mut region = Arc::unwrap_or_clone(region);
+            region.opaque = true;
+            Arc::new(region)
+        } else {
+            region
+        };
         if let Some(name) = name {
             self.end_label_refs(&node, &name, id);
         }
@@ -306,11 +315,33 @@ impl<'a> Resolver<'a> {
         }
     }
 
+    /// The innermost frame. The root frame is never popped (see
+    /// [`Self::pop_frame`]), so there always is one.
+    fn top_mut(&mut self) -> &mut Frame {
+        if self.frames.is_empty() {
+            debug_assert!(false, "the root frame is gone");
+            self.frames.push(Frame::default());
+        }
+        let last = self.frames.len() - 1;
+        &mut self.frames[last]
+    }
+
+    /// Leaves the innermost frame. An unbalanced pop, a bug, keeps the root
+    /// frame and degrades name resolution instead of panicking analysis.
+    fn pop_frame(&mut self) -> Frame {
+        debug_assert!(self.frames.len() > 1, "popped the root frame");
+        if self.frames.len() > 1 {
+            self.frames.pop().unwrap_or_default()
+        } else {
+            Frame::default()
+        }
+    }
+
     /// Pops the unit's own region. Its use clauses stay visible to the
     /// unit's secondary units, so they move to the enclosing frame.
     fn pop_unit_frame(&mut self) -> Arc<Region> {
-        let frame = self.frames.pop().unwrap();
-        let outer = self.frames.last_mut().unwrap();
+        let frame = self.pop_frame();
+        let outer = self.top_mut();
         outer.imports.extend(frame.imports);
         outer.libraries.extend(frame.libraries);
         Arc::new(frame.locals)
@@ -423,7 +454,7 @@ impl<'a> Resolver<'a> {
     /// Makes every failed lookup in the current scope unknown.
     fn push_opaque(&mut self) {
         let id = self.new_import_id();
-        self.frames.last_mut().unwrap().imports.push(Import {
+        self.top_mut().imports.push(Import {
             id,
             kind: ImportKind::Opaque,
         });
@@ -472,16 +503,17 @@ impl<'a> Resolver<'a> {
     fn declare(&mut self, name: &SyntaxToken, kind: DeclKind, node: &SyntaxNode) -> DeclId {
         let id = self.push_decl(Some(name), kind, node);
         let key = self.decls[id.index as usize].name.clone();
-        let frame = self.frames.last().unwrap();
-        let clash = frame.locals.get(&key).iter().copied().find(|&other| {
-            let other_kind = self.decl(other).map(|d| d.kind);
-            !kind.is_overloadable()
-                && !other_kind.is_some_and(DeclKind::is_overloadable)
-                && !matches!(
-                    (other_kind, kind),
-                    (Some(DeclKind::IncompleteType), DeclKind::Type)
-                        | (Some(DeclKind::IncompleteType), DeclKind::IncompleteType)
-                )
+        let clash = self.frames.last().and_then(|frame| {
+            frame.locals.get(&key).iter().copied().find(|&other| {
+                let other_kind = self.decl(other).map(|d| d.kind);
+                !kind.is_overloadable()
+                    && !other_kind.is_some_and(DeclKind::is_overloadable)
+                    && !matches!(
+                        (other_kind, kind),
+                        (Some(DeclKind::IncompleteType), DeclKind::Type)
+                            | (Some(DeclKind::IncompleteType), DeclKind::IncompleteType)
+                    )
+            })
         });
         if let Some(other) = clash
             && let Some(prev) = self.decl(other).map(|d| d.range)
@@ -496,7 +528,7 @@ impl<'a> Resolver<'a> {
                 ),
             );
         }
-        self.frames.last_mut().unwrap().locals.insert(&key, id);
+        self.top_mut().locals.insert(&key, id);
         id
     }
 
@@ -685,12 +717,11 @@ impl<'a> Resolver<'a> {
         let def = node
             .children()
             .find(|n| !matches!(n.kind(), SyntaxKind::LABEL));
-        match def.as_ref().map(SyntaxNode::kind) {
+        match def {
             None => {
                 self.declare(&name, DeclKind::IncompleteType, node);
             }
-            Some(SyntaxKind::PROTECTED_TYPE_BODY) => {
-                let def = def.unwrap();
+            Some(def) if def.kind() == SyntaxKind::PROTECTED_TYPE_BODY => {
                 let id = self.push_decl(Some(&name), DeclKind::ProtectedBody, node);
                 let mut frame = Frame::default();
                 match self.lookup(&designator_key(&name)) {
@@ -712,24 +743,22 @@ impl<'a> Resolver<'a> {
                 self.parents.push(id);
                 self.frames.push(frame);
                 self.visit_children(&def);
-                self.frames.pop();
+                self.pop_frame();
                 self.parents.pop();
                 self.end_label_refs(&def, &name, id);
             }
-            Some(SyntaxKind::PROTECTED_TYPE_DEF) => {
-                let def = def.unwrap();
+            Some(def) if def.kind() == SyntaxKind::PROTECTED_TYPE_DEF => {
                 let id = self.declare(&name, DeclKind::Type, node);
                 self.decls[id.index as usize].type_def = Some(Arc::new(TypeDef::Protected));
                 self.parents.push(id);
                 self.frames.push(Frame::default());
                 self.visit_children(&def);
-                let members = Arc::new(self.frames.pop().unwrap().locals);
+                let members = Arc::new(self.pop_frame().locals);
                 self.parents.pop();
                 self.decls[id.index as usize].members = Some(members);
                 self.end_label_refs(&def, &name, id);
             }
-            Some(_) => {
-                let def = def.unwrap();
+            Some(def) => {
                 let id = self.declare(&name, DeclKind::Type, node);
                 self.complete_incomplete_type(&name, id);
                 let type_def = match def.kind() {
@@ -897,9 +926,12 @@ impl<'a> Resolver<'a> {
         self.parents.push(id);
         self.frames.push(Frame::default());
         self.visit_children(node);
-        let members = Arc::new(self.frames.pop().unwrap().locals);
+        let mut members = self.pop_frame().locals;
+        // A vendor stub declares the ports and generics most often used:
+        // others are not reported, nor ones left unassociated.
+        members.opaque = self.ctx.is_stub(self.file);
         self.parents.pop();
-        self.decls[id.index as usize].members = Some(members);
+        self.decls[id.index as usize].members = Some(Arc::new(members));
         self.end_label_refs(node, &name, id);
     }
 
@@ -914,7 +946,7 @@ impl<'a> Resolver<'a> {
                 self.parents.push(id);
                 self.frames.push(Frame::default());
                 self.visit_children(node);
-                let members = Arc::new(self.frames.pop().unwrap().locals);
+                let members = Arc::new(self.pop_frame().locals);
                 self.parents.pop();
                 self.decls[id.index as usize].members = Some(members);
                 self.end_label_refs(node, &name, id);
@@ -935,7 +967,7 @@ impl<'a> Resolver<'a> {
                 self.parents.push(id);
                 self.frames.push(frame);
                 self.visit_children(node);
-                self.frames.pop();
+                self.pop_frame();
                 self.parents.pop();
                 self.end_label_refs(node, &name, id);
             }
@@ -969,7 +1001,7 @@ impl<'a> Resolver<'a> {
                     targets: smallvec![Target::Library(self.library_name(&key).into())],
                     access: Access::Other,
                 });
-                self.frames.last_mut().unwrap().libraries.push(key);
+                self.top_mut().libraries.push(key);
             }
         }
     }
@@ -1000,15 +1032,13 @@ impl<'a> Resolver<'a> {
                 resolved: true,
             });
             let kinds = self.use_item(&item);
-            if kinds.iter().any(|k| matches!(k, ImportKind::Opaque)) {
-                self.use_items.last_mut().unwrap().resolved = false;
+            if kinds.iter().any(|k| matches!(k, ImportKind::Opaque))
+                && let Some(item) = self.use_items.last_mut()
+            {
+                item.resolved = false;
             }
             for kind in kinds {
-                self.frames
-                    .last_mut()
-                    .unwrap()
-                    .imports
-                    .push(Import { id, kind });
+                self.top_mut().imports.push(Import { id, kind });
             }
         }
     }
@@ -1077,7 +1107,7 @@ impl<'a> Resolver<'a> {
             });
             match unit.and_then(|u| self.ctx.result(u)) {
                 Some(result) => {
-                    let frame = self.frames.last_mut().unwrap();
+                    let frame = self.top_mut();
                     frame.imports.extend(result.imports.iter().cloned());
                     frame.libraries.extend(result.libraries.iter().cloned());
                 }
@@ -1255,19 +1285,13 @@ impl<'a> Resolver<'a> {
     /// Links an incomplete type declaration to its full declaration.
     fn complete_incomplete_type(&mut self, name: &SyntaxToken, full: DeclId) {
         let key = designator_key(name);
-        let incomplete = self
-            .frames
-            .last()
-            .unwrap()
-            .locals
-            .get(&key)
-            .iter()
-            .copied()
-            .find(|&d| {
+        let incomplete = self.frames.last().and_then(|frame| {
+            frame.locals.get(&key).iter().copied().find(|&d| {
                 d != full
                     && d.unit == self.unit
                     && self.decls[d.index as usize].kind == DeclKind::IncompleteType
-            });
+            })
+        });
         if let Some(incomplete) = incomplete {
             self.decls[incomplete.index as usize].subtype = Some(full);
         }
@@ -1739,11 +1763,11 @@ impl<'a> Resolver<'a> {
             decl.spelling = "GUARD".into();
             decl.range = first_token(node, SyntaxKind::BLOCK_KW)
                 .map_or(node.text_range(), |t| t.text_range());
-            self.frames.last_mut().unwrap().locals.insert("guard", id);
+            self.top_mut().locals.insert("guard", id);
             self.implicit.push(id);
         }
         self.visit_children_except(node, |n| n.kind() == SyntaxKind::LABEL);
-        self.frames.pop();
+        self.pop_frame();
         if let Some((token, id)) = label {
             self.parents.pop();
             self.end_label_refs(node, &token, id);
@@ -1836,7 +1860,7 @@ impl<'a> Resolver<'a> {
                 _ => self.visit(&child),
             }
         }
-        self.frames.pop();
+        self.pop_frame();
         if let Some((token, id)) = label {
             self.end_label_refs(node, &token, id);
         }
@@ -1869,7 +1893,7 @@ impl<'a> Resolver<'a> {
         {
             self.generate_body(&body);
         }
-        self.frames.pop();
+        self.pop_frame();
         if let Some((token, id)) = label {
             self.parents.pop();
             self.end_label_refs(node, &token, id);
@@ -1880,7 +1904,7 @@ impl<'a> Resolver<'a> {
         let label = self.label(body);
         self.frames.push(Frame::default());
         self.visit_children_except(body, |n| n.kind() == SyntaxKind::LABEL);
-        self.frames.pop();
+        self.pop_frame();
         if let Some((token, id)) = label {
             self.end_label_refs(body, &token, id);
         }
@@ -1939,7 +1963,7 @@ impl<'a> Resolver<'a> {
                 _ => self.with_access(Access::Read, |s| s.visit(&child)),
             }
         }
-        self.frames.pop();
+        self.pop_frame();
         self.parents.pop();
         if let Some((list, sens_refs)) = sensitivity
             && !has_token(&list, SyntaxKind::ALL_KW)
@@ -2561,7 +2585,7 @@ impl<'a> Resolver<'a> {
                     if matches!(spec.kind(), FUNCTION_SPEC | PROCEDURE_SPEC) {
                         let saved = self.interface;
                         self.subprogram_spec(&spec, DeclKind::GenericSubprogram, node);
-                        self.frames.pop();
+                        self.pop_frame();
                         self.parents.pop();
                         self.interface = saved;
                     } else {
@@ -2655,7 +2679,7 @@ impl<'a> Resolver<'a> {
                     if matches!(spec.kind(), FUNCTION_SPEC | PROCEDURE_SPEC) {
                         let kind = Self::subprogram_kind(&spec);
                         self.subprogram_spec(&spec, kind, node);
-                        self.frames.pop();
+                        self.pop_frame();
                         self.parents.pop();
                     }
                 }
@@ -2674,7 +2698,7 @@ impl<'a> Resolver<'a> {
                         self.with_access(Access::Read, |s| s.visit(&child));
                     }
                 }
-                self.frames.pop();
+                self.pop_frame();
                 self.parents.pop();
                 if let (Some(id), Some(name)) = (id, designator(&spec)) {
                     // The body completes the declaration with the same
@@ -2741,7 +2765,7 @@ impl<'a> Resolver<'a> {
                         BINDING_INDICATION => {
                             self.frames.push(std::mem::take(&mut frame));
                             self.binding_indication(&child);
-                            self.frames.pop();
+                            self.pop_frame();
                         }
                         NAME | SELECTED_NAME => {
                             if let Lookup::Found(targets) = self.name_expr(&child, Access::Other)

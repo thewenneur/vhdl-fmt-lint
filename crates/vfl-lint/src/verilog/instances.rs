@@ -198,7 +198,8 @@ fn ports(
         connected[index] = true;
         let input = port.mode == Some(Mode::In);
         match &c.expr {
-            None if c.name.is_some() && has_token(&c.node, K::LPAREN) => {
+            // `.name()`, or an empty position: `sub u (a, , c)`.
+            None if c.name.is_none() || has_token(&c.node, K::LPAREN) => {
                 if input && !port.has_default && enabled(UNCONNECTED) {
                     out.push(Finding::new(
                         UNCONNECTED,
@@ -265,6 +266,36 @@ fn ports(
     ));
 }
 
+/// The edit making the empty position `connection` connect `name` to
+/// nothing: `.name()` between the separators around it. `None` when a
+/// comment is in the way.
+fn empty_position(connection: &SyntaxNode, name: &str) -> Option<Edit> {
+    let significant =
+        |e: &rowan::NodeOrToken<SyntaxNode, vfl_verilog_syntax::SyntaxToken>| !e.kind().is_trivia();
+    let before = std::iter::successors(connection.prev_sibling_or_token(), |e| {
+        e.prev_sibling_or_token()
+    })
+    .find(significant)?;
+    let after = std::iter::successors(connection.next_sibling_or_token(), |e| {
+        e.next_sibling_or_token()
+    })
+    .find(significant)?;
+    let range = TextRange::new(before.text_range().end(), after.text_range().start());
+    let blocked = connection
+        .parent()?
+        .descendants_with_tokens()
+        .filter_map(|e| e.into_token())
+        .any(|t| range.contains_range(t.text_range()) && t.kind() != K::WHITESPACE);
+    if blocked {
+        return None;
+    }
+    let space = if before.kind() == K::COMMA { " " } else { "" };
+    Some(Edit {
+        range,
+        text: format!("{space}.{name}()"),
+    })
+}
+
 /// Connections by position, with a fix naming them from the module.
 fn positional(
     list: &SyntaxNode,
@@ -293,7 +324,12 @@ fn positional(
             let name = names.get(i)?;
             let range = match &c.expr {
                 Some(expr) => super::trimmed_range(expr),
-                None => continue,
+                // An empty position: names may not mix with positions, so
+                // it becomes `.name()`.
+                None => {
+                    edits.push(empty_position(&c.node, name)?);
+                    continue;
+                }
             };
             edits.push(Edit {
                 range: TextRange::empty(range.start()),

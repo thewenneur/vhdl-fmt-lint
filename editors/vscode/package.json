@@ -5,6 +5,7 @@
   "version": "0.7.0",
   "publisher": "thewenneur",
   "license": "MIT OR Apache-2.0",
+  "icon": "images/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/thewenneur/vhdl-fmt-lint",
@@ -31,6 +32,16 @@
     "vscode": "^1.91.0"
   },
   "main": "./out/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In a workspace you do not trust, vfl ignores the workspace's `vfl.server.path` and `vfl.server.extraEnv`, so that the workspace cannot choose the program it runs.",
+      "restrictedConfigurations": [
+        "vfl.server.path",
+        "vfl.server.extraEnv"
+      ]
+    }
+  },
   "activationEvents": [
     "workspaceContains:**/{vfl,.vfl,vhdl_ls}.toml"
   ],
@@ -90,6 +101,21 @@
         "language": "verilog",
         "scopeName": "source.verilog",
         "path": "./syntaxes/verilog.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "vhdl",
+        "path": "./snippets/vhdl.json"
+      }
+    ],
+    "tomlValidation": [
+      {
+        "fileMatch": [
+          "vfl.toml",
+          ".vfl.toml"
+        ],
+        "url": "https://raw.githubusercontent.com/thewenneur/vhdl-fmt-lint/v0.7.0/editors/vscode/schemas/vfl.schema.json"
       }
     ],
     "semanticTokenTypes": [
@@ -332,7 +358,7 @@
           "type": "string",
           "default": "",
           "scope": "machine-overridable",
-          "markdownDescription": "Path to the `vfl` executable. Leave empty to use `vfl` from `PATH`, or from `~/.cargo/bin`. `~` and `${workspaceFolder}` are expanded."
+          "markdownDescription": "Path to the `vfl` executable. Leave empty to use `vfl` from `PATH`, or from `~/.cargo/bin`, or else the release binary of the extension's version, which the extension offers to download. `~` and `${workspaceFolder}` are expanded. Ignored in workspaces you do not trust, when set by the workspace."
         },
         "vfl.server.extraEnv": {
           "type": "object",
@@ -341,7 +367,7 @@
             "type": "string"
           },
           "scope": "machine-overridable",
-          "markdownDescription": "Extra environment variables for the language server, such as `{ \"RUST_BACKTRACE\": \"1\" }`."
+          "markdownDescription": "Extra environment variables for the language server, such as `{ \"RUST_BACKTRACE\": \"1\" }`. Ignored in workspaces you do not trust, when set by the workspace."
         },
         "vfl.lint.preset": {
           "type": "string",
@@ -383,6 +409,30 @@
           "scope": "resource",
           "markdownDescription": "Format the line you just finished as you type: the line of a `;`, or the line above a new line. A project can turn it off for everyone with `on_type = false` under `[format]` in `vfl.toml`."
         },
+        "vfl.inlayHints.ports": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "markdownDescription": "Show the port name before each positional actual of a port map. Unless set here, `ports` under `[lsp.inlay_hints]` in `vfl.toml` decides. `#editor.inlayHints.enabled#` turns every inlay hint off."
+        },
+        "vfl.inlayHints.generics": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "markdownDescription": "Show the generic name before each positional actual of a generic map. Unless set here, `generics` under `[lsp.inlay_hints]` in `vfl.toml` decides."
+        },
+        "vfl.inlayHints.parameters": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "markdownDescription": "Show the parameter name before each positional argument of a function or procedure call. Unless set here, `parameters` under `[lsp.inlay_hints]` in `vfl.toml` decides."
+        },
+        "vfl.inlayHints.portTypes": {
+          "type": "boolean",
+          "default": false,
+          "scope": "window",
+          "markdownDescription": "Show the mode and type of the port after each actual of a port map. Unless set here, `port_types` under `[lsp.inlay_hints]` in `vfl.toml` decides."
+        },
         "vfl.trace.server": {
           "type": "string",
           "enum": [
@@ -398,6 +448,14 @@
     },
     "configurationDefaults": {
       "[vhdl]": {
+        "editor.defaultFormatter": "thewenneur.vfl",
+        "editor.formatOnType": true
+      },
+      "[verilog]": {
+        "editor.defaultFormatter": "thewenneur.vfl",
+        "editor.formatOnType": true
+      },
+      "[systemverilog]": {
         "editor.defaultFormatter": "thewenneur.vfl",
         "editor.formatOnType": true
       }

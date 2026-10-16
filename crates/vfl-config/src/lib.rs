@@ -48,6 +48,7 @@ pub struct Config {
     pub doc: DocConfig,
     pub generate: GenerateConfig,
     pub verilog: VerilogConfig,
+    pub lsp: LspConfig,
 }
 
 impl Config {
@@ -156,6 +157,11 @@ pub struct ProjectConfig {
     /// How rust_hdl's `vhdl_ls.toml` library lists are used.
     #[serde(rename = "vhdl-ls")]
     pub vhdl_ls: VhdlLsMode,
+    /// Whether the bundled declarations of vendor primitive libraries
+    /// (`unisim`, `xpm`, `altera_mf`, Lattice's) are loaded for a library
+    /// the design uses and the project does not hold.
+    #[serde(rename = "vendor-stubs")]
+    pub vendor_stubs: bool,
 }
 
 impl Default for ProjectConfig {
@@ -166,6 +172,7 @@ impl Default for ProjectConfig {
             exclude: Vec::new(),
             libraries: BTreeMap::new(),
             vhdl_ls: VhdlLsMode::default(),
+            vendor_stubs: true,
         }
     }
 }
@@ -374,18 +381,30 @@ pub struct FormatConfig {
     pub association_separator: Separator,
     /// Whether `when x => stmt;` may keep its statement on the `when` line.
     pub case_alternative: CaseAlternative,
+    /// Whether a line still longer than `max_width` once its lists are
+    /// broken up is broken inside its expressions, at the operators that
+    /// bind loosest.
+    pub break_expressions: bool,
+    /// Where the operator goes when an expression is broken over lines.
+    pub operator_position: OperatorPosition,
     pub line_ending: LineEnding,
     /// Whether editors may format the line just typed (after `;` or a new
     /// line). Editors have their own switch too.
     pub on_type: bool,
     pub align: AlignConfig,
+    /// The case of the identifiers declared as each kind of declaration,
+    /// and of every reference to them in the same file. Kinds left out
+    /// follow `identifier_case`.
+    pub declaration_case: DeclarationCase,
+    /// Blank lines around `begin`, `end`, processes and declaration groups.
+    pub blank_lines: BlankLinesConfig,
 }
 
 impl Default for FormatConfig {
     fn default() -> Self {
         FormatConfig {
             style: Style::Default,
-            max_width: 100,
+            max_width: 120,
             indent: 4,
             continuation_indent: None,
             use_tabs: false,
@@ -395,16 +414,20 @@ impl Default for FormatConfig {
             end_keyword: EndKeyword::Preserve,
             space_before_label_colon: true,
             space_after_keyword: true,
-            max_blank_lines: 2,
+            max_blank_lines: 1,
             interface_list: ListLayout::Expand,
-            association_list: ListLayout::Auto,
+            association_list: ListLayout::Expand,
             close_paren: CloseParen::OwnLine,
             interface_separator: Separator::Trailing,
             association_separator: Separator::Trailing,
             case_alternative: CaseAlternative::Preserve,
+            break_expressions: true,
+            operator_position: OperatorPosition::Preserve,
             line_ending: LineEnding::Auto,
             on_type: true,
             align: AlignConfig::default(),
+            declaration_case: DeclarationCase::default(),
+            blank_lines: BlankLinesConfig::default(),
         }
     }
 }
@@ -512,6 +535,131 @@ pub enum Separator {
     /// At the start of the next line: `a => x` then `, b => y`. The
     /// separator sits left of the elements so that they line up.
     Leading,
+}
+
+/// Where the operator goes when an expression is broken over lines.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OperatorPosition {
+    /// At the end of the line: `a and` then `b`.
+    Trailing,
+    /// At the start of the next line: `a` then `and b`.
+    Leading,
+    /// Breaks written in the source stay on their side of the operator;
+    /// breaks the formatter adds go after it.
+    Preserve,
+}
+
+/// `[format.declaration_case]`: the case of the identifiers declared as
+/// each kind, and of every reference to them in the same file. A kind left
+/// out follows `identifier_case`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DeclarationCase {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub architecture: Option<Case>,
+    /// Packages and package instantiations.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generic: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub constant: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signal: Option<Case>,
+    /// Variables, shared variables included.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variable: Option<Case>,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub type_: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subtype: Option<Case>,
+    /// The literals of enumeration types (`IDLE` in `(IDLE, RUN)`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enum_literal: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub function: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub procedure: Option<Case>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alias: Option<Case>,
+    /// Statement labels: processes, instances, generate statements, blocks.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<Case>,
+}
+
+impl DeclarationCase {
+    /// Whether no kind has a case of its own.
+    pub fn is_empty(&self) -> bool {
+        *self == DeclarationCase::default()
+    }
+}
+
+/// `[format.blank_lines]`: how many blank lines go at some places. Each key
+/// takes a number (exactly that many) or `{ min = .., max = .. }`; a key
+/// left out keeps what is written, up to `max_blank_lines`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct BlankLinesConfig {
+    /// Before the `begin` of an architecture, process, block, subprogram
+    /// or generate statement.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_begin: Option<BlankLines>,
+    /// After that `begin`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after_begin: Option<BlankLines>,
+    /// Before the `end` of a construct (entity, architecture, process,
+    /// `if`, `case`, loop, record...).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_end: Option<BlankLines>,
+    /// Before a process, block or generate statement, and the comment
+    /// lines just above it; not when it is the first statement after
+    /// `begin`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_process: Option<BlankLines>,
+    /// Between two declarations of different kinds (constants, then
+    /// signals), above the comment lines just above the second.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub between_declaration_groups: Option<BlankLines>,
+}
+
+impl BlankLinesConfig {
+    /// Whether no rule is set.
+    pub fn is_empty(&self) -> bool {
+        *self == BlankLinesConfig::default()
+    }
+}
+
+/// A number of blank lines: exactly `n`, or a range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum BlankLines {
+    Exactly(u32),
+    Range {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        min: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max: Option<u32>,
+    },
+}
+
+impl BlankLines {
+    /// `count` brought into the range.
+    pub fn apply(self, count: u32) -> u32 {
+        match self {
+            BlankLines::Exactly(n) => n,
+            BlankLines::Range { min, max } => {
+                let count = count.max(min.unwrap_or(0));
+                max.map_or(count, |max| count.min(max))
+            }
+        }
+    }
 }
 
 /// Replaces `format.style` in a config table by the settings of that style,
@@ -758,6 +906,38 @@ impl Default for GenerateConfig {
             clock_pattern: r"(?i)^(.*_)?(clk|clock)\d*(_i|_in|_p)?$".into(),
             reset_pattern: r"(?i)^(.*_)?(a|s)?(rst|reset)\d*(n|_n|_b|_i|_in|_ni|_n_i)?$".into(),
             active_low_pattern: r"(?i)([^i]n|_b|_ni|_n_i)$".into(),
+        }
+    }
+}
+
+/// `[lsp]`: features of the language server that are a matter of taste.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LspConfig {
+    pub inlay_hints: InlayHintsConfig,
+}
+
+/// `[lsp.inlay_hints]`: which names and types the editor shows inline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct InlayHintsConfig {
+    /// The port before each positional actual of a port map.
+    pub ports: bool,
+    /// The generic before each positional actual of a generic map.
+    pub generics: bool,
+    /// The parameter before each positional argument of a subprogram call.
+    pub parameters: bool,
+    /// The mode and type of the port after each actual of a port map.
+    pub port_types: bool,
+}
+
+impl Default for InlayHintsConfig {
+    fn default() -> Self {
+        InlayHintsConfig {
+            ports: true,
+            generics: true,
+            parameters: true,
+            port_types: false,
         }
     }
 }
@@ -1165,7 +1345,7 @@ mod tests {
         );
         assert_eq!(Config::from_toml_str(&text).unwrap(), config);
         // Keys at their default, the style's included, are comments.
-        assert!(text.contains("\n# max_width = 100\n"), "{text}");
+        assert!(text.contains("\n# max_width = 120\n"), "{text}");
         assert!(text.contains("\n# indent = 2\n"), "{text}");
         assert!(text.contains("\n# standard = \"2008\"\n"), "{text}");
         let active: Vec<&str> = text
@@ -1210,11 +1390,64 @@ mod tests {
     }
 
     #[test]
+    fn blank_line_rules_and_declaration_case_parse() {
+        let config = Config::from_toml_str(
+            "[format.blank_lines]\nafter_begin = 0\nbefore_process = { min = 1 }\n\
+             before_end = { min = 1, max = 2 }\n\
+             [format.declaration_case]\nconstant = \"upper\"\ntype = \"lower\"\n",
+        )
+        .unwrap();
+        let blank = &config.format.blank_lines;
+        assert_eq!(blank.after_begin.unwrap().apply(3), 0);
+        assert_eq!(blank.before_process.unwrap().apply(0), 1);
+        assert_eq!(blank.before_process.unwrap().apply(2), 2);
+        assert_eq!(blank.before_end.unwrap().apply(5), 2);
+        assert_eq!(blank.before_begin, None);
+        assert_eq!(config.format.declaration_case.constant, Some(Case::Upper));
+        assert_eq!(config.format.declaration_case.type_, Some(Case::Lower));
+        let text = config.file_text("");
+        assert_eq!(Config::from_toml_str(&text).unwrap(), config, "{text}");
+        assert!(Config::from_toml_str("[format.blank_lines]\nafter_begin = \"x\"").is_err());
+        assert!(Config::from_toml_str("[format.declaration_case]\nnope = \"upper\"").is_err());
+    }
+
+    /// Sets the keys that are left out of the serialized config when unset.
+    fn set_unset_keys(config: &mut Config) {
+        config.format.declaration_case = DeclarationCase {
+            entity: Some(Case::Lower),
+            architecture: Some(Case::Lower),
+            package: Some(Case::Lower),
+            component: Some(Case::Lower),
+            generic: Some(Case::Upper),
+            port: Some(Case::Lower),
+            constant: Some(Case::Upper),
+            signal: Some(Case::Lower),
+            variable: Some(Case::Lower),
+            type_: Some(Case::Lower),
+            subtype: Some(Case::Lower),
+            enum_literal: Some(Case::Upper),
+            function: Some(Case::Lower),
+            procedure: Some(Case::Lower),
+            alias: Some(Case::Lower),
+            label: Some(Case::Lower),
+        };
+        let one = Some(BlankLines::Exactly(1));
+        config.format.blank_lines = BlankLinesConfig {
+            before_begin: one,
+            after_begin: one,
+            before_end: one,
+            before_process: one,
+            between_declaration_groups: one,
+        };
+    }
+
+    #[test]
     fn every_key_is_documented() {
         // Git may check the doc out with CRLF line endings on Windows.
         let doc = include_str!("../../../docs/configuration.md").replace("\r\n", "\n");
         let mut config = Config::default();
         config.format.continuation_indent = Some(2);
+        set_unset_keys(&mut config);
         config.doc.title = Some("Design".into());
         let toml::Value::Table(table) = toml::Value::try_from(&config).unwrap() else {
             panic!("the config is not a table");
@@ -1247,5 +1480,171 @@ mod tests {
             }
         }
         walk(&table, "", &doc);
+    }
+
+    /// The JSON schema of `vfl.toml` that the VS Code extension gives the
+    /// TOML extensions, for completion and checking in the editor.
+    fn schema() -> serde_json::Value {
+        serde_json::from_str(include_str!(
+            "../../../editors/vscode/schemas/vfl.schema.json"
+        ))
+        .unwrap()
+    }
+
+    /// A config whose every optional key is set, as a TOML table.
+    fn full_config_table() -> toml::Table {
+        let mut config = Config::default();
+        config.format.continuation_indent = Some(2);
+        set_unset_keys(&mut config);
+        config.doc.title = Some("Design".into());
+        config.lint.baseline = Some("baseline.json".into());
+        config.lint.waivers.push(Waiver {
+            message: Some("x".into()),
+            reason: Some("y".into()),
+            ..Waiver::default()
+        });
+        let toml::Value::Table(table) = toml::Value::try_from(&config).unwrap() else {
+            panic!("the config is not a table");
+        };
+        table
+    }
+
+    /// A config of the single key `path` set to `value`.
+    fn config_with(path: &str, value: toml::Value) -> Result<Config, ConfigError> {
+        let mut parts: Vec<&str> = path.split('.').collect();
+        let mut value = value;
+        while let Some(last) = parts.pop() {
+            let mut table = toml::Table::new();
+            table.insert(last.into(), value);
+            value = toml::Value::Table(table);
+        }
+        let toml::Value::Table(table) = value else {
+            unreachable!()
+        };
+        Config::try_from(table).map_err(|e| ConfigError::Invalid(Box::new(e)))
+    }
+
+    #[test]
+    fn schema_has_every_key_and_no_other() {
+        // Tables whose keys are names the user picks, not config keys.
+        const OPEN: [&str; 2] = ["project.libraries", "lint.rules"];
+        fn walk(table: &toml::Table, schema: &serde_json::Value, path: &str) {
+            let props = schema["properties"]
+                .as_object()
+                .unwrap_or_else(|| panic!("the schema of [{path}] has no properties"));
+            assert_eq!(
+                schema["additionalProperties"],
+                serde_json::Value::Bool(false),
+                "the schema of [{path}] accepts unknown keys"
+            );
+            let join = |key: &str| {
+                if path.is_empty() {
+                    key.to_string()
+                } else {
+                    format!("{path}.{key}")
+                }
+            };
+            for (key, value) in table {
+                let full = join(key);
+                let sub = props
+                    .get(key)
+                    .unwrap_or_else(|| panic!("the schema has no {full}"));
+                if OPEN.contains(&full.as_str()) {
+                    continue;
+                }
+                match value {
+                    toml::Value::Table(inner) => walk(inner, sub, &full),
+                    toml::Value::Array(items) if full == "lint.waiver" => {
+                        let toml::Value::Table(inner) = &items[0] else {
+                            panic!("lint.waiver holds tables")
+                        };
+                        walk(inner, &sub["items"], &full);
+                    }
+                    _ => {}
+                }
+            }
+            for key in props.keys() {
+                // `root` and `extends` are read while layering the files.
+                let special = path.is_empty() && (key == "root" || key == "extends");
+                assert!(
+                    special || table.contains_key(key),
+                    "the schema has {}, which is not a config key",
+                    join(key)
+                );
+            }
+        }
+        walk(&full_config_table(), &schema(), "");
+    }
+
+    #[test]
+    fn schema_values_are_the_accepted_ones() {
+        let defaults = toml::Value::Table(full_config_table());
+        let default_of = |path: &str| {
+            path.split('.')
+                .try_fold(&defaults, |value, key| value.get(key))
+                .cloned()
+        };
+        fn leaves(
+            schema: &serde_json::Value,
+            path: &str,
+            out: &mut Vec<(String, serde_json::Value)>,
+        ) {
+            for (key, sub) in schema["properties"].as_object().into_iter().flatten() {
+                let full = if path.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{path}.{key}")
+                };
+                if full == "lint.rules" || full == "lint.waiver" {
+                    continue;
+                }
+                if sub.get("properties").is_some() {
+                    leaves(sub, &full, out);
+                } else {
+                    out.push((full, sub.clone()));
+                }
+            }
+        }
+        let mut all = Vec::new();
+        leaves(&schema(), "", &mut all);
+        for (path, leaf) in all {
+            if path == "root" || path == "extends" || path == "project.libraries" {
+                continue;
+            }
+            let bogus = config_with(&path, toml::Value::String("not-a-value".into()));
+            if let Some(values) = leaf["enum"].as_array() {
+                let values: Vec<&str> = values.iter().map(|v| v.as_str().unwrap()).collect();
+                for value in &values {
+                    config_with(&path, toml::Value::String(value.to_string()))
+                        .unwrap_or_else(|e| panic!("{path} = {value:?} is rejected: {e}"));
+                }
+                // The error lists the names the key takes; each must be in the schema.
+                let message = bogus.expect_err(&path).to_string();
+                // "expected `a`", "expected `a` or `b`", "expected one of `a`, `b`, `c`".
+                let (_, expected) = message
+                    .lines()
+                    .find_map(|line| line.split_once("unknown variant `not-a-value`, expected "))
+                    .unwrap_or_else(|| panic!("{path}: {message}"));
+                for name in expected.split('`').skip(1).step_by(2) {
+                    assert!(
+                        values.contains(&name),
+                        "the schema of {path} lacks {name:?}"
+                    );
+                }
+            } else if leaf["type"] == "string" {
+                assert!(
+                    bogus.is_ok(),
+                    "{path} takes only some strings: give it an enum"
+                );
+            }
+            if let Some(default) = leaf.get("default") {
+                let value = default_of(&path).unwrap_or_else(|| panic!("{path} has no default"));
+                assert_eq!(
+                    serde_json::to_value(&value).unwrap(),
+                    *default,
+                    "the default of {path}"
+                );
+            }
+        }
     }
 }

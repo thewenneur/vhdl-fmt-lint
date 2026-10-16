@@ -67,4 +67,20 @@ for target in lint reanalyze lsp; do
   { mixed; printf '\0\x00\x01\x00\x20\x04\x39\x01\x00\x30\x00\x00'; } \
     >"corpus/$target/mixed_project_edits"
 done
+# Non-ASCII text: a declaration continued on lines indented with no-break
+# spaces (hover re-indents it), accents, CJK and a surrogate pair in
+# comments and strings, and CRLF line breaks.
+unicode() {
+  printf 'entity u is\r\nend entity;\r\narchitecture rtl of u is\r\n'
+  printf '  -- caf\xc3\xa9 \xe4\xb8\xad\xe6\x96\x87 \xf0\x9f\x98\x80\n'
+  printf '  function f(a : integer;\n \xc2\xa0\xc2\xa0b : integer)\n'
+  printf ' \xc2\xa0return integer is\n  begin\n    return a + b;\n  end function;\n'
+  printf '  constant s : string := "\xc3\xa9t\xc3\xa9 \xf0\x9f\x98\x80";\n'
+  printf 'begin\n\xe3\x80\x80assert f(1, 2) = 3; -- \xf0\x9f\x98\x80\nend architecture;\n'
+}
+for target in parse format lint reanalyze lsp; do
+  unicode >"corpus/$target/unicode"
+done
+{ unicode; printf '%b' "$edits"; } >corpus/lsp/unicode_edits
+
 echo "seeded ${#vhdl[@]} VHDL and ${#verilog[@]} Verilog files"

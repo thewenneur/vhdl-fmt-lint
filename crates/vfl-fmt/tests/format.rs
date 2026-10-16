@@ -86,6 +86,14 @@ fn parser_test_files_are_stable() {
             ),
             config("style = \"compact\""),
             config("style = \"classic\""),
+            config("max_width = 30\noperator_position = \"leading\"\ncontinuation_indent = 2"),
+            config(
+                "max_width = 40\noperator_position = \"trailing\"\n\
+                 [format.declaration_case]\nconstant = \"upper\"\nsignal = \"lower\"\n\
+                 enum_literal = \"upper\"\nlabel = \"upper\"\n\
+                 [format.blank_lines]\nafter_begin = 0\nbefore_end = 0\nbefore_process = 1\n\
+                 between_declaration_groups = { min = 1 }",
+            ),
         ] {
             fmt_with(&text, &config);
         }
@@ -244,6 +252,10 @@ fn blank_lines() {
     let text = "\n\npackage p is\n\n\n\n  constant a : bit := '0';\nend;\n\n\n";
     assert_eq!(
         fmt(text),
+        "package p is\n\n  constant a : bit := '0';\nend;\n"
+    );
+    assert_eq!(
+        fmt_with(text, &config("max_blank_lines = 2")),
         "package p is\n\n\n  constant a : bit := '0';\nend;\n"
     );
     assert_eq!(
@@ -280,15 +292,18 @@ fn association_list_layout() {
     let text = "architecture a of e is begin u : entity work.x port map (a => b, c => d); end;";
     assert_eq!(
         fmt(text),
-        "architecture a of e is\nbegin\n  u : entity work.x\n    port map (a => b, c => d);\nend;\n"
+        "architecture a of e is\nbegin\n  u : entity work.x\n    port map (\n      a => b,\n      c => d\n    );\nend;\n"
     );
     assert_eq!(
-        fmt_with(text, &config("association_list = \"expand\"")),
-        "architecture a of e is\nbegin\n  u : entity work.x\n    port map (\n      a => b,\n      c => d\n    );\nend;\n"
+        fmt_with(text, &config("association_list = \"auto\"")),
+        "architecture a of e is\nbegin\n  u : entity work.x\n    port map (a => b, c => d);\nend;\n"
     );
     // `auto` expands a list that is already split.
     assert_eq!(
-        fmt("architecture a of e is begin u : entity work.x port map (a => b,\nccc => d); end;"),
+        fmt_with(
+            "architecture a of e is begin u : entity work.x port map (a => b,\nccc => d); end;",
+            &config("association_list = \"auto\"")
+        ),
         "architecture a of e is\nbegin\n  u : entity work.x\n    port map (\n      a   => b,\n      ccc => d\n    );\nend;\n"
     );
 }
@@ -714,4 +729,158 @@ fn style_presets() {
     assert!(compact.align.port_colon);
     assert!(!compact.align.assignment);
     assert!(Config::from_toml_str("[format]\nstyle = \"nope\"").is_err());
+}
+
+const LONG_EXPRESSIONS: &str = "architecture a of e is begin\nprocess begin\n\
+    if first_condition = 1 and second_condition = 2 and third_condition = 3 then\nx <= y;\n\
+    end if;\nend process;\nz <= first_value when select_a = 1 else second_value;\n\
+    u : entity work.x port map (a => first_input and second_input and third_input, b => c);\nend;\n";
+
+#[test]
+fn long_expressions_break_at_their_loosest_operators() {
+    let broken = fmt_with(LONG_EXPRESSIONS, &config("max_width = 50"));
+    assert_eq!(
+        broken,
+        "architecture a of e is\nbegin\n  process\n  begin\n    if first_condition = 1 and\n      \
+         second_condition = 2 and\n      third_condition = 3 then\n      x <= y;\n    end if;\n  \
+         end process;\n  z <= first_value when select_a = 1 else\n       second_value;\n  \
+         u : entity work.x\n    port map (\n      a => first_input and\n        second_input and\n        \
+         third_input,\n      b => c\n    );\nend;\n"
+    );
+    // The breaks written stay; nothing is joined.
+    assert_eq!(fmt_with(&broken, &config("max_width = 200")), broken);
+    // With the option off, only lists break.
+    let off = fmt_with(
+        LONG_EXPRESSIONS,
+        &config("max_width = 50\nbreak_expressions = false"),
+    );
+    assert!(
+        off.contains(
+            "    if first_condition = 1 and second_condition = 2 and third_condition = 3 then\n"
+        ),
+        "{off}"
+    );
+    assert!(
+        off.contains("  z <= first_value when select_a = 1 else second_value;\n"),
+        "{off}"
+    );
+}
+
+#[test]
+fn operators_lead_or_trail_as_configured() {
+    let leading = fmt_with(
+        LONG_EXPRESSIONS,
+        &config("max_width = 50\noperator_position = \"leading\"\ncontinuation_indent = 4"),
+    );
+    assert_eq!(
+        leading,
+        "architecture a of e is\nbegin\n  process\n  begin\n    if first_condition = 1\n        \
+         and second_condition = 2\n        and third_condition = 3 then\n      x <= y;\n    end if;\n  \
+         end process;\n  z <= first_value when select_a = 1 else\n       second_value;\n  \
+         u : entity work.x\n    port map (\n      a => first_input\n          and second_input\n          \
+         and third_input,\n      b => c\n    );\nend;\n"
+    );
+    // "preserve" keeps the breaks written; "trailing" moves them back.
+    let wide = "max_width = 200\ncontinuation_indent = 4";
+    assert_eq!(fmt_with(&leading, &config(wide)), leading);
+    assert_eq!(
+        fmt_with(
+            &leading,
+            &config(&format!("{wide}\noperator_position = \"trailing\""))
+        ),
+        fmt_with(
+            LONG_EXPRESSIONS,
+            &config("max_width = 50\ncontinuation_indent = 4")
+        )
+    );
+    // A comment after the operator keeps the break where it is.
+    let text = "architecture a of e is begin x <= a and -- why\n b; end;";
+    assert_eq!(
+        fmt_with(text, &config("operator_position = \"leading\"")),
+        "architecture a of e is\nbegin\n  x <= a and -- why\n    b;\nend;\n"
+    );
+}
+
+#[test]
+fn expressions_break_outside_parentheses_first() {
+    let text = "architecture a of e is begin\n\
+        sum <= resize(operand_a, 16) + resize(operand_b, 16) - resize(carry_in, 16);\nend;";
+    assert_eq!(
+        fmt_with(text, &config("max_width = 50")),
+        "architecture a of e is\nbegin\n  sum <= resize(operand_a, 16) +\n    resize(operand_b, 16) -\n    \
+         resize(carry_in, 16);\nend;\n"
+    );
+    // An index is broken only when nothing else can be.
+    let text = "architecture a of e is begin\n\
+        q <= v(first_index_term + second_index_term) when s else r;\nend;";
+    assert_eq!(
+        fmt_with(text, &config("max_width = 40")),
+        "architecture a of e is\nbegin\n  q <= v(first_index_term +\n      second_index_term) when s else\n       r;\nend;\n"
+    );
+}
+
+#[test]
+fn wide_characters_count_twice() {
+    // 20 characters, 40 columns.
+    let text = "architecture a of e is begin\n\
+        v <= \"日本語の文字列はとても長いです日本語の\" & \"abc\";\nend;";
+    assert_eq!(
+        fmt_with(text, &config("max_width = 50")),
+        "architecture a of e is\nbegin\n  v <= \"日本語の文字列はとても長いです日本語の\" &\n    \"abc\";\nend;\n"
+    );
+}
+
+#[test]
+fn declaration_case() {
+    let text = "entity Counter is generic (width : natural := 8); \
+        port (Clk : in bit; Q : out bit_vector(Width - 1 downto 0)); end;\n\
+        architecture RTL of counter is\n\
+        type State_T is (idle, Run);\n\
+        constant max_count : natural := 2 ** WIDTH - 1;\n\
+        signal State : state_t;\n\
+        signal clk_div : bit;\n\
+        begin\n\
+        P_Count : process (CLK) begin if state = IDLE then state <= run; end if; end process;\n\
+        q <= (others => clk_div);\n\
+        end;\n";
+    let toml = "end_label = \"add\"\n[format.declaration_case]\nentity = \"lower\"\n\
+        architecture = \"lower\"\ngeneric = \"upper\"\nconstant = \"upper\"\nport = \"lower\"\n\
+        signal = \"lower\"\ntype = \"lower\"\nenum_literal = \"upper\"\nlabel = \"lower\"";
+    assert_eq!(
+        fmt_with(text, &config(toml)),
+        "entity counter is\n  generic (\n    WIDTH : natural := 8\n  );\n  port (\n    \
+         clk : in  bit;\n    q   : out bit_vector(WIDTH - 1 downto 0)\n  );\nend counter;\n\
+         architecture rtl of counter is\n  type state_t is (IDLE, RUN);\n  \
+         constant MAX_COUNT : natural := 2 ** WIDTH - 1;\n  signal state       : state_t;\n  \
+         signal clk_div     : bit;\nbegin\n  p_count : process (clk)\n  begin\n    \
+         if state = IDLE then\n      state <= RUN;\n    end if;\n  end process p_count;\n  \
+         q <= (others => clk_div);\nend rtl;\n"
+    );
+    // A name declared as kinds with different cases keeps its own.
+    let text = "package p is constant Width : natural := 8; signal Width : bit; end;";
+    assert_eq!(
+        fmt_with(
+            text,
+            &config("[format.declaration_case]\nconstant = \"upper\"\nsignal = \"lower\"")
+        ),
+        "package p is\n  constant Width : natural := 8;\n  signal Width   : bit;\nend;\n"
+    );
+}
+
+#[test]
+fn blank_line_rules() {
+    let text = "architecture a of e is\n  constant c : bit := '0';\n  -- the signal\n  \
+        signal s : bit;\n\nbegin\n\n  p1 : process begin\n\n    null;\n\n  end process;\n  \
+        -- the second\n  p2 : process begin null; end process;\n\n\nend;\n";
+    let toml = "[format.blank_lines]\nbefore_begin = 0\nafter_begin = { max = 0 }\n\
+        before_end = 0\nbefore_process = { min = 1 }\nbetween_declaration_groups = 1";
+    assert_eq!(
+        fmt_with(text, &config(toml)),
+        "architecture a of e is\n  constant c : bit := '0';\n\n  -- the signal\n  \
+         signal s : bit;\nbegin\n  p1 : process\n  begin\n    null;\n  end process;\n\n  \
+         -- the second\n  p2 : process\n  begin\n    null;\n  end process;\nend;\n"
+    );
+    // Unset, the blank lines stay as written.
+    assert_eq!(fmt(text), fmt_with(text, &config("[format.blank_lines]")));
+    assert!(fmt(text).contains("begin\n\n  p1"));
 }

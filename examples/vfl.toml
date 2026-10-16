@@ -1,0 +1,7 @@
+# Each folder of config/ is a lesson and a project of its own (its vfl.toml has
+# `root = true`), so the project here is uart/ alone: `vfl lint` run in this
+# directory checks the UART design, not the before/after copies of the lessons.
+root = true
+
+[project]
+exclude = ["config/"]

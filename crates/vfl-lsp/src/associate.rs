@@ -291,7 +291,7 @@ fn layout(
     let (separator, width) = match prefix.trim() {
         _ if one_line => (", ".to_owned(), 0),
         "" if leading && elements.len() == 1 && prefix.len() >= 2 => (
-            format!("\n{}, ", &prefix[..prefix.len() - 2]),
+            format!("\n{}, ", without_last_two(prefix)),
             arrow_column(text, &elements),
         ),
         "" => (format!(",\n{prefix}"), arrow_column(text, &elements)),
@@ -326,6 +326,13 @@ fn layout(
     }
     out.push((TextRange::empty(at), insert));
     out
+}
+
+/// `text` without its last two characters, which may be multi-byte
+/// spaces.
+fn without_last_two(text: &str) -> &str {
+    let end = text.char_indices().rev().nth(1).map_or(0, |(i, _)| i);
+    &text[..end]
 }
 
 /// `formal => actual`, the arrow at `column` after the formal's start
@@ -433,7 +440,7 @@ fn new_map(
     // The comma left of the elements, which line up.
     let separator = match config.format.association_separator {
         Separator::Leading if indent.len() >= 2 && !config.format.use_tabs => {
-            format!("\n{}, ", &indent[..indent.len() - 2])
+            format!("\n{}, ", without_last_two(&indent))
         }
         _ => format!(",\n{indent}"),
     };
@@ -484,27 +491,26 @@ fn formatted(
     .ok()?;
     let result = vfl_fmt::apply_edits(&fixed, &after);
     // One edit covering what changed.
-    let prefix = text
-        .bytes()
-        .zip(result.bytes())
-        .take_while(|(a, b)| a == b)
-        .count();
-    let mut suffix = text[prefix..]
-        .bytes()
-        .rev()
-        .zip(result[prefix..].bytes().rev())
-        .take_while(|(a, b)| a == b)
-        .count();
-    let mut prefix = prefix;
-    while !text.is_char_boundary(prefix) {
-        prefix -= 1;
-    }
-    while !text.is_char_boundary(text.len() - suffix) {
-        suffix -= 1;
-    }
-    let (old_end, new_end) = (text.len() - suffix, result.len() - suffix);
+    let edit = vfl_fmt::minimal_edit(text, &result);
     Some(vec![(
-        TextRange::new((prefix as u32).into(), (old_end as u32).into()),
-        result[prefix..new_end].to_owned(),
+        TextRange::new(
+            (edit.range.start as u32).into(),
+            (edit.range.end as u32).into(),
+        ),
+        edit.text,
     )])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_last_two_characters_may_be_multi_byte() {
+        assert_eq!(without_last_two("    "), "  ");
+        assert_eq!(without_last_two("\u{a0} "), "");
+        assert_eq!(without_last_two("  \u{a0} "), "  ");
+        assert_eq!(without_last_two(" \u{3000}\u{a0}"), " ");
+        assert_eq!(without_last_two(" "), "");
+    }
 }

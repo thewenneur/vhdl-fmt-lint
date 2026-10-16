@@ -1,0 +1,30 @@
+-- Expressions too long for max_width (120) break at the operators that bind
+-- loosest; what fits stays as written.
+architecture rtl of arbiter is
+begin
+    grant_valid <= (request_valid_from_port_a and port_a_is_enabled) or (request_valid_from_port_b and not port_b_is_busy);
+    total_length <= resize(header_length_in_bytes, 16) + resize(payload_length_in_bytes, 16) + resize(trailer_length, 16);
+    next_state <= STATE_TRANSMIT_PAYLOAD when header_was_accepted = '1' else STATE_WAIT_FOR_HEADER when timeout = '0' else STATE_IDLE;
+    with selected_input select output_data <= first_input_data_bus when "00", second_input_data_bus when "01", (others => '0') when others;
+    short <= a and b;
+
+    u_fifo : entity work.fifo
+        port map (
+            clk   => clk,
+            write => write_request_from_upstream and not fifo_is_full_flag and not reset_in_progress_flag and not overflow_was_detected and enable,
+            full  => fifo_is_full_flag
+        );
+
+    p_count : process (clk)
+    begin
+        if rising_edge(clk) then
+            if (packet_counter_register = maximum_packet_count and counting_is_enabled = '1') or force_counter_reset = '1' then
+                packet_counter_register <= (others => '0'); -- start over
+            elsif packet_was_received = '1' and -- written broken: kept
+                counting_is_enabled = '1' then
+                packet_counter_register <= packet_counter_register + increment_for_this_packet + extra_increment_for_jumbo_packets;
+            end if;
+            assert packet_counter_register <= maximum_packet_count report "the packet counter overflowed: " & to_string(packet_counter_register) severity error;
+        end if;
+    end process;
+end;

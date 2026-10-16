@@ -183,7 +183,9 @@ If the unit exists but in another library, check that library's assignment with
 A `library` clause names a library that no file of the project is in, so nothing from it is
 checked. This is an `info` note: it often means a third-party library (OSVVM, UVVM, vendor
 primitives) is outside the project root or excluded. `std`, `ieee` and `work` are always
-known.
+known, and so are the vendor primitive libraries vfl bundles declarations of (`unisim`,
+`xpm`, `altera_mf`, Lattice's) once a file uses them, unless `[project]` `vendor-stubs` is
+off ([configuration.md](configuration.md#vendor-libraries)).
 
 ### `sema/duplicate-declaration`
 
@@ -987,7 +989,8 @@ written for the Synopsys packages may then need conversions.
 
 ### `style/line-length`
 
-A line is longer than `max` columns, counted in characters. Off in `recommended`.
+A line is longer than `max` columns. Columns are counted as displayed: wide characters
+(Chinese, Japanese, Korean) take two, as in the formatter's `max_width`. Off in `recommended`.
 
 | Option | Type | Default |
 |--------|------|---------|
@@ -997,8 +1000,8 @@ A line is longer than `max` columns, counted in characters. Off in `recommended`
 "style/line-length" = { max = 100 }
 ```
 
-This limit is separate from the formatter's `format.max_width` (100 by default), which is
-where the formatter starts breaking lists.
+This limit is separate from the formatter's `format.max_width` (also 120 by default), which
+is where the formatter starts breaking lines.
 
 ### `style/trailing-whitespace`
 
@@ -1046,7 +1049,8 @@ simulation for those values.
 
 A file's name, without its extension, differs from the name of every primary unit it
 declares (entity, package, context, configuration, package instantiation). The comparison
-ignores case. The finding suggests the name of the first unit: `expected top.vhd`.
+ignores case. The finding suggests the name of the first unit, with the file's extension:
+`expected top.vhd`.
 
 ### `style/identifier-case`
 
@@ -1230,7 +1234,7 @@ shared ones:
 | [`sema/missing-reset`](#semamissing-reset), [`sema/mixed-reset`](#semamixed-reset), [`sema/reset-polarity`](#semareset-polarity) | Clocked blocks with a reset: asynchronous in the event list, synchronous as the first `if` assigning constants. |
 | [`sema/fsm-unreachable-state`](#semafsm-unreachable-state), [`sema/fsm-stuck-state`](#semafsm-stuck-state) | A `case` on a variable of an enumeration, or on one whose labels are parameters (`localparam IDLE = 0`). |
 | [`style/line-length`](#styleline-length), [`style/trailing-whitespace`](#styletrailing-whitespace), [`style/tabs`](#styletabs) | As in VHDL. |
-| [`style/process-label`](#styleprocess-label) | An `always`, `always_comb`, `always_ff`, `always_latch` or `initial` block whose `begin` has no label. |
+| [`style/process-label`](#styleprocess-label) | An `always`, `always_comb`, `always_ff` or `always_latch` block whose `begin` has no label. |
 | [`style/positional-association`](#stylepositional-association) | Ports or parameter values connected by position. Gates and primitives are positional by definition and not reported. |
 | [`style/file-name`](#stylefile-name) | Compared with the modules, interfaces, programs and packages of the file. |
 | [`naming/*`](#naming) | Modules (`naming/module`), packages, parameters (`naming/parameter`), `localparam`s (`naming/constant`), ports, nets and variables of a module (`naming/signal`) or of a block or function (`naming/variable`), types, functions, tasks (`naming/task`), instances, labels of blocks (`naming/process`) and of generate blocks (`naming/generate`). |

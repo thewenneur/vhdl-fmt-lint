@@ -36,6 +36,8 @@ const EXAMPLES: &[(&str, Kind)] = &[
     ("format/10-width-case-blank-lines", Kind::Format),
     ("format/11-in-source-regions", Kind::Format),
     ("format/12-verilog", Kind::Format),
+    ("format/13-long-expressions", Kind::Format),
+    ("format/14-declaration-case-and-blank-lines", Kind::Format),
     ("lint/01-presets-and-levels", Kind::Manual),
     ("lint/02-safe-fixes", Kind::Fix),
     ("lint/03-unsafe-fixes", Kind::UnsafeFix),
@@ -120,6 +122,13 @@ fn every_example_is_checked() {
         }
     }
     found.sort();
+    for name in &found {
+        let config = read(&root().join(name).join("vfl.toml"));
+        assert!(
+            config.lines().any(|line| line.starts_with("root = true")),
+            "{name}: vfl.toml needs `root = true`, to keep the example a project of its own"
+        );
+    }
     let listed: Vec<_> = EXAMPLES.iter().map(|(name, _)| name.to_string()).collect();
     assert_eq!(found, listed, "add new examples to EXAMPLES in this file");
 }
@@ -191,4 +200,13 @@ fn examples_are_up_to_date() {
         unclean.is_empty(),
         "hand-fixed examples still have findings: {unclean:?}"
     );
+}
+
+/// `vfl lint` run in `examples/` checks the UART design alone, and finds nothing:
+/// the lessons of `config/` are projects of their own.
+#[test]
+fn examples_dir_lints_clean() {
+    let examples = root().join("..");
+    let findings = vfl(&examples, &["lint", "--output-format", "concise"], None);
+    assert_eq!(findings, "", "vfl lint in examples/ reports findings");
 }

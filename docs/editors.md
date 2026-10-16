@@ -4,7 +4,9 @@ vfl works in any editor with a Language Server Protocol client: `vfl lsp` is the
 server, over standard input and output, for VHDL, Verilog and SystemVerilog files. What it
 offers is listed in the [command-line reference](cli.md#vfl-lsp): diagnostics as you type,
 quick fixes, formatting (document, range and on type), hover, signature help, completion,
-go to definition, references, rename, symbols and semantic highlighting.
+go to definition, implementation, type definition and declaration, references, rename,
+symbols, inlay hints, linked editing of `end` names, selection ranges, instance-count code
+lenses, call hierarchy and semantic highlighting.
 
 Install `vfl` first ([README](../README.md#installation)) and check that `vfl --version`
 runs from a terminal. If the editor does not see it, use its full path in the commands below
@@ -77,7 +79,8 @@ Uninstall the "VHDL" and "Verilog" extensions of the Zed registry first: they de
 languages and grammar names, and with both installed Zed mixes their grammars and queries, so
 VHDL files open as plain text. The vfl extension replaces them.
 
-It uses `vfl` from the `PATH`, or downloads the latest release's binary when there is none.
+It uses `vfl` from the `PATH`, or downloads the binary of the release of its own version
+(checked against the release's `SHA256SUMS`) when there is none.
 To use another binary, set it in Zed's `settings.json`:
 
 ```json
@@ -309,8 +312,16 @@ preset and the format style are the usual ones:
 { "config": { "lint": { "preset": "strict" }, "format": { "style": "compact" } } }
 ```
 
-A `vfl.toml` replaces them entirely, so that a project is linted and formatted the same for
-everyone. The code action **Generate project config (vfl.toml) from the settings in effect**
+Inlay hints are a matter of taste, so the editor can also turn each kind on or off for its
+user, whatever `[lsp.inlay_hints]` in `vfl.toml` says, under `inlayHints` (outside
+`config`); the kinds it leaves out follow `vfl.toml`:
+
+```json
+{ "inlayHints": { "parameters": false, "port_types": true } }
+```
+
+A `vfl.toml` replaces the `config` settings entirely, so that a project is linted and
+formatted the same for everyone. The code action **Generate project config (vfl.toml) from the settings in effect**
 (kind `source.vfl.generateConfig`, offered while the project has no `vfl.toml`) writes them
 to `vfl.toml` at the project root, with the keys at their default value as comments.
 

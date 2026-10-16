@@ -12,6 +12,8 @@ pub struct StyleContext<'a> {
     pub text: &'a str,
     pub root: &'a SyntaxNode,
     pub file_stem: Option<String>,
+    /// The file's extension, for the name `style/file-name` suggests.
+    pub extension: Option<String>,
     /// `style/line-length`'s limit.
     pub max_line_length: usize,
     /// Columns per indentation level: what a tab becomes.
@@ -565,11 +567,28 @@ pub(crate) fn lines(
         let start = offset;
         offset += line.len();
         if enabled("style/line-length") {
-            let width = content.chars().count();
+            // Columns on screen, as the formatter counts them: CJK and
+            // other wide characters take two.
+            let char_width = |c: char| {
+                if c.is_ascii() {
+                    1
+                } else {
+                    unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)
+                }
+            };
+            let width: usize = if content.is_ascii() {
+                content.len()
+            } else {
+                content.chars().map(char_width).sum()
+            };
             if width > max_line_length {
+                let mut col = 0;
                 let cut = content
                     .char_indices()
-                    .nth(max_line_length)
+                    .find(|&(_, c)| {
+                        col += char_width(c);
+                        col > max_line_length
+                    })
                     .map_or(content.len(), |(i, _)| i);
                 out.push(Finding::new(
                     "style/line-length",
@@ -729,10 +748,13 @@ fn file_name(ctx: &StyleContext, out: &mut Vec<Finding>) {
         return;
     };
     if primaries.iter().all(|(name, _)| *name != stem) {
+        let extension = ctx.extension.as_deref().unwrap_or("vhd");
         out.push(Finding::new(
             "style/file-name",
             *range,
-            format!("file name does not match the unit it declares; expected `{first}.vhd`"),
+            format!(
+                "file name does not match the unit it declares; expected `{first}.{extension}`"
+            ),
         ));
     }
 }
@@ -757,4 +779,20 @@ fn primary_units(root: &SyntaxNode) -> Vec<(String, TextRange)> {
                 .map(|t| (t.text().to_ascii_lowercase(), t.text_range()))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn line_length_counts_wide_characters_twice() {
+        let mut out = Vec::new();
+        let only = |rule: &str| rule == "style/line-length";
+        // 6 characters, 9 columns: past a limit of 6 from the second wide one.
+        lines("-- 日本語\n-- ab\n", 6, 4, &only, &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].message, "line is 9 characters long (max 6)");
+        assert_eq!(usize::from(out[0].range.start()), "-- 日".len());
+    }
 }

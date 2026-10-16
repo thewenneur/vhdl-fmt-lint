@@ -4,6 +4,23 @@
 
 ### Added
 
+- **`vfl order`** prints the files of the project in compile order with their libraries:
+  as a list, as JSON, or as a script for GHDL (`ghdl -a --work=lib`), Questa/ModelSim
+  (`vlib`, `vmap`, `vcom`, `vlog`) or Vivado (`read_vhdl -library`). `--top unit` keeps only
+  what an entity or configuration needs. Files that use each other's units are reported
+  and make the command fail.
+- **More project imports**: library lists are also read from `.f` file lists (`-makelib`
+  and `-work` libraries, nested `-f`/`-F` lists, environment variables; `+incdir+`, `-v`,
+  `-y` and other options are skipped), Edalize EDAM files (`*.eda.yml`, `edam.json`),
+  hdlmake `Manifest.py` (`library` and `files`, read without running it) and
+  Questa/ModelSim `.mpf` projects (`compile_to`).
+- **Vendor primitive libraries**: declarations of the commonly used Xilinx `unisim` and
+  `xpm`, Intel `altera_mf` and Lattice (`ecp5u`, `machxo2`, `sb_ice40_components_syn`)
+  primitives are bundled and analyzed when the design uses one of these libraries and the
+  project has no copy of it. Their components and entities resolve (hover, go to
+  definition, type checks of the actuals) instead of the library being left unchecked;
+  primitives, ports and generics they do not declare are not reported. `[project]`
+  `vendor-stubs = false` turns them off.
 - **Range checks**: `sema/index-range` (warn in `recommended`, error in `strict`) reports an
   index or slice outside an array's static range, a slice that goes `to` on a `downto`
   vector (or the reverse), a null slice, and a loop parameter that runs past the array;
@@ -64,6 +81,101 @@
   changed lines.
 - **`vfl lint --fix-only RULES`** applies the fixes of some rules or categories only.
 - **`vfl rules --explain RULE`** prints a rule's levels and full description.
+- **Inlay hints** in the language server: the port, generic or parameter name before each
+  positional actual of a port map, generic map or subprogram call, and optionally the
+  mode and type of each port map actual. Only the range on screen is worked out, from the
+  existing analysis. Each kind can be turned on or off under `[lsp.inlay_hints]` in
+  `vfl.toml`, and per user from the editor (`inlayHints` in the initialization options;
+  `vfl.inlayHints.*` in VS Code).
+- **Go to implementation** (entity to architectures, component to entity, package and
+  subprogram to body), **go to type definition** and **go to declaration** (body to what it
+  completes) in the language server; **Go to implementation** and **Go to type
+  definition** in Notepad++.
+- **Linked editing** of a name and its `end` name, and **selection ranges** (VS Code's
+  expand selection; **Expand selection** in Notepad++).
+- **Call hierarchy** for subprograms (callers and callees) and for the instance tree
+  (which architectures instantiate an entity, what an architecture instantiates), and an
+  **"N instances" code lens** on entities and components, counted only when shown and
+  listing the instances when clicked in VS Code; **Show call hierarchy** in Notepad++.
+- **32-bit and ARM64 Notepad++**: releases have `vfl_npp-vX.Y.Z-x86.zip` and `-arm64.zip`
+  next to the 64-bit plugin, and a `vfl` binary for Windows on ARM.
+- **VHDL snippets** in VS Code (and a copy for Zed's snippets directory): entity and
+  architecture, clocked processes with a synchronous, asynchronous or no reset, a
+  combinational process, a state machine, a testbench, generate statements, a package with
+  its body and a record type.
+- **VS Code language status**: the server's version and state with a restart action, and
+  the `vfl.toml` in effect for the file in front with an action to open it (or to generate
+  one).
+- **A JSON schema of `vfl.toml`** ([editors/vscode/schemas/vfl.schema.json](editors/vscode/schemas/vfl.schema.json)),
+  which VS Code hands to Even Better TOML for completion, hover and checking. Tests keep it
+  in sync with the config keys, their accepted values and defaults, and the lint rules.
+- **VS Code downloads the server** of its own version when no `vfl` is found, after asking,
+  and checks it against the release's `SHA256SUMS`. `vfl.server.path`, the `PATH` and
+  `~/.cargo/bin` still come first.
+- **VS Code multi-root workspaces**: one server per workspace folder.
+- **Long expressions are broken**: a line still longer than `max_width` once its lists are
+  broken up is broken at the operators of its expressions that bind loosest (`else` of
+  conditional assignments, then `and`/`or`, relational, shift, `+`/`-`/`&`, `*`/`/`), in
+  conditions, assignments and port map actuals. `operator_position` (`"trailing"`,
+  `"leading"`, `"preserve"`) places the operator; `break_expressions = false` turns it off.
+  Lines that fit are not changed.
+- **`[format.declaration_case]`**: the case of identifiers by the kind of their declaration
+  (constants and generics in upper case, ports in lower case...), applied to every use of
+  the name in the file.
+- **`[format.blank_lines]`**: blank lines before and after `begin`, before `end`, before
+  processes and between declaration groups, as an exact number or a `{ min, max }` range.
+
+### Changed
+
+- **Format defaults follow VHDL Style Guide (VSG)**, which TerosHDL also uses: `max_width`
+  is 120 (was 100, now the same as the `style/line-length` rule), `max_blank_lines` is 1
+  (was 2) and `association_list` is `"expand"` (was `"auto"`), so port and generic maps get
+  one association per line like port and generic clauses. Code formatted with the old
+  defaults only loses its extra blank lines and gets its one-line maps expanded: no line
+  is joined. `max_width = 100`, `max_blank_lines = 2` and `association_list = "auto"` bring
+  the old layout back.
+- **Zed downloads the server of its own version**, not the latest release, and checks the
+  archive against the release's `SHA256SUMS` before keeping the binary; Windows on ARM
+  gets a binary too. The example tasks run from the worktree root (`$ZED_WORKTREE_ROOT`)
+  instead of the current file's directory, and the README says they need `vfl` on the
+  `PATH`.
+- **Notepad++ format on save skips files larger than 512 KB**, with a note in the status
+  bar, since it formats before the file is written and holds up the save;
+  `format_on_save_max_kb` in `vfl_npp.ini` sets the limit.
+- VS Code: vfl is the default formatter of Verilog and SystemVerilog files too, a workspace
+  you do not trust cannot set `vfl.server.path` or `vfl.server.extraEnv`, and the extension
+  has an icon and a changelog.
+- The formatter's `max_width` and the `style/line-length` rule count display columns:
+  Chinese, Japanese and Korean characters take two.
+- A line continuing an element of a list (a port map actual broken over lines) is indented
+  `continuation_indent` further than the elements.
+- LSP position conversion finds the line of an offset without scanning the line's text
+  twice.
+- The fuzzing dictionary and seeds include non-ASCII text (no-break and ideographic spaces,
+  accents, CJK, an emoji outside the BMP) and CRLF line breaks.
+
+### Fixed
+
+- **Language server crash on hover** over a declaration continued on lines indented with
+  no-break spaces (or other multi-byte spaces): the re-indentation sliced a line by a
+  character count. Adding port associations next to such indentation, or after an edit
+  that changes a multi-byte character, no longer panics either.
+- **The language server survives a bug in a handler**: a request that panics fails with
+  `InternalError` (and the panic is logged to stderr) instead of killing the server; a
+  notification or an analysis that panics is skipped the same way.
+- **Edits past the end of a CRLF line** are inserted before the `\r\n`, not between `\r`
+  and `\n`.
+- Name resolution no longer panics on an unbalanced scope (a bug); it degrades instead.
+- Verilog: an empty position in an instance's connections (`sub u (a, , c)`) leaves its
+  input unconnected, which `verilog/unconnected-input` now reports, and the fix of
+  `style/positional-association` names it (`.b()`) instead of leaving an empty position
+  among named connections, which did not parse.
+- `style/file-name` suggests a name with the file's own extension (`top.vhdl` for a
+  `.vhdl` file) instead of always `.vhd`.
+- `vfl lint` run in `examples/` no longer mixes the configuration lessons with the UART
+  design (15 errors from duplicate entities): each lesson of `examples/config` is a
+  project of its own (`root = true`), and `examples/uart` is formatted with the default
+  style.
 
 ## [0.7.0] - 2026-10-15
 

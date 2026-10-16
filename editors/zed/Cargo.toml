@@ -13,4 +13,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
+flate2 = "1"
+sha2 = "0.10"
+tar = { version = "0.4", default-features = false }
 zed_extension_api = "0.7.0"

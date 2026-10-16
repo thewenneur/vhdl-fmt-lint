@@ -14,6 +14,14 @@ language server:
   **signature help**, **rename**, **completion** (including record elements and protected
   type methods), **document and workspace symbols**, across the whole project and into
   the bundled `std` and `ieee` libraries.
+- **Inlay hints** with the port, generic or parameter name before each positional actual of
+  a port map, generic map or call (and, if you want, the mode and type of each port); **go
+  to implementation** (an entity's architectures, a component's entity, a package's or
+  subprogram's body), **go to type definition** and **go to declaration** (from a body to
+  what it completes); **linked editing** of a name and its `end` name; **expand selection**;
+  **call hierarchy** for subprograms and for the instance tree (who instantiates an entity,
+  what its architecture instantiates); and an **"N instances" code lens** on entities and
+  components, which lists them when clicked.
 - **Code generation**: insert an entity or component instantiation or a component
   declaration at the cursor, or generate a testbench (also offered as a code action on an
   entity declaration).
@@ -40,9 +48,9 @@ by default (`mode = "names"`), VHDL that instantiates their modules resolves the
 parameters, with hover and go to definition; with `mode = "full"`, which is in progress and
 says so once in a message, they also get syntax errors and lint findings as you type,
 formatting (whole file, selection and on type), semantic highlighting, an outline of their
-modules, parameters, ports, declarations and instances, and folding. To format them with
-vfl, pick it with **Format Document With...**, or set it as `editor.defaultFormatter` under
-`"[verilog]"` and `"[systemverilog]"`.
+modules, parameters, ports, declarations and instances, and folding. vfl is their default
+formatter, as for VHDL; set another `editor.defaultFormatter` under `"[verilog]"` and
+`"[systemverilog]"` to keep using another extension's.
 
 The project root, sources and libraries are discovered from the code, so there is nothing to
 set up. Configuration lives in `vfl.toml`, shared with the `vfl` command line; see the
@@ -50,15 +58,39 @@ set up. Configuration lives in `vfl.toml`, shared with the `vfl` command line; s
 
 ## Requirements
 
-The extension runs `vfl lsp`, so `vfl` must be installed: download it for your platform
-from the [latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest), or
-build it with Rust:
+The extension runs `vfl lsp`. It is looked up in `vfl.server.path`, then on `PATH`, then
+in `~/.cargo/bin`. When none of them has it, the extension offers to download the binary of
+the [release](https://github.com/thewenneur/vhdl-fmt-lint/releases) of its own version
+(Linux, macOS and Windows on x86-64 and ARM): it checks the archive against the release's
+`SHA256SUMS` and keeps the binary in the extension's global storage. To install `vfl`
+yourself instead, download it from the release, or build it with Rust:
 
 ```sh
 cargo install --git https://github.com/thewenneur/vhdl-fmt-lint vfl-cli
 ```
 
-It is looked up in `vfl.server.path`, then on `PATH`, then in `~/.cargo/bin`.
+In a workspace you do not trust (**Workspaces: Manage Workspace Trust**), the workspace's
+own `vfl.server.path` and `vfl.server.extraEnv` are ignored, so that opening a folder
+cannot run a program of its choosing; user settings still apply.
+
+## Status, snippets and vfl.toml
+
+With a VHDL or Verilog file in front, the `{}` language status item in the status bar shows
+the server's version and state, with **Restart**, and the `vfl.toml` that applies to the
+file, with **Open** (or **Generate** when there is none).
+
+Snippets: `entity` (an entity and its architecture), `architecture`, `process-sync` and
+`process-async` (clocked processes with a synchronous or asynchronous reset),
+`process-clocked` (without reset), `process-comb` (`process (all)`), `fsm` (an architecture
+with a state machine), `fsm-process`, `testbench`, `for-generate`, `if-generate`, `package`
+(with its body) and `record`. They are written in lower case; formatting applies the
+`keyword_case` of `vfl.toml`. **vfl: Generate Testbench...** and the instantiation
+commands write code for a given entity.
+
+With [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml)
+installed, `vfl.toml` gets completion, hover documentation and checking of its keys and
+values, from the schema in [schemas/vfl.schema.json](schemas/vfl.schema.json) (fetched
+from the release of the extension's version).
 
 ## Settings
 
@@ -69,7 +101,13 @@ It is looked up in `vfl.server.path`, then on `PATH`, then in `~/.cargo/bin`.
 | `vfl.lint.preset` | `"recommended"` | Lint preset of projects without a `vfl.toml`: `none`, `recommended` or `strict`. |
 | `vfl.format.style` | `"default"` | Format style of projects without a `vfl.toml`: `default`, `leading-comma`, `compact` or `classic`. |
 | `vfl.format.onType` | `false` | Format the line you just finished as you type (`;` or Enter). |
+| `vfl.inlayHints.ports`, `.generics`, `.parameters` | `true` | Inlay hints with the formal name before positional port map, generic map and call actuals. |
+| `vfl.inlayHints.portTypes` | `false` | Inlay hints with the mode and type of the port after each port map actual. |
 | `vfl.trace.server` | `"off"` | Log LSP traffic (`messages` or `verbose`). |
+
+The `vfl.inlayHints.*` settings you set win over `[lsp.inlay_hints]` in a project's
+`vfl.toml`; those you leave alone follow it. `editor.inlayHints.enabled` turns all inlay
+hints off, or shows them only while Ctrl+Alt is held.
 
 `vfl.lint.preset` and `vfl.format.style` apply only where no `vfl.toml` does: a project's
 `vfl.toml` replaces them, so that it is linted and formatted the same for everyone. To share
@@ -150,7 +188,12 @@ for vfl and can be rebound the same way:
 | Problems of the project | `workbench.actions.view.problems` | Ctrl+Shift+M |
 | Go to definition | `editor.action.revealDefinition` | F12 |
 | Go back | `workbench.action.navigateBack` | Alt+Left (Windows), Ctrl+Alt+- (Linux) |
+| Go to implementation | `editor.action.goToImplementation` | Ctrl+F12 |
+| Go to type definition | `editor.action.goToTypeDefinition` | |
 | Find references | `editor.action.goToReferences` | Shift+F12 |
+| Call hierarchy | `editor.showCallHierarchy` | Shift+Alt+H |
+| Expand selection | `editor.action.smartSelect.expand` | Shift+Alt+Right |
+| Linked editing of `end` names | `editor.action.linkedEditing` (or `"editor.linkedEditing": true`) | Ctrl+Shift+F2 |
 | Rename | `editor.action.rename` | F2 |
 | Go to symbol in file | `workbench.action.gotoSymbol` | Ctrl+Shift+O |
 | Go to symbol in project | `workbench.action.showAllSymbols` | Ctrl+T |
@@ -162,16 +205,19 @@ Defaults are those of Windows and Linux; macOS uses Cmd for Ctrl.
 
 ## Notes
 
-The server analyzes the project around the first workspace folder. A file from elsewhere,
-such as another folder of a multi-root workspace, is checked while it is open, but the files
-around it are not loaded, so names it takes from them are not resolved.
+The server analyzes the project around its workspace folder. In a multi-root workspace,
+each folder (that is not inside another) gets a server of its own, started when the folder
+has a `vfl.toml` at its top or a VHDL or Verilog file of it is opened; the commands use the
+server of the file in front. A file outside every folder is checked while it is open in a
+workspace of one folder, but the files around it are not loaded, so names it takes from
+them are not resolved.
 
 ## Development
 
 ```sh
 npm ci
 npm run check        # type-check
-npm test             # grammar and diagrams view tests
+npm test             # grammar, snippets, download and diagrams view tests
 npm run test:e2e     # runs VS Code against target/debug/vfl (build it first)
 npm run package      # builds vfl-<version>.vsix
 ```

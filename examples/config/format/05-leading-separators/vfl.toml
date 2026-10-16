@@ -1,3 +1,5 @@
+root = true # a project of its own, apart from the other examples
+
 [format]
 interface_separator = "leading"   # ";" of generic/port clauses starts the next line
 association_separator = "leading" # "," of maps, calls and aggregates starts the next line

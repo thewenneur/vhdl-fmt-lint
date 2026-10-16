@@ -13,4 +13,6 @@ end;
 architecture rtl of top is
 begin
     u_fifo : entity work.fifo generic map (DEPTH => DEPTH) port map (clk => clk, din => din, dout => dout);
+    u_copy : entity work.fifo generic map (DEPTH => DEPTH) port map (clk => clk,
+        din => dout, dout => open);
 end;

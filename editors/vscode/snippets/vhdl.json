@@ -1,0 +1,210 @@
+{
+  "Entity and architecture": {
+    "prefix": "entity",
+    "description": "An entity with a clock and a reset, and its architecture.",
+    "body": [
+      "library ieee;",
+      "use ieee.std_logic_1164.all;",
+      "use ieee.numeric_std.all;",
+      "",
+      "entity ${1:${TM_FILENAME_BASE}} is",
+      "\tport (",
+      "\t\tclk : in  std_logic;",
+      "\t\trst : in  std_logic$2",
+      "\t);",
+      "end entity $1;",
+      "",
+      "architecture ${3:rtl} of $1 is",
+      "begin",
+      "\t$0",
+      "end architecture $3;"
+    ]
+  },
+  "Architecture": {
+    "prefix": "architecture",
+    "description": "An architecture of an entity.",
+    "body": [
+      "architecture ${1:rtl} of ${2:${TM_FILENAME_BASE}} is",
+      "begin",
+      "\t$0",
+      "end architecture $1;"
+    ]
+  },
+  "Clocked process, synchronous reset": {
+    "prefix": ["process-sync", "clocked-sync"],
+    "description": "A process clocked on the rising edge, with a synchronous reset.",
+    "body": [
+      "${1:p_name} : process (${2:clk})",
+      "begin",
+      "\tif rising_edge($2) then",
+      "\t\tif ${3:rst} = '${4|1,0|}' then",
+      "\t\t\t${5:null;}",
+      "\t\telse",
+      "\t\t\t$0",
+      "\t\tend if;",
+      "\tend if;",
+      "end process $1;"
+    ]
+  },
+  "Clocked process, asynchronous reset": {
+    "prefix": ["process-async", "clocked-async"],
+    "description": "A process clocked on the rising edge, with an asynchronous reset.",
+    "body": [
+      "${1:p_name} : process (${2:clk}, ${3:rst})",
+      "begin",
+      "\tif $3 = '${4|1,0|}' then",
+      "\t\t${5:null;}",
+      "\telsif rising_edge($2) then",
+      "\t\t$0",
+      "\tend if;",
+      "end process $1;"
+    ]
+  },
+  "Clocked process, no reset": {
+    "prefix": ["process-clocked", "clocked"],
+    "description": "A process clocked on the rising edge, without a reset.",
+    "body": [
+      "${1:p_name} : process (${2:clk})",
+      "begin",
+      "\tif rising_edge($2) then",
+      "\t\t$0",
+      "\tend if;",
+      "end process $1;"
+    ]
+  },
+  "Combinational process": {
+    "prefix": ["process-comb", "comb"],
+    "description": "A combinational process, sensitive to every signal it reads (VHDL-2008).",
+    "body": [
+      "${1:p_name} : process (all)",
+      "begin",
+      "\t$0",
+      "end process $1;"
+    ]
+  },
+  "State machine": {
+    "prefix": ["fsm", "state-machine"],
+    "description": "An architecture with a state type, a state register with a synchronous reset, and a case on the state.",
+    "body": [
+      "architecture ${1:rtl} of ${2:${TM_FILENAME_BASE}} is",
+      "\ttype ${3:state_t} is (${4:IDLE}, ${5:RUN}, ${6:DONE});",
+      "\tsignal ${7:state} : $3;",
+      "begin",
+      "\t${8:p_fsm} : process (${9:clk})",
+      "\tbegin",
+      "\t\tif rising_edge($9) then",
+      "\t\t\tif ${10:rst} = '1' then",
+      "\t\t\t\t$7 <= $4;",
+      "\t\t\telse",
+      "\t\t\t\tcase $7 is",
+      "\t\t\t\t\twhen $4 =>",
+      "\t\t\t\t\t\t$7 <= $5;$0",
+      "\t\t\t\t\twhen $5 =>",
+      "\t\t\t\t\t\t$7 <= $6;",
+      "\t\t\t\t\twhen $6 =>",
+      "\t\t\t\t\t\t$7 <= $4;",
+      "\t\t\t\tend case;",
+      "\t\t\tend if;",
+      "\t\tend if;",
+      "\tend process $8;",
+      "end architecture $1;"
+    ]
+  },
+  "State machine process": {
+    "prefix": "fsm-process",
+    "description": "A state register with a synchronous reset and a case on the state, for a state signal declared already.",
+    "body": [
+      "${1:p_fsm} : process (${2:clk})",
+      "begin",
+      "\tif rising_edge($2) then",
+      "\t\tif ${3:rst} = '1' then",
+      "\t\t\t${4:state} <= ${5:IDLE};",
+      "\t\telse",
+      "\t\t\tcase $4 is",
+      "\t\t\t\twhen $5 =>",
+      "\t\t\t\t\t${0:null;}",
+      "\t\t\t\twhen others =>",
+      "\t\t\t\t\tnull;",
+      "\t\t\tend case;",
+      "\t\tend if;",
+      "\tend if;",
+      "end process $1;"
+    ]
+  },
+  "Testbench": {
+    "prefix": ["testbench", "tb"],
+    "description": "A testbench with a clock, a reset and a stimulus process. vfl: Generate Testbench... writes one for an entity, with its ports and instance.",
+    "body": [
+      "library ieee;",
+      "use ieee.std_logic_1164.all;",
+      "use ieee.numeric_std.all;",
+      "",
+      "entity ${1:${TM_FILENAME_BASE}} is",
+      "end entity $1;",
+      "",
+      "architecture ${2:sim} of $1 is",
+      "\tconstant CLK_PERIOD : time := ${3:10 ns};",
+      "",
+      "\tsignal clk  : std_logic := '0';",
+      "\tsignal rst  : std_logic := '1';",
+      "\tsignal done : boolean   := false;",
+      "begin",
+      "\tclk <= not clk after CLK_PERIOD / 2 when not done;",
+      "",
+      "\tp_stimulus : process",
+      "\tbegin",
+      "\t\twait for 5 * CLK_PERIOD;",
+      "\t\trst <= '0';",
+      "\t\twait until rising_edge(clk);",
+      "\t\t$0",
+      "\t\treport \"done\";",
+      "\t\tdone <= true;",
+      "\t\twait;",
+      "\tend process p_stimulus;",
+      "end architecture $2;"
+    ]
+  },
+  "For generate": {
+    "prefix": ["for-generate", "generate"],
+    "description": "A for generate statement.",
+    "body": [
+      "${1:g_name} : for ${2:i} in ${3:0} to ${4:7} generate",
+      "\t$0",
+      "end generate $1;"
+    ]
+  },
+  "If generate": {
+    "prefix": "if-generate",
+    "description": "An if generate statement.",
+    "body": [
+      "${1:g_name} : if ${2:true} generate",
+      "\t$0",
+      "end generate $1;"
+    ]
+  },
+  "Package and body": {
+    "prefix": "package",
+    "description": "A package and its body.",
+    "body": [
+      "library ieee;",
+      "use ieee.std_logic_1164.all;",
+      "use ieee.numeric_std.all;",
+      "",
+      "package ${1:${TM_FILENAME_BASE}} is",
+      "\t$0",
+      "end package $1;",
+      "",
+      "package body $1 is",
+      "end package body $1;"
+    ]
+  },
+  "Record type": {
+    "prefix": "record",
+    "description": "A record type.",
+    "body": [
+      "type ${1:name_t} is record",
+      "\t${2:field} : ${3:std_logic};$0",
+      "end record $1;"
+    ]
+  }
+}

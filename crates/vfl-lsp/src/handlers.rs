@@ -85,6 +85,27 @@ pub fn request(world: &mut World, method: &str, params: Value) -> Result<Value, 
                 json(crate::generate::resolve(world, action).map_err(Error::Failed)?)
             }
         }
+        "textDocument/implementation" => {
+            json(crate::navigate::implementation(world, parse(params)?))
+        }
+        "textDocument/typeDefinition" => {
+            json(crate::navigate::type_definition(world, parse(params)?))
+        }
+        "textDocument/declaration" => json(crate::navigate::declaration(world, parse(params)?)),
+        "textDocument/linkedEditingRange" => {
+            json(crate::navigate::linked_editing(world, parse(params)?))
+        }
+        "textDocument/selectionRange" => {
+            json(crate::navigate::selection_range(world, parse(params)?))
+        }
+        "textDocument/inlayHint" => json(crate::inlay::inlay_hints(world, parse(params)?)),
+        "textDocument/codeLens" => json(crate::hierarchy::code_lens(world, parse(params)?)),
+        "codeLens/resolve" => json(crate::hierarchy::resolve_code_lens(world, parse(params)?)),
+        "textDocument/prepareCallHierarchy" => {
+            json(crate::hierarchy::prepare(world, parse(params)?))
+        }
+        "callHierarchy/incomingCalls" => json(crate::hierarchy::incoming(world, parse(params)?)),
+        "callHierarchy/outgoingCalls" => json(crate::hierarchy::outgoing(world, parse(params)?)),
         "vfl/entities" => json(crate::generate::entities(world)),
         "vfl/projectConfig" => json(crate::settings::project_config(world).map_err(Error::Failed)?),
         "vfl/generate" => {
@@ -174,35 +195,14 @@ fn formatting(world: &mut World, params: DocumentFormattingParams) -> Option<Vec
         return Some(Vec::new());
     }
     // One edit covering what changed, so the cursor keeps its place.
-    let old = doc.text;
-    let mut prefix = old
-        .bytes()
-        .zip(formatted.bytes())
-        .take_while(|(a, b)| a == b)
-        .count();
-    while !old.is_char_boundary(prefix) {
-        prefix -= 1;
-    }
-    let max_suffix = old.len().min(formatted.len()) - prefix;
-    let mut suffix = old
-        .bytes()
-        .rev()
-        .zip(formatted.bytes().rev())
-        .take(max_suffix)
-        .take_while(|(a, b)| a == b)
-        .count();
-    while !old.is_char_boundary(old.len() - suffix)
-        || !formatted.is_char_boundary(formatted.len() - suffix)
-    {
-        suffix -= 1;
-    }
+    let edit = vfl_fmt::minimal_edit(doc.text, &formatted);
     let range = TextRange::new(
-        TextSize::from(prefix as u32),
-        TextSize::from((old.len() - suffix) as u32),
+        TextSize::from(edit.range.start as u32),
+        TextSize::from(edit.range.end as u32),
     );
     Some(vec![TextEdit {
         range: doc.range(range),
-        new_text: formatted[prefix..formatted.len() - suffix].to_owned(),
+        new_text: edit.text,
     }])
 }
 
@@ -491,7 +491,8 @@ fn declaration_text(world: &World, decl: &Decl) -> String {
             break;
         }
     }
-    // Re-indent relative to the first line's column.
+    // Re-indent relative to the first line's column, which counts
+    // characters: the indentation may hold multi-byte spaces.
     let column = doc.index.line_col(doc.text, decl.full_range.start()).col as usize;
     lines
         .iter()
@@ -500,8 +501,13 @@ fn declaration_text(world: &World, decl: &Decl) -> String {
             if i == 0 {
                 line.to_string()
             } else {
-                let strip = line.len() - line.trim_start().len();
-                line[strip.min(column)..].to_string()
+                let strip: usize = line
+                    .chars()
+                    .take(column)
+                    .take_while(|c| c.is_whitespace())
+                    .map(char::len_utf8)
+                    .sum();
+                line[strip..].to_string()
             }
         })
         .collect::<Vec<_>>()
@@ -725,7 +731,7 @@ fn folding_ranges(world: &mut World, params: FoldingRangeParams) -> Option<Vec<F
     let file = crate::verilog::file(world, &path)?;
     let text = &*file.text;
     let index = LineIndex::new(text);
-    let line = |offset: TextSize| index.line_col(text, offset).line;
+    let line = |offset: TextSize| index.line(offset);
     let mut out = Vec::new();
     for (range, fold) in crate::verilog::folds(&file.parse.syntax()) {
         let start = line(range.start());
