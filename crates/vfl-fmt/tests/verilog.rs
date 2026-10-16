@@ -391,3 +391,12 @@ fn a_tick_keeps_its_space_before_a_base() {
     let text = "module m;\n  initial assert (p with {' da});\nendmodule\n";
     assert_eq!(fmt(text), text);
 }
+
+/// Found by the `format_verilog` fuzz target: range formatting dropped the
+/// only CR LF of a file that mixes CR LF and LF, which was then formatted
+/// with LF rather than CR LF.
+#[test]
+fn a_range_in_a_file_mixing_line_endings() {
+    let text = "//\n\n\r\n`t";
+    assert_eq!(fmt(&fmt_line(text, 0)), fmt(text));
+}
