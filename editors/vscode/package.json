@@ -529,6 +529,11 @@
         "icon": "$(book)"
       },
       {
+        "command": "vfl.generateSpec",
+        "title": "Generate Specification",
+        "category": "vfl"
+      },
+      {
         "command": "vfl.showDiagrams",
         "title": "Show Diagrams",
         "category": "vfl",
@@ -648,6 +653,11 @@
           "command": "vfl.showDiagrams",
           "when": "resourceLangId == vhdl",
           "group": "7_modification@51"
+        },
+        {
+          "command": "vfl.generateSpec",
+          "when": "explorerResourceIsFolder || resourceLangId == vhdl",
+          "group": "7_modification@52"
         }
       ],
       "view/title": [

@@ -1,6 +1,6 @@
 # Entity `uart_tx`
 
-Library `work` · `rtl/uart_tx.vhd:19`
+Library `work` · `rtl/uart_tx.vhd:24`
 
 Uses `ieee.std_logic_1164`, [`uart_pkg`](work.uart_pkg.md).
 

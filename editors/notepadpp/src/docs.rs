@@ -52,6 +52,35 @@ pub fn write(file: &Path, out: Option<&Path>) -> Result<Written, String> {
     })
 }
 
+/// Writes the specification of the project around `file` as `vfl spec`
+/// does, where and how `[doc.spec]` says.
+pub fn write_spec(file: &Path) -> Result<Written, String> {
+    let file = std::path::absolute(file).map_err(|e| format!("{}: {e}", file.display()))?;
+    let project = Project::load(find_root(&file)).map_err(|e| e.to_string())?;
+    let config = &project.config.doc;
+    let (design, items) = vfl_doc::load_spec(&project, config)
+        .map_err(|e| format!("invalid pattern in doc.exclude: {e}"))?;
+    let dir = project.root.dir.join(&config.spec.out_dir);
+    let files = vfl_doc::write_spec(&design, &items, config, &dir)
+        .map_err(|e| format!("could not write {}: {e}", dir.display()))?;
+    let format = config.spec.format.unwrap_or(config.format);
+    let extension = match format {
+        DocFormat::Html => "html",
+        DocFormat::Markdown => "md",
+        DocFormat::Asciidoc => "adoc",
+    };
+    let index = dir.join(format!("index.{extension}"));
+    let page = vfl_doc::page_for(&design, &project.root.dir, &file)
+        .map(|id| format!("{id}.{extension}"))
+        .filter(|name| files.iter().any(|f| f.path == *name))
+        .map_or_else(|| index.clone(), |name| dir.join(name));
+    Ok(Written {
+        index,
+        page,
+        html: format == DocFormat::Html,
+    })
+}
+
 /// Where Show diagrams writes its pages.
 pub fn diagrams_dir() -> PathBuf {
     std::env::temp_dir().join("vfl_npp").join("diagrams")
@@ -94,6 +123,20 @@ mod tests {
         assert_eq!(written.page, site.join("work.top.md"));
         assert!(!written.html);
         assert!(written.index.exists() && written.page.exists());
+    }
+
+    #[test]
+    fn writes_the_specification_of_the_file() {
+        let dir = project(FILES);
+        let written = write_spec(&dir.path().join("src/top.vhd")).unwrap();
+        let spec = dir.path().join("spec");
+        assert_eq!(written.index, spec.join("index.md"));
+        assert_eq!(written.page, spec.join("work.top.md"));
+        let page = std::fs::read_to_string(&written.page).unwrap();
+        assert!(page.contains("## 2 Interface"), "{page}");
+        // A package without spec comments has no page.
+        let written = write_spec(&dir.path().join("src/pkg.vhd")).unwrap();
+        assert_eq!(written.page, written.index);
     }
 
     #[test]

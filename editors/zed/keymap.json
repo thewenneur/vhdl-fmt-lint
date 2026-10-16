@@ -6,6 +6,7 @@
       "ctrl-alt-v x": ["task::Spawn", { "task_name": "vfl: fix file" }],
       "ctrl-alt-v p": ["task::Spawn", { "task_name": "vfl: lint project" }],
       "ctrl-alt-v d": ["task::Spawn", { "task_name": "vfl: generate documentation" }],
+      "ctrl-alt-v s": ["task::Spawn", { "task_name": "vfl: generate specification" }],
       "ctrl-alt-v t": ["task::Spawn", { "task_name": "vfl: generate testbench" }],
       "ctrl-alt-v r": "editor::RestartLanguageServer"
     }

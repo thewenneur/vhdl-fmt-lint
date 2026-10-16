@@ -809,6 +809,74 @@ highlight = "#fbefff"  # block titles
 The keys of `[doc.theme.light]`, for the dark theme. Its defaults are the second ones of the
 table above.
 
+### `[doc.spec]`
+
+`vfl spec [path]` writes the design specification: an index of the units and of every
+requirement with the tests that verify it, and a page per entity in numbered sections. What
+the code says comes first: the generics and ports, with the timing of each port (a clock, a
+reset, registered or sampled on a clock, or combinational, followed through the instances
+it is connected to), the clocks and resets with the processes and instances that use them,
+the clock domain crossings, the processes, the state machines, the registers (the signals
+and ports clocked processes drive, with their clock and reset) and the instances. Spec
+comments add what it cannot:
+
+```vhdl
+--! A UART transmitter.
+--!
+--! @req TX-1: Idles high, then sends a start bit, the data bits LSB first and a stop bit.
+--! @req TX-2: Each bit lasts `CYCLES_PER_BIT` clock cycles.
+entity uart_tx is
+  port (
+    clk   : in  std_logic;
+    --! @req TX-3: `ready` is high in the cycle `data` is taken.
+    ready : out std_logic;
+    txd   : out std_logic  -- @spec Driven from a register, never from logic.
+  );
+...
+  -- @spec Steps through the frame; the parity bit is sent
+  -- only when `PARITY` asks for one.
+  fsm : process (clk, rst_n) is
+```
+
+and in a testbench, on the test that checks them:
+
+```vhdl
+  -- @verifies TX-1, TX-2: one frame looped back
+  stimulus : process is
+```
+
+A tagged comment, with or without the doc marker (`--! @req` and `-- @req` are the same),
+starts a spec comment; the comment lines below it continue it, up to a blank comment line,
+another tag or code (blank lines inside a ```` ``` ```` fence continue it too). It
+applies to the declaration or statement below it, or to the one whose line it ends: the
+entity (its overview), a generic or port (the interface tables), a register, a state
+machine's signal, type or process, an instance, or else any other declaration or
+statement of an architecture (the behavior, under what it applies to). `@req` takes an ID
+first (`TX-1`, `TX-1:`), `@verifies` a list of IDs separated by commas or spaces, then
+optionally `:` and a note. A ```` ```wavedrom ```` block in a `@spec` comment is drawn as
+in the documentation. Spec comments are not doc comments: `vfl doc` leaves them out. A
+package gets a page when it has spec comments. Requirements without an ID or given twice,
+and tests verifying unknown requirements, are printed as warnings and listed on the index;
+`vfl spec --check` fails on them.
+
+The pages use `[doc]` for what they share with the documentation: `comment_marker`,
+`exclude`, the diagrams of `[doc.diagrams]` (symbol, clocks, block, fsm, waveforms) and
+the Markdown diagram style. [examples/uart/spec](../examples/uart/spec/index.md) is the
+specification of the example design, and the [specification guide](spec.md) explains
+spec comments and the pages in detail.
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `out_dir` | string | `"spec"` | Where `vfl spec` writes, relative to the project root. Existing files there are overwritten, others are kept. |
+| `format` | string | unset | `"html"`, `"markdown"` or `"asciidoc"`, as for `doc.format`. Unset: `doc.format`. |
+| `title` | string | unset | The title of the index page. Unset: the documentation title followed by "specification". |
+| `tag` | string | `"@spec"` | The tag that starts a spec comment. Empty: no spec comments. |
+| `requirement_tag` | string | `"@req"` | The tag that starts a requirement: `-- @req ID text`. Empty: no requirements. |
+| `verifies_tag` | string | `"@verifies"` | The tag naming the requirements a test checks: `-- @verifies ID, ID`. Empty: none. |
+| `sections` | array of strings | all, in this order | The sections of an entity's page, in order: `"overview"`, `"interface"`, `"clocks"`, `"behavior"`, `"fsm"`, `"registers"`, `"instances"` and `"requirements"`. Leave one out to drop it; what a dropped section would show of the spec comments goes to the behavior. |
+| `annotated_only` | boolean | `false` | Only entities with spec comments or requirements get a page. |
+| `testbenches` | boolean | `false` | Entities without ports get a page too. Their `@verifies` comments count either way. |
+
 ## `[generate]`
 
 Code generated from an entity: `vfl new`, and the commands of the editor integrations. The

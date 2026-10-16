@@ -93,6 +93,8 @@ const MENU: &[(&str, Option<extern "C" fn()>)] = &[
     ("Show call hierarchy", Some(cmd_call_hierarchy)),
     ("Expand selection", Some(cmd_expand_selection)),
     ("Show design hierarchy", Some(cmd_hierarchy)),
+    ("", None),
+    ("Generate specification", Some(cmd_generate_spec)),
 ];
 
 // The entries are those of `menu::NAMES`, in its order, which keeps the
@@ -828,6 +830,10 @@ extern "C" fn cmd_testbench() {
 
 extern "C" fn cmd_generate_docs() {
     guard(tools::generate_docs);
+}
+
+extern "C" fn cmd_generate_spec() {
+    guard(tools::generate_spec);
 }
 
 extern "C" fn cmd_hierarchy() {
