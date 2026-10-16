@@ -13,6 +13,7 @@ pub mod editor;
 pub mod format;
 pub mod generate;
 mod handlers;
+pub mod hierarchy;
 mod refactor;
 mod semantic;
 pub mod settings;

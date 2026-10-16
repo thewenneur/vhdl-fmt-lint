@@ -2,7 +2,7 @@
 //! link vfl directly instead of speaking LSP, like the Notepad++ plugin:
 //! hover, signature help, completion, go to definition, references,
 //! highlights, outline, project symbols, rename, quick fixes, the problems
-//! of the whole project and semantic tokens.
+//! of the whole project, the design hierarchy and semantic tokens.
 //!
 //! Each query brings the analysis up to date first, then answers from the
 //! same code as the language server.
@@ -356,6 +356,22 @@ pub fn problems(world: &mut World) -> Vec<ProjectProblem> {
         (&a.location.path, a.location.range.start).cmp(&(&b.location.path, b.location.range.start))
     });
     out
+}
+
+/// The design hierarchy of the project, as the `vfl/hierarchy` request
+/// answers it, with places as [`Location`]s.
+pub fn hierarchy(
+    world: &mut World,
+    params: &crate::hierarchy::HierarchyParams,
+) -> crate::hierarchy::Hierarchy<Location> {
+    let tree = crate::hierarchy::hierarchy(world, params);
+    let world = &*world;
+    let mut place = |(file, range)| location(world, file, range);
+    crate::hierarchy::Hierarchy {
+        roots: tree.roots.into_iter().map(|n| n.map(&mut place)).collect(),
+        entities: tree.entities,
+        message: tree.message,
+    }
 }
 
 /// The declarations of the file at `path`, in order, nested as in the

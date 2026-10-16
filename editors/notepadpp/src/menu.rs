@@ -53,6 +53,7 @@ pub const NAMES: &[&str] = &[
     "Lint preset without vfl.toml...",
     "Format style without vfl.toml...",
     "Generate project config (vfl.toml)",
+    "Show design hierarchy",
 ];
 
 #[cfg(test)]

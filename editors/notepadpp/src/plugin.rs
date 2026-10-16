@@ -87,6 +87,7 @@ const MENU: &[(&str, Option<extern "C" fn()>)] = &[
         "Generate project config (vfl.toml)",
         Some(cmd_generate_config),
     ),
+    ("Show design hierarchy", Some(cmd_hierarchy)),
 ];
 
 // The entries are those of `menu::NAMES`, in its order, which keeps the
@@ -804,6 +805,10 @@ extern "C" fn cmd_testbench() {
 
 extern "C" fn cmd_generate_docs() {
     guard(tools::generate_docs);
+}
+
+extern "C" fn cmd_hierarchy() {
+    guard(tools::design_hierarchy);
 }
 
 extern "C" fn cmd_generate_config() {

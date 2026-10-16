@@ -1629,3 +1629,163 @@ fn quick_fixes_add_missing_case_alternatives() {
             .contains("      when '0' => q <= '1';\n      when others => null;\n    end case;")
     );
 }
+
+/// A hierarchy as indented lines: `label: name(architecture)`, with
+/// the kind of grouping nodes and the flags of the others.
+fn outline(nodes: &Value) -> String {
+    fn walk(nodes: &Value, depth: usize, out: &mut String) {
+        for node in nodes.as_array().unwrap() {
+            let mut line = format!("{}{}", "  ".repeat(depth), node["label"].as_str().unwrap());
+            match node["kind"].as_str().unwrap() {
+                "generate" | "block" => {
+                    line += &format!(" [{}", node["kind"].as_str().unwrap());
+                    if let Some(detail) = node["detail"].as_str() {
+                        line += &format!(" {detail}");
+                    }
+                    line += "]";
+                }
+                kind => {
+                    if kind == "instance" {
+                        line += &format!(": {}", node["name"].as_str().unwrap());
+                    }
+                    if let Some(arch) = node["architecture"].as_str() {
+                        line += &format!("({arch})");
+                    }
+                    for flag in ["unresolved", "recursive", "truncated", "testbench"] {
+                        if node[flag] == true {
+                            line += &format!(" {flag}");
+                        }
+                    }
+                }
+            }
+            out.push_str(&line);
+            out.push('\n');
+            walk(&node["children"], depth + 1, out);
+        }
+    }
+    let mut out = String::new();
+    walk(nodes, 0, &mut out);
+    out
+}
+
+#[test]
+fn design_hierarchy_of_the_uart_example() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/uart");
+    let root = std::fs::canonicalize(root).unwrap();
+    let mut client = Client::start(&root);
+
+    let tree = client.request("vfl/hierarchy", json!({}));
+    assert_eq!(
+        outline(&tree["roots"]),
+        "tb_uart(sim) testbench\n\
+         \x20 dut: uart(rtl)\n\
+         \x20   tx_fifo: fifo(rtl)\n\
+         \x20   transmitter: uart_tx(rtl)\n\
+         \x20   receiver: uart_rx(rtl)\n\
+         \x20   error_sync: pulse_sync(rtl)\n\
+         \x20   rx_fifo: fifo(rtl)\n"
+    );
+    let entities: Vec<(&str, bool)> = tree["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| (e["name"].as_str().unwrap(), e["top"] == true))
+        .collect();
+    assert_eq!(
+        entities,
+        [
+            ("fifo", false),
+            ("pulse_sync", false),
+            ("tb_uart", true),
+            ("uart", false),
+            ("uart_rx", false),
+            ("uart_tx", false),
+        ]
+    );
+
+    // Each instance points at its label, and at the entity it binds to.
+    let dut = &tree["roots"][0]["children"][0];
+    assert_eq!(dut["unitKind"], "entity");
+    assert_eq!(dut["library"], "work");
+    assert_eq!(dut["location"]["uri"], url(&root.join("tb/tb_uart.vhd")));
+    assert_eq!(
+        dut["location"]["range"]["start"],
+        json!({ "line": 21, "character": 2 })
+    );
+    assert_eq!(
+        dut["entityLocation"]["uri"],
+        url(&root.join("rtl/uart.vhd"))
+    );
+    assert_eq!(dut["entityLocation"]["range"]["start"]["line"], 9);
+    assert_eq!(dut["architectureLocation"]["range"]["start"]["line"], 34);
+
+    // Without testbenches, what they instantiate is the top.
+    let tree = client.request("vfl/hierarchy", json!({ "testbenches": false }));
+    assert_eq!(tree["roots"].as_array().unwrap().len(), 1);
+    assert_eq!(tree["roots"][0]["label"], "uart");
+    assert_eq!(tree["roots"][0]["children"].as_array().unwrap().len(), 5);
+
+    // A chosen top, by name or library and name.
+    let tree = client.request("vfl/hierarchy", json!({ "top": "work.UART_TX" }));
+    assert_eq!(outline(&tree["roots"]), "uart_tx(rtl)\n");
+    let tree = client.request("vfl/hierarchy", json!({ "top": "nothing" }));
+    assert_eq!(tree["roots"], json!([]));
+    assert_eq!(tree["message"], "no entity `nothing` in the project");
+}
+
+const HIER_LEAF: &str = "entity leaf is\n  port (a : in bit);\nend entity;\n\
+architecture rtl of leaf is\nbegin\nend architecture;\n\
+architecture fast of leaf is\nbegin\nend architecture;\n\
+configuration leaf_cfg of leaf is\n  for rtl\n  end for;\nend configuration;\n";
+
+const HIER_TOP: &str = "entity top is\n  port (a : in bit);\nend entity;\n\
+architecture rtl of top is\n\
+  component leaf is port (a : in bit); end component;\n\
+  component black_box is port (a : in bit); end component;\n\
+begin\n\
+  gen : for i in 0 to 3 generate\n\
+    u_leaf : leaf port map (a => a);\n\
+  end generate;\n\
+  g2 : if true generate\n\
+    u1 : entity work.leaf(rtl) port map (a => a);\n\
+  else generate\n\
+    u2 : configuration work.leaf_cfg port map (a => a);\n\
+  end generate;\n\
+  b : block begin\n\
+    u3 : entity work.missing;\n\
+    u4 : black_box port map (a => a);\n\
+  end block;\n\
+  self : entity work.top port map (a => a);\n\
+end architecture;\n";
+
+#[test]
+fn design_hierarchy_groups_generates_and_flags_unresolved_instances() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("vfl.toml"), "").unwrap();
+    std::fs::write(dir.path().join("leaf.vhd"), HIER_LEAF).unwrap();
+    std::fs::write(dir.path().join("top.vhd"), HIER_TOP).unwrap();
+    let mut client = Client::start(dir.path());
+
+    // `top` instantiates itself: it is still a top, not expanded twice.
+    let tree = client.request("vfl/hierarchy", Value::Null);
+    assert_eq!(
+        outline(&tree["roots"]),
+        "top(rtl)\n\
+         \x20 gen [generate for i in 0 to 3]\n\
+         \x20   u_leaf: leaf(fast)\n\
+         \x20 g2 [generate if true]\n\
+         \x20   u1: leaf(rtl)\n\
+         \x20   u2: leaf(rtl)\n\
+         \x20 b [block]\n\
+         \x20   u3: missing unresolved\n\
+         \x20   u4: black_box unresolved\n\
+         \x20 self: top(rtl) recursive\n"
+    );
+    let g2 = &tree["roots"][0]["children"][1];
+    assert_eq!(g2["children"][0]["unitKind"], "entity");
+    assert_eq!(g2["children"][1]["unitKind"], "configuration");
+    assert_eq!(
+        tree["roots"][0]["children"][0]["children"][0]["unitKind"],
+        "component"
+    );
+}

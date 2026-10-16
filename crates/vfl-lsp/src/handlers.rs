@@ -87,6 +87,14 @@ pub fn request(world: &mut World, method: &str, params: Value) -> Result<Value, 
         }
         "vfl/entities" => json(crate::generate::entities(world)),
         "vfl/projectConfig" => json(crate::settings::project_config(world).map_err(Error::Failed)?),
+        "vfl/hierarchy" => {
+            let params = if params.is_null() {
+                Default::default()
+            } else {
+                parse(params)?
+            };
+            json(crate::hierarchy::request(world, params))
+        }
         "vfl/generate" => {
             json(crate::generate::generate_request(world, parse(params)?).map_err(Error::Failed)?)
         }
