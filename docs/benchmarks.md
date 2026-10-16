@@ -144,6 +144,22 @@ It then asks for the semantic tokens of every file, whole and as a delta. On UVV
 files) the median is 0.1 ms; the slowest is `methods_pkg.vhd` (490 KB, 20,357 names):
 7.4 ms whole, 4.8 ms as a delta.
 
+The navigation requests are timed at the same positions: go to implementation, type
+definition and declaration, linked editing, selection ranges, inlay hints for the 50 lines
+from the position (a screen), and a call hierarchy (prepare, then the incoming and outgoing
+calls of each item). Then, for every file, its code lenses, each resolved (an "N instances"
+count, which reads every reference of the project once), and its inlay hints as a whole.
+None of them changes what an edit costs: they only read the analysis.
+
+| Project | Inlay hints, a screen | Inlay hints, whole file (max) | Code lens resolve | Call hierarchy | The others |
+|---|---:|---:|---:|---:|---:|
+| neorv32 | 0.01 / 0.3 ms | 0.9 ms | 0.2 / 0.6 ms | 0.004 / 1.1 ms | under 0.3 ms |
+| OSVVM | 0.01 / 0.3 ms | 4.8 ms | 1.4 / 1.6 ms | 0.008 / 19 ms | under 2.6 ms |
+| UVVM | 0.04 / 4.5 ms | 30 ms (8,017 hints) | 5.5 / 14 ms | 0.008 / 27 ms | under 0.2 ms |
+
+(Median / max. The slowest call hierarchies are the incoming calls of subprograms called
+all over the project.)
+
 ## Running it
 
 ```sh

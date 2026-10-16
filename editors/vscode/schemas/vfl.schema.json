@@ -3529,6 +3529,40 @@
       },
       "additionalProperties": false
     },
+    "lsp": {
+      "type": "object",
+      "description": "Language server features that are a matter of taste.",
+      "properties": {
+        "inlay_hints": {
+          "type": "object",
+          "description": "Which names and types the editor shows inline. An editor can override each kind for its user.",
+          "properties": {
+            "ports": {
+              "description": "The port name before each positional actual of a port map.",
+              "type": "boolean",
+              "default": true
+            },
+            "generics": {
+              "description": "The generic name before each positional actual of a generic map.",
+              "type": "boolean",
+              "default": true
+            },
+            "parameters": {
+              "description": "The parameter name before each positional argument of a subprogram call.",
+              "type": "boolean",
+              "default": true
+            },
+            "port_types": {
+              "description": "The mode and type of the port after each actual of a port map.",
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "verilog": {
       "type": "object",
       "description": "Verilog and SystemVerilog files.",
