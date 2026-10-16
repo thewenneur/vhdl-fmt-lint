@@ -750,7 +750,7 @@ characters are `0 1 l h L H u d` (levels), `p n P N` (clocks), `x` (unknown), `z
 | `dependencies` | boolean | `true` | Draw on the index which entities and packages use which packages of the project. |
 | `waveforms` | boolean | `true` | Draw the ```` ```wavedrom ```` blocks of doc comments as timing diagrams (else they stay code blocks). |
 | `fields` | boolean | `true` | Draw the bit layout of each record type whose field widths are known (from their subtypes, constants and generics), and of each signal with aliases of its slices. |
-| `fsm` | boolean | `true` | Draw a state diagram per state machine. Past ten labelled transitions, the conditions are left to the transition table. |
+| `fsm` | boolean | `true` | Draw a state diagram per state machine. The transitions into the same state merge into one arrow. Past 24 labelled transitions, the conditions are left to the transition table. |
 | `port_types` | boolean | `true` | Write the port types next to the pins of a symbol. |
 | `generics` | boolean | `true` | Write the generics in a symbol. |
 | `markdown` | string | `"svg"` | How Markdown pages draw the hierarchy and state diagrams: `"svg"` files, or `"mermaid"` blocks, which GitHub and GitLab render. Symbols are always SVG. |

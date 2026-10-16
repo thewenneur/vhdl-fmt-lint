@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **State machine diagrams are drawn with orthogonal lines, and the transitions into the
+  same state merge into one arrow.** All the returns to `IDLE` join one trunk with a single
+  arrowhead, as do all the errors into `FAULT`; trunks that many states join run down the
+  side of the diagram instead of weaving between the branches. The transitions leaving a
+  state share one stem that branches out, each condition sits on its own branch, before
+  it merges with others, and lines are lined up so that they run straight. The DOT export
+  merges them too (`concentrate`).
+
 ## [0.8.0] - 2026-10-16
 
 New design checks (multiple drivers, combinational loops, incomplete and duplicate
