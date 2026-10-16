@@ -254,7 +254,8 @@ uses them, the registers each clocked process drives and the state machines. Spe
 add the rest: `-- @spec text`, `-- @req ID: text` and, in testbenches,
 `-- @verifies ID, ID: note`, each applying to the declaration or statement below it or to
 the one whose line it ends. A package gets a page if it has spec comments. Spec comments are
-left out of `vfl doc`. Settings are under `[doc.spec]`
+left out of `vfl doc`. The [specification guide](spec.md) explains spec comments and the
+pages in detail. Settings are under `[doc.spec]`
 ([configuration.md](configuration.md#docspec)); see
 [examples/uart/spec](../examples/uart/spec/index.md) for an example.
 

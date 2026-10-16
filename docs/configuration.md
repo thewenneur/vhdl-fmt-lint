@@ -808,7 +808,8 @@ and tests verifying unknown requirements, are printed as warnings and listed on 
 The pages use `[doc]` for what they share with the documentation: `comment_marker`,
 `exclude`, the diagrams of `[doc.diagrams]` (symbol, clocks, block, fsm, waveforms) and
 the Markdown diagram style. [examples/uart/spec](../examples/uart/spec/index.md) is the
-specification of the example design.
+specification of the example design, and the [specification guide](spec.md) explains
+spec comments and the pages in detail.
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|

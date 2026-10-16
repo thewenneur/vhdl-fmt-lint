@@ -16,7 +16,7 @@
   comments are left out of `vfl doc`. The editors have the action too: **vfl: Generate
   Specification** in VS Code, **Generate specification** at the end of the Notepad++
   menu, and a `vfl: generate specification` task (`ctrl-alt-v s`) for Zed.
-  [examples/uart/spec](examples/uart/spec/index.md) is the example's specification.
+  [docs/spec.md](docs/spec.md) is the guide, [examples/uart/spec](examples/uart/spec/index.md) the example.
 
 ### Changed
 
