@@ -7,6 +7,13 @@ use work.uart_pkg.all;
 --!
 --! Bytes written to `tx_data` are queued and sent on `txd`; bytes received
 --! on `rxd` are queued until read from `rx_data`.
+--!
+--! @req UART-1: Sends the bytes written to `tx_data` on `txd` in the order
+--! they were written, and receives the bytes of `rxd` in the order they came.
+--! @req UART-2: Holds up to `FIFO_DEPTH` bytes each way: `tx_full` and
+--! `rx_empty` say when a side can take or give no byte.
+--! @spec The bit rate is `CLK_HZ / BAUD`, rounded to the nearest whole number
+--! of clock cycles per bit.
 entity uart is
     generic (
         CLK_HZ     : positive := 100_000_000; --! Clock frequency
@@ -25,6 +32,8 @@ entity uart is
         rx_read  : in  std_logic                   ; --! Take `rx_data`
         rx_empty : out std_logic                   ; --! No received byte
         host_clk : in  std_logic                   ; --! Clock of `rx_error`
+        --! @req UART-3: A frame with a bad stop bit gives one pulse of
+        --! `rx_error`, one `host_clk` cycle long.
         rx_error : out std_logic                   ; --! A frame had a bad stop bit, on `host_clk`
         -- Serial lines
         txd      : out std_logic                   ; --! Serial output
@@ -87,6 +96,7 @@ begin
         );
 
     --! Brings the error pulses to the host clock.
+    --! @spec `rx_bad` is the only signal crossing from `clk` to `host_clk`.
     error_sync : entity work.pulse_sync
         port map (
             clk_a   => clk,

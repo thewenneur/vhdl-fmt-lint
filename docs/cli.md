@@ -20,6 +20,7 @@ apply to each file ([configuration.md](configuration.md#lookup)).
 | [`vfl order`](#vfl-order) | Print the files in compile order, as a list, JSON or a GHDL, Questa or Vivado script |
 | [`vfl config show`](#vfl-config-show) | Show the effective configuration and where each value came from |
 | [`vfl doc`](#vfl-doc) | Write the documentation of the design, with diagrams |
+| [`vfl spec`](#vfl-spec) | Write the design specification, from the code and its spec comments |
 | [`vfl schema`](#vfl-schema) | Draw one diagram |
 | [`vfl new`](#vfl-new) | Generate a testbench, an instantiation or a component declaration |
 | [`vfl lsp`](#vfl-lsp) | Run the language server over standard input and output |
@@ -237,6 +238,37 @@ for an example.
 | `--format FORMAT` | `html`, `markdown` or `asciidoc` (default: `doc.format`). |
 | `--title TITLE` | Title of the index page (default: `doc.title`, else the project directory's name). |
 | `--page-for FILE` | Print the page of the first entity (else package) `FILE` declares instead of writing the whole documentation. Editors use it for their diagram views. |
+
+## `vfl spec`
+
+```sh
+vfl spec [OPTIONS] [PATH]
+```
+
+Writes the design specification: an index of the units and of every requirement, with the
+tests that verify it, and a page per entity in numbered sections (overview, interface,
+clocks and resets, behavior, state machines, registers, sub-blocks, requirements). The
+code gives each port its timing (a clock, a reset, registered or sampled on a clock, or
+combinational, through the instances it is connected to), the clocks and resets with what
+uses them, the registers each clocked process drives and the state machines. Spec comments
+add the rest: `-- @spec text`, `-- @req ID: text` and, in testbenches,
+`-- @verifies ID, ID: note`, each applying to the declaration or statement below it or to
+the one whose line it ends. A package gets a page if it has spec comments. Spec comments are
+left out of `vfl doc`. The [specification guide](spec.md) explains spec comments and the
+pages in detail. Settings are under `[doc.spec]`
+([configuration.md](configuration.md#docspec)); see
+[examples/uart/spec](../examples/uart/spec/index.md) for an example.
+
+Problems (a requirement without an ID or given twice, a test verifying an unknown
+requirement) are printed as warnings and listed on the index.
+
+| Option | |
+|--------|---|
+| `-o, --out DIR` | Output directory (default: `doc.spec.out_dir`, relative to the project root). |
+| `--format FORMAT` | `html`, `markdown` or `asciidoc` (default: `doc.spec.format`, else `doc.format`). |
+| `--title TITLE` | Title of the index page (default: `doc.spec.title`, else the documentation title followed by "specification"). |
+| `--page-for FILE` | Print the page of the first entity (else package) `FILE` declares instead of the index. Editors use it to open the specification of the current file. |
+| `--check` | Exit with `1` when there are problems. |
 
 ## `vfl schema`
 

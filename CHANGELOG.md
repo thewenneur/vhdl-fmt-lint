@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`vfl spec` writes a design specification from the code and spec comments.** Each
+  entity gets a page in numbered sections: overview, interface (with the timing of each
+  port: clock, reset, registered or sampled on which clock, or combinational, followed
+  through the instances), clocks and resets with what uses them, behavior, state machines,
+  registers with their clock and reset, sub-blocks and requirements. `-- @spec text`,
+  `-- @req ID: text` and `-- @verifies ID, ID` comments add to the place they apply to,
+  and the index lists every requirement with the tests that verify it. Duplicate IDs and
+  unknown verified requirements are reported (`--check` fails on them). Pages are HTML,
+  Markdown or AsciiDoc; tags, sections and output are set under `[doc.spec]`. Spec
+  comments are left out of `vfl doc`. The editors have the action too: **vfl: Generate
+  Specification** in VS Code, **Generate specification** at the end of the Notepad++
+  menu, and a `vfl: generate specification` task (`ctrl-alt-v s`) for Zed.
+  [docs/spec.md](docs/spec.md) is the guide, [examples/uart/spec](examples/uart/spec/index.md) the example.
+
+### Changed
+
+- **State machine diagrams are drawn with orthogonal lines, and the transitions into the
+  same state merge into one arrow.** All the returns to `IDLE` join one trunk with a single
+  arrowhead, as do all the errors into `FAULT`; trunks that many states join run down the
+  side of the diagram instead of weaving between the branches. The transitions leaving a
+  state share one stem that branches out, each condition sits on its own branch, before
+  it merges with others, and lines are lined up so that they run straight. The DOT export
+  merges them too (`concentrate`).
+
 ## [0.8.0] - 2026-10-16
 
 New design checks (multiple drivers, combinational loops, incomplete and duplicate

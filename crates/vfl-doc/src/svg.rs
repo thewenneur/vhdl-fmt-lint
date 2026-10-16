@@ -38,7 +38,7 @@ const STYLE: &str = "\
 .vfl-gap{fill:#ffffff;stroke:#424a53;stroke-width:1}\
 .vfl-state{fill:#f6f8fa;stroke:#424a53;stroke-width:1.5}\
 .vfl-initial{fill:#ddf4ff;stroke:#0969da;stroke-width:2}\
-.vfl-label-bg{fill:#ffffff;fill-opacity:0.85}\
+.vfl-label-bg{fill:#ffffff}\
 text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,'DejaVu Sans Mono','Liberation Mono',monospace;font-size:12px;fill:#1f2328}\
 .vfl-title{font-weight:bold}\
 .vfl-muted{fill:#59636e}\
@@ -470,48 +470,32 @@ pub fn hierarchy(roots: &[Node], link: Option<&dyn Fn(usize) -> String>) -> Stri
     c.finish("Design hierarchy", 6.0)
 }
 
-/// A smooth curve through `points`, which go steadily up or down: a
-/// monotone cubic (Fritsch-Carlson) in x as a function of y, so it never
-/// overshoots a waypoint, leaving the first point and entering the last one
-/// vertically.
-fn spline(points: &[(f64, f64)]) -> String {
+/// A path through the corners of an orthogonal line, with each corner
+/// rounded.
+fn rounded(points: &[(f64, f64)], radius: f64) -> String {
     let mut d = String::new();
     let Some(&(x0, y0)) = points.first() else {
         return d;
     };
     let _ = write!(d, "M{x0:.1},{y0:.1}");
-    let slope = |p: (f64, f64), q: (f64, f64)| {
-        if (q.1 - p.1).abs() < 1e-6 {
-            0.0
-        } else {
-            (q.0 - p.0) / (q.1 - p.1)
-        }
+    let toward = |p: (f64, f64), q: (f64, f64), r: f64| {
+        let len = ((q.0 - p.0).powi(2) + (q.1 - p.1).powi(2)).sqrt().max(1e-9);
+        (p.0 + (q.0 - p.0) * r / len, p.1 + (q.1 - p.1) * r / len)
     };
-    let n = points.len();
-    let tangent = |i: usize| {
-        if i == 0 || i + 1 == n {
-            return 0.0;
+    let length = |p: (f64, f64), q: (f64, f64)| (q.0 - p.0).abs() + (q.1 - p.1).abs();
+    for i in 1..points.len() {
+        let p = points[i];
+        if i + 1 == points.len() {
+            let _ = write!(d, "L{:.1},{:.1}", p.0, p.1);
+            break;
         }
-        let (a, b) = (
-            slope(points[i - 1], points[i]),
-            slope(points[i], points[i + 1]),
-        );
-        if a * b <= 0.0 {
-            0.0
-        } else {
-            2.0 / (1.0 / a + 1.0 / b)
-        }
-    };
-    for i in 0..n - 1 {
-        let ((x1, y1), (x2, y2)) = (points[i], points[i + 1]);
-        let third = (y2 - y1) / 3.0;
+        let (prev, next) = (points[i - 1], points[i + 1]);
+        let r = radius.min(length(prev, p) / 2.0).min(length(p, next) / 2.0);
+        let (a, b) = (toward(p, prev, r), toward(p, next, r));
         let _ = write!(
             d,
-            "C{:.1},{:.1} {:.1},{:.1} {x2:.1},{y2:.1}",
-            x1 + tangent(i) * third,
-            y1 + third,
-            x2 - tangent(i + 1) * third,
-            y2 - third,
+            "L{:.1},{:.1}Q{:.1},{:.1} {:.1},{:.1}",
+            a.0, a.1, p.0, p.1, b.0, b.1
         );
     }
     d
@@ -519,7 +503,8 @@ fn spline(points: &[(f64, f64)]) -> String {
 
 /// A state diagram, laid out in layers from the initial state down (see
 /// [`crate::layered`]): branches run side by side, loops go back up, and
-/// transitions are curves labelled with their conditions.
+/// transitions are orthogonal lines labelled with their conditions; the
+/// transitions into the same state merge into one arrow.
 pub fn fsm(machine: &Fsm) -> String {
     const HEIGHT: f64 = 30.0;
     let index = |state: &str| machine.states.iter().position(|s| s == state);
@@ -544,7 +529,7 @@ pub fn fsm(machine: &Fsm) -> String {
         if !show_labels {
             return Vec::new();
         }
-        let mut lines: Vec<String> = conditions.iter().flatten().map(|c| cut(c, 28)).collect();
+        let mut lines: Vec<String> = conditions.iter().flatten().map(|c| cut(c, 36)).collect();
         if lines.len() > 3 {
             lines.truncate(3);
             lines.push("…".into());
@@ -575,25 +560,26 @@ pub fn fsm(machine: &Fsm) -> String {
         if route.points.is_empty() {
             // A loop on the right side of the state.
             let (x, y) = layout.states[edge.from];
-            let right = x + sizes[edge.from].0 / 2.0;
-            let reach = right + layered::LOOP_ROOM - 4.0;
-            c.extend(right, y - 18.0, reach, y + 18.0);
+            let right = x + layout.widths[edge.from] / 2.0;
+            let reach = right + layered::LOOP_ROOM - 8.0;
+            let points = [
+                (right, y - 7.0),
+                (reach, y - 7.0),
+                (reach, y + 7.0),
+                (right, y + 7.0),
+            ];
+            c.extend(right, y - 7.0, reach, y + 7.0);
             c.raw(&format!(
-                r#"<path class="vfl-edge" marker-end="url(#vfl-arrow)" d="M{:.1},{:.1}C{reach:.1},{:.1} {reach:.1},{:.1} {:.1},{:.1}"/>"#,
-                right - 4.0,
-                y - HEIGHT / 2.0 + 1.0,
-                y - 22.0,
-                y + 22.0,
-                right - 4.0,
-                y + HEIGHT / 2.0 - 1.0,
+                r#"<path class="vfl-edge" marker-end="url(#vfl-arrow)" d="{}"/>"#,
+                rounded(&points, 5.0)
             ));
         } else {
-            let d = spline(&route.points);
             for &(x, y) in &route.points {
                 c.extend(x, y, x, y);
             }
             c.raw(&format!(
-                r#"<path class="vfl-edge" marker-end="url(#vfl-arrow)" d="{d}"/>"#
+                r#"<path class="vfl-edge" marker-end="url(#vfl-arrow)" d="{}"/>"#,
+                rounded(&route.points, 6.0)
             ));
         }
         if let Some((x, y)) = route.label {
@@ -613,14 +599,14 @@ pub fn fsm(machine: &Fsm) -> String {
     }
     for (i, name) in names.iter().enumerate() {
         let (x, y) = layout.states[i];
-        let (w, h) = sizes[i];
+        let (w, h) = (layout.widths[i], sizes[i].1);
         let initial = Some(i) == initial;
         let class = if initial { "vfl-initial" } else { "vfl-state" };
         let (left, top) = (x - w / 2.0, y - h / 2.0);
         c.extend(left, top, left + w, top + h);
         c.raw(&format!(
             r#"<rect class="{class}" x="{left:.1}" y="{top:.1}" width="{w:.1}" height="{h:.1}" rx="{:.1}"/>"#,
-            h / 2.0
+            layered::CORNER
         ));
         c.text(
             x,

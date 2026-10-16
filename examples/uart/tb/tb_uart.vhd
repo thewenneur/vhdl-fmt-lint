@@ -37,6 +37,7 @@ begin
         );
 
     --! Writes one byte and waits for it to come back.
+    --! @verifies UART-1, TX-1, RX-2: one byte looped back
     stimulus : process is
     begin
         wait for 20 ns;

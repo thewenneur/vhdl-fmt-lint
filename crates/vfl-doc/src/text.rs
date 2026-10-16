@@ -156,10 +156,11 @@ pub fn fsm_mermaid(machine: &Fsm) -> String {
     out
 }
 
-/// A state machine as a DOT graph.
+/// A state machine as a DOT graph; the transitions into the same state
+/// merge (`concentrate`).
 pub fn fsm_dot(machine: &Fsm) -> String {
     let mut out = format!(
-        "digraph \"{}\" {{\n  rankdir=LR;\n  node [shape=circle, fontname=\"monospace\"];\n  edge [fontname=\"monospace\", fontsize=10];\n",
+        "digraph \"{}\" {{\n  rankdir=LR;\n  concentrate=true;\n  node [shape=circle, fontname=\"monospace\"];\n  edge [fontname=\"monospace\", fontsize=10];\n",
         dot_text(&machine.signal)
     );
     for state in &machine.states {

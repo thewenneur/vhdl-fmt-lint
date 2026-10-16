@@ -956,6 +956,7 @@ version = "0.8.0"
 dependencies = [
  "insta",
  "rowan",
+ "similar",
  "thiserror",
  "toml",
  "unicode-width",

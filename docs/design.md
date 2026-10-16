@@ -549,3 +549,8 @@ and far fewer false errors, with zero configuration.
 
     Files are dispatched by extension when the project is collected; a project without
     Verilog files never runs Verilog code.
+18. Design specifications: `vfl spec` writes a page per entity from the code (interface
+    with each port's timing, clocks and resets, registers, state machines, sub-blocks)
+    and from `@spec`, `@req` and `@verifies` comments, with an index of the requirements
+    and the tests that verify them ([spec.md](spec.md)). Like `vfl doc`, it reads the
+    syntax trees only and is not part of the language server (done).

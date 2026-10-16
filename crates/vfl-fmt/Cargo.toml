@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 rowan = "0.16"
+similar.workspace = true
 thiserror.workspace = true
 unicode-width.workspace = true
 vfl-config.workspace = true

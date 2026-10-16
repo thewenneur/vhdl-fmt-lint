@@ -16,6 +16,11 @@ use work.uart_pkg.all;
 --!   head: { text: "One frame without parity, one column per bit" }
 --! }
 --! ```
+--!
+--! @req TX-1: Idles high, then sends a frame per byte: a start bit (low),
+--! the eight data bits LSB first, a parity bit unless `PARITY` is
+--! `PARITY_NONE`, and a stop bit (high).
+--! @req TX-2: Each bit lasts `CYCLES_PER_BIT` clock cycles.
 entity uart_tx is
     generic (
         CYCLES_PER_BIT : positive := 868;        --! Clock cycles per bit
@@ -26,6 +31,8 @@ entity uart_tx is
         rst_n : in  std_logic                   ; --! Asynchronous reset, active low
         data  : in  std_logic_vector(7 downto 0); --! Byte to send
         valid : in  std_logic                   ; --! `data` holds a byte to send
+        --! @req TX-3: `ready` is high in the cycle `data` is taken, only while
+        --! no frame is being sent.
         ready : out std_logic                   ; --! A byte is taken this cycle
         txd   : out std_logic                     --! Serial output
     );

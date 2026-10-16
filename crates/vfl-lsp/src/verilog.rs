@@ -724,7 +724,15 @@ q port
             "textDocument/formatting",
             json!({ "textDocument": { "uri": uri }, "options": { "tabSize": 2, "insertSpaces": true } }),
         );
-        assert_eq!(edits.as_array().unwrap().len(), 1, "{edits}");
+        // Only the changed lines: the header is left alone.
+        let edits = edits.as_array().unwrap();
+        assert!(!edits.is_empty());
+        assert!(
+            edits
+                .iter()
+                .all(|e| e["range"]["start"]["line"].as_u64() >= Some(2)),
+            "{edits:?}"
+        );
 
         // Requests answered from the analysis of VHDL have no answer here.
         let at =

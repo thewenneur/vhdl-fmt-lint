@@ -1,6 +1,6 @@
 # Entity `uart_rx`
 
-Library `work` · `rtl/uart_rx.vhd:6`
+Library `work` · `rtl/uart_rx.vhd:11`
 
 Uses `ieee.std_logic_1164`.
 

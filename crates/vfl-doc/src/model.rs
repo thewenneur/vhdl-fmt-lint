@@ -329,7 +329,7 @@ pub fn build(
     let mut architectures: Vec<(String, String, Architecture)> = Vec::new();
     let mut package_bodies: Vec<(String, String, String, Vec<Use>)> = Vec::new();
     for file in files {
-        let style = CommentStyle::for_file(file.root, config.comments, &config.comment_marker);
+        let style = CommentStyle::for_file(file.root, config);
         let ctx = Ctx {
             style: &style,
             text: file.text,

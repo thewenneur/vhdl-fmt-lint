@@ -22,6 +22,7 @@
 //! Formatting the same range again changes nothing.
 
 use std::ops::Range;
+use std::time::{Duration, Instant};
 
 use rowan::{NodeOrToken, TextSize};
 use vfl_config::{AlignScope, BlockBoundary, FormatConfig};
@@ -82,6 +83,161 @@ pub fn minimal_edit(old: &str, new: &str) -> Edit {
     Edit {
         range: prefix..old.len() - suffix,
         text: new[prefix..new.len() - suffix].to_owned(),
+    }
+}
+
+/// How long [`minimal_edits`] looks for the smallest set of changed lines
+/// before it settles for larger runs.
+const DIFF_DEADLINE: Duration = Duration::from_millis(20);
+
+/// Edits turning `old` into `new`, each trimmed to the bytes that differ:
+/// one for each changed line, and one for each run of lines that were
+/// joined, split, added or removed. Editors keep the cursor, the selection
+/// and the scroll position when a whole-file change comes as these edits:
+/// text outside them, including lines added or removed above the view,
+/// keeps its place. Sorted, and they do not overlap.
+///
+/// Lines are matched by their text without spaces and case, since
+/// formatting mostly reindents, realigns and recases them. That keeps the
+/// diff small, and so fast, even when every line changed.
+pub fn minimal_edits(old: &str, new: &str) -> Vec<Edit> {
+    if old == new {
+        return Vec::new();
+    }
+    let (old, new) = (Lines::new(old), Lines::new(new));
+    let mut runs = Runs::default();
+    let Ok(()) = similar::algorithms::patience::diff_deadline(
+        &mut runs,
+        &old.keys,
+        0..old.keys.len(),
+        &new.keys,
+        0..new.keys.len(),
+        Instant::now().checked_add(DIFF_DEADLINE),
+    );
+    let mut edits = Vec::new();
+    let mut edit = |o: Range<usize>, n: Range<usize>| {
+        let (o, n) = (old.bytes(o), new.bytes(n));
+        let edit = minimal_edit(&old.text[o.clone()], &new.text[n]);
+        if !edit.range.is_empty() || !edit.text.is_empty() {
+            edits.push(Edit {
+                range: o.start + edit.range.start..o.start + edit.range.end,
+                text: edit.text,
+            });
+        }
+    };
+    // Between the runs, lines with the same key may still differ in spaces
+    // or case.
+    let mut at = (0, 0);
+    for (o, n) in runs
+        .runs
+        .into_iter()
+        .chain([(old.len()..old.len(), new.len()..new.len())])
+    {
+        for (a, b) in (at.0..o.start).zip(at.1..n.start) {
+            if old.lines[a] != new.lines[b] {
+                edit(a..a + 1, b..b + 1);
+            }
+        }
+        if o.len() == n.len() {
+            for (a, b) in o.clone().zip(n.clone()) {
+                edit(a..a + 1, b..b + 1);
+            }
+        } else if !o.is_empty() || !n.is_empty() {
+            edit(o.clone(), n.clone());
+        }
+        at = (o.end, n.end);
+    }
+    edits
+}
+
+/// The lines of a text, ending with their line break, where each starts,
+/// and the key each is matched by.
+struct Lines<'a> {
+    text: &'a str,
+    lines: Vec<&'a str>,
+    starts: Vec<usize>,
+    keys: Vec<u64>,
+}
+
+impl<'a> Lines<'a> {
+    fn new(text: &'a str) -> Lines<'a> {
+        let lines: Vec<&str> = text.split_inclusive('\n').collect();
+        let mut starts = Vec::with_capacity(lines.len() + 1);
+        let mut at = 0;
+        for line in &lines {
+            starts.push(at);
+            at += line.len();
+        }
+        starts.push(at);
+        let keys = lines.iter().map(|line| key(line)).collect();
+        Lines {
+            text,
+            lines,
+            starts,
+            keys,
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.lines.len()
+    }
+
+    fn bytes(&self, lines: Range<usize>) -> Range<usize> {
+        self.starts[lines.start]..self.starts[lines.end]
+    }
+}
+
+/// A hash (FNV-1a) of a line without its spaces, lowercased. A collision
+/// only makes the edits larger.
+fn key(line: &str) -> u64 {
+    line.bytes()
+        .filter(|b| !b.is_ascii_whitespace())
+        .fold(0xcbf2_9ce4_8422_2325, |hash, b| {
+            (hash ^ u64::from(b.to_ascii_lowercase())).wrapping_mul(0x0100_0000_01b3)
+        })
+}
+
+/// The runs of changed lines of a diff, consecutive changes joined.
+#[derive(Default)]
+struct Runs {
+    runs: Vec<(Range<usize>, Range<usize>)>,
+    /// Whether the last run may still grow.
+    open: bool,
+}
+
+impl Runs {
+    fn change(&mut self, old: Range<usize>, new: Range<usize>) {
+        match self.runs.last_mut() {
+            // A replacement comes as a deletion and an insertion from the
+            // same start.
+            Some(last) if self.open => {
+                last.0.end = last.0.end.max(old.end);
+                last.1.end = last.1.end.max(new.end);
+            }
+            _ => {
+                self.runs.push((old, new));
+                self.open = true;
+            }
+        }
+    }
+}
+
+impl similar::algorithms::DiffHook for Runs {
+    type Error = std::convert::Infallible;
+
+    fn equal(&mut self, _: usize, _: usize, _: usize) -> Result<(), Self::Error> {
+        self.open = false;
+        Ok(())
+    }
+
+    fn delete(&mut self, old: usize, len: usize, new: usize) -> Result<(), Self::Error> {
+        self.change(old..old + len, new..new);
+        Ok(())
+    }
+
+    fn insert(&mut self, old: usize, new: usize, len: usize) -> Result<(), Self::Error> {
+        self.change(old..old, new..new + len);
+        Ok(())
     }
 }
 
@@ -879,6 +1035,45 @@ mod tests {
         assert_eq!((edit.range, edit.text.as_str()), (3..3, ""));
         assert_eq!(check("", "x").range, 0..0);
         assert_eq!(check("xyz", "").range, 0..3);
+    }
+
+    fn check_all(old: &str, new: &str) -> Vec<Edit> {
+        let edits = minimal_edits(old, new);
+        assert_eq!(apply_edits(old, &edits), new);
+        assert!(edits.windows(2).all(|w| w[0].range.end <= w[1].range.start));
+        edits
+    }
+
+    #[test]
+    fn minimal_edits_leave_unchanged_lines_alone() {
+        assert!(check_all("a\nb\n", "a\nb\n").is_empty());
+        // A line removed at the top and an indent changed at the bottom are
+        // two edits; the lines between are not replaced.
+        let old = "x\n\n\na;\nb;\nc;\n  d;\n";
+        let new = "x\n\na;\nb;\nc;\nd;\n";
+        let edits = check_all(old, new);
+        assert_eq!(edits.len(), 2, "{edits:?}");
+        assert_eq!((edits[0].range.len(), edits[0].text.as_str()), (1, ""));
+        assert_eq!(edits[1].range, 13..15);
+        // Each changed line of a run of the same length is its own edit.
+        let edits = check_all("a  := 1;\nbb :=2;\n", "a := 1;\nbb := 2;\n");
+        assert_eq!(edits.len(), 2, "{edits:?}");
+        assert_eq!(edits[0].range, 2..3);
+        assert_eq!(
+            (edits[1].range.clone(), edits[1].text.as_str()),
+            (14..14, " ")
+        );
+    }
+
+    #[test]
+    fn minimal_edits_join_split_and_end_lines() {
+        check_all("a(\n  b,\n  c);\nz;\n", "a(b, c);\nz;\n");
+        check_all("a(b, c);\nz;\n", "a(\n  b,\n  c);\nz;\n");
+        check_all("end;", "end;\n");
+        check_all("a\r\nb\r\n", "a\nb\n");
+        check_all("é\nè\n", "è\né\n");
+        check_all("", "x\n");
+        check_all("x\n", "");
     }
 
     #[test]
