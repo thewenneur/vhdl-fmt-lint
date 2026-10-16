@@ -74,10 +74,12 @@ are ready, and are dropped if the file changed in the meantime.
   and hierarchy, in the browser.
 
 - **FPGA vendor files**: Quartus settings (`.qsf`, `.qip`), SDC and XDC constraints
-  (`.sdc`, `.xdc`) and Tcl scripts are linted as you type with the `vendor/*` rules
-  (misspelled commands, options and names, missing arguments and files, duplicate
-  assignments, pin conflicts, ports the design does not have), and highlighted as Tcl
-  unless another language was chosen for them.
+  (`.sdc`, `.xdc`), Libero and Radiant physical constraints (`.pdc`, `.ldc`), Lattice
+  preferences (`.lpf`), Gowin constraints (`.cst`) and Tcl scripts are linted as you type
+  with the `vendor/*` rules (misspelled commands, options and names, missing arguments and
+  files, duplicate assignments, pin conflicts, ports the design does not have). They are
+  highlighted as Tcl (`.lpf` and `.cst` as C, for their `//` comments) unless another
+  language was chosen for them.
 
 - **Verilog and SystemVerilog**: set by `mode` under `[verilog]` in `vfl.toml` (see
   [configuration](../../docs/configuration.md#verilog)). By default (`mode = "names"`),

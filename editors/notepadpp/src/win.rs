@@ -351,6 +351,8 @@ pub const NPPM_ALLOCATEINDICATOR: u32 = NPPMSG + 113;
 
 /// `L_TEXT` in `enum LangType`: plain text.
 pub const L_TEXT: isize = 0;
+/// `L_C` in `enum LangType`.
+pub const L_C: isize = 2;
 /// `L_TCL` in `enum LangType`.
 pub const L_TCL: isize = 29;
 /// `L_VHDL` in `enum LangType`.

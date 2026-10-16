@@ -1,0 +1,80 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Gowin Constraints",
+  "scopeName": "source.cst",
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#statement"
+    },
+    {
+      "include": "#attribute"
+    },
+    {
+      "include": "#value"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.cst",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "statement": {
+      "patterns": [
+        {
+          "name": "keyword.other.statement.cst",
+          "match": "(?i)(?<![\\w\"])(INS_RELATIVE|VREF_DRIVER|USE_GLOBAL|CLOCK_LOC|GRP_LOC|INS_LOC|IO_PORT|IO_LOC|GROUP)(?![\\w\"])"
+        }
+      ]
+    },
+    "attribute": {
+      "patterns": [
+        {
+          "match": "(?i)\\b(DIFF_DYNAMIC_ODT|SINGLE_RESISTOR|DIFF_RESISTOR|DRIVE_ENHANCE|OUTPUT_DELAY|INPUT_DELAY|BANK_VCCIO|HYSTERESIS|OPEN_DRAIN|LVDS_TRIM|PCI_CLAMP|PULL_MODE|SLEW_RATE|IO_TYPE|CLAMP|DRIVE|VREF)\\s*(=)",
+          "captures": {
+            "1": {
+              "name": "support.constant.attribute.cst"
+            },
+            "2": {
+              "name": "keyword.operator.assignment.cst"
+            }
+          }
+        },
+        {
+          "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(=)",
+          "captures": {
+            "1": {
+              "name": "variable.other.attribute.cst"
+            },
+            "2": {
+              "name": "keyword.operator.assignment.cst"
+            }
+          }
+        }
+      ]
+    },
+    "value": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.cst",
+          "begin": "\"",
+          "end": "\"|$"
+        },
+        {
+          "name": "constant.numeric.cst",
+          "match": "(?<![\\w.])-?\\d+(\\.\\d+)?(?![\\w.])"
+        },
+        {
+          "name": "punctuation.terminator.statement.cst",
+          "match": ";"
+        }
+      ]
+    }
+  }
+}

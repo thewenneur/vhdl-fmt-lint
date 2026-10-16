@@ -1173,7 +1173,9 @@ mod tests {
                 _ => String::new(),
             })
             .collect();
-        assert_eq!(rules, ["vendor/pin-conflict", "vendor/unknown-port"]);
+        // `rst` is not a port of the design: the tools ignore its pin, so
+        // it is no pin conflict.
+        assert_eq!(rules, ["vendor/unknown-port"]);
         assert!(messages.iter().any(|m| matches!(m, Message::Response(r)
             if r.id == 7.into() && r.result == Some(serde_json::Value::Null))));
         assert!(!server.world.dirty, "the project is not analyzed again");

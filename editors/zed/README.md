@@ -5,9 +5,10 @@ brackets and indentation from Tree-sitter grammars, and everything else from the
 language server (`vfl lsp`): diagnostics as you type, quick fixes, formatting (on save,
 of a selection, and on type), hover with types, signature help, completion, go to
 definition, implementation and type definition, references, rename, inlay hints and
-semantic highlighting. Quartus settings (`.qsf`, `.qip`) and SDC / XDC constraints
-(`.sdc`, `.xdc`) are highlighted with the Tcl grammar and linted with the
-[`vendor/*` rules](../../docs/lints.md#vendor). With the registry's Tcl extension
+semantic highlighting. Quartus settings (`.qsf`, `.qip`), SDC / XDC constraints
+(`.sdc`, `.xdc`) and Libero / Radiant physical constraints (`.pdc`, `.ldc`) are highlighted
+with the Tcl grammar and linted with the [`vendor/*` rules](../../docs/lints.md#vendor).
+Zed has no grammar for Lattice `.lpf` and Gowin `.cst` files: `vfl lint` checks them. With the registry's Tcl extension
 installed too, both use the grammar name `tcl`; uninstall it if Tcl files look wrong.
 
 It is not in the Zed extension registry yet, so it installs as a dev extension, which Zed

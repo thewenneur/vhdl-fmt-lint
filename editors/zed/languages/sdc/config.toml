@@ -1,6 +1,6 @@
 name = "SDC Constraints"
 grammar = "tcl"
-path_suffixes = ["sdc", "xdc"]
+path_suffixes = ["sdc", "xdc", "pdc", "ldc"]
 line_comments = ["# "]
 tab_size = 2
 brackets = [
