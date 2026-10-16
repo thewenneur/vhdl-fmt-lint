@@ -398,6 +398,10 @@ fn lint_file(
                         .path
                         .file_stem()
                         .map(|s| s.to_string_lossy().into_owned()),
+                    extension: file
+                        .path
+                        .extension()
+                        .map(|s| s.to_string_lossy().into_owned()),
                     max_line_length,
                     indent: settings.config.format.indent as usize,
                     standard: settings.config.standard(),

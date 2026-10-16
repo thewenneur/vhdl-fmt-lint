@@ -1,3 +1,5 @@
+root = true # a project of its own, apart from the other examples
+
 [format]
 indent = 2                # columns per level (default 4)
 continuation_indent = 4   # extra columns for a statement continued on the next line

@@ -42,6 +42,10 @@ The lint examples have a `findings.txt` with what `vfl lint before.vhd --output-
 concise` reports. Their `vfl.toml` excludes `after.vhd` from the project only so that the
 two copies of the same entities do not clash.
 
+Every `vfl.toml` here has `root = true`: each folder is a project of its own, so that the
+examples do not clash with each other, and `examples/vfl.toml` leaves them out of the
+project of `examples/` (the UART design).
+
 ## Updating
 
 After a change to vfl that changes an `after` file or the findings:
@@ -50,6 +54,6 @@ After a change to vfl that changes an `after` file or the findings:
 VFL_BLESS=1 cargo test -p vfl-cli --test examples
 ```
 
-then check the diff. To add an example, make a folder with a `vfl.toml`, a `before` file
+then check the diff. To add an example, make a folder with a `vfl.toml` (with `root = true`), a `before` file
 and a README, list it in `EXAMPLES` in `crates/vfl-cli/tests/examples.rs` and in the tables
 above, and run the command above.

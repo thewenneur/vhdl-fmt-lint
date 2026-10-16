@@ -1,2 +1,4 @@
 # An empty vfl.toml is enough: every key takes its default value.
-# `vfl config show` prints them all.
+# `vfl config show` prints them all. `root = true` only keeps this example a
+# project of its own, apart from the other examples.
+root = true

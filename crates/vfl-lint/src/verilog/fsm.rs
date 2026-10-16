@@ -371,10 +371,8 @@ fn in_reset(assign: &SyntaxNode) -> bool {
                 then.is_some_and(|t| t.text_range().contains_range(assign.text_range()))
                     && condition.descendants().any(|n| {
                         n.kind() == K::NAME_REF
-                            && scope::ref_name(&n).is_some_and(|t| {
-                                let name = t.text().to_ascii_lowercase();
-                                name.contains("rst") || name.contains("reset")
-                            })
+                            && scope::ref_name(&n)
+                                .is_some_and(|t| vfl_sema::resets::is_reset_name(t.text()))
                     })
             })
     })
