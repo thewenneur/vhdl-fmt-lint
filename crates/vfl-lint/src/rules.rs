@@ -646,4 +646,36 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn the_config_schema_lists_every_rule() {
+        let schema: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../editors/vscode/schemas/vfl.schema.json"
+        ))
+        .unwrap();
+        let listed = schema["properties"]["lint"]["properties"]["rules"]["properties"]
+            .as_object()
+            .unwrap();
+        let ids: Vec<String> = RULES
+            .iter()
+            .map(|rule| rule.id.to_string())
+            .chain(
+                NAMING_KINDS
+                    .iter()
+                    .map(|(kind, _)| format!("naming/{kind}")),
+            )
+            .collect();
+        for id in &ids {
+            assert!(
+                listed.contains_key(id),
+                "editors/vscode/schemas/vfl.schema.json does not list {id}"
+            );
+        }
+        for id in listed.keys() {
+            assert!(
+                ids.contains(id),
+                "editors/vscode/schemas/vfl.schema.json lists {id}, which is not a rule"
+            );
+        }
+    }
 }

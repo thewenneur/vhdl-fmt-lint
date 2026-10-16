@@ -1,0 +1,3632 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/thewenneur/vhdl-fmt-lint/main/editors/vscode/schemas/vfl.schema.json",
+  "title": "vfl.toml",
+  "description": "The configuration of vfl, the VHDL and Verilog formatter and linter. Every key is described in docs/configuration.md.",
+  "type": "object",
+  "properties": {
+    "root": {
+      "description": "`root = true` stops the upward search: config files above this one are ignored.",
+      "type": "boolean"
+    },
+    "extends": {
+      "description": "A path to another config file, relative to this file's directory. That file is loaded first and this file is merged on top of it. It may itself use `extends`; a cycle is an error. A `root` key in the extended file is ignored.",
+      "type": "string"
+    },
+    "project": {
+      "type": "object",
+      "description": "Sources, standard and libraries.",
+      "properties": {
+        "standard": {
+          "description": "The VHDL standard to parse: `\"93\"` (or `\"1993\"`), `\"2008\"` (or `\"08\"`), `\"2019\"` (or `\"19\"`).",
+          "enum": [
+            "93",
+            "1993",
+            "2008",
+            "08",
+            "2019",
+            "19"
+          ],
+          "default": "2008"
+        },
+        "extensions": {
+          "description": "File extensions, without the dot, of the files treated as VHDL sources.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "vhd",
+            "vhdl"
+          ]
+        },
+        "exclude": {
+          "description": "Gitignore-style globs, relative to the project root, of files and directories to skip. `.gitignore` files are honoured as well.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "libraries": {
+          "type": "object",
+          "description": "Explicit library assignments: each key is a library name, its value the globs, relative to the project root, of the files in it.",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "vhdl-ls": {
+          "description": "How rust_hdl's `vhdl_ls.toml` places files in libraries: `\"fallback\"` (only the files inference places nowhere, or over inference when that leaves fewer library conflicts), `\"prefer\"` (over inference and tool files, below `[project.libraries]`) or `\"off\"` (not read). See below.",
+          "enum": [
+            "fallback",
+            "prefer",
+            "off"
+          ],
+          "default": "fallback"
+        },
+        "vendor-stubs": {
+          "description": "Load vfl's bundled declarations of vendor primitive libraries (`unisim`, `xpm`, `altera_mf`, `ecp5u`, `machxo2`, `sb_ice40_components_syn`) for a library the design uses and the project does not hold. See Vendor libraries.",
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "format": {
+      "type": "object",
+      "description": "The formatter.",
+      "properties": {
+        "style": {
+          "description": "A named set of defaults for the other keys: `\"default\"`, `\"leading-comma\"`, `\"compact\"` or `\"classic\"`; see Styles. Keys set explicitly win over it.",
+          "enum": [
+            "default",
+            "leading-comma",
+            "compact",
+            "classic"
+          ],
+          "default": "default"
+        },
+        "max_width": {
+          "description": "Lines longer than this get their parenthesized lists broken up, one element per line, then their expressions broken at operators (`break_expressions`); see Long lines. Columns are counted as displayed: Chinese, Japanese and Korean characters take two.",
+          "type": "integer",
+          "minimum": 0,
+          "default": 100
+        },
+        "indent": {
+          "description": "Columns per indentation level. Also the tab width with `use_tabs`.",
+          "type": "integer",
+          "minimum": 0,
+          "default": 4
+        },
+        "continuation_indent": {
+          "description": "Columns added for a statement continued on the next line, outside parentheses. Unset: follows `indent`.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "use_tabs": {
+          "description": "Indent with tabs instead of spaces. Alignment padding is always spaces.",
+          "type": "boolean",
+          "default": false
+        },
+        "keyword_case": {
+          "description": "Case of reserved words: `\"lower\"`, `\"upper\"` or `\"preserve\"`.",
+          "enum": [
+            "lower",
+            "upper",
+            "preserve"
+          ],
+          "default": "lower"
+        },
+        "identifier_case": {
+          "description": "Case of basic identifiers: `\"lower\"`, `\"upper\"` or `\"preserve\"`. Extended identifiers (`\\Foo\\`) never change.",
+          "enum": [
+            "lower",
+            "upper",
+            "preserve"
+          ],
+          "default": "preserve"
+        },
+        "end_label": {
+          "description": "Whether `end` repeats the construct's name or label: `\"add\"` (`end entity counter;`, `end process p_count;`), `\"remove\"` (`end entity;`) or `\"preserve\"`.",
+          "enum": [
+            "add",
+            "remove",
+            "preserve"
+          ],
+          "default": "preserve"
+        },
+        "end_keyword": {
+          "description": "Whether `end` repeats the optional construct keyword (`end entity`, `end architecture`, `end package body`, `end function`, ...): `\"add\"`, `\"remove\"` or `\"preserve\"`.",
+          "enum": [
+            "add",
+            "remove",
+            "preserve"
+          ],
+          "default": "preserve"
+        },
+        "space_before_label_colon": {
+          "description": "`p_count : process` rather than `p_count: process`.",
+          "type": "boolean",
+          "default": true
+        },
+        "space_after_keyword": {
+          "description": "A space between `(` and the keyword before it: `process (clk)`, `port map (`, `if (`. Applies after `process`, `port`, `generic`, `map`, `parameter`, `array`, `block`, `if`, `elsif`, `while` and `until`. Calls and indexing never get a space: `f(x)`, `v(7 downto 0)`.",
+          "type": "boolean",
+          "default": true
+        },
+        "max_blank_lines": {
+          "description": "Longer runs of blank lines are shortened to this many.",
+          "type": "integer",
+          "minimum": 0,
+          "default": 2
+        },
+        "interface_list": {
+          "description": "Layout of `generic (...)` and `port (...)` clauses; see List layouts.",
+          "enum": [
+            "expand",
+            "auto",
+            "preserve"
+          ],
+          "default": "expand"
+        },
+        "association_list": {
+          "description": "Layout of `generic map (...)` and `port map (...)`; see List layouts.",
+          "enum": [
+            "expand",
+            "auto",
+            "preserve"
+          ],
+          "default": "auto"
+        },
+        "close_paren": {
+          "description": "Where `)` goes in a list laid out one element per line: `\"own-line\"` (on its own line, at the indentation of the line that opened the list) or `\"attached\"` (right after the last element).",
+          "enum": [
+            "own-line",
+            "attached"
+          ],
+          "default": "own-line"
+        },
+        "interface_separator": {
+          "description": "Where the `;` between the elements of `generic (...)`, `port (...)` and subprogram parameter lists goes when they are on separate lines: `\"trailing\"` (end of the line) or `\"leading\"` (start of the next line); see Separators.",
+          "enum": [
+            "trailing",
+            "leading"
+          ],
+          "default": "trailing"
+        },
+        "association_separator": {
+          "description": "Where the `,` between the elements of `generic map (...)`, `port map (...)`, calls, aggregates and enumeration types goes when they are on separate lines: `\"trailing\"` or `\"leading\"`; see Separators.",
+          "enum": [
+            "trailing",
+            "leading"
+          ],
+          "default": "trailing"
+        },
+        "case_alternative": {
+          "description": "`\"preserve\"` keeps a first statement written on the `when ... =>` line there; `\"break\"` starts every statement of a case alternative on its own line.",
+          "enum": [
+            "preserve",
+            "break"
+          ],
+          "default": "preserve"
+        },
+        "break_expressions": {
+          "description": "A line still longer than `max_width` once its lists are broken up is broken inside its expressions, at the operators that bind loosest; see Long lines. `false` only breaks lists.",
+          "type": "boolean",
+          "default": true
+        },
+        "operator_position": {
+          "description": "Where the operator goes when an expression is on several lines: `\"trailing\"` (end of the line: `a and` then `b`), `\"leading\"` (start of the next line: `a` then `and b`) or `\"preserve\"` (line breaks written next to an operator stay on their side; those the formatter adds go after it).",
+          "enum": [
+            "trailing",
+            "leading",
+            "preserve"
+          ],
+          "default": "preserve"
+        },
+        "line_ending": {
+          "description": "`\"auto\"` keeps the line endings the file uses (LF for new files), `\"lf\"` or `\"crlf\"` converts.",
+          "enum": [
+            "auto",
+            "lf",
+            "crlf"
+          ],
+          "default": "auto"
+        },
+        "on_type": {
+          "description": "Lets editors format the line you just finished as you type: the line of a `;`, or the line above a new line. Editors have their own switch as well (`vfl.format.onType` in VS Code, **Format on type** in Notepad++), off by default; `false` here turns it off for everyone working on the project. In a block larger than 16 KB (with `[format.align] scope = \"block\"`), the line aligns with the lines near it rather than the whole block, to stay fast; formatting the file or a selection aligns the rest.",
+          "type": "boolean",
+          "default": true
+        },
+        "align": {
+          "type": "object",
+          "description": "Column alignment.",
+          "properties": {
+            "port_colon": {
+              "description": "`:` in port clauses and subprogram parameter lists.",
+              "type": "boolean",
+              "default": true
+            },
+            "port_mode": {
+              "description": "The subtype after the mode (`in`, `out`, ...) in port clauses and parameter lists: `clk : in  std_logic;` / `q : out std_logic;`.",
+              "type": "boolean",
+              "default": true
+            },
+            "generic_colon": {
+              "description": "`:` in generic clauses.",
+              "type": "boolean",
+              "default": true
+            },
+            "interface_default": {
+              "description": "`:=` default values in generic and port clauses.",
+              "type": "boolean",
+              "default": true
+            },
+            "assignment": {
+              "description": "`<=` and `:=` of assignment statements.",
+              "type": "boolean",
+              "default": true
+            },
+            "association": {
+              "description": "`=>` in port maps, generic maps and aggregates laid out one element per line.",
+              "type": "boolean",
+              "default": true
+            },
+            "declaration": {
+              "description": "`:` and `:=` in object declarations and record elements, and `is` in type and subtype declarations.",
+              "type": "boolean",
+              "default": true
+            },
+            "case_choice": {
+              "description": "`=>` of case alternatives: all of them with `scope = \"block\"`, else those whose statement is on the same line.",
+              "type": "boolean",
+              "default": true
+            },
+            "when_clause": {
+              "description": "`when` in conditional and selected assignments.",
+              "type": "boolean",
+              "default": true
+            },
+            "conditional_continuation": {
+              "description": "Continuation lines of conditional and selected assignments start under the first value instead of one indentation level in.",
+              "type": "boolean",
+              "default": true
+            },
+            "trailing_comment": {
+              "description": "Comments at the end of lines.",
+              "type": "boolean",
+              "default": true
+            },
+            "semicolon": {
+              "description": "The `;` ending a line that has another aligned token: interface elements, declarations and statements each line up their `;` among themselves.",
+              "type": "boolean",
+              "default": true
+            },
+            "scope": {
+              "description": "Which lines align together: `\"block\"` or `\"contiguous\"`; see below.",
+              "enum": [
+                "block",
+                "contiguous"
+              ],
+              "default": "block"
+            },
+            "block_boundary": {
+              "description": "With `scope = \"contiguous\"`, what ends a run of aligned lines; see below.",
+              "enum": [
+                "blank-line",
+                "comment",
+                "never"
+              ],
+              "default": "blank-line"
+            }
+          },
+          "additionalProperties": false
+        },
+        "declaration_case": {
+          "type": "object",
+          "description": "The case of identifiers by the kind of their declaration; a kind left out follows `identifier_case`.",
+          "properties": {
+            "entity": {
+              "description": "Entities.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "architecture": {
+              "description": "Architectures.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "package": {
+              "description": "Packages and package instantiations.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "component": {
+              "description": "Components.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "generic": {
+              "description": "Generics.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "port": {
+              "description": "Ports.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "constant": {
+              "description": "Constants.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "signal": {
+              "description": "Signals.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "variable": {
+              "description": "Variables, shared ones included.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "type": {
+              "description": "Types.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "subtype": {
+              "description": "Subtypes.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "enum_literal": {
+              "description": "The literals of enumeration types: `IDLE` in `type state_t is (IDLE, RUN)`.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "function": {
+              "description": "Functions.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "procedure": {
+              "description": "Procedures.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "alias": {
+              "description": "Aliases.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            },
+            "label": {
+              "description": "Statement labels: processes, instances, generate statements, blocks.",
+              "enum": [
+                "lower",
+                "upper",
+                "preserve"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "blank_lines": {
+          "type": "object",
+          "description": "How many blank lines go at some places: a number, or a range `{ min, max }`. A key left out keeps the blank lines as written, up to `max_blank_lines`.",
+          "properties": {
+            "before_begin": {
+              "description": "Before the `begin` of an architecture, process, block, subprogram or generate statement.",
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "max": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "after_begin": {
+              "description": "After that `begin`.",
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "max": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "before_end": {
+              "description": "Before the `end` of a construct: entity, architecture, package, process, subprogram, `if`, `case`, loop, generate, record...",
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "max": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "before_process": {
+              "description": "Before a process, block or generate statement, and above the comment lines right above it; not for the first statement after `begin`.",
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "max": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "between_declaration_groups": {
+              "description": "Between two declarations of different kinds that follow one another (types and subtypes, constants, signals, variables, files, aliases, attributes, components, subprograms, `use` clauses), above the comment lines right above the second.",
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "max": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "lint": {
+      "type": "object",
+      "description": "Presets and per-rule settings.",
+      "properties": {
+        "preset": {
+          "description": "The starting level of every rule: `\"none\"` (only `syntax/error`), `\"recommended\"` (likely bugs) or `\"strict\"` (everything except `naming/*`). The level of each rule in each preset is in lints.md.",
+          "enum": [
+            "none",
+            "recommended",
+            "strict"
+          ],
+          "default": "recommended"
+        },
+        "rules": {
+          "type": "object",
+          "description": "Per-rule settings, keyed by rule id: a level (\"off\", \"info\", \"warn\" or \"error\"), or a table with an optional `level` and the rule's options.",
+          "properties": {
+            "syntax/error": {
+              "description": "The file does not parse.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unresolved-name": {
+              "description": "A name is not declared, or a port or generic does not exist.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unresolved-unit": {
+              "description": "A library unit, entity or architecture does not exist.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unknown-library": {
+              "description": "A library is not part of the project, so names from it are not checked.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/duplicate-declaration": {
+              "description": "Two declarations of a region have the same name.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/duplicate-unit": {
+              "description": "Two design units of a library have the same name.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unassociated-port": {
+              "description": "An input port or generic without a default is not associated.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "undeclared": {
+                      "enum": [
+                        "open",
+                        "name"
+                      ],
+                      "default": "open",
+                      "description": "What the quick fix associates a port with when no object of its name is declared: `open`, or the port's own name, to be replaced."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/type-mismatch": {
+              "description": "An expression does not have the type its context needs.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/no-matching-overload": {
+              "description": "No subprogram or operator of that name accepts the arguments.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unused-signal": {
+              "description": "A signal is never used.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unused-variable": {
+              "description": "A variable is never used.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unused-constant": {
+              "description": "A local constant is never used.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unused-port": {
+              "description": "A port is not used by any architecture of its entity.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unused-generic": {
+              "description": "A generic is not used by its entity or any of its architectures.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unused-use": {
+              "description": "Nothing a use clause makes visible is used.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unread-signal": {
+              "description": "A signal is assigned but never read.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/undriven-signal": {
+              "description": "A signal is read but never assigned, or an output port is never assigned.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/sensitivity-list": {
+              "description": "A process reads signals its sensitivity list does not name.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unneeded-sensitivity": {
+              "description": "A sensitivity list names a signal the process never reads.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/width-mismatch": {
+              "description": "An assignment, initial value or port association gives a vector a value with a different static number of elements.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/inferred-latch": {
+              "description": "A combinational process assigns a signal on some paths but not all, which infers a latch.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/missing-branch-assignment": {
+              "description": "A branch of an `if` or `case` in a process does not assign a signal another branch assigns, and nothing before it does.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "clocked": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "Check the clocked branch of clocked processes too."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/clock-domain-crossing": {
+              "description": "A signal registered on one clock is used in logic clocked by another without a synchronizer.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/open-input": {
+              "description": "An instantiation associates an input port that has no default value with `open`.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/inout-port": {
+              "description": "An `inout` port is only read or only driven by its architectures.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/missing-reset": {
+              "description": "A clocked process with a reset assigns a register its reset leaves out, so the reset acts as an enable on it.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/mixed-reset": {
+              "description": "A reset signal resets one process synchronously and another asynchronously.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/reset-polarity": {
+              "description": "A reset signal is tested active high in one process and active low in another, or its name says active low but it resets when high.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/fsm-unreachable-state": {
+              "description": "A state machine has a state that no transition reaches.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/fsm-stuck-state": {
+              "description": "A state machine has a state that nothing but a reset leaves.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/incomplete-case": {
+              "description": "The choices of a `case` statement or selected assignment leave out values of the selector's subtype, and there is no `when others`.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/duplicate-choice": {
+              "description": "A choice of a `case` statement or selected assignment names a value an earlier choice covers.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/multiple-drivers": {
+              "description": "A signal, or an overlapping part of it, is driven by more than one process, concurrent statement or instance.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "resolved": {
+                      "enum": [
+                        "rtl",
+                        "always",
+                        "never"
+                      ],
+                      "default": "rtl",
+                      "description": "When signals of resolved types are reported: except in testbenches (`rtl`), in every architecture (`always`), or never (`never`)."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/combinational-loop": {
+              "description": "A signal depends on itself through concurrent assignments and combinational processes, with no register on the way.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "verilog/blocking-in-clocked": {
+              "description": "A clocked `always` block assigns a signal with a blocking assignment (`=`).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "verilog/nonblocking-in-combinational": {
+              "description": "A combinational `always` block uses a non-blocking assignment (`<=`).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "verilog/multiple-drivers": {
+              "description": "A variable is assigned by more than one `always` block, or by a block and a continuous assignment.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "verilog/implicit-net": {
+              "description": "A name nothing declares is connected to a port or assigned, which declares an implicit 1-bit wire.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "verilog/unconnected-input": {
+              "description": "An instance leaves an input port of a project module without a default unconnected.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "verilog/default-nettype": {
+              "description": "A module is not under `` `default_nettype none ``, so undeclared names become implicit wires.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "verilog/case-default": {
+              "description": "A `case` in a combinational block has no `default` and does not list every value.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/no-buffer-ports": {
+              "description": "A port has mode `buffer`.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/no-std-logic-arith": {
+              "description": "The non-standard Synopsys packages (`std_logic_arith`, `std_logic_unsigned`, `std_logic_signed`) are used instead of `numeric_std`.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/line-length": {
+              "description": "A line is longer than `max` columns (default 120).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "max": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "default": 120,
+                      "description": "The longest line allowed, in characters."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/trailing-whitespace": {
+              "description": "A line ends with spaces or tabs.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/tabs": {
+              "description": "A line is indented with tabs.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/case-others": {
+              "description": "A `case` statement has no `when others` alternative.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/process-label": {
+              "description": "A process has no label.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/positional-association": {
+              "description": "An instantiation maps ports or generics by position.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/clock-edge": {
+              "description": "A clock edge is tested with `clk'event` instead of `rising_edge` or `falling_edge`.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/file-name": {
+              "description": "A file's name differs from the name of the primary unit it declares.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/entity": {
+              "description": "Naming convention for entities (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/architecture": {
+              "description": "Naming convention for architectures (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/package": {
+              "description": "Naming convention for packages (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/component": {
+              "description": "Naming convention for components (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/signal": {
+              "description": "Naming convention for signals (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/variable": {
+              "description": "Naming convention for variables (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/constant": {
+              "description": "Naming convention for constants (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/generic": {
+              "description": "Naming convention for generics (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/port": {
+              "description": "Naming convention for ports (all modes) (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/input-port": {
+              "description": "Naming convention for ports of mode `in` (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/output-port": {
+              "description": "Naming convention for ports of mode `out` or `buffer` (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/inout-port": {
+              "description": "Naming convention for ports of mode `inout` (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/type": {
+              "description": "Naming convention for types (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/subtype": {
+              "description": "Naming convention for subtypes (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/function": {
+              "description": "Naming convention for functions (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/procedure": {
+              "description": "Naming convention for procedures (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/alias": {
+              "description": "Naming convention for aliases (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/process": {
+              "description": "Naming convention for process labels (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/instance": {
+              "description": "Naming convention for instance labels (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/generate": {
+              "description": "Naming convention for generate statement labels (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/module": {
+              "description": "Naming convention for Verilog modules, interfaces and programs (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/parameter": {
+              "description": "Naming convention for Verilog parameters (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "naming/task": {
+              "description": "Naming convention for Verilog tasks (on when configured).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "description": "The name must start with this (compared without case)."
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "description": "The name must end with this (compared without case)."
+                    },
+                    "case": {
+                      "enum": [
+                        "snake",
+                        "lower",
+                        "upper",
+                        "pascal",
+                        "camel",
+                        "any"
+                      ],
+                      "description": "The case of the name between the prefix and the suffix."
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "description": "A regular expression (Rust `regex` syntax) the whole name must match."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "enum": [
+                  "off",
+                  "info",
+                  "warn",
+                  "error"
+                ]
+              },
+              {
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "waiver": {
+          "type": "array",
+          "description": "Findings silenced from the config instead of the sources; see [`[[lint.waiver]]`](#lintwaiver).",
+          "items": {
+            "type": "object",
+            "properties": {
+              "files": {
+                "description": "Gitignore-style globs, relative to the project root: `src/legacy/**`, `*_tb.vhd` (a pattern without `/` matches at any depth), `ip/` (a directory and what is under it).",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "rules": {
+                "description": "Rule ids or categories (`naming`, `style/*`).",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "lines": {
+                "type": "array",
+                "description": "Lines the finding starts on: numbers (`12`) or inclusive ranges (`\"40:52\"`), one-based.",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^\\s*\\d+\\s*(:\\s*\\d+\\s*)?$"
+                    }
+                  ]
+                }
+              },
+              "message": {
+                "description": "A regular expression (Rust `regex` syntax) that must match part of the message.",
+                "type": "string"
+              },
+              "reason": {
+                "description": "Why the findings are waived. Not used by vfl; for the reader.",
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "baseline": {
+          "description": "A baseline file, relative to the project root, written by `vfl lint --write-baseline`: `vfl lint` does not report the findings it lists (see cli.md). `--baseline` overrides it.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "doc": {
+      "type": "object",
+      "description": "Documentation generation (`vfl doc`).",
+      "properties": {
+        "out_dir": {
+          "description": "Where `vfl doc` writes, relative to the project root. Existing files there are overwritten, others are kept.",
+          "type": "string",
+          "default": "doc"
+        },
+        "format": {
+          "description": "`\"html\"`: self-contained pages with the diagrams inline, light and dark. `\"markdown\"`: `.md` pages, with the diagrams as `.svg` files next to them (or Mermaid blocks, see `[doc.diagrams]`). `\"asciidoc\"`: `.adoc` pages for Asciidoctor (or Antora), with the diagrams as `.svg` files next to them.",
+          "enum": [
+            "html",
+            "markdown",
+            "asciidoc"
+          ],
+          "default": "html"
+        },
+        "title": {
+          "description": "The title of the index page. Unset: the name of the project directory.",
+          "type": "string"
+        },
+        "comments": {
+          "description": "Which comments document a declaration: `\"marked\"` (only comments starting with `--` and `comment_marker`, as in TerosHDL and Doxygen), `\"all\"` (every comment), `\"auto\"` (marked comments in files that have any, all comments in the others) or `\"none\"`.",
+          "enum": [
+            "auto",
+            "marked",
+            "all",
+            "none"
+          ],
+          "default": "auto"
+        },
+        "comment_marker": {
+          "description": "What follows `--` in a marked comment: `\"!\"` for `--!`.",
+          "type": "string",
+          "default": "!"
+        },
+        "exclude": {
+          "description": "Gitignore-style globs, relative to the project root, of files whose units are left out of the documentation (their entities still count when resolving instances).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "testbenches": {
+          "description": "Document entities without ports.",
+          "type": "boolean",
+          "default": true
+        },
+        "signals": {
+          "description": "List the signals of architectures and packages.",
+          "type": "boolean",
+          "default": true
+        },
+        "constants": {
+          "description": "List constants.",
+          "type": "boolean",
+          "default": true
+        },
+        "types": {
+          "description": "List types and subtypes.",
+          "type": "boolean",
+          "default": true
+        },
+        "subprograms": {
+          "description": "List functions and procedures.",
+          "type": "boolean",
+          "default": true
+        },
+        "processes": {
+          "description": "List processes, with their sensitivity list, clock and the signals they drive.",
+          "type": "boolean",
+          "default": true
+        },
+        "instances": {
+          "description": "List the instances of each architecture.",
+          "type": "boolean",
+          "default": true
+        },
+        "fsm": {
+          "description": "Detect state machines and list their states and transitions.",
+          "type": "boolean",
+          "default": true
+        },
+        "diagrams": {
+          "type": "object",
+          "description": "The diagrams in the documentation.",
+          "properties": {
+            "symbol": {
+              "description": "Draw each entity (and each component of a package) as a block: inputs on the left, outputs and bidirectional ports on the right.",
+              "type": "boolean",
+              "default": true
+            },
+            "hierarchy": {
+              "description": "Draw the instantiation tree on the index (and the instances of each architecture when `block` is off). A subtree already drawn higher up is not drawn again.",
+              "type": "boolean",
+              "default": true
+            },
+            "block": {
+              "description": "Draw each architecture with instances as a block diagram: its instances as blocks, wired to each other and to the ports of the entity by the signals of their port maps. Signals between neighbouring columns are drawn as wires, longer ones as named stubs. Architectures with more than 80 instances are left to the instance table.",
+              "type": "boolean",
+              "default": true
+            },
+            "top": {
+              "description": "Draw the top level on the index: the block diagram (or, without instances, the symbol) of each entity at the root of the hierarchy, or for a testbench of the entities it instantiates.",
+              "type": "boolean",
+              "default": true
+            },
+            "port_map": {
+              "description": "Draw each instance of an architecture as the block it instantiates, with the actual connected to each port (`open` and defaulted inputs muted) and its generic map.",
+              "type": "boolean",
+              "default": true
+            },
+            "dataflow": {
+              "description": "Draw each architecture with processes or concurrent assignments as its processes, assignments and instances, wired by the signals they read and drive, with each process's clock and reset.",
+              "type": "boolean",
+              "default": true
+            },
+            "clocks": {
+              "description": "For each architecture with two or more clocks, draw its clock domains (processes and instances grouped by clock, through combinational logic) and the signals crossing them, also listed in a table.",
+              "type": "boolean",
+              "default": true
+            },
+            "resets": {
+              "description": "Draw a reset tree on the index for each top-level entity: where each reset port goes, through assignments and port maps, down to the processes, with their kind (synchronous or asynchronous, active high or low).",
+              "type": "boolean",
+              "default": true
+            },
+            "dependencies": {
+              "description": "Draw on the index which entities and packages use which packages of the project.",
+              "type": "boolean",
+              "default": true
+            },
+            "waveforms": {
+              "description": "Draw the ```` ```wavedrom ```` blocks of doc comments as timing diagrams (else they stay code blocks).",
+              "type": "boolean",
+              "default": true
+            },
+            "fields": {
+              "description": "Draw the bit layout of each record type whose field widths are known (from their subtypes, constants and generics), and of each signal with aliases of its slices.",
+              "type": "boolean",
+              "default": true
+            },
+            "fsm": {
+              "description": "Draw a state diagram per state machine. Past ten labelled transitions, the conditions are left to the transition table.",
+              "type": "boolean",
+              "default": true
+            },
+            "port_types": {
+              "description": "Write the port types next to the pins of a symbol.",
+              "type": "boolean",
+              "default": true
+            },
+            "generics": {
+              "description": "Write the generics in a symbol.",
+              "type": "boolean",
+              "default": true
+            },
+            "markdown": {
+              "description": "How Markdown pages draw the hierarchy and state diagrams: `\"svg\"` files, or `\"mermaid\"` blocks, which GitHub and GitLab render. Symbols are always SVG.",
+              "enum": [
+                "svg",
+                "mermaid"
+              ],
+              "default": "svg"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "generate": {
+      "type": "object",
+      "description": "Code generation: `vfl new` and the editors' generate commands.",
+      "properties": {
+        "instance_label": {
+          "description": "Label of a generated instantiation. `{entity}` is replaced by the entity name.",
+          "type": "string",
+          "default": "u_{entity}"
+        },
+        "testbench_name": {
+          "description": "Name of a testbench entity, and of its file (with the extension of the entity's file).",
+          "type": "string",
+          "default": "{entity}_tb"
+        },
+        "testbench_architecture": {
+          "description": "Name of a testbench architecture.",
+          "type": "string",
+          "default": "sim"
+        },
+        "testbench_instance": {
+          "description": "Label of the design under test in a testbench.",
+          "type": "string",
+          "default": "dut"
+        },
+        "clock_period": {
+          "description": "Period of the clocks a testbench drives, a VHDL time expression.",
+          "type": "string",
+          "default": "10 ns"
+        },
+        "reset_cycles": {
+          "description": "Clock cycles a testbench holds the resets active before releasing them.",
+          "type": "integer",
+          "minimum": 0,
+          "default": 5
+        },
+        "clock_pattern": {
+          "description": "Regular expression for the input ports driven as clocks, when no architecture of the entity shows it with `rising_edge(clk)`, `falling_edge(clk)` or `clk'event`.",
+          "type": "string",
+          "default": "(?i)^(.*_)?(clk|clock)\\d*(_i|_in|_p)?$"
+        },
+        "reset_pattern": {
+          "description": "Regular expression for the input ports driven as resets.",
+          "type": "string",
+          "default": "(?i)^(.*_)?(a|s)?(rst|reset)\\d*(n|_n|_b|_i|_in|_ni|_n_i)?$"
+        },
+        "active_low_pattern": {
+          "description": "Regular expression for the resets that are active low, when no architecture compares them with `'0'` or `'1'`.",
+          "type": "string",
+          "default": "(?i)([^i]n|_b|_ni|_n_i)$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "verilog": {
+      "type": "object",
+      "description": "Verilog and SystemVerilog files.",
+      "properties": {
+        "mode": {
+          "description": "How much of vfl works on Verilog and SystemVerilog files: `\"off\"`, `\"names\"` or `\"full\"` (see above).",
+          "enum": [
+            "off",
+            "names",
+            "full"
+          ],
+          "default": "names"
+        },
+        "extensions": {
+          "description": "File extensions, without the dot, of Verilog sources.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "v",
+            "vh"
+          ]
+        },
+        "standard": {
+          "description": "The Verilog standard of those files: `\"1364-1995\"`, `\"1364-2001\"`, `\"1364-2005\"` (or `\"1995\"`, `\"2001\"`, `\"2005\"`), or a SystemVerilog one to parse `.v` files as SystemVerilog.",
+          "enum": [
+            "1364-1995",
+            "1364-2001",
+            "1364-2005",
+            "1995",
+            "2001",
+            "2005",
+            "1800-2005",
+            "1800-2009",
+            "1800-2012",
+            "1800-2017",
+            "1800-2023",
+            "sv2005",
+            "sv2009",
+            "sv2012",
+            "sv2017",
+            "sv2023"
+          ],
+          "default": "1364-2005"
+        },
+        "sv_extensions": {
+          "description": "File extensions, without the dot, of SystemVerilog sources.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "sv",
+            "svh"
+          ]
+        },
+        "sv_standard": {
+          "description": "The SystemVerilog standard of those files: `\"1800-2005\"`, `\"1800-2009\"`, `\"1800-2012\"`, `\"1800-2017\"`, `\"1800-2023\"` (or `\"sv2005\"` ... `\"sv2023\"`).",
+          "enum": [
+            "1800-2005",
+            "1800-2009",
+            "1800-2012",
+            "1800-2017",
+            "1800-2023",
+            "sv2005",
+            "sv2009",
+            "sv2012",
+            "sv2017",
+            "sv2023",
+            "1364-1995",
+            "1364-2001",
+            "1364-2005",
+            "1995",
+            "2001",
+            "2005"
+          ],
+          "default": "1800-2017"
+        },
+        "include_dirs": {
+          "description": "Directories, relative to the project root, searched for `` `include `` files.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "defines": {
+          "description": "Macros defined before every file, as `\"NAME\"` or `\"NAME=value\"` (only whether a macro is defined matters so far).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

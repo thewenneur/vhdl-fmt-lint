@@ -931,6 +931,7 @@ name = "vfl-config"
 version = "0.7.0"
 dependencies = [
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "toml",
