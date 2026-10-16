@@ -537,7 +537,7 @@ impl<'a> Checker<'a> {
 
 /// The declaration statement (`signal`, `subtype`, ...) that declares the
 /// name at `range`.
-fn declaration_node(root: &SyntaxNode, range: TextRange) -> Option<SyntaxNode> {
+pub(crate) fn declaration_node(root: &SyntaxNode, range: TextRange) -> Option<SyntaxNode> {
     use SyntaxKind::*;
     let element = root.covering_element(range);
     let node = match element {

@@ -19,3 +19,4 @@ fsm.vhd:39:12: sema/fsm-stuck-state: `state` never leaves state `DONE` once ther
 fsm.vhd:40:12: sema/fsm-unreachable-state: no transition of `state` reaches state `ORPHAN` of `state_t`
 resets.vhd:18:59: sema/multiple-drivers: `y2` is also driven by the statement at line 17; its type is resolved, but two drivers are rarely intended outside a tri-state bus
 fsm.vhd:66:9: sema/missing-branch-assignment: this `when` alternative does not assign `free`, which another branch of the `case` assigns [fix: Keep the value of `free` in this branch]
+fsm.vhd:12:27: sema/synthesis-initial-value: initial value of a signal in RTL: ASICs and some FPGAs ignore it; use a reset

@@ -1,5 +1,6 @@
 //! Rules that only look at the text and the syntax tree of one file.
 
+use regex::Regex;
 use vfl_sema::{Edit, Fix};
 use vfl_syntax::green_walk::{ChildTokens, descendants_where};
 use vfl_syntax::{Standard, SyntaxKind, SyntaxNode, TextRange, TextSize};
@@ -16,6 +17,13 @@ pub struct StyleContext<'a> {
     /// Columns per indentation level: what a tab becomes.
     pub indent: usize,
     pub standard: Standard,
+    /// `style/magic-number`'s numbers that may be written as they are.
+    pub magic_allow: &'a [i64],
+    /// `style/file-header`'s pattern.
+    pub header: Option<&'a Regex>,
+    /// `style/port-order`'s names of clock and reset ports.
+    pub clocks: Option<&'a Regex>,
+    pub resets: Option<&'a Regex>,
 }
 
 pub fn check(ctx: &StyleContext, enabled: impl Fn(&str) -> bool, out: &mut Vec<Finding>) {
@@ -25,8 +33,17 @@ pub fn check(ctx: &StyleContext, enabled: impl Fn(&str) -> bool, out: &mut Vec<F
     }
     // The kinds the arms below look at: only these become syntax nodes.
     let case_others = enabled("style/case-others");
+    let magic = enabled("style/magic-number");
+    let generic_default = enabled("style/generic-default");
+    let port_order = enabled("style/port-order");
+    let process_all = enabled("style/process-all") && ctx.standard >= Standard::Vhdl2008;
+    let shared = enabled("style/shared-variable");
     let wanted = |kind| {
         (case_others && kind == SyntaxKind::CASE_STMT)
+            || (magic && kind == SyntaxKind::LITERAL)
+            || (generic_default && kind == SyntaxKind::GENERIC_CLAUSE)
+            || (port_order && kind == SyntaxKind::PORT_CLAUSE)
+            || (shared && kind == SyntaxKind::VARIABLE_DECL)
             || matches!(
                 kind,
                 SyntaxKind::INTERFACE_OBJECT_DECL
@@ -134,14 +151,346 @@ pub fn check(ctx: &StyleContext, enabled: impl Fn(&str) -> bool, out: &mut Vec<F
                     ));
                 }
             }
-            SyntaxKind::BINARY_EXPR if enabled("style/clock-edge") => clock_edge(ctx, &node, out),
+            SyntaxKind::BINARY_EXPR => {
+                if enabled("style/clock-edge") {
+                    clock_edge(ctx, &node, out);
+                }
+                if enabled("style/boolean-comparison") {
+                    boolean_comparison(ctx, &node, out);
+                }
+            }
             SyntaxKind::CASE_STMT => case_others_check(ctx.text, &node, out),
+            SyntaxKind::LITERAL => magic_number(ctx, &node, out),
+            SyntaxKind::GENERIC_CLAUSE => generic_defaults(&node, out),
+            SyntaxKind::PORT_CLAUSE => port_order_check(ctx, &node, out),
+            SyntaxKind::VARIABLE_DECL => {
+                if let Some(shared) = node.child_token(|k| k == SyntaxKind::SHARED_KW) {
+                    let name = node
+                        .children()
+                        .find(|n| n.kind() == SyntaxKind::IDENT_LIST)
+                        .map(|n| n.text().to_string())
+                        .unwrap_or_default();
+                    out.push(Finding::new(
+                        "style/shared-variable",
+                        TextRange::new(shared.text_range().start(), node.text_range().end()),
+                        format!("shared variable `{}`", name.trim()),
+                    ));
+                }
+            }
             _ => {}
+        }
+        if process_all && node.kind() == SyntaxKind::PROCESS_STMT {
+            process_all_check(ctx, &node, out);
         }
     }
     if enabled("style/file-name") {
         file_name(ctx, out);
     }
+    if enabled("style/one-unit-per-file") {
+        one_unit_per_file(ctx, out);
+    }
+    if enabled("style/file-header")
+        && let Some(header) = ctx.header
+    {
+        file_header(ctx, header, out);
+    }
+}
+
+/// `style/boolean-comparison`: `x = true`, `x /= false` and the like.
+fn boolean_comparison(ctx: &StyleContext, node: &SyntaxNode, out: &mut Vec<Finding>) {
+    let Some(operator) = node.child_token(|k| !k.is_trivia()) else {
+        return;
+    };
+    if !matches!(operator.kind(), SyntaxKind::EQ | SyntaxKind::NEQ) {
+        return;
+    }
+    let operands: Vec<SyntaxNode> = node.children().collect();
+    let [a, b] = operands.as_slice() else { return };
+    let literal = |n: &SyntaxNode| -> Option<bool> {
+        if n.kind() != SyntaxKind::NAME {
+            return None;
+        }
+        match n.text().to_string().trim().to_ascii_lowercase().as_str() {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        }
+    };
+    let (value, other) = match (literal(a), literal(b)) {
+        (Some(v), None) => (v, b),
+        (None, Some(v)) => (v, a),
+        _ => return,
+    };
+    let negate = value == (operator.kind() == SyntaxKind::NEQ);
+    let text = &ctx.text[other.text_range()];
+    let replacement = if !negate {
+        text.to_owned()
+    } else if matches!(
+        other.kind(),
+        SyntaxKind::BINARY_EXPR | SyntaxKind::UNARY_EXPR
+    ) {
+        format!("not ({text})")
+    } else {
+        format!("not {text}")
+    };
+    out.push(
+        Finding::new(
+            "style/boolean-comparison",
+            node.text_range(),
+            format!(
+                "comparison of a boolean with `{value}`; write `{}`",
+                replacement
+            ),
+        )
+        .with_fix(Fix {
+            title: format!("Replace with `{replacement}`"),
+            edits: vec![Edit {
+                range: node.text_range(),
+                text: replacement,
+            }],
+            safe: true,
+        }),
+    );
+}
+
+/// `style/magic-number`: an integer literal in a statement, other than
+/// the allowed ones. Declarations (constants, types, generics, signals
+/// and their constraints) and generic maps are where numbers get names.
+fn magic_number(ctx: &StyleContext, node: &SyntaxNode, out: &mut Vec<Finding>) {
+    use SyntaxKind::*;
+    let Some(token) = node.first_token() else {
+        return;
+    };
+    let value = match token.kind() {
+        DECIMAL_LITERAL => {
+            let text = token.text().replace('_', "");
+            if text.contains(['.', 'e', 'E']) {
+                return;
+            }
+            text.parse::<i64>().ok()
+        }
+        BASED_LITERAL => {
+            let text = token.text().replace('_', "");
+            let mut parts = text.split('#');
+            let base = parts.next().and_then(|b| b.parse::<u32>().ok());
+            let digits = parts.next();
+            match (base, digits) {
+                (Some(base), Some(digits)) if (2..=16).contains(&base) && !digits.contains('.') => {
+                    i64::from_str_radix(digits, base).ok()
+                }
+                _ => return,
+            }
+        }
+        _ => return,
+    };
+    if value.is_some_and(|v| ctx.magic_allow.contains(&v)) {
+        return;
+    }
+    let mut in_statement = false;
+    for ancestor in node.ancestors().skip(1) {
+        match ancestor.kind() {
+            PHYSICAL_LITERAL
+            | CONSTANT_DECL
+            | SIGNAL_DECL
+            | VARIABLE_DECL
+            | FILE_DECL
+            | TYPE_DECL
+            | SUBTYPE_DECL
+            | ALIAS_DECL
+            | ATTRIBUTE_SPEC
+            | INTERFACE_OBJECT_DECL
+            | GENERIC_MAP_ASPECT
+            | SUBTYPE_INDICATION
+            | COMPONENT_DECL
+            | CONFIGURATION_DECL => {
+                return;
+            }
+            PROCESS_STMT | SIGNAL_ASSIGN_STMT | SELECTED_ASSIGN_STMT | VARIABLE_ASSIGN_STMT
+            | PROCEDURE_CALL_STMT | IF_STMT | CASE_STMT | LOOP_STMT | WAIT_STMT | RETURN_STMT
+            | FOR_GENERATE_STMT | IF_GENERATE_STMT | CASE_GENERATE_STMT | PORT_MAP_ASPECT => {
+                in_statement = true
+            }
+            DESIGN_UNIT => break,
+            _ => {}
+        }
+    }
+    if in_statement {
+        out.push(Finding::new(
+            "style/magic-number",
+            node.text_range(),
+            format!(
+                "magic number `{}`; give it a name with a constant",
+                token.text()
+            ),
+        ));
+    }
+}
+
+/// `style/generic-default`: generics of an entity or component without a
+/// default value.
+fn generic_defaults(clause: &SyntaxNode, out: &mut Vec<Finding>) {
+    if !clause.parent().is_some_and(|p| {
+        matches!(
+            p.kind(),
+            SyntaxKind::ENTITY_DECL | SyntaxKind::COMPONENT_DECL
+        )
+    }) {
+        return;
+    }
+    for decl in clause
+        .descendants()
+        .filter(|n| n.kind() == SyntaxKind::INTERFACE_OBJECT_DECL)
+    {
+        if decl.has_child(|k| k == SyntaxKind::COLON_EQ) {
+            continue;
+        }
+        let Some(list) = decl.children().find(|n| n.kind() == SyntaxKind::IDENT_LIST) else {
+            continue;
+        };
+        out.push(Finding::new(
+            "style/generic-default",
+            list.text_range(),
+            format!(
+                "generic `{}` has no default value",
+                list.text().to_string().trim()
+            ),
+        ));
+    }
+}
+
+/// `style/port-order`: clock and reset ports of an entity come first.
+fn port_order_check(ctx: &StyleContext, clause: &SyntaxNode, out: &mut Vec<Finding>) {
+    if !clause
+        .parent()
+        .is_some_and(|p| p.kind() == SyntaxKind::ENTITY_DECL)
+    {
+        return;
+    }
+    let (Some(clocks), Some(resets)) = (ctx.clocks, ctx.resets) else {
+        return;
+    };
+    let mut other: Option<String> = None;
+    for decl in clause
+        .descendants()
+        .filter(|n| n.kind() == SyntaxKind::INTERFACE_OBJECT_DECL)
+    {
+        let Some(list) = decl.children().find(|n| n.kind() == SyntaxKind::IDENT_LIST) else {
+            continue;
+        };
+        for name in list
+            .children_with_tokens()
+            .filter_map(|e| e.into_token())
+            .filter(|t| t.kind() == SyntaxKind::IDENT)
+        {
+            let what = if clocks.is_match(name.text()) {
+                "clock"
+            } else if resets.is_match(name.text()) {
+                "reset"
+            } else {
+                if other.is_none() {
+                    other = Some(name.text().to_owned());
+                }
+                continue;
+            };
+            if let Some(first) = &other {
+                out.push(Finding::new(
+                    "style/port-order",
+                    name.text_range(),
+                    format!(
+                        "{what} port `{}` comes after port `{first}`; put clocks and resets first",
+                        name.text()
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+/// `style/process-all`: a combinational process with a sensitivity list
+/// of signals, in VHDL-2008.
+fn process_all_check(ctx: &StyleContext, process: &SyntaxNode, out: &mut Vec<Finding>) {
+    use SyntaxKind::*;
+    let Some(list) = process.children().find(|n| n.kind() == SENSITIVITY_LIST) else {
+        return;
+    };
+    if list.has_child(|k| k == ALL_KW) {
+        return;
+    }
+    // Clocked processes and processes with `wait` are not combinational.
+    let clocked = !descendants_where(process, |k| matches!(k, WAIT_STMT)).is_empty()
+        || descendants_where(process, |k| matches!(k, CALL_EXPR | ATTRIBUTE_NAME))
+            .iter()
+            .any(is_clock_edge);
+    if clocked {
+        return;
+    }
+    let inner = TextRange::new(
+        list.text_range().start() + TextSize::from(1),
+        list.text_range().end() - TextSize::from(1),
+    );
+    if !ctx.text[list.text_range()].ends_with(')') {
+        return;
+    }
+    out.push(
+        Finding::new(
+            "style/process-all",
+            list.text_range(),
+            "combinational process: use `process (all)` instead of listing its signals",
+        )
+        .with_fix(Fix {
+            title: "Use `process (all)`".into(),
+            edits: vec![Edit {
+                range: inner,
+                text: "all".into(),
+            }],
+            // A list that leaves signals out changes simulation.
+            safe: false,
+        }),
+    );
+}
+
+/// `rising_edge(x)`, `falling_edge(x)` or `x'event`.
+fn is_clock_edge(node: &SyntaxNode) -> bool {
+    match node.kind() {
+        SyntaxKind::CALL_EXPR => node.children().next().is_some_and(|n| {
+            let name = n.text().to_string().trim().to_ascii_lowercase();
+            name == "rising_edge" || name == "falling_edge"
+        }),
+        SyntaxKind::ATTRIBUTE_NAME => is_event(node).is_some(),
+        _ => false,
+    }
+}
+
+/// `style/one-unit-per-file`: the primary units after the first.
+fn one_unit_per_file(ctx: &StyleContext, out: &mut Vec<Finding>) {
+    for (name, range) in primary_units(ctx.root).into_iter().skip(1) {
+        out.push(Finding::new(
+            "style/one-unit-per-file",
+            range,
+            format!("`{name}` is not the first primary unit of this file; give it its own file"),
+        ));
+    }
+}
+
+/// `style/file-header`: the comments before the first token must match.
+fn file_header(ctx: &StyleContext, pattern: &Regex, out: &mut Vec<Finding>) {
+    let end = ctx
+        .root
+        .descendants_with_tokens()
+        .filter_map(|e| e.into_token())
+        .find(|t| !t.kind().is_trivia())
+        .map_or(ctx.text.len(), |t| usize::from(t.text_range().start()));
+    let header = &ctx.text[..end];
+    if pattern.is_match(header) {
+        return;
+    }
+    let first_line = ctx.text.find('\n').unwrap_or(ctx.text.len());
+    let first_line = ctx.text[..first_line].trim_end_matches('\r').len();
+    out.push(Finding::new(
+        "style/file-header",
+        range(0, first_line),
+        "the file header does not match the configured pattern",
+    ));
 }
 
 /// `style/case-others`: a `case` statement without `when others`.
@@ -375,9 +724,22 @@ fn compared_value(node: &SyntaxNode, signal: &str) -> Option<String> {
 fn file_name(ctx: &StyleContext, out: &mut Vec<Finding>) {
     let Some(stem) = &ctx.file_stem else { return };
     let stem = stem.to_ascii_lowercase();
-    let primaries: Vec<(String, TextRange)> = ctx
-        .root
-        .children()
+    let primaries = primary_units(ctx.root);
+    let Some((first, range)) = primaries.first() else {
+        return;
+    };
+    if primaries.iter().all(|(name, _)| *name != stem) {
+        out.push(Finding::new(
+            "style/file-name",
+            *range,
+            format!("file name does not match the unit it declares; expected `{first}.vhd`"),
+        ));
+    }
+}
+
+/// The names (lower case) and name ranges of a file's primary units.
+fn primary_units(root: &SyntaxNode) -> Vec<(String, TextRange)> {
+    root.children()
         .filter(|n| n.kind() == SyntaxKind::DESIGN_UNIT)
         .flat_map(|n| n.children())
         .filter(|n| {
@@ -394,15 +756,5 @@ fn file_name(ctx: &StyleContext, out: &mut Vec<Finding>) {
             n.child_token(|k| k == SyntaxKind::IDENT)
                 .map(|t| (t.text().to_ascii_lowercase(), t.text_range()))
         })
-        .collect();
-    let Some((first, range)) = primaries.first() else {
-        return;
-    };
-    if primaries.iter().all(|(name, _)| *name != stem) {
-        out.push(Finding::new(
-            "style/file-name",
-            *range,
-            format!("file name does not match the unit it declares; expected `{first}.vhd`"),
-        ));
-    }
+        .collect()
 }

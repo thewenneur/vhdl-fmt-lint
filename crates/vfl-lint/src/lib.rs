@@ -340,6 +340,11 @@ fn lint_file(
             loops: enabled(vfl_sema::codes::COMBINATIONAL_LOOP),
         },
     );
+    // Computed on demand too, each check only when its rule is on.
+    let code = analysis.code_checks(
+        settings.file,
+        &code_checks(lint_config, &enabled, &mut errors),
+    );
     // A latch that a missing branch assignment explains is reported as the
     // latter only.
     let explained = |d: &vfl_sema::Diagnostic| {
@@ -351,6 +356,7 @@ fn lint_file(
         .filter(|d| !explained(d))
         .chain(&branches.diagnostics)
         .chain(&drivers)
+        .chain(&code)
     {
         let code = d.code;
         let mut finding = Finding::new(code, d.range, d.message.clone());
@@ -390,6 +396,7 @@ fn lint_file(
         }
         _ => {
             let root = file.syntax();
+            let options = StyleOptions::new(settings.config, &enabled, &mut errors);
             style::check(
                 &style::StyleContext {
                     text: &file.text,
@@ -401,6 +408,10 @@ fn lint_file(
                     max_line_length,
                     indent: settings.config.format.indent as usize,
                     standard: settings.config.standard(),
+                    magic_allow: &options.magic_allow,
+                    header: options.header.as_ref(),
+                    clocks: options.clocks.as_ref(),
+                    resets: options.resets.as_ref(),
                 },
                 enabled,
                 &mut findings,
@@ -409,6 +420,14 @@ fn lint_file(
                 if finding.rule == "style/positional-association" {
                     finding.fix = name_formals(analysis, settings.file, &root, finding.range);
                 }
+            }
+            // Shared variables of protected types are reported only with
+            // the `protected` option.
+            if enabled("style/shared-variable") && !options.protected_shared {
+                findings.retain(|f| {
+                    f.rule != "style/shared-variable"
+                        || !protected_variable(decls, analysis, f.range)
+                });
             }
             naming::check(decls, &file.text, &root, &conventions, &mut findings);
             Suppressions::new(&root, &file.text, &file.line_index)
@@ -445,6 +464,137 @@ fn lint_file(
         });
     }
     (out, errors)
+}
+
+/// The options of the style rules that are on.
+#[derive(Default)]
+struct StyleOptions {
+    magic_allow: Vec<i64>,
+    header: Option<regex::Regex>,
+    clocks: Option<regex::Regex>,
+    resets: Option<regex::Regex>,
+    protected_shared: bool,
+}
+
+impl StyleOptions {
+    fn new(config: &Config, enabled: &impl Fn(&str) -> bool, errors: &mut Vec<String>) -> Self {
+        let lint = &config.lint;
+        let mut out = StyleOptions::default();
+        let regex = |id: &str, key: &str, default: Option<&str>, errors: &mut Vec<String>| {
+            let pattern = match rules::string_option(lint, id, key) {
+                Ok(p) => p.or(default),
+                Err(e) => {
+                    errors.push(e);
+                    default
+                }
+            };
+            match pattern.map(regex::Regex::new) {
+                Some(Ok(r)) => Some(r),
+                Some(Err(e)) => {
+                    errors.push(format!("`{key}` of `{id}` is not a valid pattern: {e}"));
+                    None
+                }
+                None => None,
+            }
+        };
+        if enabled("style/magic-number") {
+            out.magic_allow = rules::magic_number_allow(lint).unwrap_or_else(|e| {
+                errors.push(e);
+                vec![0, 1, 2]
+            });
+        }
+        if enabled("style/file-header") {
+            out.header = regex("style/file-header", "pattern", None, errors);
+            if rules::string_option(lint, "style/file-header", "pattern") == Ok(None) {
+                errors.push("`style/file-header` needs a `pattern` option".into());
+            }
+        }
+        if enabled("style/port-order") {
+            out.clocks = regex(
+                "style/port-order",
+                "clocks",
+                Some(&config.generate.clock_pattern),
+                errors,
+            );
+            out.resets = regex(
+                "style/port-order",
+                "resets",
+                Some(&config.generate.reset_pattern),
+                errors,
+            );
+        }
+        if enabled("style/shared-variable") {
+            out.protected_shared =
+                rules::bool_option(lint, "style/shared-variable", "protected", false)
+                    .unwrap_or_else(|e| {
+                        errors.push(e);
+                        false
+                    });
+        }
+        out
+    }
+}
+
+/// Whether the shared variable declared at `range` has a protected type.
+fn protected_variable(decls: &[&vfl_sema::Decl], analysis: &Analysis, range: TextRange) -> bool {
+    use vfl_sema::{DeclKind, TypeDef};
+    let Some(decl) = decls
+        .iter()
+        .find(|d| d.kind == DeclKind::Variable && range.contains_range(d.range))
+    else {
+        return false;
+    };
+    let mut mark = decl.subtype;
+    for _ in 0..16 {
+        let Some(d) = mark.and_then(|m| analysis.decl(m)) else {
+            return false;
+        };
+        match d.kind {
+            DeclKind::Subtype => mark = d.subtype,
+            DeclKind::Type => {
+                return matches!(d.type_def.as_deref(), Some(TypeDef::Protected));
+            }
+            _ => return false,
+        }
+    }
+    false
+}
+
+/// Which of the on-demand checks of `vfl-sema` to run, with their options;
+/// a bad option is added to `errors` and its default used.
+fn code_checks(
+    config: &vfl_config::LintConfig,
+    enabled: &impl Fn(&str) -> bool,
+    errors: &mut Vec<String>,
+) -> vfl_sema::CodeChecks {
+    use vfl_sema::codes;
+    let mut option = |id: &str, key: &str, default: bool| {
+        if !enabled(id) {
+            return default;
+        }
+        rules::bool_option(config, id, key, default).unwrap_or_else(|error| {
+            errors.push(error);
+            default
+        })
+    };
+    vfl_sema::CodeChecks {
+        index_range: enabled(codes::INDEX_RANGE),
+        range_generics: option(codes::INDEX_RANGE, "generics", true),
+        value_range: enabled(codes::VALUE_RANGE),
+        unreachable_code: enabled(codes::UNREACHABLE_CODE),
+        constant_condition: enabled(codes::CONSTANT_CONDITION),
+        condition_constants: option(codes::CONSTANT_CONDITION, "constants", false),
+        unused_subprogram: enabled(codes::UNUSED_SUBPROGRAM),
+        public_subprograms: option(codes::UNUSED_SUBPROGRAM, "public", false),
+        comparison_width: enabled(codes::COMPARISON_WIDTH),
+        synthesis_delay: enabled(codes::SYNTHESIS_DELAY),
+        synthesis_file_io: enabled(codes::SYNTHESIS_FILE_IO),
+        synthesis_loop: enabled(codes::SYNTHESIS_LOOP),
+        synthesis_initial_value: enabled(codes::SYNTHESIS_INITIAL_VALUE),
+        synthesis_real_port: enabled(codes::SYNTHESIS_REAL_PORT),
+        identifier_case: enabled(codes::IDENTIFIER_CASE),
+        case_libraries: option(codes::IDENTIFIER_CASE, "libraries", false),
+    }
 }
 
 /// Names the formals of the positional associations of the generic or

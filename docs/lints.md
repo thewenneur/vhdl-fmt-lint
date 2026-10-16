@@ -24,7 +24,8 @@ The preset gives every rule its starting level:
 
 - `none`: only `syntax/error`.
 - `recommended` (the default): the rules that point at likely bugs.
-- `strict`: every rule except `naming/*`, which are off until configured.
+- `strict`: every rule except `naming/*`, `style/magic-number` and `style/file-header`, which
+  are off until configured.
 
 ```toml
 [lint]
@@ -90,6 +91,17 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`sema/duplicate-choice`](#semaduplicate-choice) | error | error | |
 | [`sema/multiple-drivers`](#semamultiple-drivers) | warn | error | |
 | [`sema/combinational-loop`](#semacombinational-loop) | warn | error | |
+| [`sema/index-range`](#semaindex-range) | warn | error | |
+| [`sema/value-range`](#semavalue-range) | warn | error | |
+| [`sema/unreachable-code`](#semaunreachable-code) | warn | warn | |
+| [`sema/constant-condition`](#semaconstant-condition) | info | warn | |
+| [`sema/unused-subprogram`](#semaunused-subprogram) | warn | warn | |
+| [`sema/comparison-width`](#semacomparison-width) | warn | error | |
+| [`sema/synthesis-delay`](#semasynthesis-delay) | off | warn | |
+| [`sema/synthesis-file-io`](#semasynthesis-file-io) | off | warn | |
+| [`sema/synthesis-loop`](#semasynthesis-loop) | off | warn | |
+| [`sema/synthesis-initial-value`](#semasynthesis-initial-value) | off | info | |
+| [`sema/synthesis-real-port`](#semasynthesis-real-port) | off | warn | |
 | [`verilog/blocking-in-clocked`](#verilogblocking-in-clocked) | warn | warn | unsafe |
 | [`verilog/nonblocking-in-combinational`](#verilognonblocking-in-combinational) | warn | warn | unsafe |
 | [`verilog/multiple-drivers`](#verilogmultiple-drivers) | warn | error | |
@@ -107,6 +119,15 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`style/positional-association`](#stylepositional-association) | off | warn | safe |
 | [`style/clock-edge`](#styleclock-edge) | off | warn | unsafe |
 | [`style/file-name`](#stylefile-name) | off | warn | |
+| [`style/identifier-case`](#styleidentifier-case) | off | warn | safe |
+| [`style/boolean-comparison`](#styleboolean-comparison) | off | warn | safe |
+| [`style/magic-number`](#stylemagic-number) | off | off | |
+| [`style/file-header`](#stylefile-header) | off | off | |
+| [`style/one-unit-per-file`](#styleone-unit-per-file) | off | warn | |
+| [`style/generic-default`](#stylegeneric-default) | off | info | |
+| [`style/port-order`](#styleport-order) | off | info | |
+| [`style/process-all`](#styleprocess-all) | off | info | unsafe |
+| [`style/shared-variable`](#styleshared-variable) | off | warn | |
 | [`naming/<kind>`](#naming) | off | off | |
 
 ## `syntax`
@@ -697,6 +718,179 @@ generate. `q <= q` and `q <= d when en = '1' else q` keep a value, which is a la
 told apart as for [`sema/multiple-drivers`](#semamultiple-drivers): `c(1) <= c(0) and b`
 is not a loop. `warn` in `recommended`, `error` in `strict`.
 
+### `sema/index-range`
+
+An index or a slice of an array object is outside the object's range, goes the other
+direction, or is a null range, when both are static. Simulation stops with an index error,
+or the slice has no elements; synthesis tools reject it.
+
+```vhdl
+signal s : std_logic_vector(7 downto 0);
+...
+q <= s(8 downto 1);   -- the slice `8 downto 1` is outside the range of `s` (7 downto 0)
+q <= s(0 to 7);       -- the slice `0 to 7` goes `to` but `s` is declared `downto` (7 downto 0)
+b <= s(8);            -- index 8 is outside the range of `s` (7 downto 0)
+for i in 0 to 8 loop
+  s(i) <= '0';        -- `i` takes the value 8, outside the range of `s` (7 downto 0)
+end loop;
+```
+
+The range of an object comes from its subtype indication (`(7 downto 0)`,
+`t_slv_array(0 to 3)(7 downto 0)`), or from the constrained subtype or array type it names
+(`subtype word_t is std_logic_vector(15 downto 0)`, `type mem_t is array (0 to 3) of
+...`). Indexes and bounds are static when they are made of literals and constants of known
+value. An index that is a loop or `for` generate parameter is checked over the parameter's
+static range. Only one-dimensional arrays are checked, and only the first index of an array
+of arrays (`mem(4)(0)`).
+
+With the `generics` option (on by default), generics with a default value count as
+constants of that value, and the finding says so (`, with generics at their default
+values`); such findings are not reported under an `if` or `case` generate, which often
+exists for other values. A null slice is not reported when it depends on a generic.
+
+| Option | Type | Default |
+|--------|------|---------|
+| `generics` | boolean | `true` |
+
+`warn` in `recommended`, `error` in `strict`.
+
+### `sema/value-range`
+
+A static integer value is given to an object of an integer subtype whose range does not
+include it: an initial value, a constant, or an assignment.
+
+```vhdl
+signal small : integer range 0 to 7 := 8;   -- 8 is outside the range of `small` (0 to 7)
+signal n : natural;
+...
+n <= -1;                                    -- -1 is outside the range of `n` (at least 0)
+```
+
+The range comes from the object's range constraint, or that of the subtypes and the type
+it names; a bound that is not static (`integer'high`) is not checked. `warn` in
+`recommended`, `error` in `strict`.
+
+### `sema/unreachable-code`
+
+A statement follows a `return`, an `exit` or `next` without condition, or a `wait;`, in the
+same sequence of statements, so it never runs.
+
+```vhdl
+if done then
+  exit;
+  count := count + 1;   -- this statement is never reached: the `exit` at line 2 comes first
+end if;
+```
+
+Only the first unreachable statement of a sequence is reported. Files with syntax errors are
+not checked. `warn` in every preset.
+
+### `sema/constant-condition`
+
+A condition of an `if` or `elsif`, or of a conditional assignment (`when`), is the literal
+`true` or `false` (possibly with `not` and parentheses): either its branch never runs, or
+the branches after it never do.
+
+```vhdl
+if false then             -- this condition is always `false`: its branch never runs
+  q <= '0';
+end if;
+```
+
+With the `constants` option, a constant whose value is the literal `true` or `false` counts
+too (`if DEBUG then`); it is off by default, as such constants are usually configuration
+switches. Generics are never followed, and `if` generates are left alone: `if true
+generate` is a common way to group statements.
+
+| Option | Type | Default |
+|--------|------|---------|
+| `constants` | boolean | `false` |
+
+`info` in `recommended`, `warn` in `strict`.
+
+### `sema/unused-subprogram`
+
+A function or procedure is never called. A subprogram whose declaration and body are
+separate is reported once, at its declaration; a call from within itself (recursion) or its
+end label does not count.
+
+Subprograms declared directly in a package or an entity are visible to the whole project, and
+are only checked with the `public` option, which looks for calls in every unit of the
+project. Operators (`"+"`) and the methods of protected types are not checked.
+
+| Option | Type | Default |
+|--------|------|---------|
+| `public` | boolean | `false` |
+
+`warn` in every preset.
+
+### `sema/comparison-width`
+
+Two arrays of different static widths are compared with a predefined relational operator.
+`=` between vectors of different lengths is always false (and `/=` always true); `<`, `<=`,
+`>` and `>=` compare element by element from the left, so `"100" > "0111"` is true,
+whatever the numbers they stand for.
+
+```vhdl
+signal s : std_logic_vector(7 downto 0);
+...
+if s = "0000" then   -- comparison of 8 elements with 4 elements, so `=` is always false
+```
+
+Widths are those of objects with a static index constraint, slices with static bounds,
+string and bit-string literals, and concatenations of these. Comparisons that use
+an operator declared by a package (`numeric_std`'s on `unsigned`, `numeric_std_unsigned`'s
+on `std_logic_vector`) compare values and are not reported. `warn` in `recommended`, `error`
+in `strict`.
+
+### `sema/synthesis-delay`
+
+An `after` delay in a signal assignment, or a `wait for`, in RTL. Synthesis ignores
+`after` (so simulation and the hardware differ) and cannot build `wait for`.
+
+The `sema/synthesis-*` rules check the architectures of entities with ports, taken to be
+RTL. Testbenches (entities without ports) are left alone, as is code between
+`-- synthesis translate_off` and `-- synthesis translate_on` comments (also `pragma
+translate_off`, `RTL_SYNTHESIS OFF`). Verification components with ports, such as bus
+functional models, are not RTL either: silence the rules for them with a
+[waiver](configuration.md#lintwaiver) on their files:
+
+```toml
+[[lint.waiver]]
+files = ["tb/**", "sim/**"]
+rules = ["sema/synthesis-delay", "sema/synthesis-file-io", "sema/synthesis-loop"]
+```
+
+`off` in `recommended`, `warn` in `strict`.
+
+### `sema/synthesis-file-io`
+
+A process in RTL declares a file, or uses a file object or `std.textio` (`line`,
+`readline`, `write`, ...). Synthesis cannot read or write files while the design runs.
+Functions that read a file to give a constant its initial value (a ROM image) are left
+alone, as many synthesis tools support them. Reported once per process. `off` in
+`recommended`, `warn` in `strict`.
+
+### `sema/synthesis-loop`
+
+A loop of a process in RTL has a range that reads a signal or a variable (`for i in 0 to
+n loop`), or a `while` condition that does. Synthesis unrolls loops, so it needs a number of
+iterations known when the design is elaborated. Attributes such as `v'range` are static.
+`off` in `recommended`, `warn` in `strict`.
+
+### `sema/synthesis-initial-value`
+
+A signal in RTL has an initial value. Most FPGA tools load it into the registers at
+configuration, but ASIC flows and some FPGA families ignore it, so a design that relies on it
+needs a reset instead. Off in `recommended`, as FPGA designs often rely on initial values;
+`info` in `strict`.
+
+### `sema/synthesis-real-port`
+
+A port of an entity has the type `real`, or an array of `real` (`real_vector`). Synthesis
+does not support floating-point ports. Generics of type `real` are fine. `off` in
+`recommended`, `warn` in `strict`.
+
 ## `verilog`
 
 These rules apply to Verilog and SystemVerilog files only. A block is clocked when its event
@@ -769,7 +963,8 @@ member of an enumeration, or lists every value of a selector of up to 12 bits.
 
 ## `style`
 
-These rules look at one file's text and syntax tree.
+These rules look at one file's text and syntax tree (`style/identifier-case` and
+`style/shared-variable` also at what its names resolve to).
 
 ### `style/no-buffer-ports`
 
@@ -852,6 +1047,104 @@ simulation for those values.
 A file's name, without its extension, differs from the name of every primary unit it
 declares (entity, package, context, configuration, package instantiation). The comparison
 ignores case. The finding suggests the name of the first unit: `expected top.vhd`.
+
+### `style/identifier-case`
+
+A name is written with another case than its declaration: `clk` declared as `Clk`. VHDL
+ignores the case of identifiers, so the code works, but readers and searches see two
+names.
+
+Fix (safe): writes the name as declared. Names declared in `std` and `ieee` (`STD_LOGIC`)
+are only checked with the `libraries` option; extended identifiers (`\Name\`) are never.
+This rule compares uses with their declaration; [`naming/*`](#naming) rules check the
+declarations themselves, and the formatter's `identifier_case` can rewrite every name in one
+case, so the two do not overlap.
+
+| Option | Type | Default |
+|--------|------|---------|
+| `libraries` | boolean | `false` |
+
+### `style/boolean-comparison`
+
+A boolean is compared with `true` or `false`: `if valid = true`, `if done /= false`. The
+boolean is already the condition.
+
+Fix (safe): `x = true` and `x /= false` become `x`; `x = false` and `x /= true` become
+`not x`.
+
+### `style/magic-number`
+
+An integer literal is written in a statement instead of a named constant: `count <= count +
+7;`. Literals in declarations (constants, generics' defaults, signals and their
+constraints, types), in generic maps and in physical literals (`10 ns`) are not reported,
+nor are the numbers of the `allow` option. Off in every preset; setting options turns it on
+at `warn`.
+
+| Option | Type | Default |
+|--------|------|---------|
+| `allow` | array of integers | `[0, 1, 2]` |
+
+```toml
+"style/magic-number" = { allow = [0, 1, 2, 8] }
+```
+
+### `style/file-header`
+
+The comments before the first token of a file do not match the `pattern` option, a regular
+expression ([Rust `regex` syntax](https://docs.rs/regex/latest/regex/#syntax)) that must
+match part of them; anchor it with `\A` to require it at the very top. Off in every preset;
+setting `pattern` turns it on at `warn`. Without `pattern`, the rule reports a configuration
+warning.
+
+| Option | Type | Default |
+|--------|------|---------|
+| `pattern` | string | none |
+
+```toml
+"style/file-header" = { pattern = '\A-- Copyright \(c\) 20[0-9]{2} Example Corp' }
+```
+
+### `style/one-unit-per-file`
+
+A file declares more than one primary unit (entity, package, context, configuration,
+package instantiation). Each primary unit after the first is reported. An architecture or a
+package body in the file of its entity or package is fine.
+
+### `style/generic-default`
+
+A generic of an entity or a component has no default value, so every instantiation must
+associate it. Generic types, subprograms and packages are not checked. `info` in `strict`.
+
+### `style/port-order`
+
+A clock or reset port of an entity comes after another port. Clocks and resets are
+recognized by name, with the patterns of `[generate]`
+([`clock_pattern` and `reset_pattern`](configuration.md#generate)) unless the options set
+others. `info` in `strict`.
+
+| Option | Type | Default |
+|--------|------|---------|
+| `clocks` | string (regular expression) | `[generate] clock_pattern` |
+| `resets` | string (regular expression) | `[generate] reset_pattern` |
+
+### `style/process-all`
+
+In VHDL-2008 and later, a combinational process (no `wait`, no clock edge) lists the signals
+of its sensitivity list instead of using `process (all)`, which cannot leave one out. `info`
+in `strict`.
+
+Fix (unsafe): replaces the list with `all`. It changes simulation when the list leaves out
+a signal the process reads (see [`sema/sensitivity-list`](#semasensitivity-list)).
+
+### `style/shared-variable`
+
+A shared variable is declared. Shared variables of a type that is not protected are not
+allowed since VHDL-2002 and race in simulation; those of a protected type are reported only
+with the `protected` option.
+
+| Option | Type | Default |
+|--------|------|---------|
+| `protected` | boolean | `false` |
 
 ## `naming`
 

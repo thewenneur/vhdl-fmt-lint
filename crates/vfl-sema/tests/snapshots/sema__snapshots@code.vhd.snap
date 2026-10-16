@@ -1,0 +1,65 @@
+---
+source: crates/vfl-sema/tests/sema.rs
+expression: analyze(&text)
+input_file: crates/vfl-sema/tests/data/code.vhd
+---
+pkg.vhd: work
+ranges.vhd: work
+dead.vhd: work
+synth.vhd: work
+casing.vhd: work
+pkg.vhd:2:5: sema/unused-use: nothing from `ieee.std_logic_1164.all` is used [fix: Remove the unused use clause]
+ranges.vhd:19:10: sema/undriven-signal: signal `w` is read but never assigned
+ranges.vhd:20:10: sema/undriven-signal: signal `mem` is read but never assigned
+ranges.vhd:21:10: sema/undriven-signal: signal `up` is read but never assigned
+ranges.vhd:22:10: sema/unread-signal: signal `small` is assigned but never read
+ranges.vhd:23:10: sema/unread-signal: signal `nat` is assigned but never read
+ranges.vhd:24:10: sema/undriven-signal: signal `u` is read but never assigned
+ranges.vhd:26:12: sema/unused-constant: constant `BAD` is never used [fix: Remove the unused constant `BAD`]
+ranges.vhd:30:23: sema/width-mismatch: `dout` has 4 elements but the value has 0
+synth.vhd:8:5: sema/unused-port: port `level` is never used
+synth.vhd:15:10: sema/undriven-signal: signal `n` is read but never assigned
+pkg.vhd:8:12: sema/unused-subprogram: function `public_unused` is never called
+pkg.vhd:23:13: sema/unused-subprogram: procedure `private_unused` is never called
+ranges.vhd:29:3: sema/multiple-drivers: `dout` is also driven by the statement at line 28; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+ranges.vhd:30:3: sema/multiple-drivers: `dout` is also driven by the statement at line 28; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+ranges.vhd:31:3: sema/multiple-drivers: `dout` is also driven by the statement at line 28; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+ranges.vhd:32:3: sema/multiple-drivers: `dout` is also driven by the statement at line 28; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+ranges.vhd:33:3: sema/multiple-drivers: `dout` is also driven by the statement at line 28; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+ranges.vhd:34:3: sema/multiple-drivers: `dout` is also driven by the statement at line 28; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+ranges.vhd:35:3: sema/multiple-drivers: `dout` is also driven by the statement at line 28; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+ranges.vhd:36:3: sema/multiple-drivers: `dout` is also driven by the statement at line 28; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+ranges.vhd:39:3: sema/multiple-drivers: `dout` is also driven by the statement at line 28; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+ranges.vhd:40:3: sema/multiple-drivers: `dout` is also driven by the statement at line 28; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+ranges.vhd:41:3: sema/multiple-drivers: `dout` is also driven by the statement at line 28; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+ranges.vhd:22:42: sema/synthesis-initial-value: initial value of a signal in RTL: ASICs and some FPGAs ignore it; use a reset
+ranges.vhd:22:42: sema/value-range: 8 is outside the range of `small` (0 to 7)
+ranges.vhd:26:42: sema/value-range: 0 is outside the range of `BAD` (1 to 4)
+ranges.vhd:28:13: sema/index-range: the slice `8 downto 1` is outside the range of `s` (7 downto 0)
+ranges.vhd:29:13: sema/index-range: the slice `0 to 7` goes `to` but `s` is declared `downto` (7 downto 0)
+ranges.vhd:30:25: sema/index-range: the slice `3 downto 4` of `s` is a null range: it has no elements
+ranges.vhd:31:16: sema/index-range: index 8 is outside the range of `s` (7 downto 0)
+ranges.vhd:32:18: sema/index-range: index 8 is outside the range of `din` (7 downto 0), with generics at their default values
+ranges.vhd:33:16: sema/index-range: index 16 is outside the range of `w` (15 downto 0)
+ranges.vhd:35:18: sema/index-range: index 4 is outside the range of `mem` (0 to 3)
+ranges.vhd:37:10: sema/value-range: -1 is outside the range of `nat` (at least 0)
+ranges.vhd:39:23: sema/comparison-width: comparison of 8 elements with 16 elements, so `=` is always false
+ranges.vhd:40:23: sema/comparison-width: comparison of 8 elements with 4 elements, so the comparison is element by element from the left, not by value
+ranges.vhd:51:11: sema/index-range: `i` takes the value 8, outside the range of `s` (7 downto 0)
+dead.vhd:26:5: sema/missing-branch-assignment: this `if` has no `else`, so `y` is not assigned when no condition holds [fix: Assign `y` a default value before the `if`]
+dead.vhd:47:3: sema/multiple-drivers: `y` is also driven by the statement at line 27; a signal of an unresolved type can have only one driver
+dead.vhd:13:5: sema/unreachable-code: this statement is never reached: the `return` at line 12 comes first
+dead.vhd:16:12: sema/unused-subprogram: function `local_unused` is never called
+dead.vhd:26:8: sema/constant-condition: this condition is always `false`: its branch never runs
+dead.vhd:31:8: sema/constant-condition: this condition is always `false`: its branch never runs
+dead.vhd:34:8: sema/constant-condition: this condition is always `false`: its branch never runs
+dead.vhd:40:9: sema/unreachable-code: this statement is never reached: the `exit` at line 39 comes first
+dead.vhd:47:15: sema/constant-condition: this condition is always `true`: the branches after it never run
+synth.vhd:8:5: sema/synthesis-real-port: port `level` has a `real` type, which synthesis does not support
+synth.vhd:14:27: sema/synthesis-initial-value: initial value of a signal in RTL: ASICs and some FPGAs ignore it; use a reset
+synth.vhd:17:10: sema/synthesis-delay: synthesis ignores `after` delays: simulation and hardware differ
+synth.vhd:20:18: sema/synthesis-file-io: file input and output (`line`) in a process cannot be synthesized
+synth.vhd:23:7: sema/synthesis-loop: the range of this loop depends on `n`, which is not static: synthesis needs a fixed number of iterations
+casing.vhd:11:8: style/identifier-case: `data_valid` is declared as `Data_Valid` [fix: Write `Data_Valid`]
+casing.vhd:12:12: style/identifier-case: `clk` is declared as `Clk` [fix: Write `Clk`]
+casing.vhd:14:20: style/identifier-case: `CLK` is declared as `Clk` [fix: Write `Clk`]

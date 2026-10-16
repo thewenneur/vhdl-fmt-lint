@@ -284,7 +284,15 @@ impl<'a> Resolver<'a> {
             region,
             imports,
             libraries,
-            refs: self.refs,
+            refs: {
+                // In source order, for binary searches by position:
+                // operators are recorded before their operands, and
+                // implicit declarations last. Almost sorted already, so
+                // this costs about one pass.
+                let mut refs = self.refs;
+                refs.sort_by_key(|r| r.range.start());
+                refs
+            },
             elements: Vec::new(),
             diagnostics: self.diags,
             use_items: self.use_items,

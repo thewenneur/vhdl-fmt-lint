@@ -410,7 +410,7 @@ y <= a when sel = '1' else
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
-| `preset` | string | `"recommended"` | The starting level of every rule: `"none"` (only `syntax/error`), `"recommended"` (likely bugs) or `"strict"` (everything except `naming/*`). The level of each rule in each preset is in [lints.md](lints.md). |
+| `preset` | string | `"recommended"` | The starting level of every rule: `"none"` (only `syntax/error`), `"recommended"` (likely bugs) or `"strict"` (everything except `naming/*`, `style/magic-number` and `style/file-header`, which need options). The level of each rule in each preset is in [lints.md](lints.md). |
 | `rules` | table | `{}` | Per-rule settings, keyed by rule id; see below. |
 | `waiver` | array of tables | `[]` | Findings silenced from the config instead of the sources; see [`[[lint.waiver]]`](#lintwaiver). |
 | `baseline` | string | unset | A baseline file, relative to the project root, written by `vfl lint --write-baseline`: `vfl lint` does not report the findings it lists (see [cli.md](cli.md#baselines)). `--baseline` overrides it. |
@@ -432,7 +432,17 @@ Each entry is either a level, or a table with an optional `level` and rule optio
 - Rules with options: `style/line-length` (`max`), `sema/unassociated-port` (`undeclared`,
   for its quick fix), `sema/missing-branch-assignment` (`clocked`, to check clocked
   processes too), `sema/multiple-drivers` (`resolved`: `"rtl"`, `"always"` or `"never"`,
-  for signals of resolved types such as `std_logic`) and every `naming/<kind>` rule (`prefix`, `suffix`, `case`, `pattern`). See [lints.md](lints.md) for what they do.
+  for signals of resolved types such as `std_logic`), `sema/index-range` (`generics`, to
+  use generics' default values), `sema/constant-condition` (`constants`, to follow boolean
+  constants), `sema/unused-subprogram` (`public`, to check the subprograms of packages
+  across the project), `style/identifier-case` (`libraries`, to check names from `std` and
+  `ieee` too), `style/magic-number` (`allow`, a list of integers), `style/file-header`
+  (`pattern`, a regular expression), `style/port-order` (`clocks`, `resets`: regular
+  expressions), `style/shared-variable` (`protected`, to report shared variables of
+  protected types too) and every `naming/<kind>` rule (`prefix`, `suffix`, `case`,
+  `pattern`). See [lints.md](lints.md) for what they do.
+- `style/magic-number` and `style/file-header` are off in every preset, like `naming/*`:
+  setting their options turns them on.
 
 `info` findings are shown as notes. `vfl lint` exits with a failure status when there are
 `error` findings, or `warn` findings too with `--deny-warnings`.

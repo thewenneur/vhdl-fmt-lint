@@ -3,7 +3,7 @@
 //! that cross clock domains, input ports left open, resets, state
 //! machines, and the choices of `case` statements.
 
-mod cases;
+pub(crate) mod cases;
 mod fsm;
 pub(crate) mod reset;
 
@@ -134,7 +134,7 @@ pub(crate) fn constraint_width(
 }
 
 /// The number of elements a string or bit string literal has.
-fn literal_width(token: &SyntaxToken) -> Option<u32> {
+pub(crate) fn literal_width(token: &SyntaxToken) -> Option<u32> {
     let text = token.text();
     match token.kind() {
         SyntaxKind::STRING_LITERAL => {

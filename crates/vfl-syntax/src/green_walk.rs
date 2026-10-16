@@ -8,8 +8,12 @@
 //! recurse: expressions can nest deeply.
 
 use std::cell::Cell;
+use std::marker::PhantomData;
 
-use rowan::{Children, Language, NodeOrToken, SyntaxElement, SyntaxNode, SyntaxToken, TextRange};
+use rowan::{
+    Children, GreenNodeData, Language, NodeOrToken, SyntaxElement, SyntaxNode, SyntaxToken,
+    TextRange, TextSize,
+};
 
 /// Calls `f` with the kind, range and text of each token under `node`, in
 /// source order, building no syntax tokens.
@@ -43,11 +47,102 @@ pub fn descendants_where<L: Language>(
     node: &SyntaxNode<L>,
     wanted: impl Fn(L::Kind) -> bool,
 ) -> Vec<SyntaxNode<L>> {
+    descendants_where_green(node, |green| wanted(green.kind()))
+}
+
+/// A green node with where it starts in the file: lets a walk look inside a
+/// node before deciding to build a syntax node for it.
+pub struct GreenAt<'a, L> {
+    green: &'a GreenNodeData,
+    start: TextSize,
+    language: PhantomData<L>,
+}
+
+impl<L> Clone for GreenAt<'_, L> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<L> Copy for GreenAt<'_, L> {}
+
+impl<'a, L: Language> GreenAt<'a, L> {
+    pub fn kind(self) -> L::Kind {
+        L::kind_from_raw(self.green.kind())
+    }
+
+    pub fn range(self) -> TextRange {
+        TextRange::at(self.start, self.green.text_len())
+    }
+
+    /// The child nodes, in order.
+    pub fn nodes(self) -> impl Iterator<Item = GreenAt<'a, L>> {
+        self.elements().filter_map(|e| e.left())
+    }
+
+    /// The kind and range of each child token, in order.
+    pub fn tokens(self) -> impl Iterator<Item = (L::Kind, TextRange)> {
+        self.elements().filter_map(|e| e.right())
+    }
+
+    fn elements(self) -> impl Iterator<Item = Either<GreenAt<'a, L>, (L::Kind, TextRange)>> {
+        let mut offset = self.start;
+        self.green.children().map(move |child| {
+            let start = offset;
+            offset += child.text_len();
+            match child {
+                NodeOrToken::Node(green) => Either::Left(GreenAt {
+                    green,
+                    start,
+                    language: PhantomData,
+                }),
+                NodeOrToken::Token(token) => Either::Right((
+                    L::kind_from_raw(token.kind()),
+                    TextRange::at(start, token.text_len()),
+                )),
+            }
+        })
+    }
+}
+
+enum Either<A, B> {
+    Left(A),
+    Right(B),
+}
+
+impl<A, B> Either<A, B> {
+    fn left(self) -> Option<A> {
+        match self {
+            Either::Left(a) => Some(a),
+            Either::Right(_) => None,
+        }
+    }
+
+    fn right(self) -> Option<B> {
+        match self {
+            Either::Left(_) => None,
+            Either::Right(b) => Some(b),
+        }
+    }
+}
+
+/// Like [`descendants_where`], but `wanted` sees each node's green node and
+/// where it starts, so it can rule a node out by its children (an operator
+/// token, a reference the analysis resolved) without a syntax node built.
+pub fn descendants_where_green<L: Language>(
+    node: &SyntaxNode<L>,
+    mut wanted: impl FnMut(GreenAt<'_, L>) -> bool,
+) -> Vec<SyntaxNode<L>> {
     let mut out = Vec::new();
-    if wanted(node.kind()) {
+    let green = node.green();
+    let mut offset = node.text_range().start();
+    if wanted(GreenAt {
+        green: &green,
+        start: offset,
+        language: PhantomData,
+    }) {
         out.push(node.clone());
     }
-    let green = node.green();
     // The children of each node on the current path (`node` at depth 0),
     // with how many of them were taken so far.
     let mut stack: Vec<(Children<'_>, u32)> = vec![(green.children(), 0)];
@@ -60,10 +155,18 @@ pub fn descendants_where<L: Language>(
             continue;
         };
         *taken += 1;
-        let NodeOrToken::Node(child) = child else {
-            continue;
+        let child = match child {
+            NodeOrToken::Node(child) => child,
+            NodeOrToken::Token(token) => {
+                offset += token.text_len();
+                continue;
+            }
         };
-        if wanted(L::kind_from_raw(child.kind())) {
+        if wanted(GreenAt {
+            green: child,
+            start: offset,
+            language: PhantomData,
+        }) {
             // Build the path down to this child, from the deepest node
             // already built on it.
             for depth in built.len()..=stack.len() {
