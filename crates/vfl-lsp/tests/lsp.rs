@@ -245,7 +245,7 @@ fn edits_update_diagnostics_and_fixes() {
         "textDocument/formatting",
         json!({ "textDocument": { "uri": top }, "options": { "tabSize": 2, "insertSpaces": true } }),
     );
-    assert_eq!(formatting.as_array().unwrap().len(), 1, "{formatting}");
+    assert!(!formatting.as_array().unwrap().is_empty(), "{formatting}");
 
     // Closing the document goes back to the file on disk.
     client.notify(

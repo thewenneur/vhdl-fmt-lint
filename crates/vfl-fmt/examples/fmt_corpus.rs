@@ -1,6 +1,7 @@
 //! Formats every VHDL file under the given paths and checks the formatter's
 //! guarantees: no internal error (the output re-parses to the same tokens)
-//! and idempotency (formatting the output again changes nothing). With
+//! and idempotency (formatting the output again changes nothing), and that
+//! the edits editors apply rebuild the formatted file. With
 //! `--verilog`, formats the Verilog and SystemVerilog files instead, each
 //! with the standard its extension implies.
 //!
@@ -116,6 +117,8 @@ fn main() {
     let mut skipped = 0usize;
     let mut changed = 0usize;
     let mut failures = 0usize;
+    let mut diff_elapsed = Duration::ZERO;
+    let mut diff_max = (Duration::ZERO, PathBuf::new());
     for file in &files {
         let raw = std::fs::read(file).expect("read file");
         let text = match String::from_utf8(raw) {
@@ -148,6 +151,19 @@ fn main() {
         if out != text {
             changed += 1;
         }
+        // Editors apply the formatted file as these edits.
+        let start = Instant::now();
+        let edits = vfl_fmt::minimal_edits(&text, &out);
+        let took = start.elapsed();
+        diff_elapsed += took;
+        diff_max = diff_max.max((took, file.clone()));
+        if apply_edits(&text, &edits) != out {
+            failures += 1;
+            println!(
+                "{}: minimal edits do not rebuild the output",
+                file.display()
+            );
+        }
         if ranges && let Err(message) = check_ranges(&text, &out, &config, lang) {
             failures += 1;
             println!("{}: {message}", file.display());
@@ -177,6 +193,12 @@ fn main() {
         changed,
         skipped,
         failures,
+    );
+    println!(
+        "edits computed in {:.2?}, slowest {:.2?} ({})",
+        diff_elapsed,
+        diff_max.0,
+        diff_max.1.display(),
     );
     if failures > 0 {
         std::process::exit(1);
