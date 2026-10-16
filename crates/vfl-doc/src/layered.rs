@@ -1,4 +1,5 @@
-//! Layered (Sugiyama style) layout of state diagrams, drawn top to bottom.
+//! Layered (Sugiyama style) layout of state diagrams, drawn top to bottom
+//! with orthogonal edges.
 //!
 //! 1. A depth-first walk from the initial state finds the edges that close
 //!    a loop (back to a state on the walk, or into the initial state); they
@@ -6,33 +7,49 @@
 //! 2. Each state goes one layer below the lowest state with an edge to it.
 //!    A state with several successors thereby opens branches that run side
 //!    by side, and the states of a branch stack in its column.
-//! 3. Edges spanning layers get a waypoint in every layer between (shared
-//!    by the unlabelled edges into the same state, so loops back to `IDLE`
-//!    merge into one trunk), and a labelled edge gets a slot for its label
-//!    in the layer below its source. Edges never cross a state or a label.
+//! 3. Edges spanning layers get a waypoint in every layer between. The
+//!    edges into the same state share theirs, so that they merge into one
+//!    trunk with one arrowhead (all the loops back to `IDLE`, all the
+//!    errors into `FAULT`); a labelled edge first gets a waypoint of its
+//!    own with room for its label, which sits on it just after its source. Edges never
+//!    cross a state or a label.
 //! 4. Layers are ordered by repeated barycentre sweeps, starting from the
 //!    order of the walk so that branches start out contiguous, keeping the
 //!    order with the fewest crossings.
 //! 5. Each node is pulled towards its neighbours, waypoints harder than
 //!    states so long edges run straight, under the spacing constraints of
 //!    its layer (solved exactly by pool-adjacent-violators).
+//! 6. Edges leave and enter states through ports spread along their top
+//!    and bottom sides, and run vertically through the layers. Between two
+//!    layers, the segments of the edges going to the same node merge into
+//!    one horizontal track; tracks are stacked in the order that crosses
+//!    least.
 
 use std::collections::BTreeMap;
 
-/// Vertical space between consecutive layers.
-const LAYER_GAP: f64 = 18.0;
-/// The most vertical space between layers.
-const MAX_LAYER_GAP: f64 = 44.0;
-/// Vertical space per unit of sideways travel of an edge between layers.
-const SLOPE: f64 = 0.1;
+/// Vertical space between the tracks of a channel, and between a track
+/// and the layers around it.
+const TRACK_GAP: f64 = 9.0;
+/// The least height of a channel between two layers.
+const CHANNEL_MIN: f64 = 16.0;
+/// Horizontal space between the ends of two segments sharing a track.
+const TRACK_SEP: f64 = 8.0;
+/// The least space between two ports on a side of a state.
+const PORT_GAP: f64 = 10.0;
+/// Room kept free of ports at each end of a side of a state.
+pub(crate) const CORNER: f64 = 9.0;
 /// Horizontal space between two states, or a state and a waypoint.
 const STATE_GAP: f64 = 28.0;
 /// Horizontal space between two waypoints.
 const WAYPOINT_GAP: f64 = 12.0;
 /// Room right of a state for its self-loop.
-pub(crate) const LOOP_ROOM: f64 = 30.0;
+pub(crate) const LOOP_ROOM: f64 = 26.0;
 /// Space between an edge and its label.
 pub(crate) const LABEL_OFFSET: f64 = 6.0;
+/// Trunks this many layers long or more, joined by this many edges or
+/// more, run down the side of the diagram.
+const MIN_SIDE_TRUNK: usize = 3;
+const MIN_SIDE_EDGES: usize = 4;
 const ORDER_SWEEPS: usize = 24;
 const PLACE_SWEEPS: usize = 40;
 
@@ -46,10 +63,11 @@ pub(crate) struct Edge {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Route {
-    /// From the source's border to the target's border, through the
-    /// waypoints; empty for a self-loop.
+    /// The corners of the edge, from the source's border to the target's
+    /// border; empty for a self-loop.
     pub points: Vec<(f64, f64)>,
-    /// The left end of the label's middle line.
+    /// The left end of the middle line of the label, which sits on the
+    /// edge.
     pub label: Option<(f64, f64)>,
 }
 
@@ -57,6 +75,8 @@ pub(crate) struct Route {
 pub(crate) struct Layout {
     /// The centre of each state.
     pub states: Vec<(f64, f64)>,
+    /// The width of each state, widened to fit its ports.
+    pub widths: Vec<f64>,
     /// One per edge, in the order given.
     pub routes: Vec<Route>,
 }
@@ -68,6 +88,47 @@ struct Node {
     right: f64,
     height: f64,
     state: bool,
+}
+
+/// The edges going into a state: the state, and whether they go up.
+type Net = (usize, bool);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Side {
+    Top,
+    Bottom,
+}
+
+/// What a port of a state is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum End {
+    /// Every edge arriving on that side.
+    Arrive,
+    /// The edges fanning out on that side.
+    Fan,
+    /// The edge leaving through the given neighbour.
+    Leave(usize),
+}
+
+/// The segments between two layers that share a track.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Group {
+    /// Those of the edges into a state that go to the given node.
+    Into(Net, usize),
+    /// Those leaving that side of a state, apart from the above.
+    Out(usize, Side),
+    /// A segment on its own.
+    One(usize, usize),
+}
+
+/// The segments of a channel that merge: their ends on the layer above
+/// and on the layer below.
+#[derive(Debug, Clone, Default)]
+struct Hyper {
+    tops: Vec<f64>,
+    bottoms: Vec<f64>,
+    lo: f64,
+    hi: f64,
 }
 
 /// Lays out states of the given sizes (width, height).
@@ -99,47 +160,40 @@ pub(crate) fn layout(sizes: &[(f64, f64)], edges: &[Edge], initial: Option<usize
     }
     let mut chains: Vec<Vec<usize>> = vec![Vec::new(); edges.len()];
     let mut label_node: Vec<Option<usize>> = vec![None; edges.len()];
-    let mut shared: BTreeMap<(usize, usize, bool), usize> = BTreeMap::new();
-    let mut links: BTreeMap<(usize, usize), f64> = BTreeMap::new();
+    // The waypoints of the edges into a state, by layer: all of them share
+    // one, so that they merge into one trunk.
+    let mut trunks: BTreeMap<(Net, usize), usize> = BTreeMap::new();
+    let mut links: BTreeMap<(usize, usize), (f64, Net)> = BTreeMap::new();
     for (i, e) in edges.iter().enumerate() {
         if e.from == e.to || e.from >= n || e.to >= n {
             continue;
         }
+        let net = (e.to, reversed[i]);
         let (top, bottom) = if reversed[i] {
             (e.to, e.from)
         } else {
             (e.from, e.to)
         };
         let (rt, rb) = (nodes[top].layer, nodes[bottom].layer);
+        // The label goes next to the edge where it leaves its source,
+        // before it joins the others.
         let label_layer = if reversed[i] { rb - 1 } else { rt + 1 };
         let mut chain = vec![top];
         for layer in rt + 1..rb {
-            let mut waypoint = |label: Option<(f64, f64)>| {
-                let (right, height) =
-                    label.map_or((0.0, 0.0), |(w, h)| (w + LABEL_OFFSET + 2.0, h));
-                nodes.push(Node {
-                    layer,
-                    left: if label.is_some() { 2.0 } else { 0.0 },
-                    right,
-                    height,
-                    state: false,
-                });
-                nodes.len() - 1
-            };
             let id = match e.label {
-                // Loops back merge into one trunk; edges down to a state run
-                // apart and join just above it.
-                None if reversed[i] || layer + 1 == rb => *shared
-                    .entry((e.to, layer, reversed[i]))
-                    .or_insert_with(|| waypoint(None)),
-                None => waypoint(None),
-                Some(size) => {
-                    let id = waypoint((layer == label_layer).then_some(size));
-                    if layer == label_layer {
-                        label_node[i] = Some(id);
-                    }
+                Some(size) if layer == label_layer => {
+                    let id = waypoint(&mut nodes, layer, Some(size));
+                    label_node[i] = Some(id);
                     id
                 }
+                _ => match trunks.get(&(net, layer)) {
+                    Some(&id) => id,
+                    None => {
+                        let id = waypoint(&mut nodes, layer, None);
+                        trunks.insert((net, layer), id);
+                        id
+                    }
+                },
             };
             chain.push(id);
         }
@@ -150,50 +204,273 @@ pub(crate) fn layout(sizes: &[(f64, f64)], edges: &[Edge], initial: Option<usize
                 (false, false) => 8.0,
                 _ => 2.0,
             };
-            links.insert((pair[0], pair[1]), weight);
+            links.insert((pair[0], pair[1]), (weight, net));
         }
         chains[i] = chain;
+    }
+
+    // The segments between two layers that merge: those of the edges into
+    // the same state that go to the same node, and else those leaving the
+    // same side of a state. Merging only one way keeps every merged line
+    // telling where it goes.
+    let mut into: BTreeMap<(Net, usize), usize> = BTreeMap::new();
+    for (&(a, b), &(_, net)) in &links {
+        *into.entry((net, if net.1 { a } else { b })).or_default() += 1;
+    }
+    let mut out: BTreeMap<(usize, Side), usize> = BTreeMap::new();
+    for (&(a, b), &(_, net)) in &links {
+        let (d, u, side) = if net.1 {
+            (a, b, Side::Top)
+        } else {
+            (b, a, Side::Bottom)
+        };
+        if into[&(net, d)] == 1 && nodes[u].state {
+            *out.entry((u, side)).or_default() += 1;
+        }
+    }
+    let group: BTreeMap<(usize, usize), Group> = links
+        .iter()
+        .map(|(&(a, b), &(_, net))| {
+            let (d, u, side) = if net.1 {
+                (a, b, Side::Top)
+            } else {
+                (b, a, Side::Bottom)
+            };
+            let g = if into[&(net, d)] > 1 {
+                Group::Into(net, d)
+            } else if out.get(&(u, side)).is_some_and(|&k| k > 1) {
+                Group::Out(u, side)
+            } else {
+                Group::One(a, b)
+            };
+            ((a, b), g)
+        })
+        .collect();
+    // How link (a, b) meets state `v`, one of its ends.
+    let end = |v: usize, a: usize, b: usize| -> End {
+        let net = links[&(a, b)].1;
+        if net.0 == v {
+            End::Arrive
+        } else if matches!(group[&(a, b)], Group::Out(..)) {
+            End::Fan
+        } else {
+            End::Leave(if v == a { b } else { a })
+        }
+    };
+
+    // The ports of each side of each state: one for the edges arriving,
+    // one for those fanning out, one for each other edge leaving. States
+    // widen to fit them.
+    let mut ports: BTreeMap<(usize, Side), Vec<End>> = BTreeMap::new();
+    for &(a, b) in links.keys() {
+        if nodes[a].state {
+            ports
+                .entry((a, Side::Bottom))
+                .or_default()
+                .push(end(a, a, b));
+        }
+        if nodes[b].state {
+            ports.entry((b, Side::Top)).or_default().push(end(b, a, b));
+        }
+    }
+    let mut widths: Vec<f64> = sizes.iter().map(|s| s.0).collect();
+    for (&(v, _), ends) in &mut ports {
+        ends.sort_unstable();
+        ends.dedup();
+        let need = (ends.len() - 1) as f64 * PORT_GAP + 2.0 * CORNER;
+        if need > widths[v] {
+            let grow = (need - widths[v]) / 2.0;
+            widths[v] = need;
+            nodes[v].left += grow;
+            nodes[v].right += grow;
+        }
     }
 
     let count = nodes.len();
     let mut down: Vec<Vec<(usize, f64)>> = vec![Vec::new(); count];
     let mut up: Vec<Vec<(usize, f64)>> = vec![Vec::new(); count];
-    for (&(a, b), &w) in &links {
+    for (&(a, b), &(w, _)) in &links {
         down[a].push((b, w));
         up[b].push((a, w));
     }
-    let layers = order(&nodes, &down, &up, initial);
-    let x = place(&nodes, &layers, &down, &up);
+    let mut layers = order(&nodes, &down, &up, initial);
+    to_the_side(&mut layers, &trunks, edges, &reversed);
+    let mut x = place(&nodes, &layers, &down, &up);
+    straighten(&nodes, &layers, &mut x, &down, &up, &trunks, &widths);
+    for _ in 0..3 {
+        snap(&nodes, &layers, &mut x, &down, &up, &widths);
+        straighten(&nodes, &layers, &mut x, &down, &up, &trunks, &widths);
+    }
 
-    // Layer heights, then the y of each layer's middle line. Edges that go
-    // far sideways get more height, so that they do not run flat.
-    let mut ys = Vec::with_capacity(layers.len());
+    // Port positions: under or over the other end if there is room, else
+    // as close as the spacing allows.
+    let place_ports = |x: &[f64]| {
+        let mut port_x: BTreeMap<(usize, Side, End), f64> = BTreeMap::new();
+        for (&(v, side), ends) in &ports {
+            // The mean x of the other ends of the links through each port.
+            let mut sums: BTreeMap<End, (f64, f64)> = BTreeMap::new();
+            let list = if side == Side::Top { &up[v] } else { &down[v] };
+            for &(o, _) in list {
+                let (a, b) = if side == Side::Top { (o, v) } else { (v, o) };
+                let sum = sums.entry(end(v, a, b)).or_default();
+                sum.0 += x[o];
+                sum.1 += 1.0;
+            }
+            let others: Vec<f64> = ends
+                .iter()
+                .map(|e| sums.get(e).map_or(x[v], |&(s, k)| s / k))
+                .collect();
+            let mut sorted: Vec<usize> = (0..ends.len()).collect();
+            sorted.sort_by(|&a, &b| others[a].total_cmp(&others[b]).then(a.cmp(&b)));
+            let (lo, hi) = (
+                x[v] - widths[v] / 2.0 + CORNER,
+                x[v] + widths[v] / 2.0 - CORNER,
+            );
+            let desired: Vec<f64> = sorted.iter().map(|&k| clamp(others[k], lo, hi)).collect();
+            let mut at = spaced(
+                &desired,
+                &vec![1.0; desired.len()],
+                &vec![PORT_GAP; desired.len().saturating_sub(1)],
+            );
+            if let (Some(&first), Some(&last)) = (at.first(), at.last()) {
+                let shift = if first < lo {
+                    lo - first
+                } else if last > hi {
+                    (hi - last).max(lo - first)
+                } else {
+                    0.0
+                };
+                for p in &mut at {
+                    *p += shift;
+                }
+            }
+            // A port a hair off its other end lines up with it where the
+            // spacing allows: a tiny step reads as a glitch.
+            for i in 0..at.len() {
+                let want = others[sorted[i]];
+                let fits = want >= lo
+                    && want <= hi
+                    && (i == 0 || want - at[i - 1] >= PORT_GAP)
+                    && (i + 1 == at.len() || at[i + 1] - want >= PORT_GAP);
+                if (want - at[i]).abs() < 6.0 && fits {
+                    at[i] = want;
+                }
+            }
+            for (&k, p) in sorted.iter().zip(at) {
+                port_x.insert((v, side, ends[k]), p);
+            }
+        }
+        port_x
+    };
+    let mut port_x = place_ports(&x);
+    // Then each waypoint moves, if its layer leaves it room, to where more
+    // of its links run straight to the ports as placed.
+    for _ in 0..3 {
+        let mut moved = false;
+        for layer in &layers {
+            for (i, &w) in layer.iter().enumerate() {
+                if nodes[w].state {
+                    continue;
+                }
+                let lo = i
+                    .checked_sub(1)
+                    .map_or(f64::MIN, |j| x[layer[j]] + gap(&nodes, layer[j], w));
+                let hi = layer
+                    .get(i + 1)
+                    .map_or(f64::MAX, |&r| x[r] - gap(&nodes, w, r));
+                let ends: Vec<f64> = up[w]
+                    .iter()
+                    .map(|&(o, _)| (o, w))
+                    .chain(down[w].iter().map(|&(o, _)| (w, o)))
+                    .map(|(a, b)| {
+                        let o = if a == w { b } else { a };
+                        if nodes[o].state {
+                            let side = if o == a { Side::Bottom } else { Side::Top };
+                            port_x[&(o, side, end(o, a, b))]
+                        } else {
+                            x[o]
+                        }
+                    })
+                    .collect();
+                let straight = |p: f64| ends.iter().filter(|&&e| (e - p).abs() < 0.5).count();
+                let now = straight(x[w]);
+                if let Some(&best) = ends
+                    .iter()
+                    .filter(|&&p| p >= lo && p <= hi && straight(p) > now)
+                    .max_by_key(|&&p| straight(p))
+                {
+                    x[w] = best;
+                    moved = true;
+                }
+            }
+        }
+        if !moved {
+            break;
+        }
+        port_x = place_ports(&x);
+    }
+    let x = x;
+    let end_x = |v: usize, a: usize, b: usize| -> f64 {
+        if nodes[v].state {
+            let side = if v == a { Side::Bottom } else { Side::Top };
+            port_x[&(v, side, end(v, a, b))]
+        } else {
+            x[v]
+        }
+    };
+
+    // The channels between layers: the segments of each group share one
+    // horizontal track, and the tracks are stacked to keep crossings few.
+    let depth = layers.len();
+    let mut hypers: Vec<Vec<Hyper>> = vec![Vec::new(); depth.saturating_sub(1)];
+    let mut hyper_of: BTreeMap<(usize, usize), usize> = BTreeMap::new();
+    let mut groups: BTreeMap<Group, usize> = BTreeMap::new();
+    for &(a, b) in links.keys() {
+        let channel = nodes[a].layer;
+        let list = &mut hypers[channel];
+        let h = *groups.entry(group[&(a, b)]).or_insert_with(|| {
+            list.push(Hyper::default());
+            list.len() - 1
+        });
+        let (top, bottom) = (end_x(a, a, b), end_x(b, a, b));
+        let hyper = &mut list[h];
+        hyper.tops.push(top);
+        hyper.bottoms.push(bottom);
+        hyper_of.insert((a, b), h);
+    }
+    let mut track_y: Vec<Vec<Option<f64>>> = Vec::with_capacity(hypers.len());
+    let mut channel_height = Vec::with_capacity(hypers.len());
+    for list in &mut hypers {
+        for h in list.iter_mut() {
+            let all = h.tops.iter().chain(&h.bottoms);
+            h.lo = all.clone().fold(f64::MAX, |a, &b| a.min(b));
+            h.hi = all.fold(f64::MIN, |a, &b| a.max(b));
+        }
+        let (tracks, count) = tracks(list);
+        let height = ((count + 1) as f64 * TRACK_GAP).max(CHANNEL_MIN);
+        let offset = (height - (count + 1) as f64 * TRACK_GAP) / 2.0;
+        track_y.push(
+            tracks
+                .iter()
+                .map(|t| t.map(|t| offset + (t + 1) as f64 * TRACK_GAP))
+                .collect(),
+        );
+        channel_height.push(height);
+    }
+
+    // Layer heights, then the y of each layer's middle line.
+    let mut ys = Vec::with_capacity(depth);
+    let mut channel_top = Vec::with_capacity(depth);
     let mut top = 0.0;
-    for layer in &layers {
+    for (l, layer) in layers.iter().enumerate() {
         let h = layer.iter().map(|&v| nodes[v].height).fold(0.0, f64::max);
         ys.push(top + h / 2.0);
-        let x = &x;
-        let sideways = layer
-            .iter()
-            .flat_map(|&v| down[v].iter().map(move |&(w, _)| (x[w] - x[v]).abs()))
-            .fold(0.0, f64::max);
-        top += h + (sideways * SLOPE).clamp(LAYER_GAP, MAX_LAYER_GAP);
+        top += h;
+        channel_top.push(top);
+        top += channel_height.get(l).copied().unwrap_or(0.0);
     }
     let y = |v: usize| ys[nodes[v].layer];
 
-    // Where each edge leaves the bottom or enters the top of a state:
-    // spread along its border in the order of the other ends.
-    let port = |v: usize, other: usize, list: &[(usize, f64)]| -> f64 {
-        let mut ends: Vec<usize> = list.iter().map(|&(o, _)| o).collect();
-        ends.sort_by(|&a, &b| x[a].total_cmp(&x[b]).then(a.cmp(&b)));
-        let k = ends.len();
-        let i = ends.iter().position(|&o| o == other).unwrap_or(0);
-        if k <= 1 {
-            return x[v];
-        }
-        let span = (nodes[v].left.min(sizes[v].0 / 2.0)) * 1.4;
-        x[v] - span / 2.0 + span * (i as f64 + 0.5) / k as f64
-    };
     let routes = edges
         .iter()
         .enumerate()
@@ -202,42 +479,150 @@ pub(crate) fn layout(sizes: &[(f64, f64)], edges: &[Edge], initial: Option<usize
             if chain.len() < 2 {
                 let label = e.label.filter(|_| e.from < n).map(|_| {
                     let (cx, cy) = (x[e.from], y(e.from));
-                    (cx + sizes[e.from].0 / 2.0 + LOOP_ROOM, cy)
+                    (cx + widths[e.from] / 2.0 + LOOP_ROOM, cy)
                 });
                 return Route {
                     points: Vec::new(),
                     label,
                 };
             }
-            let (first, last) = (chain[0], chain[chain.len() - 1]);
-            let mut points = Vec::with_capacity(chain.len());
-            points.push((
-                port(first, chain[1], &down[first]),
-                y(first) + nodes[first].height / 2.0,
-            ));
-            for &w in &chain[1..chain.len() - 1] {
-                // Straight down past a label.
-                let h = nodes[w].height / 2.0;
-                points.push((x[w], y(w) - h));
-                if h > 0.0 {
-                    points.push((x[w], y(w) + h));
+            let mut points: Vec<(f64, f64)> = Vec::with_capacity(4 * chain.len());
+            for pair in chain.windows(2) {
+                let (a, b) = (pair[0], pair[1]);
+                let (xt, yt) = (end_x(a, a, b), y(a) + nodes[a].height / 2.0);
+                let (xb, yb) = (end_x(b, a, b), y(b) - nodes[b].height / 2.0);
+                points.push((xt, yt));
+                let channel = nodes[a].layer;
+                if let Some(t) = track_y[channel][hyper_of[&(a, b)]] {
+                    let ty = channel_top[channel] + t;
+                    points.push((xt, ty));
+                    points.push((xb, ty));
                 }
+                points.push((xb, yb));
             }
-            points.push((
-                port(last, chain[chain.len() - 2], &up[last]),
-                y(last) - nodes[last].height / 2.0,
-            ));
             if reversed[i] {
                 points.reverse();
             }
-            let label = label_node[i].map(|w| (x[w] + LABEL_OFFSET, y(w)));
-            Route { points, label }
+            let label = label_node[i].map(|w| (x[w] - nodes[w].left + 1.0, y(w)));
+            Route {
+                points: simplify(points),
+                label,
+            }
         })
         .collect();
     Layout {
         states: (0..n).map(|v| (x[v], y(v))).collect(),
+        widths,
         routes,
     }
+}
+
+fn waypoint(nodes: &mut Vec<Node>, layer: usize, label: Option<(f64, f64)>) -> usize {
+    // A label sits on its edge, centred.
+    let (half, height) = label.map_or((0.0, 0.0), |(w, h)| (w / 2.0 + 1.0, h));
+    nodes.push(Node {
+        layer,
+        left: half,
+        right: half,
+        height,
+        state: false,
+    });
+    nodes.len() - 1
+}
+
+/// Drops repeated points and points in the middle of a straight run.
+fn simplify(points: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
+    let mut out: Vec<(f64, f64)> = Vec::with_capacity(points.len());
+    for p in points {
+        if let Some(&last) = out.last()
+            && (last.0 - p.0).abs() < 0.05
+            && (last.1 - p.1).abs() < 0.05
+        {
+            continue;
+        }
+        if out.len() >= 2 {
+            let (a, b) = (out[out.len() - 2], out[out.len() - 1]);
+            let vertical = (a.0 - b.0).abs() < 0.05 && (b.0 - p.0).abs() < 0.05;
+            let horizontal = (a.1 - b.1).abs() < 0.05 && (b.1 - p.1).abs() < 0.05;
+            if vertical || horizontal {
+                out.pop();
+            }
+        }
+        out.push(p);
+    }
+    out
+}
+
+/// The track of each segment of a channel (none for a straight one), and
+/// the number of tracks. Segments whose spans overlap get different
+/// tracks, the one above the other that way that crosses less.
+fn tracks(list: &[Hyper]) -> (Vec<Option<usize>>, usize) {
+    let m = list.len();
+    let bent: Vec<bool> = list.iter().map(|h| h.hi - h.lo > 0.5).collect();
+    let overlap = |a: &Hyper, b: &Hyper| a.lo < b.hi + TRACK_SEP && b.lo < a.hi + TRACK_SEP;
+    let within = |x: f64, h: &Hyper| x > h.lo - 0.5 && x < h.hi + 0.5;
+    // The crossings when `a` runs above `b`; a vertical of `a` running
+    // down along one of `b` going up counts as many.
+    let cost = |a: &Hyper, b: &Hyper| {
+        let mut c = 0;
+        for &x in &a.bottoms {
+            c += usize::from(within(x, b));
+            c += 100 * b.tops.iter().filter(|&&t| (t - x).abs() < 0.5).count();
+        }
+        c + b.tops.iter().filter(|&&x| within(x, a)).count()
+    };
+    let mut above: Vec<Vec<usize>> = vec![Vec::new(); m];
+    let mut conflicts: Vec<Vec<usize>> = vec![Vec::new(); m];
+    for a in 0..m {
+        for b in a + 1..m {
+            if !bent[a] || !bent[b] || !overlap(&list[a], &list[b]) {
+                continue;
+            }
+            conflicts[a].push(b);
+            conflicts[b].push(a);
+            let (ab, ba) = (cost(&list[a], &list[b]), cost(&list[b], &list[a]));
+            if ab < ba {
+                above[b].push(a);
+            } else if ba < ab {
+                above[a].push(b);
+            }
+        }
+    }
+    // Topological order of "above", dropping constraints to break cycles.
+    let mut done = vec![false; m];
+    let mut order = Vec::with_capacity(m);
+    let mut remaining: Vec<usize> = (0..m).filter(|&v| bent[v]).collect();
+    remaining.sort_by(|&a, &b| list[a].lo.total_cmp(&list[b].lo));
+    while !remaining.is_empty() {
+        let pick = remaining
+            .iter()
+            .position(|&v| above[v].iter().all(|&u| done[u]))
+            .unwrap_or_else(|| {
+                // A cycle: take the one with the fewest pending constraints.
+                (0..remaining.len())
+                    .min_by_key(|&k| above[remaining[k]].iter().filter(|&&u| !done[u]).count())
+                    .unwrap_or(0)
+            });
+        let v = remaining.remove(pick);
+        done[v] = true;
+        order.push(v);
+    }
+    let mut track: Vec<Option<usize>> = vec![None; m];
+    let mut count = 0;
+    for &v in &order {
+        let mut t = above[v]
+            .iter()
+            .filter_map(|&u| track[u])
+            .map(|t| t + 1)
+            .max()
+            .unwrap_or(0);
+        while conflicts[v].iter().any(|&w| track[w] == Some(t)) {
+            t += 1;
+        }
+        track[v] = Some(t);
+        count = count.max(t + 1);
+    }
+    (track, count)
 }
 
 /// The edges to turn around so that the rest has no cycle: edges back to a
@@ -412,6 +797,54 @@ fn order(
     best
 }
 
+/// Moves the long trunks that many edges join to the side of the diagram
+/// they lean to, where they run straight instead of weaving between the
+/// branches.
+fn to_the_side(
+    layers: &mut [Vec<usize>],
+    trunks: &BTreeMap<(Net, usize), usize>,
+    edges: &[Edge],
+    reversed: &[bool],
+) {
+    let mut joining: BTreeMap<Net, usize> = BTreeMap::new();
+    for (i, e) in edges.iter().enumerate() {
+        if e.from != e.to {
+            *joining.entry((e.to, reversed[i])).or_default() += 1;
+        }
+    }
+    let mut runs: BTreeMap<Net, Vec<(usize, usize)>> = BTreeMap::new();
+    for (&(net, layer), &v) in trunks {
+        runs.entry(net).or_default().push((layer, v));
+    }
+    let mut runs: Vec<Vec<(usize, usize)>> = runs
+        .into_iter()
+        .filter(|(net, run)| run.len() >= MIN_SIDE_TRUNK && joining[net] >= MIN_SIDE_EDGES)
+        .map(|(_, run)| run)
+        .collect();
+    // Shorter trunks go inside the longer ones.
+    runs.sort_by_key(|run| run.len());
+    for run in runs {
+        let lean = run
+            .iter()
+            .map(|&(l, v)| {
+                let layer = &layers[l];
+                let i = layer.iter().position(|&w| w == v).unwrap_or(0);
+                (i as f64 + 0.5) / layer.len() as f64
+            })
+            .sum::<f64>()
+            / run.len() as f64;
+        for (l, v) in run {
+            let layer = &mut layers[l];
+            layer.retain(|&w| w != v);
+            if lean < 0.5 {
+                layer.insert(0, v);
+            } else {
+                layer.push(v);
+            }
+        }
+    }
+}
+
 /// Swaps neighbours of a layer while that removes crossings.
 fn transpose(
     layers: &mut [Vec<usize>],
@@ -492,6 +925,165 @@ fn inversions(v: &mut [usize]) -> usize {
     count
 }
 
+/// `v` within `lo..=hi`, or `hi` when they are out of order (rounding).
+fn clamp(v: f64, lo: f64, hi: f64) -> f64 {
+    v.max(lo).min(hi)
+}
+
+/// The least distance between the centres of `a` and `b`, `a` left of
+/// `b` in the same layer.
+fn gap(nodes: &[Node], a: usize, b: usize) -> f64 {
+    let spacing = if nodes[a].state || nodes[b].state {
+        STATE_GAP
+    } else {
+        WAYPOINT_GAP
+    };
+    nodes[a].right + spacing + nodes[b].left
+}
+
+/// Lines up the waypoints of each trunk, and the waypoint of each label
+/// with its source, wherever the spacing of their layers allows, so that
+/// edges run straight instead of stepping sideways at every layer.
+fn straighten(
+    nodes: &[Node],
+    layers: &[Vec<usize>],
+    x: &mut [f64],
+    down: &[Vec<(usize, f64)>],
+    up: &[Vec<(usize, f64)>],
+    trunks: &BTreeMap<(Net, usize), usize>,
+    widths: &[f64],
+) {
+    let mut runs: BTreeMap<Net, Vec<usize>> = BTreeMap::new();
+    for (&(net, _), &v) in trunks {
+        runs.entry(net).or_default().push(v);
+    }
+    let mut runs: Vec<Vec<usize>> = runs.into_values().collect();
+    let in_trunk: std::collections::BTreeSet<usize> = trunks.values().copied().collect();
+    runs.extend(
+        (0..nodes.len())
+            .filter(|&v| !nodes[v].state && !in_trunk.contains(&v))
+            .map(|v| vec![v]),
+    );
+    runs.sort_by_key(|run| std::cmp::Reverse(run.len()));
+    let mut neighbours: Vec<(Option<usize>, Option<usize>)> = vec![(None, None); nodes.len()];
+    for layer in layers {
+        for (i, &v) in layer.iter().enumerate() {
+            neighbours[v] = (
+                i.checked_sub(1).map(|j| layer[j]),
+                layer.get(i + 1).copied(),
+            );
+        }
+    }
+    // The single state an end of a run is linked to.
+    let end_state = |list: &[(usize, f64)]| match list {
+        [(s, _)] if nodes[*s].state => Some(*s),
+        _ => None,
+    };
+    for _ in 0..4 {
+        for run in &runs {
+            let feasible = |v: usize, x: &[f64]| {
+                let (left, right) = neighbours[v];
+                (
+                    left.map_or(f64::MIN, |u| x[u] + gap(nodes, u, v)),
+                    right.map_or(f64::MAX, |w| x[w] - gap(nodes, v, w)),
+                )
+            };
+            let mut start = 0;
+            let mut previous = None;
+            while start < run.len() {
+                let (mut lo, mut hi) = feasible(run[start], x);
+                let mut end = start + 1;
+                while end < run.len() {
+                    let (l, h) = feasible(run[end], x);
+                    if lo.max(l) > hi.min(h) {
+                        break;
+                    }
+                    (lo, hi) = (lo.max(l), hi.min(h));
+                    end += 1;
+                }
+                let part = &run[start..end];
+                // Where the run cannot go straight, it steps as little as
+                // it can.
+                let mean = part.iter().map(|&v| x[v]).sum::<f64>() / part.len() as f64;
+                let mut target = clamp(previous.unwrap_or(mean), lo, hi);
+                // Straight into the state at the end, then out of the one
+                // at the start.
+                let ends = [
+                    (end == run.len()).then(|| end_state(&down[run[end - 1]])),
+                    (start == 0).then(|| end_state(&up[run[0]])),
+                ];
+                for s in ends.into_iter().flatten().flatten() {
+                    let half = widths[s] / 2.0 - CORNER;
+                    let (l, h) = (lo.max(x[s] - half), hi.min(x[s] + half));
+                    if l <= h {
+                        target = clamp(target, l, h);
+                        (lo, hi) = (l, h);
+                    }
+                }
+                for &v in part {
+                    x[v] = target;
+                }
+                previous = Some(target);
+                start = end;
+            }
+        }
+    }
+}
+
+/// Moves each node, within the room its layer leaves it, to where most of
+/// its links run straight down: to the x of a waypoint, or anywhere a port
+/// of a state can sit.
+fn snap(
+    nodes: &[Node],
+    layers: &[Vec<usize>],
+    x: &mut [f64],
+    down: &[Vec<(usize, f64)>],
+    up: &[Vec<(usize, f64)>],
+    widths: &[f64],
+) {
+    let half = |v: usize| {
+        if nodes[v].state {
+            (widths[v] / 2.0 - CORNER).max(0.0)
+        } else {
+            0.0
+        }
+    };
+    for _ in 0..3 {
+        for layer in layers {
+            for (i, &v) in layer.iter().enumerate() {
+                let lo = i
+                    .checked_sub(1)
+                    .map_or(f64::MIN, |j| x[layer[j]] + gap(nodes, layer[j], v));
+                let hi = layer
+                    .get(i + 1)
+                    .map_or(f64::MAX, |&w| x[w] - gap(nodes, v, w));
+                if lo > hi {
+                    continue;
+                }
+                let links = || down[v].iter().chain(&up[v]);
+                // The score of `p`: the weight of the links straight there.
+                let score = |p: f64, x: &[f64]| -> f64 {
+                    links()
+                        .filter(|&&(n, _)| (p - x[n]).abs() <= half(v) + half(n) + 0.01)
+                        .map(|&(_, w)| w)
+                        .sum()
+                };
+                let current = x[v];
+                let mut best = (score(current, x), 0.0, current);
+                for &(n, _) in links() {
+                    let reach = half(v) + half(n);
+                    let p = clamp(clamp(current, x[n] - reach, x[n] + reach), lo, hi);
+                    let candidate = (score(p, x), -(p - current).abs(), p);
+                    if candidate.0 > best.0 || (candidate.0 == best.0 && candidate.1 > best.1) {
+                        best = candidate;
+                    }
+                }
+                x[v] = best.2;
+            }
+        }
+    }
+}
+
 /// The x of every node.
 fn place(
     nodes: &[Node],
@@ -499,14 +1091,7 @@ fn place(
     down: &[Vec<(usize, f64)>],
     up: &[Vec<(usize, f64)>],
 ) -> Vec<f64> {
-    let gap = |a: usize, b: usize| {
-        let spacing = if nodes[a].state || nodes[b].state {
-            STATE_GAP
-        } else {
-            WAYPOINT_GAP
-        };
-        nodes[a].right + spacing + nodes[b].left
-    };
+    let gap = |a: usize, b: usize| gap(nodes, a, b);
     let mut x = vec![0.0; nodes.len()];
     for layer in layers {
         let mut at = 0.0;
@@ -682,5 +1267,48 @@ mod tests {
         }
         assert_eq!(l.routes.len(), edges.len());
         assert!(l.routes.iter().all(|r| r.points.len() >= 2));
+    }
+
+    #[test]
+    fn edges_into_a_state_merge_and_run_orthogonally() {
+        // IDLE -> A -> B -> C, and every state back to IDLE and on to ERR.
+        let sizes = vec![(60.0, 30.0); 5];
+        let mut edges = vec![edge(0, 1), edge(1, 2), edge(2, 3)];
+        for v in 1..4 {
+            edges.push(edge(v, 0));
+            edges.push(Edge {
+                from: v,
+                to: 4,
+                label: Some((30.0, 14.0)),
+            });
+        }
+        let l = layout(&sizes, &edges, Some(0));
+        for (e, r) in edges.iter().zip(&l.routes) {
+            for p in r.points.windows(2) {
+                let (a, b) = (p[0], p[1]);
+                assert!(
+                    (a.0 - b.0).abs() < 1e-6 || (a.1 - b.1).abs() < 1e-6,
+                    "{e:?} has a slanted segment"
+                );
+            }
+        }
+        // One arrowhead per state and side.
+        let ends = |to: usize| {
+            let mut ends: Vec<(i64, i64)> = edges
+                .iter()
+                .zip(&l.routes)
+                .filter(|(e, _)| e.to == to && e.from != to)
+                .map(|(_, r)| {
+                    let p = r.points.last().unwrap();
+                    (p.0.round() as i64, p.1.round() as i64)
+                })
+                .collect();
+            ends.dedup();
+            ends
+        };
+        assert_eq!(ends(0).len(), 1);
+        assert_eq!(ends(4).len(), 1);
+        assert!(l.routes.iter().all(|r| r.points.len() >= 2));
+        assert_eq!(l.routes.iter().filter(|r| r.label.is_some()).count(), 3);
     }
 }
