@@ -79,7 +79,8 @@ Uninstall the "VHDL" and "Verilog" extensions of the Zed registry first: they de
 languages and grammar names, and with both installed Zed mixes their grammars and queries, so
 VHDL files open as plain text. The vfl extension replaces them.
 
-It uses `vfl` from the `PATH`, or downloads the latest release's binary when there is none.
+It uses `vfl` from the `PATH`, or downloads the binary of the release of its own version
+(checked against the release's `SHA256SUMS`) when there is none.
 To use another binary, set it in Zed's `settings.json`:
 
 ```json

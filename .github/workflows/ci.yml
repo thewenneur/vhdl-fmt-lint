@@ -51,8 +51,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+          targets: i686-pc-windows-msvc, aarch64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy -p vfl-npp --all-targets
+      # The 32-bit and ARM64 plugins of the release.
+      - run: cargo check -p vfl-npp --target i686-pc-windows-msvc --target aarch64-pc-windows-msvc
       - run: cargo build --release -p vfl-npp
       - uses: actions/upload-artifact@v4
         with:
@@ -126,13 +129,18 @@ jobs:
         working-directory: editors/zed
       - run: cargo clippy --target wasm32-wasip2
         working-directory: editors/zed
+      # The download checks (checksum, archive extraction) run natively.
+      - run: cargo test
+        working-directory: editors/zed
       - run: editors/zed/check.sh
 
-  # The Neovim, Emacs, Vim and Helix setups in editors/, in those editors.
+  # The Neovim, Emacs, Vim and Helix setups in editors/, in those editors,
+  # and the syntax of every JSON and TOML file under editors/.
   editors:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: python3 scripts/check-editor-configs.py
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build -p vfl-cli
