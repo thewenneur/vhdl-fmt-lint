@@ -221,3 +221,27 @@ fn verilog_edits_reanalyze_only_what_sees_the_module() {
         "{messages}"
     );
 }
+
+#[test]
+fn library_named_by_the_entity_only() {
+    // The architecture names units of `ieee`, which only its entity's
+    // context makes visible. It depends on them all the same: analyzed
+    // from scratch, it must not be analyzed before them, as it would then
+    // see none of them while a reused `ieee` is there already.
+    const TOP: &str = "-- file: top.vhd
+library ieee;
+use ieee.std_logic_1164.all;
+entity top is
+end entity;
+architecture rtl of top is
+  use ieee.std_logic_1164.all;
+  signal s : std_logic;
+  signal v : ieee.std_logic_1164.std_logic_vector(1 downto 0);
+begin
+end architecture;
+";
+    let broken = |t: &str| t.replacen("std_logic_1164.all", "std_logicrst4.all", 1);
+    check(TOP, "top.vhd", broken);
+    let full = Analysis::new(inputs(&split(&broken(TOP)))).dump();
+    assert!(!full.contains("`std_logic` is not declared"), "{full}");
+}
