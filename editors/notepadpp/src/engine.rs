@@ -14,12 +14,12 @@ use std::time::SystemTime;
 use vfl_config::{Config, Level, Preset, Style};
 use vfl_fmt::FormatError;
 use vfl_lsp::World;
+use vfl_lsp::design_tree::{Hierarchy, HierarchyParams, Node, NodeKind};
 use vfl_lsp::editor::{
     self, Completion, Completions, FileEdits, HoverInfo, Location, ProjectProblem, ProjectSymbol,
     QuickFix, SignatureHelp, Symbol, TokenKind, Use, token_modifier,
 };
 use vfl_lsp::generate::{self, EntityRef, Generated, Kind};
-use vfl_lsp::hierarchy::{Hierarchy, HierarchyParams, Node, NodeKind};
 use vfl_lsp::settings::ProjectConfig;
 use vfl_project::{Encoding, find_root};
 

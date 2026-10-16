@@ -362,12 +362,12 @@ pub fn problems(world: &mut World) -> Vec<ProjectProblem> {
 /// answers it, with places as [`Location`]s.
 pub fn hierarchy(
     world: &mut World,
-    params: &crate::hierarchy::HierarchyParams,
-) -> crate::hierarchy::Hierarchy<Location> {
-    let tree = crate::hierarchy::hierarchy(world, params);
+    params: &crate::design_tree::HierarchyParams,
+) -> crate::design_tree::Hierarchy<Location> {
+    let tree = crate::design_tree::hierarchy(world, params);
     let world = &*world;
     let mut place = |(file, range)| location(world, file, range);
-    crate::hierarchy::Hierarchy {
+    crate::design_tree::Hierarchy {
         roots: tree.roots.into_iter().map(|n| n.map(&mut place)).collect(),
         entities: tree.entities,
         message: tree.message,
