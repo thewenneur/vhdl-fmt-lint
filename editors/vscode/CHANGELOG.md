@@ -6,6 +6,8 @@ the [vfl changelog](https://github.com/thewenneur/vhdl-fmt-lint/blob/main/CHANGE
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-16
+
 ### Added
 
 - **Snippets** for VHDL: `entity` (with its architecture), `architecture`, clocked
