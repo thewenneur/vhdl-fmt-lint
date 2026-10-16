@@ -354,3 +354,18 @@ fn a_directive_closing_an_empty_branch_stays_on_its_line() {
         "module a;\n`ifdef O`else\n  initial;\n`endif\nendmodule\n"
     );
 }
+
+/// Found by the `format_verilog` fuzz target: a comment in a macro body
+/// ending in `\` and blanks continued the macro once a line break followed
+/// it, and one ending in `\` and a form feed did once the form feed was
+/// trimmed.
+#[test]
+fn a_comment_ending_in_a_backslash_and_blanks_in_a_define() {
+    let options = Options::default();
+    for text in ["`define F//\\ ", "`define F//\\\t"] {
+        let result = format_verilog(text, &legacy(), &options);
+        assert!(matches!(result, Err(FormatError::Syntax(_))), "{result:?}");
+    }
+    let text = "`define A//\\\x0c\nwire b;\n";
+    assert_eq!(fmt(text), text);
+}

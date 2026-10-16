@@ -674,15 +674,20 @@ impl<'a> Lexer<'a> {
                     };
                 }
                 // A line comment ends the body, unless it ends with a line
-                // continuation as most tools accept.
+                // continuation as most tools accept. White space after the
+                // `\` does not count, whatever it is: the formatter drops it.
                 b'/' if bytes.get(pos + 1) == Some(&b'/') => {
                     let end = self.text[pos..]
                         .find(['\n', '\r'])
                         .map_or(bytes.len(), |e| pos + e);
-                    if self.text[pos..end]
-                        .trim_end_matches([' ', '\t'])
-                        .ends_with('\\')
-                    {
+                    let comment = &self.text[pos..end];
+                    if comment.trim_end().ends_with('\\') {
+                        // At the end of the file, the line break the
+                        // formatter ends it with would be continued. Below
+                        // catches a `\` right at the end.
+                        if end == bytes.len() && !comment.ends_with('\\') {
+                            self.error_at("line continuation at the end of the file", pos, end);
+                        }
                         pos = end;
                         if bytes.get(pos) == Some(&b'\r') {
                             pos += 1;
@@ -1035,6 +1040,25 @@ mod tests {
         let text = "`define A x \\  \nwire b;\n";
         let toks = kinds(text, Standard::default());
         assert_eq!(toks[0], (DIRECTIVE, "`define A x \\  "), "{toks:?}");
+    }
+
+    /// Found by fuzzing: a comment in a macro body ending in `\` and blanks
+    /// at the end of the file, or in `\` and a form feed, was continued
+    /// once formatted.
+    #[test]
+    fn backslash_and_blanks_ending_a_comment_in_a_define() {
+        for text in ["`define F//\\ ", "`define F // x \\\t"] {
+            let lexed = lex(text, &Options::default());
+            assert_eq!(lexed.errors.len(), 1, "{text:?}: {:?}", lexed.errors);
+        }
+        let lexed = lex("`define F//\\", &Options::default());
+        assert_eq!(lexed.errors.len(), 1, "{:?}", lexed.errors);
+        let toks = kinds("`define A//\\\x0c\nwire b;\n", Standard::default());
+        assert_eq!(
+            toks[0],
+            (DIRECTIVE, "`define A//\\\x0c\nwire b;"),
+            "{toks:?}"
+        );
     }
 
     /// Found by fuzzing: protected text with no end ran to the end of the
