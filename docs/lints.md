@@ -11,6 +11,7 @@ table of `vfl.toml`; see [configuration.md](configuration.md#lint).
 - [`sema/*`](#sema): semantic checks across the whole project
 - [`verilog/*`](#verilog): checks of Verilog and SystemVerilog only
 - [`style/*`](#style): checks on the text and syntax of one file
+- [`vendor/*`](#vendor): checks of FPGA vendor files (Quartus `.qsf`/`.qip`, `.sdc`, Vivado `.xdc`, `.tcl`)
 - [`naming/*`](#naming): naming conventions
 - [Verilog and SystemVerilog](#verilog-and-systemverilog): which rules apply to them, and how
 
@@ -128,6 +129,15 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`style/port-order`](#styleport-order) | off | info | |
 | [`style/process-all`](#styleprocess-all) | off | info | unsafe |
 | [`style/shared-variable`](#styleshared-variable) | off | warn | |
+| [`vendor/syntax`](#vendorsyntax) | error | error | |
+| [`vendor/unknown-command`](#vendorunknown-command) | warn | warn | |
+| [`vendor/unknown-option`](#vendorunknown-option) | warn | error | |
+| [`vendor/misspelled-name`](#vendormisspelled-name) | warn | error | |
+| [`vendor/missing-argument`](#vendormissing-argument) | error | error | |
+| [`vendor/missing-file`](#vendormissing-file) | error | error | |
+| [`vendor/duplicate-assignment`](#vendorduplicate-assignment) | warn | warn | |
+| [`vendor/pin-conflict`](#vendorpin-conflict) | error | error | |
+| [`vendor/unknown-port`](#vendorunknown-port) | info | warn | |
 | [`naming/<kind>`](#naming) | off | off | |
 
 ## `syntax`
@@ -1149,6 +1159,106 @@ with the `protected` option.
 | Option | Type | Default |
 |--------|------|---------|
 | `protected` | boolean | `false` |
+
+## `vendor`
+
+These rules check the files FPGA tools read besides the HDL: Quartus settings (`.qsf`) and
+IP file lists (`.qip`), timing constraints (`.sdc`, as Quartus, Vivado and others read
+them), Vivado constraints (`.xdc`) and Tcl build scripts (`.tcl`). `vfl lint` checks the
+vendor files under the paths it is given, and the language server those open in the editor.
+Each file is checked on its own, from its text: nothing is run, and what a command builds at
+run time (a path from an unknown variable, a `[glob]`) is not checked.
+
+Suppressions are written in Tcl comments: `# vfl-ignore vendor/pin-conflict` on a line of
+its own or after `;` at the end of a command (`set_location_assignment PIN_A1 -to a ;#
+vfl-ignore`).
+
+### `vendor/syntax`
+
+A brace, quote or bracket is not closed, or characters follow a closing brace or quote
+(`{a}b`). Tcl reads the rest of the file as part of the open word, so everything after it is
+lost to the tool.
+
+### `vendor/unknown-command`
+
+A command is not known, and is one or two letters away from one that is: in a `.qsf` or a
+`.qip`, the Quartus settings commands and Tcl's own; in a `.sdc` or a `.xdc`, the SDC
+commands with their Quartus and Vivado extensions. Commands the file defines with `proc` are
+known.
+
+```tcl
+set_global_assignmnt -name FAMILY "Cyclone V"   # did you mean `set_global_assignment`?
+create_clok -period 10 [get_ports clk]           # did you mean `create_clock`?
+```
+
+Tcl scripts (`.tcl`) may call any command their tool defines, so they are checked only with
+the `strict` option, which also reports the unknown commands that are not near misses.
+
+| Option | Type | Default |
+|--------|------|---------|
+| `strict` | boolean | `false` |
+
+### `vendor/unknown-option`
+
+A command is passed an option it does not take, such as `-nmae` for `-name`. Checked for the
+Quartus assignment commands and the main SDC commands (`create_clock`,
+`create_generated_clock`, `set_false_path`, `set_multicycle_path`, `set_max_delay`,
+`set_min_delay`, `set_input_delay`, `set_output_delay`, `set_clock_groups`,
+`set_clock_uncertainty`); the tool would stop on it.
+
+### `vendor/misspelled-name`
+
+A Quartus assignment name (`-name`) or a Vivado property name (`set_property`) is not known,
+and is one or two letters away from one that is. Names that are not near a known one are
+left alone, since every tool version adds some.
+
+```tcl
+set_global_assignment -name VHLD_INPUT_VERSION VHDL_2008   # did you mean `VHDL_INPUT_VERSION`?
+set_property IOSTANDRD LVCMOS33 [get_ports led]           # did you mean `IOSTANDARD`?
+```
+
+### `vendor/missing-argument`
+
+A command lacks what it needs: `-name` or a value of an assignment, the location or `-to` of
+`set_location_assignment`, the value of an option at the end of the line, `-period` of
+`create_clock`, a delay or ports of `set_input_delay`, a `-group` of `set_clock_groups`, a
+property, value and objects of `set_property`. `set_false_path` without `-from`, `-to` or
+`-through` is reported too: it cuts every path of the design.
+
+### `vendor/missing-file`
+
+A file a vendor file names does not exist: a source, IP, constraints or script file of a
+Quartus assignment (`VHDL_FILE`, `VERILOG_FILE`, `QIP_FILE`, `SDC_FILE`, `IP_FILE`, ...), a
+`source`d script, or a file a Vivado script reads (`read_vhdl`, `read_verilog`, `read_xdc`,
+`add_files`, ...). Variables the file sets, `$::quartus(qip_path)`, `[info script]` and the
+`file` commands are followed. A relative path is looked for next to the file and from the
+project root, and for a `.qip`, `.sdc` or `.tcl` in the directories above it too. Since
+build flows often run the tool in a directory below the file, `../x` is also looked for as
+`x`.
+
+### `vendor/duplicate-assignment`
+
+The same assignment is made twice at the top level of a file: a Quartus global or instance
+assignment with the same name, target and section, a pin location of the same port, a Vivado
+property of the same objects, or a clock of the same name (without `-add`). The second
+usually overrides the first by mistake. Assignments that take several values (source files,
+`SEARCH_PATH`, `VERILOG_MACRO`, ...) are reported only when the value repeats too.
+Assignments inside `if` or `proc` bodies are not compared.
+
+### `vendor/pin-conflict`
+
+One pin is assigned to two ports: `set_location_assignment PIN_A1` in a `.qsf`, or
+`PACKAGE_PIN` in a `.xdc`. The fitter rejects it.
+
+### `vendor/unknown-port`
+
+A pin assignment or a `[get_ports ...]` names a port that the design does not have, often
+after a port was renamed. In a `.qsf`, the ports are those of `TOP_LEVEL_ENTITY`; elsewhere,
+those of any entity or module of the project. Bits (`data[3]`) count as their port, and
+patterns (`data[*]`, `-regexp`, `-filter`) are not checked. The rule needs the project's
+analysis: the language server and `vfl lint` have it. It is a note in the `recommended`
+preset because board files often place every pin of the board whatever the design uses
+(the tool ignores those assignments with a warning).
 
 ## `naming`
 

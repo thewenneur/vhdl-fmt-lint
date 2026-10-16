@@ -5,7 +5,10 @@ brackets and indentation from Tree-sitter grammars, and everything else from the
 language server (`vfl lsp`): diagnostics as you type, quick fixes, formatting (on save,
 of a selection, and on type), hover with types, signature help, completion, go to
 definition, implementation and type definition, references, rename, inlay hints and
-semantic highlighting.
+semantic highlighting. Quartus settings (`.qsf`, `.qip`) and SDC / XDC constraints
+(`.sdc`, `.xdc`) are highlighted with the Tcl grammar and linted with the
+[`vendor/*` rules](../../docs/lints.md#vendor). With the registry's Tcl extension
+installed too, both use the grammar name `tcl`; uninstall it if Tcl files look wrong.
 
 It is not in the Zed extension registry yet, so it installs as a dev extension, which Zed
 builds itself: [rustup](https://rustup.rs) must be installed.

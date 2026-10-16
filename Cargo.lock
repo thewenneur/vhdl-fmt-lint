@@ -992,6 +992,7 @@ dependencies = [
  "vfl-project",
  "vfl-sema",
  "vfl-syntax",
+ "vfl-vendor",
  "vfl-verilog-syntax",
 ]
 
@@ -1015,6 +1016,7 @@ dependencies = [
  "vfl-project",
  "vfl-sema",
  "vfl-syntax",
+ "vfl-vendor",
  "vfl-verilog-syntax",
 ]
 
@@ -1027,6 +1029,7 @@ dependencies = [
  "vfl-config",
  "vfl-doc",
  "vfl-fmt",
+ "vfl-lint",
  "vfl-lsp",
  "vfl-project",
 ]
@@ -1045,6 +1048,7 @@ dependencies = [
  "vfl-config",
  "vfl-sema",
  "vfl-syntax",
+ "vfl-vendor",
  "vfl-verilog-syntax",
  "yaml-rust2",
 ]
@@ -1070,6 +1074,15 @@ version = "0.8.0"
 dependencies = [
  "insta",
  "rowan",
+]
+
+[[package]]
+name = "vfl-vendor"
+version = "0.8.0"
+dependencies = [
+ "rustc-hash",
+ "tempfile",
+ "vfl-syntax",
 ]
 
 [[package]]

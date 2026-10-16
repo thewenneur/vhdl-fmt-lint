@@ -345,9 +345,14 @@ pub const NPPM_GETPLUGINSCONFIGDIR: u32 = NPPMSG + 46;
 pub const NPPM_GETFULLPATHFROMBUFFERID: u32 = NPPMSG + 58;
 pub const NPPM_GETCURRENTBUFFERID: u32 = NPPMSG + 60;
 pub const NPPM_GETBUFFERLANGTYPE: u32 = NPPMSG + 64;
+pub const NPPM_SETBUFFERLANGTYPE: u32 = NPPMSG + 65;
 pub const NPPM_DOOPEN: u32 = NPPMSG + 77;
 pub const NPPM_ALLOCATEINDICATOR: u32 = NPPMSG + 113;
 
+/// `L_TEXT` in `enum LangType`: plain text.
+pub const L_TEXT: isize = 0;
+/// `L_TCL` in `enum LangType`.
+pub const L_TCL: isize = 29;
 /// `L_VHDL` in `enum LangType`.
 pub const L_VHDL: isize = 38;
 /// `L_VERILOG` in `enum LangType`.
