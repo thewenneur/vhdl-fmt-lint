@@ -70,7 +70,7 @@ pub fn lint(
             });
     let cx = Context {
         root,
-        ports: ports.filter(|_| level(vfl_vendor::rules::UNKNOWN_PORT) != Level::Off),
+        ports,
         strict_commands,
     };
     let findings = vfl_vendor::check(kind, path, text, &cx);
@@ -78,7 +78,7 @@ pub fn lint(
         return (Vec::new(), errors);
     }
     let index = LineIndex::new(text);
-    let suppressions = Suppressions::hash_comments(&vfl_vendor::comments(text), text, &index);
+    let suppressions = Suppressions::hash_comments(&vfl_vendor::comments(kind, text), text, &index);
     let waivers = Waivers::new(&lint.waivers, path, root, &mut errors);
     let diagnostics = findings
         .into_iter()
@@ -140,5 +140,24 @@ mod tests {
                 .0
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn slash_comments_suppress_in_statement_files() {
+        let text = "IO_LOC \"a\" 1;\nIO_LOC \"b\" 1; // vfl-ignore vendor/pin-conflict\n\
+                    IO_LOC \"c\" 2;\nIO_LOC \"d\" 2;\n";
+        let (diagnostics, _) = lint(
+            Path::new("pins.cst"),
+            text,
+            &Config::default(),
+            None,
+            None,
+            0,
+        );
+        let lines: Vec<u32> = diagnostics
+            .iter()
+            .map(|d| LineIndex::new(text).line(d.range.start()))
+            .collect();
+        assert_eq!(lines, [3]);
     }
 }

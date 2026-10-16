@@ -1033,12 +1033,22 @@ pub(crate) fn is_vendor(id: usize) -> bool {
     buffer_path(id).is_some_and(|p| is_vendor_path(&p))
 }
 
-/// Highlights vendor files (`.qsf`, `.qip`, `.sdc`, `.xdc`) as Tcl, which
-/// they are written in, unless another language was chosen for them.
+/// Highlights vendor files as Tcl, which most are written in, and Lattice
+/// `.lpf` and Gowin `.cst` statement files as C, for their `//` comments
+/// and strings, unless another language was chosen for them.
 fn tcl_for_vendor_files(id: usize) {
-    if is_vendor(id) && send(npp(), NPPM_GETBUFFERLANGTYPE, id, 0) == L_TEXT {
-        send(npp(), NPPM_SETBUFFERLANGTYPE, id, L_TCL);
+    let Some(path) = buffer_path(id).filter(|p| is_vendor_path(p)) else {
+        return;
+    };
+    if send(npp(), NPPM_GETBUFFERLANGTYPE, id, 0) != L_TEXT {
+        return;
     }
+    let statements = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("lpf") || e.eq_ignore_ascii_case("cst"));
+    let language = if statements { L_C } else { L_TCL };
+    send(npp(), NPPM_SETBUFFERLANGTYPE, id, language);
 }
 
 pub(crate) fn is_vhdl(id: usize) -> bool {

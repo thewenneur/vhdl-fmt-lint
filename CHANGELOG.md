@@ -5,15 +5,17 @@
 ### Added
 
 - **FPGA vendor files are linted and highlighted: Quartus `.qsf` and `.qip`, SDC, Vivado
-  `.xdc` and Tcl scripts.** Nine `vendor/*` rules report unbalanced braces, quotes and
+  `.xdc` and Tcl scripts, Microchip Libero and Lattice Radiant `.pdc` / `.ldc`, Lattice
+  Diamond `.lpf` and Gowin `.cst`.** Nine `vendor/*` rules report unbalanced braces, quotes and
   brackets, misspelled commands, options, assignment and property names (with what was
   meant), missing arguments (`create_clock` without `-period`, `set_false_path` without
   `-from`/`-to`), source, IP and script files that do not exist, duplicate assignments,
   one pin assigned to two ports, and ports the top-level entity does not have. `vfl lint`
   checks the vendor files under its paths, and the language server and the Notepad++
   plugin those open in the editor, without analyzing the project again. VS Code gets
-  Quartus Settings and SDC / XDC Constraints languages with their grammars, Notepad++
-  highlights them as Tcl, and Zed with the Tcl grammar. See [docs/lints.md](docs/lints.md#vendor).
+  Quartus Settings, SDC / XDC / PDC Constraints, Lattice Preferences and Gowin Constraints
+  languages with their grammars, Notepad++ highlights them as Tcl (`.lpf` and `.cst` as C),
+  and Zed the Tcl ones with the Tcl grammar. See [docs/lints.md](docs/lints.md#vendor).
 
 ### Changed
 

@@ -174,6 +174,8 @@ mod tests {
     fn vendor_uris_by_extension() {
         assert!(may_be_vendor_uri("file:///p/top.QSF"));
         assert!(may_be_vendor_uri("file:///p/pins.xdc"));
+        assert!(may_be_vendor_uri("file:///p/pins.cst"));
+        assert!(may_be_vendor_uri("file:///p/board.lpf"));
         assert!(!may_be_vendor_uri("file:///p/top.vhd"));
         assert!(!may_be_vendor_uri("file:///p.qsf/top"));
     }

@@ -1,0 +1,88 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Lattice Preferences",
+  "scopeName": "source.lpf",
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#statement"
+    },
+    {
+      "include": "#attribute"
+    },
+    {
+      "include": "#value"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.lpf",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.line.number-sign.lpf",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "statement": {
+      "patterns": [
+        {
+          "name": "keyword.other.statement.lpf",
+          "match": "(?i)(?<![\\w\"])(CLOCK_TO_OUT|CLKSKEWDIFF|INPUT_SETUP|TEMPERATURE|AUTOMOTIVE|COMMERCIAL|INDUSTRIAL|MULTICYCLE|PRIORITIZE|FREQUENCY|SCHEMATIC|SYSCONFIG|MAXDELAY|MILITARY|PROHIBIT|GSR_NET|MAXSKEW|VOLTAGE|DEFINE|LOCATE|OUTPUT|PERIOD|REGION|UGROUP|BLOCK|DELAY|INPUT|IOBUF|ASIC|BANK|HOLD|USE)(?![\\w\"])"
+        },
+        {
+          "name": "storage.type.object.lpf",
+          "match": "(?i)(?<![\\w\"])(ASYNCPATHS|RESETPATHS|JTAGPATHS|SECONDARY|ALLPORTS|ALLNETS|CLKPORT|PRIMARY|CLKNET|PGROUP|REGION|UGROUP|GROUP|CELL|COMP|EDGE|PATH|PORT|SITE|BUS|KHZ|MHZ|NET|HZ|MV|NS|PS|US|V)(?![\\w\"])"
+        }
+      ]
+    },
+    "attribute": {
+      "patterns": [
+        {
+          "match": "(?i)\\b(DIFFRESISTOR|PREEMPHASIS|TERMINATION|BANK_VCCIO|FIXEDDELAY|HYSTERESIS|DIFFDRIVE|MULTIDROP|OPENDRAIN|PCICLAMP|PULLMODE|SLEWRATE|IO_TYPE|EQ_CAL|CLAMP|DRIVE|DOUT|VREF|DIN)\\s*(=)",
+          "captures": {
+            "1": {
+              "name": "support.constant.attribute.lpf"
+            },
+            "2": {
+              "name": "keyword.operator.assignment.lpf"
+            }
+          }
+        },
+        {
+          "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(=)",
+          "captures": {
+            "1": {
+              "name": "variable.other.attribute.lpf"
+            },
+            "2": {
+              "name": "keyword.operator.assignment.lpf"
+            }
+          }
+        }
+      ]
+    },
+    "value": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.lpf",
+          "begin": "\"",
+          "end": "\"|$"
+        },
+        {
+          "name": "constant.numeric.lpf",
+          "match": "(?<![\\w.])-?\\d+(\\.\\d+)?(?![\\w.])"
+        },
+        {
+          "name": "punctuation.terminator.statement.lpf",
+          "match": ";"
+        }
+      ]
+    }
+  }
+}

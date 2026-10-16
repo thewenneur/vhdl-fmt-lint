@@ -41,12 +41,12 @@ impl Suppressions {
         Self::from_comments(comments.into_iter(), text, index, "//")
     }
 
-    /// The suppressions of a vendor file: `# vfl-ignore rule`, in the
-    /// comments at `comments`.
+    /// The suppressions of a vendor file: `# vfl-ignore rule` (or `//`), in
+    /// the comments at `comments`.
     pub fn hash_comments(comments: &[TextRange], text: &str, index: &LineIndex) -> Self {
         let comments = comments
             .iter()
-            .filter_map(|range| suppression(*range, text[*range].trim_start_matches('#')));
+            .filter_map(|range| suppression(*range, text[*range].trim_start_matches(['#', '/'])));
         Self::from_comments(comments, text, index, "#")
     }
 

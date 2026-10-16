@@ -12,9 +12,10 @@ use crate::suggest::near;
 use crate::tcl::{self, Command, Script, Word, WordKind};
 use crate::{Context, Finding, Kind};
 
+mod statements;
+
 /// The findings of every `vendor/*` rule in `text`, the file at `path`.
 pub fn check(kind: Kind, path: &Path, text: &str, cx: &Context) -> Vec<Finding> {
-    let script = tcl::parse(text);
     let mut checker = Checker {
         kind,
         path,
@@ -30,9 +31,14 @@ pub fn check(kind: Kind, path: &Path, text: &str, cx: &Context) -> Vec<Finding> 
         tcl: Tcl::new(path).strict(),
         reported: FxHashSet::default(),
     };
-    checker.procs(&script);
-    checker.top = checker.top_entity(&script);
-    checker.script(&script, true);
+    if kind.is_statements() {
+        checker.statements();
+    } else {
+        let script = tcl::parse(text);
+        checker.procs(&script);
+        checker.top = checker.top_entity(&script);
+        checker.script(&script, true);
+    }
     checker
         .findings
         .sort_by_key(|f| (f.range.start(), f.range.end(), f.rule));
@@ -169,6 +175,8 @@ impl<'a> Checker<'a> {
             Kind::Sdc => &[known::SDC, known::XDC],
             Kind::Xdc => &[known::SDC, known::XDC],
             Kind::Tcl => &[known::QUARTUS, known::SDC, known::XDC],
+            Kind::Pdc => &[known::PDC, known::SDC],
+            Kind::Lpf | Kind::Cst => &[],
         };
         lists.iter().flat_map(|l| l.iter()).find(|s| s.name == name)
     }
@@ -187,6 +195,7 @@ impl<'a> Checker<'a> {
         let mut names: Vec<&'static str> = known::TCL.to_vec();
         let lists: &[&[Spec]] = match self.kind {
             Kind::Qsf | Kind::Qip => &[known::QUARTUS],
+            Kind::Pdc => &[known::PDC, known::SDC],
             _ => &[known::SDC, known::XDC],
         };
         names.extend(lists.iter().flat_map(|l| l.iter()).map(|s| s.name));
@@ -268,6 +277,8 @@ impl<'a> Checker<'a> {
                 }
             }
             "set_property" => self.property(&args, top),
+            "set_io" if self.kind == Kind::Pdc => self.set_io(command, top),
+            "ldc_set_location" => self.ldc_location(command, top),
             "create_clock" if top => {
                 if let Some(clock) = args.option("-name").or_else(|| args.positional.first()) {
                     let key = clock.text(text).to_owned();
@@ -523,7 +534,7 @@ impl<'a> Checker<'a> {
 
     fn assign(&mut self, key: String, at: TextRange, what: &str, value: String) {
         // Scripts set and reset properties as they go.
-        if self.kind == Kind::Tcl || key.contains(['$', '[']) && !key.contains("port ") {
+        if self.kind == Kind::Tcl || is_dynamic(&key) {
             return;
         }
         match self.assigned.get(&key) {
@@ -572,7 +583,11 @@ impl<'a> Checker<'a> {
 
     fn pin(&mut self, pin: String, at: TextRange, port: String) {
         match self.pins.get(&pin) {
-            Some((first, other)) if !other.eq_ignore_ascii_case(&port) => {
+            Some((first, other))
+                if !other.eq_ignore_ascii_case(&port)
+                    && self.in_design(other)
+                    && self.in_design(&port) =>
+            {
                 let line = self.line(*first);
                 self.push(
                     PIN_CONFLICT,
@@ -585,6 +600,65 @@ impl<'a> Checker<'a> {
                 self.pins.insert(pin, (at, port));
             }
         }
+    }
+
+    /// Libero `set_io port -pinname A1 ...`, or `set_io -port_name port
+    /// -pin_name A1 ...`.
+    fn set_io(&mut self, command: &Command, top: bool) {
+        let text = self.text;
+        let args = self.args(command, None);
+        let option = |names: &[&str]| {
+            args.options
+                .iter()
+                .rev()
+                .find(|(o, _, _)| names.iter().any(|n| o.eq_ignore_ascii_case(n)))
+                .and_then(|(_, _, value)| value.clone())
+        };
+        let Some(port) = option(&["-port_name"]).or_else(|| args.positional.first().cloned())
+        else {
+            return;
+        };
+        self.port(&port);
+        let (Some(pin), true) = (option(&["-pinname", "-pin_name"]), top) else {
+            return;
+        };
+        if !pin.is_literal(text) || !port.is_literal(text) {
+            return;
+        }
+        let port = port.text(text).to_owned();
+        let pin_text = pin.text(text).to_ascii_uppercase();
+        self.assign(
+            format!("set_io -pinname {port}"),
+            pin.range,
+            &format!("the pin of {port}"),
+            pin_text.clone(),
+        );
+        self.pin(pin_text, pin.range, port);
+    }
+
+    /// Radiant `ldc_set_location -site {A1} [get_ports port]`.
+    fn ldc_location(&mut self, command: &Command, top: bool) {
+        let text = self.text;
+        let args = self.args(command, None);
+        let (Some(site), Some(objects), true) =
+            (args.option("-site"), args.positional.first(), top)
+        else {
+            return;
+        };
+        let Some(port) = self.single_port(objects) else {
+            return;
+        };
+        let site_text = site.text(text).trim().to_ascii_uppercase();
+        if !site.is_literal(text) || !is_pin(&site_text) {
+            return;
+        }
+        self.assign(
+            format!("ldc_set_location -site {port}"),
+            site.range,
+            &format!("the site of {port}"),
+            site_text.clone(),
+        );
+        self.pin(site_text, site.range, port);
     }
 
     /// `set_property NAME value objects`, or `set_property -dict {...}
@@ -706,6 +780,23 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// Whether `port` (or the port of bit `port`) is a port of the design,
+    /// or may be when the design's ports are not known. Board files place
+    /// one pin under several names, of which a design uses one: the tools
+    /// ignore the others.
+    fn in_design(&self, port: &str) -> bool {
+        let Some(ports) = self.cx.ports.filter(|p| !p.is_empty()) else {
+            return true;
+        };
+        let base = port
+            .split(['[', '('])
+            .next()
+            .unwrap_or(port)
+            .trim_start_matches('\\')
+            .trim();
+        ports.has(self.top.as_deref(), base)
+    }
+
     /// Reports `range` when it names no port of the design.
     fn port_item(&mut self, range: TextRange) {
         let Some(ports) = self.cx.ports.filter(|p| !p.is_empty()) else {
@@ -753,6 +844,21 @@ impl<'a> Checker<'a> {
         if is_glob || path.contains(['*', '?']) || path.contains("://") {
             return;
         }
+        // The same for a relative path a script sets in a variable.
+        if self.kind == Kind::Tcl {
+            let value = self
+                .tcl
+                .word(text, word)
+                .unwrap_or_default()
+                .replace('\\', "/");
+            let value = crate::eval::normalize_path(&value);
+            if !(Path::new(&value).is_absolute()
+                || looks_absolute(&value)
+                || value.starts_with(&format!("{}/", self.tcl.dir)))
+            {
+                return;
+            }
+        }
         if self.exists(&path) {
             return;
         }
@@ -794,6 +900,24 @@ impl<'a> Checker<'a> {
 }
 
 /// `data[3]`: a bit of a port, which is not a pattern.
+/// Whether `key` holds a variable or a command, whose value is not known.
+fn is_dynamic(key: &str) -> bool {
+    key.contains('$')
+        || key
+            .match_indices('[')
+            .any(|(i, _)| !key[i + 1..].starts_with(|c: char| c.is_ascii_digit()))
+}
+
+/// Whether `site` names a package pin (`A1`, `AB12`, `23`), not a slice
+/// or a region.
+fn is_pin(site: &str) -> bool {
+    let digits = site.trim_start_matches(|c: char| c.is_ascii_alphabetic());
+    site.len() - digits.len() <= 2
+        && !digits.is_empty()
+        && digits.len() <= 3
+        && digits.chars().all(|c| c.is_ascii_digit())
+}
+
 fn is_index(name: &str) -> bool {
     name.ends_with(']')
         && name.split_once('[').is_some_and(|(_, i)| {
@@ -977,6 +1101,114 @@ mod tests {
         );
     }
 
+    fn rules_of(
+        kind: Kind,
+        name: &str,
+        text: &str,
+        ports: Option<&Ports>,
+    ) -> Vec<(&'static str, String)> {
+        let cx = Context {
+            ports,
+            ..Context::default()
+        };
+        check(kind, Path::new(name), text, &cx)
+            .into_iter()
+            .map(|f| (f.rule, text[f.range].to_owned()))
+            .collect()
+    }
+
+    fn design_ports() -> Ports {
+        let mut ports = Ports::default();
+        ports.add("top", ["clk", "led"]);
+        ports
+    }
+
+    #[test]
+    fn lattice_preferences() {
+        let text = "LOCATE COMP \"clk\" SITE \"A1\";\n\
+                    LOCATE COMP \"led[0]\" SITE \"A1\";\n\
+                    LOCATE COMP \"btn\" SITE \"B2\";\n\
+                    LOCATE COMP \"u_core\" SITE \"R2C3D\";\n\
+                    IOBUF PORT \"clk\" IO_TYPE=LVCMOS33 PULMODE=UP;\n\
+                    IOBUF PORT \"clk\" IO_TYPE=LVCMOS25;\n\
+                    FREQUENCY PORT \"clk\" 12 MHZ;\n\
+                    FREQUENCY 50 MHZ;\n\
+                    LOCATE COMP \"led[1]\";\n\
+                    IOBUFF ALLPORTS IO_TYPE=LVCMOS33;\n\
+                    LOCATE COMP \"led[2]\" SITE \"C3\"\n\
+                    BLOCK RESETPATHS;\n\
+                    LOCATE COMP \"spare\" SITE \"C3\";\n";
+        let ports = design_ports();
+        assert_eq!(
+            rules_of(Kind::Lpf, "pins.lpf", text, Some(&ports)),
+            [
+                (PIN_CONFLICT, "\"A1\"".into()),
+                (UNKNOWN_PORT, "btn".into()),
+                (MISSPELLED_NAME, "PULMODE".into()),
+                (DUPLICATE_ASSIGNMENT, "IO_TYPE=LVCMOS25".into()),
+                (MISSING_ARGUMENT, "LOCATE COMP \"led[1]\"".into()),
+                (UNKNOWN_COMMAND, "IOBUFF".into()),
+                (SYNTAX, "".into()),
+                // Not a pin conflict: `spare` is not in the design.
+                (UNKNOWN_PORT, "spare".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn gowin_constraints() {
+        let text = "// pins\n\
+                    IO_LOC \"clk\" 35;\n\
+                    IO_LOC \"led[0]\" 35;\n\
+                    IO_LOC \"led[1]\" 10,11;\n\
+                    IO_LOC \"led[1]\" 12;\n\
+                    IO_PORT \"clk\" IO_TYPE=LVCMOS33 PULLMODE=UP;\n\
+                    IO_LOC \"nope\";\n\
+                    IO_LCO \"led[2]\" 14; // vfl-ignore\n";
+        let ports = design_ports();
+        assert_eq!(
+            rules_of(Kind::Cst, "pins.cst", text, Some(&ports)),
+            [
+                (PIN_CONFLICT, "35".into()),
+                (DUPLICATE_ASSIGNMENT, "12".into()),
+                (MISSPELLED_NAME, "PULLMODE".into()),
+                (MISSING_ARGUMENT, "IO_LOC \"nope\"".into()),
+                (UNKNOWN_COMMAND, "IO_LCO".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn physical_constraints() {
+        let libero = "set_io clk -pinname A1 -fixed yes -DIRECTION INPUT\n\
+                      set_io {led[0]} -pinname A1 -fixed yes\n\
+                      set_io btn -pinname B2\n\
+                      set_io -port_name led -pin_name A1 -fixed true\n\
+                      set_iobnak Bank1 -vcci 3.30\n";
+        let ports = design_ports();
+        assert_eq!(
+            rules_of(Kind::Pdc, "io.pdc", libero, Some(&ports)),
+            [
+                (PIN_CONFLICT, "A1".into()),
+                (UNKNOWN_PORT, "btn".into()),
+                (PIN_CONFLICT, "A1".into()),
+                (UNKNOWN_COMMAND, "set_iobnak".into()),
+            ]
+        );
+        let radiant = "ldc_set_location -site {A1} [get_ports clk]\n\
+                       ldc_set_location -site {A1} [get_ports {led[0]}]\n\
+                       ldc_set_port -iobuf {IO_TYPE=LVCMOS33} [get_ports led]\n\
+                       ldc_set_port [get_ports led]\n\
+                       create_clock -name clk -period 10 [get_ports clk]\n";
+        assert_eq!(
+            rules_of(Kind::Pdc, "pins.ldc", radiant, Some(&ports)),
+            [
+                (PIN_CONFLICT, "{A1}".into()),
+                (MISSING_ARGUMENT, "ldc_set_port".into()),
+            ]
+        );
+    }
+
     #[test]
     fn script_forms() {
         let text = "set_property -name STEPS.SYNTH -value true -objects [get_runs synth_1]\n\
@@ -1025,7 +1257,9 @@ mod tests {
                     source \"${root}/tools/common.tcl\"\n\
                     read_vhdl -library work {a.vhd gone.vhd}\n\
                     read_vhdl $dir/ip/pll.vhd\n\
-                    read_xdc $dir/pins.xdc\n";
+                    read_xdc $dir/pins.xdc\n\
+                    set design ./gone.vhd\n\
+                    add_files $design\n";
         let found: Vec<_> = check(Kind::Tcl, &tcl, text, &Context::default())
             .into_iter()
             .map(|f| (f.rule, text[f.range].to_owned()))

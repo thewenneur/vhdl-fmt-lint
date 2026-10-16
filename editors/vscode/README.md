@@ -10,8 +10,9 @@ language server:
   an instantiation leaves out, or silence the rule
   on the line or in the file with a `-- vfl-ignore` comment.
 - **Formatting** with every rule from your `vfl.toml`.
-- **FPGA vendor files**: Quartus settings (`.qsf`, `.qip`) and SDC / XDC constraints
-  (`.sdc`, `.xdc`) are highlighted, and linted as you type with the
+- **FPGA vendor files**: Quartus settings (`.qsf`, `.qip`), SDC / XDC constraints
+  (`.sdc`, `.xdc`), Libero and Radiant physical constraints (`.pdc`, `.ldc`), Lattice
+  preferences (`.lpf`) and Gowin constraints (`.cst`) are highlighted, and linted as you type with the
   [`vendor/*` rules](https://github.com/thewenneur/vhdl-fmt-lint/blob/main/docs/lints.md#vendor):
   misspelled commands, options and names, missing arguments and files, duplicate
   assignments, pin conflicts and ports the design does not have. Tcl scripts are linted
