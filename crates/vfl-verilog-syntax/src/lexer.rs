@@ -835,12 +835,15 @@ impl<'a> Lexer<'a> {
                         None => bytes.len(),
                     };
                 }
+                // A string ends where it does in code that is compiled
+                // (`"""` strings too), so that the lines of a branch lexed
+                // alone hold the same tokens. Its errors do not count.
                 b'"' => {
-                    pos += 1;
-                    while pos < bytes.len() && !matches!(bytes[pos], b'"' | b'\n') {
-                        pos += if bytes[pos] == b'\\' { 2 } else { 1 };
-                    }
-                    pos += 1;
+                    self.pos = pos;
+                    let errors = self.errors.len();
+                    self.string();
+                    self.errors.truncate(errors);
+                    pos = self.pos;
                 }
                 b'`' => {
                     let word_start = pos + 1;

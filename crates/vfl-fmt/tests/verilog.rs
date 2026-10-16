@@ -369,3 +369,17 @@ fn a_comment_ending_in_a_backslash_and_blanks_in_a_define() {
     let text = "`define A//\\\x0c\nwire b;\n";
     assert_eq!(fmt(text), text);
 }
+
+/// Found by the `format_verilog` fuzz target: a branch that is not compiled
+/// was skipped reading `"""` as three quotes, and its lines lexed alone for
+/// range formatting as a string: a directive after it ended the branch in
+/// one and was in a string in the other.
+#[test]
+fn a_triple_quoted_string_in_a_branch_not_compiled() {
+    let text = "`ifndef S\n`elsif s \"\"\"a\"b\"\"\" `endif\nmodule m;\nendmodule\n";
+    assert_eq!(fmt(text), text);
+    assert_eq!(fmt_line(text, 10), text);
+    let text = "`ifndef S\n`elsif s \"\"\"\"`endif`A";
+    let result = format_verilog(text, &legacy(), &Options::default());
+    assert!(matches!(result, Err(FormatError::Syntax(_))), "{result:?}");
+}
