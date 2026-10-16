@@ -383,6 +383,18 @@
           "scope": "resource",
           "markdownDescription": "Format the line you just finished as you type: the line of a `;`, or the line above a new line. A project can turn it off for everyone with `on_type = false` under `[format]` in `vfl.toml`."
         },
+        "vfl.hierarchy.top": {
+          "type": "string",
+          "default": "",
+          "scope": "window",
+          "markdownDescription": "The top entity of the **VHDL Hierarchy** view, as `name` or `library.name`. Empty: every entity no other entity instantiates. **Select Top Entity** in the view sets it for the workspace."
+        },
+        "vfl.hierarchy.testbenches": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "markdownDescription": "Without `#vfl.hierarchy.top#`, start the **VHDL Hierarchy** view from testbenches (entities without ports) too. Off, it starts from what they test."
+        },
         "vfl.trace.server": {
           "type": "string",
           "enum": [
@@ -463,6 +475,38 @@
         "title": "Show Diagrams",
         "category": "vfl",
         "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "vfl.hierarchy.refresh",
+        "title": "Refresh Hierarchy",
+        "category": "vfl",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "vfl.hierarchy.selectTop",
+        "title": "Select Hierarchy Top...",
+        "category": "vfl",
+        "icon": "$(target)"
+      },
+      {
+        "command": "vfl.hierarchy.setTop",
+        "title": "Set as Top",
+        "category": "vfl"
+      },
+      {
+        "command": "vfl.hierarchy.openEntity",
+        "title": "Open Entity",
+        "category": "vfl"
+      },
+      {
+        "command": "vfl.hierarchy.openArchitecture",
+        "title": "Open Architecture",
+        "category": "vfl"
+      },
+      {
+        "command": "vfl.hierarchy.generateTestbench",
+        "title": "Generate Testbench",
+        "category": "vfl"
       }
     ],
     "menus": {
@@ -486,6 +530,30 @@
         {
           "command": "vfl.showDiagrams",
           "when": "editorLangId == vhdl"
+        },
+        {
+          "command": "vfl.hierarchy.setTop",
+          "when": "false"
+        },
+        {
+          "command": "vfl.hierarchy.openEntity",
+          "when": "false"
+        },
+        {
+          "command": "vfl.hierarchy.openArchitecture",
+          "when": "false"
+        },
+        {
+          "command": "vfl.hierarchy.generateTestbench",
+          "when": "false"
+        },
+        {
+          "command": "vfl.hierarchy.refresh",
+          "when": "vfl.active"
+        },
+        {
+          "command": "vfl.hierarchy.selectTop",
+          "when": "vfl.active"
         }
       ],
       "editor/context": [
@@ -522,6 +590,51 @@
           "command": "vfl.showDiagrams",
           "when": "resourceLangId == vhdl",
           "group": "7_modification@51"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "vfl.hierarchy.selectTop",
+          "when": "view == vfl.hierarchy",
+          "group": "navigation@1"
+        },
+        {
+          "command": "vfl.hierarchy.refresh",
+          "when": "view == vfl.hierarchy",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "vfl.hierarchy.openEntity",
+          "when": "view == vfl.hierarchy && viewItem == entity",
+          "group": "navigation@1"
+        },
+        {
+          "command": "vfl.hierarchy.openArchitecture",
+          "when": "view == vfl.hierarchy && viewItem == entity",
+          "group": "navigation@2"
+        },
+        {
+          "command": "vfl.hierarchy.setTop",
+          "when": "view == vfl.hierarchy && viewItem == entity",
+          "group": "2_top@1"
+        },
+        {
+          "command": "vfl.hierarchy.generateTestbench",
+          "when": "view == vfl.hierarchy && viewItem == entity",
+          "group": "3_generate@1"
+        }
+      ]
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "vfl.hierarchy",
+          "name": "VHDL Hierarchy",
+          "when": "vfl.active",
+          "icon": "$(type-hierarchy)",
+          "contextualTitle": "vfl"
         }
       ]
     }

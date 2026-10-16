@@ -20,6 +20,7 @@ import {
   ServerOptions,
 } from "vscode-languageclient/node";
 import { OPEN_PAGE_COMMAND, pageTitle, webviewHtml } from "./docview";
+import { registerHierarchy } from "./hierarchy";
 
 const INSTALL_URL = "https://github.com/thewenneur/vhdl-fmt-lint#installation";
 
@@ -56,6 +57,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("vfl.generateConfig", generateConfig),
     vscode.commands.registerCommand("vfl.generateDocs", generateDocs),
     vscode.commands.registerCommand("vfl.showDiagrams", showDiagrams),
+    // The VHDL Hierarchy view asks the running server.
+    registerHierarchy(() => (client?.isRunning() ? client : undefined)),
     // The target of the links between pages in the diagrams view.
     vscode.commands.registerCommand(OPEN_PAGE_COMMAND, openDocPage),
     vscode.workspace.onDidSaveTextDocument((doc) => {

@@ -64,6 +64,18 @@
 - **`[format.blank_lines]`**: blank lines before and after `begin`, before `end`, before
   processes and between declaration groups, as an exact number or a `{ min, max }` range.
 
+- **Design hierarchy view**: the language server answers a `vfl/hierarchy` request with
+  the instantiation tree of the project, from a chosen top or from every entity no other
+  entity instantiates (testbenches optionally left out): each instance with its label,
+  entity (or component, configuration or Verilog module), library and architecture, where
+  the instance and the entity are, generate statements and blocks as groups, and the
+  instances that bind to nothing flagged. It is built from the analysis only when asked,
+  never while typing, and bounded against recursion. VS Code shows it as a **VHDL
+  Hierarchy** view in the Explorer (top picked with a quick pick and kept in
+  `vfl.hierarchy.top`; open the entity, set as top or generate a testbench from an
+  instance), refreshed after saves and analyses; Notepad++ lists it with **Show design
+  hierarchy**. Zed has no tree view for extensions.
+
 ### Changed
 
 - The formatter's `max_width` and the `style/line-length` rule count display columns:

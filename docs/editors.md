@@ -52,6 +52,9 @@ for its commands and settings.
 Every command can be given a key in **Preferences: Open Keyboard Shortcuts** (search for
 `vfl`); see [Keyboard shortcuts](../editors/vscode/README.md#keyboard-shortcuts).
 
+The **VHDL Hierarchy** view in the Explorer shows the instantiation tree of the project:
+see [Design hierarchy](#design-hierarchy).
+
 ## Notepad++
 
 The plugin has the formatter, the linter and the editor features built in, without
@@ -61,6 +64,9 @@ The plugin has the formatter, the linter and the editor features built in, witho
 Every menu command, the settings included, can be given a key in **Settings > Shortcut
 Mapper > Plugin commands** (filter on `vfl`); see
 [Commands](../editors/notepadpp/README.md#commands).
+
+**Show design hierarchy** lists the instantiation tree of the project: see
+[Design hierarchy](#design-hierarchy).
 
 ## Zed
 
@@ -297,6 +303,77 @@ Any other editor with an LSP client works the same way: run `vfl lsp` over stdio
 file types above, with no initialization options needed. The server announces what it supports
 in its `initialize` response, including its semantic token types and its on-type
 formatting triggers (`;` and newline).
+
+## Design hierarchy
+
+The language server answers a custom `vfl/hierarchy` request with the instantiation tree
+of the project. It is built from the analysis the server already has, only when an
+editor asks for it, never on an edit.
+
+| Editor | Where |
+|---|---|
+| VS Code | **VHDL Hierarchy** view in the Explorer |
+| Notepad++ | **Plugins > vfl > Show design hierarchy**, a list indented by depth |
+| Zed | Not available: Zed extensions cannot add tree views |
+| Others | Any client that can send a custom request, see below |
+
+The tree starts from every entity no other entity instantiates, or from a top you choose.
+Under each entity are the instances of its architecture: the one the instantiation names
+(`entity work.fifo(rtl)`), else the entity's last architecture, as VHDL binds the most
+recently analyzed. A component instance binds to the entity of the same name (in the
+instantiating unit's library first), a configuration instance to its entity and the
+architecture its block configuration names. Generate statements and blocks group the
+instances inside them. Instances of nothing in the project, and components no entity
+binds to, are flagged. An entity that instantiates itself further up is not expanded
+again, and the tree stops at 64 levels and 20000 nodes.
+
+In VS Code, the title bar of the view picks the top (**Select Hierarchy Top...**: a
+quick pick of the entities, the tops first) and refreshes it. The top is kept in the
+workspace's `vfl.hierarchy.top` setting (`name` or `library.name`; empty for every top),
+and `vfl.hierarchy.testbenches` (on by default) says whether entities without ports
+start trees when no top is set; off, what they test does. Clicking an instance opens it;
+its context menu has **Open Entity**, **Open Architecture**, **Set as Top** and
+**Generate Testbench**. The view is refreshed after a VHDL or Verilog file is saved and
+after the server has analyzed an edit (once its diagnostics change), debounced, and only
+while it is visible.
+
+Notepad++ shows the tree as a list rather than a docked panel: the plugin's other lists
+(problems, symbols, references) are Scintilla lists, which open at the caret and filter as
+you type, and a docked tree would need its own window, dialog resources and tree control
+for a view that is read once and left. Choosing a line goes to the instance (a top's
+entity). Testbenches are tops there too.
+
+### The `vfl/hierarchy` request
+
+Parameters, all optional: `top` (`name` or `library.name`) and `testbenches` (`true` by
+default). The answer:
+
+```text
+{
+  "roots": [
+    {
+      "kind": "entity", "label": "tb_uart", "name": "tb_uart", "unitKind": "entity",
+      "library": "work", "architecture": "sim", "testbench": true,
+      "location": { "uri": "file:///.../tb_uart.vhd", "range": { ... } },
+      "entityLocation": { ... }, "architectureLocation": { ... },
+      "children": [
+        { "kind": "instance", "label": "dut", "name": "uart", "unitKind": "entity", ... }
+      ]
+    }
+  ],
+  "entities": [
+    { "library": "work", "name": "uart", "path": "/.../uart.vhd", "top": false, "testbench": false }
+  ]
+}
+```
+
+`kind` is `entity` (a top), `instance`, `generate` or `block`; a generate statement has
+its scheme in `detail` (`for i in 0 to 3`). `unitKind` is `entity`, `component`,
+`configuration` or `module` (Verilog). `location` is the instance's label (a top's entity
+name), `entityLocation` and `architectureLocation` the declarations it binds to.
+`unresolved`, `recursive` and `truncated` are set when true. `entities` lists every VHDL
+entity of the project with whether it is a top, to choose one from; `message` says why
+`roots` is empty, such as a `top` that is not in the project.
 
 ## Editor settings
 
