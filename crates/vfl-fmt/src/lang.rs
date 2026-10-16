@@ -75,6 +75,12 @@ pub(crate) trait Lang:
         false
     }
 
+    /// Comment-like tokens kept as written, blanks at their end included:
+    /// code that is not compiled, which may be nothing but blanks.
+    fn keeps_blanks(_kind: Self::Kind) -> bool {
+        false
+    }
+
     /// Nodes kept as written, as one piece.
     fn is_chunk(kind: Self::Kind) -> bool;
 

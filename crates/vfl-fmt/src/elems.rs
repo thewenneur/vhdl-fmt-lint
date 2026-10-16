@@ -142,9 +142,11 @@ pub(crate) fn collect<L: Lang>(
                     continue;
                 }
                 // Blanks after a directive's `\` are kept: without them it
-                // would continue on the next line.
+                // would continue on the next line. Code that is not compiled
+                // keeps its blanks too: they may be all of it.
                 let text = if L::is_comment(kind)
                     && !raw.contains('\n')
+                    && !L::keeps_blanks(kind)
                     && !(L::keeps_column(kind) && raw.trim_end().ends_with('\\'))
                 {
                     raw.trim_end().to_owned()

@@ -180,6 +180,10 @@ impl Lang for Verilog {
         kind == DIRECTIVE
     }
 
+    fn keeps_blanks(kind: SyntaxKind) -> bool {
+        kind == INACTIVE
+    }
+
     fn is_chunk(kind: SyntaxKind) -> bool {
         matches!(
             kind,

@@ -314,3 +314,27 @@ fn a_range_ending_in_a_continued_directive() {
         fmt(text)
     );
 }
+
+/// `text` after formatting the line at byte `at` alone.
+fn fmt_line(text: &str, at: usize) -> String {
+    let edits = format_ranges_verilog(
+        text,
+        std::slice::from_ref(&(at..at)),
+        &legacy(),
+        &Options::default(),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    apply_edits(text, &edits)
+}
+
+/// Found by the `format_verilog` fuzz target: code that is not compiled lost
+/// its trailing blanks, all of it when it was nothing else, and range
+/// formatting then lexed it differently.
+#[test]
+fn code_not_compiled_keeps_its_blanks() {
+    let text = "module m;\n`ifdef B `endif\nendmodule\n";
+    assert_eq!(fmt(text), text);
+    let text = "module m;\n`ifdef B ;\u{a0}`endif\nendmodule\n";
+    assert_eq!(fmt(text), text);
+    assert_eq!(fmt_line(text, 10), text);
+}
