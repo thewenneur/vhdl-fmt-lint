@@ -13,6 +13,25 @@ pub const FEATURES: &[(&str, &[&str])] = &[
     ("textDocument/rangeFormatting", &["Format selection"]),
     ("textDocument/onTypeFormatting", &["Format on type"]),
     ("textDocument/definition", &["Go to definition"]),
+    // Go to definition on a body's name opens what the body completes.
+    ("textDocument/declaration", &["Go to definition"]),
+    ("textDocument/implementation", &["Go to implementation"]),
+    ("textDocument/typeDefinition", &["Go to type definition"]),
+    (
+        "textDocument/prepareCallHierarchy",
+        &["Show call hierarchy"],
+    ),
+    ("callHierarchy/incomingCalls", &["Show call hierarchy"]),
+    ("callHierarchy/outgoingCalls", &["Show call hierarchy"]),
+    // The instances a code lens counts are listed with the callers.
+    ("textDocument/codeLens", &["Show call hierarchy"]),
+    ("codeLens/resolve", &["Show call hierarchy"]),
+    ("textDocument/selectionRange", &["Expand selection"]),
+    // Rename symbol renames a name and its `end` name together.
+    ("textDocument/linkedEditingRange", &["Rename symbol"]),
+    // Scintilla has no inline hints: the formal names are in the
+    // parameter hints.
+    ("textDocument/inlayHint", &["Show parameters"]),
     ("textDocument/references", &["Find references"]),
     ("textDocument/documentHighlight", &["Highlight uses"]),
     ("textDocument/hover", &["Show type", "Code assistance"]),
@@ -171,6 +190,14 @@ mod tests {
                     "signatureHelpProvider",
                     "semanticTokensProvider",
                     "codeActionProvider",
+                    "declarationProvider",
+                    "implementationProvider",
+                    "typeDefinitionProvider",
+                    "callHierarchyProvider",
+                    "codeLensProvider",
+                    "selectionRangeProvider",
+                    "linkedEditingRangeProvider",
+                    "inlayHintProvider",
                 ]
                 .contains(&name.as_str()),
                 "new capability {name}: add it to the Notepad++ plugin and to FEATURES"

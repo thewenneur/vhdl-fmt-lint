@@ -4,7 +4,8 @@ A Zed extension for VHDL, Verilog and SystemVerilog: syntax highlighting, outlin
 brackets and indentation from Tree-sitter grammars, and everything else from the vfl
 language server (`vfl lsp`): diagnostics as you type, quick fixes, formatting (on save,
 of a selection, and on type), hover with types, signature help, completion, go to
-definition, references, rename and semantic highlighting.
+definition, implementation and type definition, references, rename, inlay hints and
+semantic highlighting.
 
 It is not in the Zed extension registry yet, so it installs as a dev extension, which Zed
 builds itself: [rustup](https://rustup.rs) must be installed.

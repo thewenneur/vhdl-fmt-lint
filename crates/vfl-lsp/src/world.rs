@@ -50,6 +50,9 @@ pub struct World {
     /// The config of files no config file applies to: the editor's
     /// settings.
     defaults: Config,
+    /// The inlay hints the editor's settings turn on or off, whatever the
+    /// config says.
+    pub(crate) inlay_overrides: crate::inlay::Overrides,
 }
 
 impl World {
@@ -80,6 +83,7 @@ impl World {
             semantic: Default::default(),
             fixed_config: false,
             defaults,
+            inlay_overrides: Default::default(),
         };
         world.refresh();
         world
@@ -117,6 +121,7 @@ impl World {
             inferred_from: Vec::new(),
             dirty: true,
             semantic: Default::default(),
+            inlay_overrides: Default::default(),
         }
     }
 

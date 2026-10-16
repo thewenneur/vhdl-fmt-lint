@@ -246,6 +246,106 @@ pub(crate) fn go_to_definition() {
     );
 }
 
+/// Opens one of `found`, or lists them when there are several.
+fn go_to_one_of(here: Here, found: Vec<Location>, none: &str) {
+    match found.as_slice() {
+        [] => tell(none),
+        [one] => open_location(one, true),
+        _ => show_list(
+            &here,
+            found
+                .into_iter()
+                .map(|l| (location_label(&l), Action::Go(l)))
+                .collect(),
+        ),
+    }
+}
+
+pub(crate) fn go_to_implementation() {
+    here().ask(
+        Key::Command,
+        |engine, path, buffer, offset| engine.implementation(path, &buffer.text, offset),
+        |here, found| {
+            go_to_one_of(
+                here,
+                found,
+                "No implementation found for the name at the caret: it works on entities, \
+                 components, packages and subprograms.",
+            )
+        },
+    );
+}
+
+pub(crate) fn go_to_type_definition() {
+    here().ask(
+        Key::Command,
+        |engine, path, buffer, offset| engine.type_definition(path, &buffer.text, offset),
+        |here, found| go_to_one_of(here, found, "No type found for the name at the caret."),
+    );
+}
+
+/// Lists who calls the subprogram at the caret and what it calls, or which
+/// architectures instantiate the entity there and what it instantiates.
+pub(crate) fn call_hierarchy() {
+    here().ask(
+        Key::Command,
+        |engine, path, buffer, offset| engine.call_hierarchy(path, &buffer.text, offset),
+        |here, calls| {
+            if calls.is_empty() {
+                tell(
+                    "No calls or instances found for the name at the caret: it works on \
+                     subprograms, entities, components and architectures.",
+                );
+                return;
+            }
+            let items = calls
+                .into_iter()
+                .map(|call| {
+                    let times = if call.count > 1 {
+                        format!(", {} times", call.count)
+                    } else {
+                        String::new()
+                    };
+                    let direction = if call.incoming { "from" } else { "to" };
+                    let label = format!(
+                        "{direction} {} ({}{times})  {}",
+                        call.name,
+                        call.detail,
+                        location_label(&call.location)
+                    );
+                    (label, Action::Go(call.location))
+                })
+                .collect();
+            show_list(&here, items);
+        },
+    );
+}
+
+/// Selects the smallest construct around the selection: a name, an
+/// expression, a statement, a declaration, a unit.
+pub(crate) fn expand_selection() {
+    let here = here();
+    let selection = |message| {
+        here.buffer
+            .offset(send(here.sci, message, 0, 0).max(0) as usize)
+    };
+    let (start, end) = (
+        selection(SCI_GETSELECTIONSTART),
+        selection(SCI_GETSELECTIONEND),
+    );
+    here.ask(
+        Key::Command,
+        move |engine, path, buffer, _| engine.expand_selection(path, &buffer.text, start..end),
+        |here, range| {
+            if let Some(range) = range
+                && here.is_current()
+            {
+                select(here.sci, &here.buffer, range);
+            }
+        },
+    );
+}
+
 pub(crate) fn go_back() {
     let Some((path, position)) = with(|s| s.tools.back.borrow_mut().pop()) else {
         tell("Nowhere to go back to.");

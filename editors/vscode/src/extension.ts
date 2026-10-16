@@ -33,6 +33,20 @@ const LANGUAGES = ["vhdl", "verilog", "systemverilog"];
 const CONFIG_FILES = ["vfl.toml", ".vfl.toml"];
 
 /**
+ * The command of the "N instances" code lenses (`vfl::SHOW_REFERENCES` in
+ * the server): internal, so registered through this constant.
+ */
+const SHOW_REFERENCES_COMMAND = "vfl.showReferences";
+
+/** The kinds of inlay hints, as `vfl.inlayHints.*` settings and server keys. */
+const INLAY_HINTS: [string, string][] = [
+  ["ports", "ports"],
+  ["generics", "generics"],
+  ["parameters", "parameters"],
+  ["portTypes", "port_types"],
+];
+
+/**
  * The language servers, by the workspace folder they serve (its URI), or
  * by "" for the one server of a workspace with one folder or none.
  */
@@ -93,6 +107,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     // The target of the links between pages in the diagrams view.
     vscode.commands.registerCommand(OPEN_PAGE_COMMAND, openDocPage),
+    vscode.commands.registerCommand(SHOW_REFERENCES_COMMAND, showReferences),
     vscode.workspace.onDidSaveTextDocument((doc) => {
       if (diagrams && doc.languageId === "vhdl" && doc.uri.scheme === "file") {
         void refreshDiagrams();
@@ -106,7 +121,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("vfl.server")) {
         void restart();
-      } else if (e.affectsConfiguration("vfl.lint.preset") || e.affectsConfiguration("vfl.format.style")) {
+      } else if (
+        e.affectsConfiguration("vfl.lint.preset") ||
+        e.affectsConfiguration("vfl.format.style") ||
+        e.affectsConfiguration("vfl.inlayHints")
+      ) {
         for (const client of clients.values()) {
           if (client.isRunning()) {
             void client.sendNotification("workspace/didChangeConfiguration", {
@@ -287,16 +306,51 @@ function runningClient(): LanguageClient | undefined {
 
 /**
  * The settings the server applies to projects without a `vfl.toml`, as
- * `vfl.toml` keys under `config`.
+ * `vfl.toml` keys under `config`; and the kinds of inlay hints the user
+ * turned on or off, which win over `[lsp.inlay_hints]` in `vfl.toml`.
  */
-function editorSettings(): { config: object } {
+function editorSettings(): { config: object; inlayHints: Record<string, boolean> } {
   const settings = vscode.workspace.getConfiguration("vfl");
+  // Only the hints set somewhere: the others follow the project.
+  const inlayHints: Record<string, boolean> = {};
+  for (const [setting, key] of INLAY_HINTS) {
+    const value = settings.inspect<boolean>(`inlayHints.${setting}`);
+    const set = value?.workspaceFolderValue ?? value?.workspaceValue ?? value?.globalValue;
+    if (set !== undefined) {
+      inlayHints[key] = set;
+    }
+  }
   return {
     config: {
       lint: { preset: settings.get<string>("lint.preset", "recommended") },
       format: { style: settings.get<string>("format.style", "default") },
     },
+    inlayHints,
   };
+}
+
+/**
+ * Shows the instances a code lens counts, in VS Code's references view:
+ * the server sends them as LSP values.
+ */
+async function showReferences(
+  uri: string,
+  position: { line: number; character: number },
+  locations: { uri: string; range: { start: typeof position; end: typeof position } }[],
+): Promise<void> {
+  const asPosition = (p: typeof position) => new vscode.Position(p.line, p.character);
+  await vscode.commands.executeCommand(
+    "editor.action.showReferences",
+    vscode.Uri.parse(uri),
+    asPosition(position),
+    (locations ?? []).map(
+      (l) =>
+        new vscode.Location(
+          vscode.Uri.parse(l.uri),
+          new vscode.Range(asPosition(l.range.start), asPosition(l.range.end)),
+        ),
+    ),
+  );
 }
 
 async function reportMissingServer(): Promise<void> {

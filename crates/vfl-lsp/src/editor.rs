@@ -1,8 +1,9 @@
 //! The language server's editor features at byte offsets, for editors that
 //! link vfl directly instead of speaking LSP, like the Notepad++ plugin:
-//! hover, signature help, completion, go to definition, references,
-//! highlights, outline, project symbols, rename, quick fixes, the problems
-//! of the whole project, the design hierarchy and semantic tokens.
+//! hover, signature help, completion, go to definition, implementation and
+//! type definition, references, the call hierarchy, highlights, outline,
+//! project symbols, rename, quick fixes, selection ranges, the problems of
+//! the whole project, the design hierarchy and semantic tokens.
 //!
 //! Each query brings the analysis up to date first, then answers from the
 //! same code as the language server.
@@ -278,6 +279,98 @@ pub fn references(world: &mut World, path: &Path, offset: usize) -> Vec<Location
         .filter(|(f, _, _)| !world.analysis.files()[*f as usize].builtin)
         .filter_map(|(f, range, _)| location(world, f, range))
         .collect()
+}
+
+/// Where what is named at byte `offset` is implemented: an entity's
+/// architectures, a component's entity, a package's body, a subprogram's
+/// body.
+pub fn implementation(world: &mut World, path: &Path, offset: usize) -> Vec<Location> {
+    let Some((file, offset)) = locate(world, path, offset) else {
+        return Vec::new();
+    };
+    crate::navigate::implementations(world, file, offset)
+        .into_iter()
+        .filter_map(|(file, range)| location(world, file, range))
+        .collect()
+}
+
+/// The type of what is named at byte `offset`: where its type mark is
+/// declared.
+pub fn type_definition(world: &mut World, path: &Path, offset: usize) -> Vec<Location> {
+    let Some((file, offset)) = locate(world, path, offset) else {
+        return Vec::new();
+    };
+    crate::navigate::type_definitions(world, file, offset)
+        .into_iter()
+        .filter_map(|(file, range)| location(world, file, range))
+        .collect()
+}
+
+/// A caller or callee of the subprogram or design entity at the cursor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Call {
+    /// Whether it calls (or instantiates) the one at the cursor, rather
+    /// than being called by it.
+    pub incoming: bool,
+    /// The caller's or callee's name.
+    pub name: String,
+    /// What it is: `function`, `process`, `architecture rtl`.
+    pub detail: String,
+    /// The first call, or instantiation, of the two.
+    pub location: Location,
+    /// How many calls there are.
+    pub count: usize,
+}
+
+/// Who calls the subprogram named at byte `offset` and what it calls; or,
+/// for an entity, component or architecture, which architectures
+/// instantiate it and what its architecture instantiates.
+pub fn call_hierarchy(world: &mut World, path: &Path, offset: usize) -> Vec<Call> {
+    let Some((file, offset)) = locate(world, path, offset) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for node in crate::hierarchy::nodes_at(world, file, offset) {
+        let incoming = crate::hierarchy::incoming_of(world, node);
+        let outgoing = crate::hierarchy::outgoing_of(world, node);
+        let calls = incoming
+            .into_iter()
+            .map(|c| (true, c))
+            .chain(outgoing.into_iter().map(|c| (false, c)));
+        for (incoming, (other, file, ranges)) in calls {
+            let Some((name, detail, _)) = crate::hierarchy::describe(world, other) else {
+                continue;
+            };
+            let Some(location) = location(world, file, ranges[0]) else {
+                continue;
+            };
+            out.push(Call {
+                incoming,
+                name,
+                detail,
+                location,
+                count: ranges.len(),
+            });
+        }
+    }
+    out
+}
+
+/// The smallest syntax node (or name) around the selection `range` that
+/// is larger than it, to grow the selection to.
+pub fn expand_selection(
+    world: &mut World,
+    path: &Path,
+    range: Range<usize>,
+) -> Option<Range<usize>> {
+    let (file, start) = locate(world, path, range.start)?;
+    let end = TextSize::from(range.end.min(world.doc(file).text.len()) as u32);
+    let root = world.analysis.files()[file as usize].syntax();
+    let selection = vfl_syntax::TextRange::new(start, end.max(start));
+    crate::navigate::selection_ranges(&root, start)
+        .into_iter()
+        .find(|r| r.contains_range(selection) && *r != selection)
+        .map(Into::into)
 }
 
 /// How a highlighted name is used.
