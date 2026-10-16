@@ -11,6 +11,8 @@ pub struct StyleContext<'a> {
     pub text: &'a str,
     pub root: &'a SyntaxNode,
     pub file_stem: Option<String>,
+    /// The file's extension, for the name `style/file-name` suggests.
+    pub extension: Option<String>,
     /// `style/line-length`'s limit.
     pub max_line_length: usize,
     /// Columns per indentation level: what a tab becomes.
@@ -416,10 +418,13 @@ fn file_name(ctx: &StyleContext, out: &mut Vec<Finding>) {
         return;
     };
     if primaries.iter().all(|(name, _)| *name != stem) {
+        let extension = ctx.extension.as_deref().unwrap_or("vhd");
         out.push(Finding::new(
             "style/file-name",
             *range,
-            format!("file name does not match the unit it declares; expected `{first}.vhd`"),
+            format!(
+                "file name does not match the unit it declares; expected `{first}.{extension}`"
+            ),
         ));
     }
 }

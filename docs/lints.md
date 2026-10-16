@@ -854,7 +854,8 @@ simulation for those values.
 
 A file's name, without its extension, differs from the name of every primary unit it
 declares (entity, package, context, configuration, package instantiation). The comparison
-ignores case. The finding suggests the name of the first unit: `expected top.vhd`.
+ignores case. The finding suggests the name of the first unit, with the file's extension:
+`expected top.vhd`.
 
 ## `naming`
 
@@ -940,7 +941,7 @@ shared ones:
 | [`sema/missing-reset`](#semamissing-reset), [`sema/mixed-reset`](#semamixed-reset), [`sema/reset-polarity`](#semareset-polarity) | Clocked blocks with a reset: asynchronous in the event list, synchronous as the first `if` assigning constants. |
 | [`sema/fsm-unreachable-state`](#semafsm-unreachable-state), [`sema/fsm-stuck-state`](#semafsm-stuck-state) | A `case` on a variable of an enumeration, or on one whose labels are parameters (`localparam IDLE = 0`). |
 | [`style/line-length`](#styleline-length), [`style/trailing-whitespace`](#styletrailing-whitespace), [`style/tabs`](#styletabs) | As in VHDL. |
-| [`style/process-label`](#styleprocess-label) | An `always`, `always_comb`, `always_ff`, `always_latch` or `initial` block whose `begin` has no label. |
+| [`style/process-label`](#styleprocess-label) | An `always`, `always_comb`, `always_ff` or `always_latch` block whose `begin` has no label. |
 | [`style/positional-association`](#stylepositional-association) | Ports or parameter values connected by position. Gates and primitives are positional by definition and not reported. |
 | [`style/file-name`](#stylefile-name) | Compared with the modules, interfaces, programs and packages of the file. |
 | [`naming/*`](#naming) | Modules (`naming/module`), packages, parameters (`naming/parameter`), `localparam`s (`naming/constant`), ports, nets and variables of a module (`naming/signal`) or of a block or function (`naming/variable`), types, functions, tasks (`naming/task`), instances, labels of blocks (`naming/process`) and of generate blocks (`naming/generate`). |

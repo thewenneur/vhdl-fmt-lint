@@ -114,13 +114,12 @@
 - **Edits past the end of a CRLF line** are inserted before the `\r\n`, not between `\r`
   and `\n`.
 - Name resolution no longer panics on an unbalanced scope (a bug); it degrades instead.
-
-### Fixed
-
 - Verilog: an empty position in an instance's connections (`sub u (a, , c)`) leaves its
   input unconnected, which `verilog/unconnected-input` now reports, and the fix of
   `style/positional-association` names it (`.b()`) instead of leaving an empty position
   among named connections, which did not parse.
+- `style/file-name` suggests a name with the file's own extension (`top.vhdl` for a
+  `.vhdl` file) instead of always `.vhd`.
 - `vfl lint` run in `examples/` no longer mixes the configuration lessons with the UART
   design (15 errors from duplicate entities): each lesson of `examples/config` is a
   project of its own (`root = true`), and `examples/uart` is formatted with the default
