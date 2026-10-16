@@ -1710,7 +1710,7 @@ fn design_hierarchy_of_the_uart_example() {
     assert_eq!(dut["location"]["uri"], url(&root.join("tb/tb_uart.vhd")));
     assert_eq!(
         dut["location"]["range"]["start"],
-        json!({ "line": 21, "character": 2 })
+        json!({ "line": 21, "character": 4 })
     );
     assert_eq!(
         dut["entityLocation"]["uri"],
