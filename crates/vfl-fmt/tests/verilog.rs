@@ -383,3 +383,11 @@ fn a_triple_quoted_string_in_a_branch_not_compiled() {
     let result = format_verilog(text, &legacy(), &Options::default());
     assert!(matches!(result, Err(FormatError::Syntax(_))), "{result:?}");
 }
+
+/// Found by the `format_verilog` fuzz target: the space after a `'` was
+/// dropped, and `' da` became the based number `'da`.
+#[test]
+fn a_tick_keeps_its_space_before_a_base() {
+    let text = "module m;\n  initial assert (p with {' da});\nendmodule\n";
+    assert_eq!(fmt(text), text);
+}

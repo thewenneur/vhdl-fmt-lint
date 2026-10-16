@@ -427,9 +427,11 @@ fn spaced_in_source(prev: &Elem<Verilog>, cur: &Elem<Verilog>) -> bool {
 fn would_join(prev: &Elem<Verilog>, cur: &Elem<Verilog>) -> bool {
     let operator =
         |text: &str| !text.is_empty() && text.bytes().all(|b| b"+-*/%<>=!~&|^?:@#'.".contains(&b));
-    if !operator(&prev.text) || !operator(&cur.text) {
-        return false;
-    }
+    operator(&prev.text) && operator(&cur.text) && joined_lexes_differently(prev, cur)
+}
+
+/// Whether `prev` and `cur` lex differently once written together.
+fn joined_lexes_differently(prev: &Elem<Verilog>, cur: &Elem<Verilog>) -> bool {
     let joined = format!("{}{}", prev.text, cur.text);
     let lexed = vfl_verilog_syntax::lex(&joined, &Options::default());
     !matches!(&lexed.tokens[..], [a, b] if a.kind == prev.kind && b.kind == cur.kind)
@@ -535,7 +537,10 @@ fn space_between(prev: &Elem<Verilog>, cur: &Elem<Verilog>, config: &FormatConfi
                         .is_some_and(|t| Some(t.text_range()) == cur.src)
             })
         }
-        _ if prev.kind == TICK => false,
+        // `' da` would read as a based number.
+        _ if prev.kind == TICK => {
+            spaced_in_source(prev, cur) && joined_lexes_differently(prev, cur)
+        }
         COLON => matches!(cur.parent_kind(), Some(CONDITIONAL_EXPR | END_LABEL)),
         PLUS2 | MINUS2 if cur.parent_kind() == Some(POSTFIX_EXPR) => false,
         LBRACKET => {
