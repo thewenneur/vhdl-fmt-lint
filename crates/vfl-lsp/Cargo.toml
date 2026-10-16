@@ -21,6 +21,7 @@ vfl-project.workspace = true
 vfl-sema.workspace = true
 vfl-syntax.workspace = true
 vfl-verilog-syntax.workspace = true
+vfl-vendor.workspace = true
 rowan.workspace = true
 anyhow.workspace = true
 serde.workspace = true

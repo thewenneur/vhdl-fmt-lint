@@ -534,6 +534,69 @@ pub const RULES: &[Rule] = &[
         Warn,
         false,
     ),
+    rule(
+        vfl_vendor::rules::SYNTAX,
+        "A vendor file (`.qsf`, `.qip`, `.sdc`, `.xdc`, `.tcl`) has an unbalanced brace, quote or bracket.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        vfl_vendor::rules::UNKNOWN_COMMAND,
+        "A vendor file calls a command that is a near miss of a known one (any unknown command with the `strict` option).",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        vfl_vendor::rules::UNKNOWN_OPTION,
+        "A vendor file passes an option the command does not take.",
+        Warn,
+        Error,
+        false,
+    ),
+    rule(
+        vfl_vendor::rules::MISSPELLED_NAME,
+        "A Quartus assignment or Vivado property name is a near miss of a known one.",
+        Warn,
+        Error,
+        false,
+    ),
+    rule(
+        vfl_vendor::rules::MISSING_ARGUMENT,
+        "A vendor file command lacks a required option or value.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        vfl_vendor::rules::MISSING_FILE,
+        "A vendor file names a source, IP or script file that does not exist.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        vfl_vendor::rules::DUPLICATE_ASSIGNMENT,
+        "A vendor file sets the same assignment, property or clock twice.",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        vfl_vendor::rules::PIN_CONFLICT,
+        "A vendor file assigns one pin to two ports.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        vfl_vendor::rules::UNKNOWN_PORT,
+        "A vendor file constrains a port the top-level entity or module does not have.",
+        Info,
+        Warn,
+        false,
+    ),
 ];
 
 /// The kinds of declaration `naming/<kind>` rules apply to. They are off
@@ -601,7 +664,7 @@ fn preset_level(preset: Preset, id: &str) -> Level {
         return Off;
     };
     match preset {
-        Preset::None if id == "syntax/error" => Error,
+        Preset::None if id == "syntax/error" || id == vfl_vendor::rules::SYNTAX => Error,
         Preset::None => Off,
         Preset::Recommended => rule.recommended,
         Preset::Strict => rule.strict,

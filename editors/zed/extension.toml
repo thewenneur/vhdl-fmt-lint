@@ -1,6 +1,6 @@
 id = "vfl"
 name = "vfl"
-description = "VHDL, Verilog and SystemVerilog: diagnostics, lint fixes, formatting, hover, completion, navigation and rename from the vfl language server."
+description = "VHDL, Verilog and SystemVerilog, with Quartus settings and SDC/XDC constraints: diagnostics, lint fixes, formatting, hover, completion, navigation and rename from the vfl language server."
 version = "0.8.0"
 schema_version = 1
 authors = ["thewenneur"]
@@ -8,12 +8,14 @@ repository = "https://github.com/thewenneur/vhdl-fmt-lint"
 
 [language_servers.vfl]
 name = "vfl"
-languages = ["VHDL", "Verilog", "SystemVerilog"]
+languages = ["VHDL", "Verilog", "SystemVerilog", "Quartus Settings", "SDC Constraints"]
 
 [language_servers.vfl.language_ids]
 VHDL = "vhdl"
 Verilog = "verilog"
 SystemVerilog = "systemverilog"
+"Quartus Settings" = "quartus"
+"SDC Constraints" = "sdc"
 
 [grammars.vhdl]
 repository = "https://github.com/jpt13653903/tree-sitter-vhdl"
@@ -22,3 +24,7 @@ rev = "9be8e45c3ae7e7a4373a943a5c81ff92ce3656f8"
 [grammars.systemverilog]
 repository = "https://github.com/gmlarumbe/tree-sitter-systemverilog"
 rev = "d6be6119fe4d04c65c567e7b79625aa6280fea34"
+
+[grammars.tcl]
+repository = "https://github.com/tree-sitter-grammars/tree-sitter-tcl"
+rev = "850a72ab6436e06645b33b11cfa60cbdb04b1f01"

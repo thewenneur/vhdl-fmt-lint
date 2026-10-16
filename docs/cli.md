@@ -75,7 +75,9 @@ across files and libraries, then reports the findings in the given files only. U
 `[verilog]` `mode` is off (it is `"names"` by default), the project's Verilog and SystemVerilog modules
 take part as entities: instances of them are checked against their parameters and ports.
 With `mode = "full"`, Verilog and SystemVerilog files are linted too (see
-[lints.md](lints.md#verilog-and-systemverilog)). Which rules
+[lints.md](lints.md#verilog-and-systemverilog)). FPGA vendor files under the paths
+(Quartus `.qsf` and `.qip`, `.sdc`, Vivado `.xdc` and `.tcl`) are linted with the
+[`vendor/*` rules](lints.md#vendor), with the ports of the analyzed design. Which rules
 run and at which level comes from `[lint]` ([configuration.md](configuration.md#lint));
 every rule is described in [lints.md](lints.md).
 

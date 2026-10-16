@@ -2677,6 +2677,263 @@
                 }
               ]
             },
+            "vendor/syntax": {
+              "description": "A vendor file (`.qsf`, `.qip`, `.sdc`, `.xdc`, `.tcl`) has an unbalanced brace, quote or bracket.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "vendor/unknown-command": {
+              "description": "A vendor file calls a command that is a near miss of a known one (any unknown command with the `strict` option).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "strict": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "Report every unknown command, not only near misses of known ones (Tcl scripts included)."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "vendor/unknown-option": {
+              "description": "A vendor file passes an option the command does not take.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "vendor/misspelled-name": {
+              "description": "A Quartus assignment or Vivado property name is a near miss of a known one.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "vendor/missing-argument": {
+              "description": "A vendor file command lacks a required option or value.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "vendor/missing-file": {
+              "description": "A vendor file names a source, IP or script file that does not exist.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "vendor/duplicate-assignment": {
+              "description": "A vendor file sets the same assignment, property or clock twice.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "vendor/pin-conflict": {
+              "description": "A vendor file assigns one pin to two ports.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "vendor/unknown-port": {
+              "description": "A vendor file constrains a port the top-level entity or module does not have.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
             "naming/entity": {
               "description": "Naming convention for entities (on when configured).",
               "anyOf": [

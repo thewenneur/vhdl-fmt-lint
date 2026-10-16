@@ -23,6 +23,13 @@ for query in languages/systemverilog/*.scm; do
   fi
 done
 
+for query in languages/quartus/*.scm; do
+  if ! cmp -s "$query" "languages/sdc/$(basename "$query")"; then
+    echo "FAIL: languages/quartus and languages/sdc differ in $(basename "$query")" >&2
+    exit 1
+  fi
+done
+
 # The example keymap only spawns tasks of the example tasks.json.
 python3 - <<'PY'
 import json
@@ -71,3 +78,9 @@ check() {
 check vhdl source.vhdl "$repo"/examples/uart/rtl/*.vhd
 check systemverilog source.systemverilog \
   "$repo"/crates/vfl-verilog-syntax/tests/data/ok/*.sv "$repo"/crates/vfl-verilog-syntax/tests/data/ok/*.v
+vendor=$(mktemp -d)
+printf 'set_global_assignment -name VHDL_FILE "rtl/top.vhd"\nset_location_assignment PIN_A1 -to clk ;# pin\n' > "$vendor/top.qsf"
+printf 'create_clock -name clk -period 10 [get_ports {clk}]\nset_property PACKAGE_PIN W5 [get_ports clk]\n' > "$vendor/top.xdc"
+check quartus source.tcl "$vendor/top.qsf"
+check sdc source.tcl "$vendor/top.xdc"
+rm -rf "$vendor"

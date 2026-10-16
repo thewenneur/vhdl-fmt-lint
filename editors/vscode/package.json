@@ -84,6 +84,31 @@
           ".svh"
         ],
         "configuration": "./language-configuration-verilog.json"
+      },
+      {
+        "id": "quartus",
+        "aliases": [
+          "Quartus Settings",
+          "quartus"
+        ],
+        "extensions": [
+          ".qsf",
+          ".qip"
+        ],
+        "configuration": "./language-configuration-tcl.json"
+      },
+      {
+        "id": "sdc",
+        "aliases": [
+          "SDC / XDC Constraints",
+          "sdc",
+          "xdc"
+        ],
+        "extensions": [
+          ".sdc",
+          ".xdc"
+        ],
+        "configuration": "./language-configuration-tcl.json"
       }
     ],
     "grammars": [
@@ -101,6 +126,16 @@
         "language": "verilog",
         "scopeName": "source.verilog",
         "path": "./syntaxes/verilog.tmLanguage.json"
+      },
+      {
+        "language": "quartus",
+        "scopeName": "source.quartus",
+        "path": "./syntaxes/quartus.tmLanguage.json"
+      },
+      {
+        "language": "sdc",
+        "scopeName": "source.sdc",
+        "path": "./syntaxes/sdc.tmLanguage.json"
       }
     ],
     "snippets": [

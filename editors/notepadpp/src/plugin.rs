@@ -27,8 +27,8 @@ use vfl_lsp::generate::Kind;
 
 use crate::engine::{
     BufferText, Engine, FormatFailure, NameColor, Severity, buffer_edits, completes_after_dot,
-    completion_list, editor_config, is_library_copy, is_project_file, is_verilog_path,
-    is_vhdl_path, plain_text, signature_tip,
+    completion_list, editor_config, is_library_copy, is_project_file, is_vendor_path,
+    is_verilog_path, is_vhdl_path, plain_text, signature_tip,
 };
 use crate::menu;
 use crate::tools;
@@ -641,6 +641,7 @@ fn on_notification(n: &ScNotification) {
             lint_current(Trigger::Auto);
         }
         NPPN_BUFFERACTIVATED | NPPN_LANGCHANGED if from_npp => {
+            tcl_for_vendor_files(current_buffer());
             rescan(false);
             lint_current(Trigger::Auto);
             tools::schedule_highlight();
@@ -1026,6 +1027,20 @@ pub(crate) fn is_hdl(id: usize) -> bool {
         || buffer_path(id).is_some_and(|p| is_verilog_path(&p))
 }
 
+/// Whether a buffer is an FPGA vendor file vfl lints: Quartus settings,
+/// SDC or XDC constraints, a Tcl script.
+pub(crate) fn is_vendor(id: usize) -> bool {
+    buffer_path(id).is_some_and(|p| is_vendor_path(&p))
+}
+
+/// Highlights vendor files (`.qsf`, `.qip`, `.sdc`, `.xdc`) as Tcl, which
+/// they are written in, unless another language was chosen for them.
+fn tcl_for_vendor_files(id: usize) {
+    if is_vendor(id) && send(npp(), NPPM_GETBUFFERLANGTYPE, id, 0) == L_TEXT {
+        send(npp(), NPPM_SETBUFFERLANGTYPE, id, L_TCL);
+    }
+}
+
 pub(crate) fn is_vhdl(id: usize) -> bool {
     send(npp(), NPPM_GETBUFFERLANGTYPE, id, 0) == L_VHDL
         || buffer_path(id).is_some_and(|p| is_vhdl_path(&p))
@@ -1166,10 +1181,11 @@ pub(crate) fn lint_current(trigger: Trigger) {
     // Library sources opened by go to definition are not the user's.
     let library = path.as_deref().is_some_and(is_library_copy);
     let wanted = match trigger {
-        Trigger::Auto => auto && is_hdl(id) && !library,
+        Trigger::Auto => auto && (is_hdl(id) || is_vendor(id)) && !library,
         Trigger::Command => true,
         Trigger::Refresh => {
-            (is_hdl(id) && !library) || with(|s| s.problems.borrow().contains_key(&id))
+            ((is_hdl(id) || is_vendor(id)) && !library)
+                || with(|s| s.problems.borrow().contains_key(&id))
         }
     };
     if !wanted {

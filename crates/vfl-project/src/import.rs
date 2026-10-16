@@ -8,6 +8,8 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
+use vfl_vendor::eval::{Tcl, normalize_path};
+use vfl_vendor::tcl::{self, Word, WordKind};
 use yaml_rust2::{Yaml, YamlLoader};
 
 /// Library name to path patterns, relative to the tool file's directory
@@ -438,313 +440,12 @@ fn vivado_project(text: &str, path: &Path) -> Libraries {
     libraries
 }
 
-/// Splits a Tcl command line into words, keeping `{...}` and `"..."`
-/// groups and `[...]` substitutions whole.
-fn tcl_words(line: &str) -> Vec<String> {
-    let mut words = Vec::new();
-    let mut word = String::new();
-    let mut chars = line.chars().peekable();
-    while let Some(c) = chars.next() {
-        match c {
-            ' ' | '\t' => {
-                if !word.is_empty() {
-                    words.push(std::mem::take(&mut word));
-                }
-            }
-            '{' | '"' | '[' => {
-                let close = match c {
-                    '{' => '}',
-                    '"' => '"',
-                    _ => ']',
-                };
-                let mut depth = 1;
-                let mut group = String::new();
-                for d in chars.by_ref() {
-                    if d == c && c != '"' {
-                        depth += 1;
-                    } else if d == close {
-                        depth -= 1;
-                        if depth == 0 {
-                            break;
-                        }
-                    }
-                    group.push(d);
-                }
-                if c == '[' {
-                    word.push('[');
-                    word.push_str(&group);
-                    word.push(']');
-                } else {
-                    word.push_str(&group);
-                }
-            }
-            _ => word.push(c),
-        }
-    }
-    if !word.is_empty() {
-        words.push(word);
-    }
-    words
-}
-
-/// The logical lines of a Tcl script: comments dropped, `\` continuations
-/// joined.
-fn tcl_lines(text: &str) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut current = String::new();
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if current.is_empty() && trimmed.starts_with('#') {
-            continue;
-        }
-        match trimmed.strip_suffix('\\') {
-            Some(start) => {
-                current.push_str(start);
-                current.push(' ');
-            }
-            None => {
-                current.push_str(trimmed);
-                lines.push(std::mem::take(&mut current));
-            }
-        }
-    }
-    if !current.is_empty() {
-        lines.push(current);
-    }
-    lines
-}
-
-/// Tcl evaluation as far as file lists need it: `set` variables, `$var`,
-/// `${var}` and `$::quartus(qip_path)`, and the commands that build paths
-/// (`info script`, `file dirname|join|normalize|tail`, `pwd`, `glob`).
-/// Anything else makes a word unknown, and it is skipped.
-struct Tcl {
-    /// The script's own directory, `/`-separated.
-    dir: String,
-    script: String,
-    vars: HashMap<String, String>,
-}
-
-impl Tcl {
-    fn new(script: &Path) -> Tcl {
-        let script = script.to_string_lossy().replace('\\', "/");
-        let dir = match script.rfind('/') {
-            Some(slash) => script[..slash].to_owned(),
-            None => ".".to_owned(),
-        };
-        let mut vars = HashMap::new();
-        // Quartus sets this to the directory of the `.qip` being read.
-        vars.insert("quartus(qip_path)".to_owned(), dir.clone());
-        Tcl { dir, script, vars }
-    }
-
-    /// Runs the commands that matter between file lists: `set name value`.
-    fn run(&mut self, words: &[String]) {
-        if words.len() == 3
-            && words[0] == "set"
-            && let Some(value) = self.subst(&words[2])
-        {
-            self.vars
-                .insert(words[1].trim_start_matches("::").to_owned(), value);
-        }
-    }
-
-    /// A word with its variables and commands substituted.
-    fn subst(&self, word: &str) -> Option<String> {
-        let chars: Vec<char> = word.chars().collect();
-        let mut out = String::new();
-        let mut i = 0;
-        while i < chars.len() {
-            match chars[i] {
-                '$' => {
-                    let at_start = i == 0;
-                    i += 1;
-                    let mut name = String::new();
-                    if chars.get(i) == Some(&'{') {
-                        i += 1;
-                        while i < chars.len() && chars[i] != '}' {
-                            name.push(chars[i]);
-                            i += 1;
-                        }
-                        i += 1;
-                    } else {
-                        while i < chars.len()
-                            && (chars[i].is_ascii_alphanumeric() || matches!(chars[i], '_' | ':'))
-                        {
-                            name.push(chars[i]);
-                            i += 1;
-                        }
-                        if chars.get(i) == Some(&'(') {
-                            while i < chars.len() && chars[i] != ')' {
-                                name.push(chars[i]);
-                                i += 1;
-                            }
-                            name.push(')');
-                            i += 1;
-                        }
-                    }
-                    let name = name.trim_start_matches("::");
-                    match self.var(name) {
-                        Some(value) => out.push_str(&value),
-                        // An unknown leading variable is most often the
-                        // script's directory.
-                        None if at_start && chars.get(i) == Some(&'/') => out.push_str(&self.dir),
-                        None => return None,
-                    }
-                }
-                '[' => {
-                    let mut depth = 1;
-                    let mut inner = String::new();
-                    i += 1;
-                    while i < chars.len() {
-                        match chars[i] {
-                            '[' => depth += 1,
-                            ']' => {
-                                depth -= 1;
-                                if depth == 0 {
-                                    break;
-                                }
-                            }
-                            _ => {}
-                        }
-                        inner.push(chars[i]);
-                        i += 1;
-                    }
-                    i += 1;
-                    out.push_str(&self.command(&inner)?);
-                }
-                '\\' => {
-                    out.push('/');
-                    i += 1;
-                }
-                c => {
-                    out.push(c);
-                    i += 1;
-                }
-            }
-        }
-        Some(out)
-    }
-
-    fn var(&self, name: &str) -> Option<String> {
-        if let Some(env) = name.strip_prefix("env(").and_then(|n| n.strip_suffix(')')) {
-            return std::env::var(env).ok();
-        }
-        self.vars.get(name).cloned()
-    }
-
-    /// The result of `[inner]`.
-    fn command(&self, inner: &str) -> Option<String> {
-        let words = tcl_words(inner);
-        let arg = |i: usize| words.get(i).and_then(|w| self.subst(w));
-        match (words.first()?.as_str(), words.get(1).map(String::as_str)) {
-            ("info", Some("script")) => Some(self.script.clone()),
-            ("pwd", _) => Some(self.dir.clone()),
-            ("file", Some("dirname")) => {
-                let path = arg(2)?;
-                let path = path.trim_end_matches('/');
-                Some(match path.rfind('/') {
-                    Some(0) => "/".to_owned(),
-                    Some(slash) => path[..slash].to_owned(),
-                    None => ".".to_owned(),
-                })
-            }
-            ("file", Some("tail")) => {
-                let path = arg(2)?;
-                Some(path.rsplit('/').next().unwrap_or_default().to_owned())
-            }
-            ("file", Some("join")) => {
-                let mut joined = String::new();
-                for word in &words[2..] {
-                    // An unknown variable here is most often the script's
-                    // directory.
-                    let part = match self.subst(word) {
-                        Some(part) => part,
-                        None if word.starts_with('$') => self.dir.clone(),
-                        None => return None,
-                    };
-                    if part.starts_with('/') || joined.is_empty() {
-                        joined = part;
-                    } else {
-                        joined = format!("{}/{part}", joined.trim_end_matches('/'));
-                    }
-                }
-                Some(joined)
-            }
-            ("file", Some("normalize")) => {
-                let path = arg(2)?;
-                Some(if path.starts_with('/') {
-                    path
-                } else {
-                    format!("{}/{path}", self.dir)
-                })
-            }
-            ("glob", _) => {
-                let mut directory = None;
-                let mut i = 1;
-                while i < words.len() {
-                    match words[i].as_str() {
-                        "-directory" | "-dir" | "-path" | "-types" | "-type" => {
-                            if words[i].starts_with("-dir") {
-                                directory = Some(arg(i + 1)?);
-                            }
-                            i += 2;
-                        }
-                        "--" => i += 1,
-                        w if w.starts_with('-') => i += 1,
-                        _ => {
-                            let pattern = arg(i)?;
-                            return Some(match directory {
-                                Some(dir) => format!("{}/{pattern}", dir.trim_end_matches('/')),
-                                None => pattern,
-                            });
-                        }
-                    }
-                }
-                None
-            }
-            _ => None,
-        }
-    }
-
-    /// A file word as a pattern relative to the script's directory (or
-    /// absolute): a whole `[glob ...]` stays a pattern, anything else is a
-    /// literal path.
-    fn path(&self, word: &str) -> Option<String> {
-        let word = word.trim();
-        let is_glob = word.starts_with("[glob ") && word.ends_with(']');
-        let path = normalize_path(&self.subst(word)?);
-        let path = match path.strip_prefix(&format!("{}/", self.dir)) {
-            Some(rest) => rest.to_owned(),
-            None => path,
-        };
-        if path.is_empty() || path == "." {
-            return None;
-        }
-        Some(if is_glob { path } else { literal(&path) })
-    }
-}
-
-/// Resolves `.` and `..` segments where possible.
-fn normalize_path(path: &str) -> String {
-    let absolute = path.starts_with('/');
-    let mut segments: Vec<&str> = Vec::new();
-    for segment in path.split('/') {
-        match segment {
-            "" | "." => {}
-            ".." if segments.last().is_some_and(|s| *s != "..") => {
-                segments.pop();
-            }
-            ".." if absolute => {}
-            _ => segments.push(segment),
-        }
-    }
-    let joined = segments.join("/");
-    if absolute {
-        format!("/{joined}")
-    } else {
-        joined
-    }
+/// A file word of a Tcl script as a pattern relative to the script's
+/// directory (or absolute): a whole `[glob ...]` stays a pattern, anything
+/// else is a literal path.
+fn tcl_path(tcl: &Tcl, text: &str, word: &Word) -> Option<String> {
+    let (path, is_glob) = tcl.path(text, word)?;
+    Some(if is_glob { path } else { literal(&path) })
 }
 
 /// `read_vhdl [-library lib] [-vhdl2008] files`; files without a library
@@ -752,32 +453,41 @@ fn normalize_path(path: &str) -> String {
 fn vivado_tcl(text: &str, script: &Path) -> Libraries {
     let mut tcl = Tcl::new(script);
     let mut libraries = Libraries::new();
-    for line in tcl_lines(text) {
-        let words = tcl_words(&line);
-        if words.first().map(String::as_str) != Some("read_vhdl") {
-            tcl.run(&words);
+    for command in tcl::parse(text).commands {
+        let words = &command.words;
+        if command.name(text) != "read_vhdl" {
+            tcl.run(text, words);
             continue;
         }
         let mut library = "xil_defaultlib".to_owned();
-        let mut files = Vec::new();
+        let mut files: Vec<Word> = Vec::new();
         let mut i = 1;
         while i < words.len() {
-            match words[i].as_str() {
+            let word = &words[i];
+            match word.text(text) {
                 "-library" | "-lib" => {
-                    if let Some(name) = words.get(i + 1).and_then(|w| tcl.subst(w)) {
+                    if let Some(name) = words.get(i + 1).and_then(|w| tcl.word(text, w)) {
                         library = name;
                     }
                     i += 1;
                 }
-                w if w.starts_with('-') => {}
-                w if w.starts_with('[') => files.push(w.to_owned()),
+                w if w.starts_with('-') && word.kind == WordKind::Bare => {}
                 // `{a.vhd b.vhd}`: a list.
-                w => files.extend(w.split_whitespace().map(str::to_owned)),
+                _ if word.kind == WordKind::Braced => files.extend(
+                    tcl::list_items(text, word.inner)
+                        .into_iter()
+                        .map(|range| Word {
+                            kind: WordKind::Braced,
+                            range,
+                            inner: range,
+                        }),
+                ),
+                _ => files.push(word.clone()),
             }
             i += 1;
         }
         for file in files {
-            if let Some(pattern) = tcl.path(&file) {
+            if let Some(pattern) = tcl_path(&tcl, text, &file) {
                 add(&mut libraries, &library, pattern);
             }
         }
@@ -792,10 +502,10 @@ fn vivado_tcl(text: &str, script: &Path) -> Libraries {
 fn quartus(text: &str, script: &Path) -> Libraries {
     let mut tcl = Tcl::new(script);
     let mut libraries = Libraries::new();
-    for line in tcl_lines(text) {
-        let words = tcl_words(&line);
-        if words.first().map(String::as_str) != Some("set_global_assignment") {
-            tcl.run(&words);
+    for command in tcl::parse(text).commands {
+        let words = &command.words;
+        if command.name(text) != "set_global_assignment" {
+            tcl.run(text, words);
             continue;
         }
         let mut name = None;
@@ -803,23 +513,23 @@ fn quartus(text: &str, script: &Path) -> Libraries {
         let mut value = None;
         let mut i = 1;
         while i < words.len() {
-            match words[i].to_ascii_lowercase().as_str() {
+            match words[i].text(text).to_ascii_lowercase().as_str() {
                 "-name" => {
-                    name = words.get(i + 1).cloned();
+                    name = words.get(i + 1).map(|w| w.text(text));
                     i += 1;
                 }
                 "-library" => {
-                    library = words.get(i + 1).and_then(|w| tcl.subst(w));
+                    library = words.get(i + 1).and_then(|w| tcl.word(text, w));
                     i += 1;
                 }
-                w if w.starts_with('-') => i += 1,
-                _ => value = value.or_else(|| Some(words[i].clone())),
+                w if w.starts_with('-') && words[i].kind == WordKind::Bare => i += 1,
+                _ => value = value.or(Some(&words[i])),
             }
             i += 1;
         }
         if name.is_some_and(|n| n.eq_ignore_ascii_case("VHDL_FILE"))
             && let (Some(library), Some(value)) = (library, value)
-            && let Some(pattern) = tcl.path(&value)
+            && let Some(pattern) = tcl_path(&tcl, text, value)
         {
             add(&mut libraries, &library, pattern);
         }
@@ -1284,6 +994,26 @@ set_global_assignment -library ip -name VHDL_FILE [file join $::quartus(qip_path
                 ("ip", &["pll.vhd"]),
                 ("lib_x", &["my dir/x.vhd"]),
             ])
+        );
+    }
+
+    /// What the shared Tcl reader adds: `;` between commands, comments
+    /// after `;#`, commands and lists over several lines, and braced
+    /// words taken as they are.
+    #[test]
+    fn tcl_syntax() {
+        let text = "set lib a; set_global_assignment -name VHDL_FILE x.vhd -library $lib ;# x\n\
+                    set_global_assignment \\\n  -name VHDL_FILE y.vhd -library b\n\
+                    if {0} {\n  set_global_assignment -name VHDL_FILE z.vhd -library c\n}\n\
+                    set_global_assignment -name VHDL_FILE {$odd.vhd} -library d\n";
+        assert_eq!(
+            quartus(text, Path::new("/p/top.qsf")),
+            libs(&[("a", &["x.vhd"]), ("b", &["y.vhd"]), ("d", &["$odd.vhd"])])
+        );
+        let text = "read_vhdl -library l {\n  a.vhd\n  b.vhd\n}\n";
+        assert_eq!(
+            vivado_tcl(text, Path::new("/p/build.tcl")),
+            libs(&[("l", &["a.vhd", "b.vhd"])])
         );
     }
 

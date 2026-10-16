@@ -1,0 +1,179 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Quartus Settings",
+  "scopeName": "source.quartus",
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "match": "(-name)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": {
+          "name": "variable.parameter.option.quartus"
+        },
+        "2": {
+          "name": "support.constant.assignment.quartus"
+        }
+      }
+    },
+    {
+      "name": "constant.other.pin.quartus",
+      "match": "\\bPIN_[A-Za-z]*\\d+\\b"
+    },
+    {
+      "include": "#command"
+    },
+    {
+      "include": "#value"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.quartus",
+          "match": "(?:^|(?<=;))\\s*(#.*)$",
+          "captures": {
+            "1": {
+              "name": "comment.line.number-sign.quartus"
+            }
+          }
+        }
+      ]
+    },
+    "command": {
+      "patterns": [
+        {
+          "name": "keyword.control.quartus",
+          "match": "(?<![\\w:$-])(continue|foreach|switch|return|elseif|break|throw|catch|while|proc|else|then|try|for|if)(?![\\w:-])"
+        },
+        {
+          "name": "support.function.vendor.quartus",
+          "match": "(?<![\\w:$-])(set_power_file_assignment|derive_clock_uncertainty|set_operating_conditions|set_location_assignment|set_hierarchy_separator|config_timing_pessimism|set_instance_assignment|create_generated_clock|set_switching_activity|set_clock_uncertainty|set_global_assignment|set_clock_transition|set_propagated_clock|set_input_transition|make_diff_pair_ports|set_max_time_borrow|set_min_pulse_width|add_cells_to_pblock|set_multicycle_path|remove_clock_groups|connect_debug_port|set_external_delay|export_assignments|set_disable_timing|set_max_transition|set_system_jitter|create_debug_core|set_clock_latency|set_timing_derate|create_debug_port|derive_pll_clocks|set_io_assignment|set_case_analysis|set_output_delay|set_driving_cell|set_input_jitter|set_clock_groups|current_instance|set_user_option|set_input_delay|set_clock_sense|set_time_format|create_property|delete_pblocks|execute_module|set_false_path|set_logic_zero|set_max_fanout|current_design|set_msg_config|set_data_delay|set_data_check|create_pblock|derive_clocks|set_power_opt|set_net_delay|set_min_delay|set_parameter|set_logic_one|project_close|resize_pblock|create_waiver|set_max_delay|create_macro|create_clock|load_package|set_max_skew|set_logic_dc|post_message|set_bus_skew|update_macro|execute_flow|project_open|set_property|project_new|place_cell|startgroup|group_path|reset_path|set_units|set_param|set_drive|endgroup|set_load)(?![\\w:-])"
+        },
+        {
+          "name": "support.function.builtin.quartus",
+          "match": "(?<![\\w:$-])(fconfigure|namespace|lreverse|variable|encoding|lreplace|lrepeat|lassign|llength|lsearch|linsert|uplevel|lappend|package|append|format|binary|concat|global|source|rename|update|interp|regsub|lindex|string|lrange|regexp|split|unset|upvar|array|after|trace|vwait|clock|lsort|error|close|subst|apply|flush|expr|puts|lmap|list|dict|exit|scan|join|lset|read|glob|file|tell|eval|info|gets|incr|exec|seek|open|time|chan|pwd|eof|set|cd)(?![\\w:-])"
+        }
+      ]
+    },
+    "value": {
+      "patterns": [
+        {
+          "include": "#string"
+        },
+        {
+          "include": "#substitution"
+        },
+        {
+          "include": "#variable"
+        },
+        {
+          "include": "#braces"
+        },
+        {
+          "name": "variable.parameter.option.quartus",
+          "match": "(?<![\\w$-])-[A-Za-z_]\\w*"
+        },
+        {
+          "name": "constant.numeric.quartus",
+          "match": "(?<![\\w.$-])-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?(?![\\w.])"
+        },
+        {
+          "name": "punctuation.terminator.quartus",
+          "match": ";"
+        },
+        {
+          "name": "constant.character.escape.quartus",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "variable": {
+      "name": "variable.other.quartus",
+      "match": "\\$(?:\\{[^}]*\\}|(?:::)?[A-Za-z_][\\w:]*(?:\\([^)]*\\))?)"
+    },
+    "string": {
+      "name": "string.quoted.double.quartus",
+      "begin": "\"",
+      "end": "\"",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.begin.quartus"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.quartus"
+        }
+      },
+      "patterns": [
+        {
+          "name": "constant.character.escape.quartus",
+          "match": "\\\\."
+        },
+        {
+          "include": "#variable"
+        },
+        {
+          "include": "#substitution"
+        }
+      ]
+    },
+    "substitution": {
+      "begin": "\\[",
+      "end": "\\]",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.brackets.begin.quartus"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.brackets.end.quartus"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#getter"
+        },
+        {
+          "include": "#command"
+        },
+        {
+          "include": "#value"
+        }
+      ]
+    },
+    "getter": {
+      "name": "support.function.collection.quartus",
+      "match": "(?<![\\w:$-])(remove_from_collection|foreach_in_collection|get_assignment_groups|get_entity_instances|get_generated_clocks|get_collection_size|get_clock_regions|add_to_collection|query_collection|get_package_pins|get_debug_ports|get_debug_cores|get_object_name|get_partitions|get_registers|all_registers|get_site_pins|get_lib_cells|get_lib_pins|get_property|get_bel_pins|get_pblocks|get_designs|get_keepers|all_outputs|get_fanouts|get_iobanks|get_fanins|get_clocks|get_macros|all_fanout|all_clocks|all_inputs|get_ports|get_nodes|get_sites|all_fanin|get_tiles|get_cells|get_libs|get_nets|get_bels|get_slrs|get_pins|filter)(?![\\w:-])"
+    },
+    "braces": {
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.braces.begin.quartus"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.braces.end.quartus"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#command"
+        },
+        {
+          "include": "#value"
+        }
+      ]
+    }
+  }
+}

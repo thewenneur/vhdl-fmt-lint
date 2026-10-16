@@ -20,6 +20,7 @@ vfl-lint = { path = "crates/vfl-lint" }
 vfl-lsp = { path = "crates/vfl-lsp" }
 vfl-doc = { path = "crates/vfl-doc" }
 vfl-gen = { path = "crates/vfl-gen" }
+vfl-vendor = { path = "crates/vfl-vendor" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
