@@ -205,12 +205,18 @@ Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
    (clk)` does not (configurable).
 2. **Line breaks**: the source's line breaks are kept (runs of blank lines capped), and every
    statement, declaration, clause, `begin`, `end`, `else` and `elsif` starts a line. The
-   formatter adds line breaks but never removes one, which makes idempotency structural and
-   keeps diffs small. Lists are laid out one element per line, with `(` ending the opening line
+   formatter adds line breaks but never removes one (it only moves one to the other side of an
+   operator, with `operator_position`), which makes idempotency structural and keeps diffs
+   small. `[format.blank_lines]` sets the blank lines around `begin`, `end`, processes and
+   declaration groups. Lists are laid out one element per line, with `(` ending the opening line
    and `)` on its own line: port and generic clauses always by default, port and generic maps
    when already split or too long, and any other list of two or more elements (parameter
-   lists, calls, aggregates) when its line is wider than `max_width`, outermost list first. A
-   single index or argument is never split; an expression with no list to split stays long.
+   lists, calls, aggregates) when its line is wider than `max_width`, outermost list first.
+   Expressions too long are broken at their loosest operators (`else` of conditional values,
+   then logical, relational, shift, adding and multiplying operators), each run of operators
+   of a kind breaking together; at the same parenthesis depth, port and generic lists come
+   first, then expressions, then calls and aggregates, and a single index or argument comes
+   last. Widths are display widths: CJK characters count two columns.
 3. **Indentation** follows the constructs. A line continuing a statement gets
    `continuation_indent`; a line inside parentheses gets one `indent` more than the line that
    opened them; continuation lines of conditional and selected assignments start under the
@@ -232,8 +238,8 @@ Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
 
 The plan was a Wadler/Prettier document IR printed against `max_width`. Keeping the author's
 line breaks and only adding breaks turned out simpler and closer to how VHDL is written by hand
-(aligned blocks, hand-split conditions); long lines are handled by splitting lists. Re-wrapping
-long expressions is left for later.
+(aligned blocks, hand-split conditions); long lines are handled by splitting lists, then
+expressions at their operators, each step only while the line is still too long.
 
 Guarantees, enforced in tests, in the corpus job and at runtime:
 
@@ -400,6 +406,19 @@ use them. Implemented, all read without running the tool:
 - Vivado `.xpr` (`Library` attribute, default `xil_defaultlib`) and Tcl `read_vhdl
   -library` scripts.
 - Quartus `.qsf`/`.qip`: `set_global_assignment -name VHDL_FILE ... -library`.
+- Edalize EDAM (`*.eda.yml`, `*.eda.json`, `edam.json`): `files` entries of a `vhdlSource*`
+  type with a `logical_name`.
+- `.f` file lists: files after `-makelib lib` (up to `-endlib`, as Vivado's
+  `export_simulation` writes them) or `-work lib`. `-f` lists nest with paths relative to
+  the top list's directory, `-F` ones relative to themselves; `$VAR`, `${VAR}` and
+  `$(VAR)` come from the environment; `//`, `/* */` and `#` comments, `+incdir+`,
+  `+define+`, `-v`, `-y` and other options are skipped.
+- hdlmake `Manifest.py`: `files` (a directory stands for its VHDL files) in `library`.
+  Each module's own manifest is found by the walk, so `modules` is not followed.
+- Questa/ModelSim projects (`.mpf`): `Project_File_N` with the `compile_to` library of
+  `Project_File_P_N`.
+
+  Bender's `Bender.yml` is not read: it has no VHDL libraries to import.
 
   In both Tcl formats, `set` variables are followed (`set path [file dirname [info
   script]]`, then `$path/rtl/x.vhd` or `${path}`), along with `[file join|dirname|
@@ -413,7 +432,7 @@ by default: it places only the files inference leaves in no library, and its lib
 propagate along `work` references. If that leaves library conflicts (references to project
 units missing from the library meant, units declared twice in a library), the ranking with
 `vhdl_ls.toml` above inference is tried too and kept when it leaves fewer (`[project]` `vhdl-ls = "prefer"` ranks it just below
-`vfl.toml` instead, `"off"` ignores it). HDLmake `Manifest.py` is not read yet. This makes migration a no-op.
+`vfl.toml` instead, `"off"` ignores it). This makes migration a no-op.
 
 **4. Infer libraries from the code.** For everything else, every file is parsed (fast,
 parallel) and indexed by the primary units it declares and the references it makes
@@ -428,8 +447,16 @@ parallel) and indexed by the primary units it declares and the references it mak
   constraints) are resolved by directory proximity, and surfaced as a diagnostic that
   suggests a one-line `[project.libraries]` entry.
 
+Vendor primitive libraries (`unisim`, `xpm`, `altera_mf`, Lattice's) are not part of the
+project. vfl bundles declarations of their common primitives, written from public
+documentation, and analyzes a library's only when a file uses it and no file is in it
+(`[project]` `vendor-stubs`). Their packages and components are marked incomplete, so names
+they lack stay unchecked rather than reported.
+
 **5. Explain it.** `vfl project` prints the root, the files, the inferred libraries and why
-each file landed where it did. The LSP exposes the same through a command.
+each file landed where it did. The LSP exposes the same through a command. `vfl order`
+writes the files in compile order, from the same libraries and unit references, for GHDL,
+Questa or Vivado.
 
 Explicit entries in `[project.libraries]` always win over inference, so the escape hatch
 is small and local rather than a full list.

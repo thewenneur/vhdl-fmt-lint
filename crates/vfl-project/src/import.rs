@@ -1,8 +1,9 @@
 //! Library lists of other tools found in the tree: VUnit `run.py` scripts,
-//! FuseSoC `.core` files, Vivado projects (`.xpr`) and Tcl scripts
-//! (`read_vhdl`), Quartus settings (`.qsf`, `.qip`). Each is read without
-//! running anything: only what can be seen statically counts, and a file
-//! that cannot be understood contributes nothing.
+//! FuseSoC `.core` files, Edalize EDAM files, Vivado projects (`.xpr`) and
+//! Tcl scripts (`read_vhdl`), Quartus settings (`.qsf`, `.qip`), `.f` file
+//! lists, hdlmake `Manifest.py` and Questa/ModelSim projects (`.mpf`). Each
+//! is read without running anything: only what can be seen statically
+//! counts, and a file that cannot be understood contributes nothing.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -16,7 +17,7 @@ pub type Libraries = BTreeMap<String, Vec<String>>;
 /// Whether `path` may be a tool file worth reading.
 pub fn is_tool_file(path: &Path) -> bool {
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    if name == "run.py" {
+    if name == "run.py" || name == "Manifest.py" || is_edam(name) {
         return true;
     }
     matches!(
@@ -24,18 +25,36 @@ pub fn is_tool_file(path: &Path) -> bool {
             .and_then(|e| e.to_str())
             .map(str::to_ascii_lowercase)
             .as_deref(),
-        Some("core" | "xpr" | "qsf" | "qip" | "tcl")
+        Some("core" | "xpr" | "qsf" | "qip" | "tcl" | "f" | "mpf")
     )
+}
+
+/// An Edalize EDAM file, as FuseSoC writes it (`name.eda.yml`) or as it is
+/// often saved by hand (`edam.json`).
+fn is_edam(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    [".eda.yml", ".eda.yaml", ".eda.json"]
+        .iter()
+        .any(|e| lower.ends_with(e))
+        || matches!(lower.as_str(), "edam.yml" | "edam.yaml" | "edam.json")
 }
 
 /// The library assignments a tool file makes, if it is one.
 pub fn import(path: &Path) -> Option<Libraries> {
-    let text = std::fs::read_to_string(path).ok()?;
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let extension = path
         .extension()
         .and_then(|e| e.to_str())
         .map(str::to_ascii_lowercase);
+    if extension.as_deref() == Some("f") {
+        let libraries = filelist(path);
+        return (!libraries.is_empty()).then_some(libraries);
+    }
+    let text = std::fs::read_to_string(path).ok()?;
     let libraries = match extension.as_deref() {
+        _ if is_edam(name) => edam(&text),
+        Some("py") if name == "Manifest.py" => hdlmake(&text),
+        Some("mpf") => questa_project(&text),
         Some("py") => vunit(&text),
         Some("core") => fusesoc(&text),
         Some("xpr") => vivado_project(&text, path),
@@ -808,6 +827,317 @@ fn quartus(text: &str, script: &Path) -> Libraries {
     libraries
 }
 
+// ---- Edalize -----------------------------------------------------------------
+
+/// `files: [{name: path, file_type: vhdlSource-2008, logical_name: lib}]`,
+/// paths relative to the EDAM file (its work root). JSON is read as YAML.
+fn edam(text: &str) -> Libraries {
+    let mut libraries = Libraries::new();
+    let Ok(documents) = YamlLoader::load_from_str(text) else {
+        return libraries;
+    };
+    let Some(Yaml::Array(files)) = documents.first().map(|d| &d["files"]) else {
+        return libraries;
+    };
+    for file in files {
+        let (Some(path), Some(library)) = (file["name"].as_str(), file["logical_name"].as_str())
+        else {
+            continue;
+        };
+        let vhdl = match file["file_type"].as_str() {
+            Some(t) => t.starts_with("vhdlSource"),
+            None => is_vhdl_path(path),
+        };
+        if vhdl && !library.is_empty() {
+            add(&mut libraries, library, literal(path));
+        }
+    }
+    libraries
+}
+
+// ---- File lists ----------------------------------------------------------------
+
+/// How deep `-f` files may nest.
+const FILELIST_DEPTH: usize = 8;
+
+/// A `.f` file list, as simulators, Verible or Slang read it: paths after
+/// `-makelib lib` (up to `-endlib`) or `-work lib` go to that library;
+/// `-f file` (relative to the top list's directory, taken as the one the
+/// tool runs in) and `-F file` (relative to the list naming it) are read
+/// in turn. `+incdir+`, `+define+`, `-v`, `-y` and other options are
+/// skipped. Files in no library are left to inference.
+fn filelist(path: &Path) -> Libraries {
+    let mut libraries = Libraries::new();
+    let mut list = FileList {
+        top: path.parent().unwrap_or(Path::new(".")).to_owned(),
+        library: None,
+        seen: Vec::new(),
+        libraries: &mut libraries,
+    };
+    list.read(path, "", "", 0);
+    libraries
+}
+
+struct FileList<'a> {
+    /// The top list's directory.
+    top: PathBuf,
+    /// The library of the paths read now.
+    library: Option<String>,
+    seen: Vec<PathBuf>,
+    libraries: &'a mut Libraries,
+}
+
+impl FileList<'_> {
+    /// Reads the list at `path`, in `dir` (relative to the top list's
+    /// directory), whose plain paths are relative to `base`: `dir` for a
+    /// list named by `-F`, the top list's directory otherwise.
+    fn read(&mut self, path: &Path, dir: &str, base: &str, depth: usize) {
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_owned());
+        if depth > FILELIST_DEPTH || self.seen.contains(&canonical) {
+            return;
+        }
+        self.seen.push(canonical);
+        let Ok(text) = std::fs::read_to_string(path) else {
+            return;
+        };
+        let words = filelist_words(&text);
+        let mut i = 0;
+        while i < words.len() {
+            let arg = words.get(i + 1).and_then(|w| expand_env(w));
+            let Some(word) = expand_env(&words[i]) else {
+                i += 1;
+                continue;
+            };
+            match word.as_str() {
+                "-f" | "-F" => {
+                    if let Some(file) = arg {
+                        let relative_to_file = word == "-F";
+                        let relative = join_path(if relative_to_file { dir } else { "" }, &file);
+                        let nested = self.top.join(&relative);
+                        let nested_dir = relative.rsplit_once('/').map_or("", |(d, _)| d);
+                        let nested_base = if relative_to_file { nested_dir } else { "" };
+                        self.read(&nested, nested_dir, nested_base, depth + 1);
+                    }
+                    i += 1;
+                }
+                "-makelib" => {
+                    self.library =
+                        arg.map(|l| l.rsplit(['/', '\\']).next().unwrap_or("").to_owned());
+                    i += 1;
+                }
+                "-work" => {
+                    self.library = arg;
+                    i += 1;
+                }
+                "-endlib" => self.library = None,
+                "-v" | "-y" | "-L" | "-l" | "-top" | "-o" | "-timescale" | "-reflib"
+                | "-libmap" | "-incdir" | "-define" | "-sv_lib" | "-sv_root" | "-cuname" => i += 1,
+                w if w.starts_with('-') || w.starts_with('+') => {}
+                file => {
+                    if let Some(library) = self.library.as_deref().filter(|l| !l.is_empty())
+                        && is_vhdl_path(file)
+                    {
+                        add(self.libraries, library, literal(&join_path(base, file)));
+                    }
+                }
+            }
+            i += 1;
+        }
+    }
+}
+
+/// `file` relative to `base`, unless absolute.
+fn join_path(base: &str, file: &str) -> String {
+    let file = file.replace('\\', "/");
+    let absolute = file.starts_with('/') || file.as_bytes().get(1) == Some(&b':');
+    if absolute || base.is_empty() {
+        normalize_path(&file)
+    } else {
+        normalize_path(&format!("{base}/{file}"))
+    }
+}
+
+/// The words of a file list: `/* */`, `//` and `#` comments dropped, quoted
+/// words kept whole.
+fn filelist_words(text: &str) -> Vec<String> {
+    let mut clean = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find("/*") {
+        clean.push_str(&rest[..start]);
+        clean.push(' ');
+        let after = &rest[start + 2..];
+        rest = after.find("*/").map_or("", |end| &after[end + 2..]);
+    }
+    clean.push_str(rest);
+    let mut words = Vec::new();
+    for line in clean.lines() {
+        let line = line.trim_start();
+        if line.starts_with('#') {
+            continue;
+        }
+        let line = line.find("//").map_or(line, |at| &line[..at]);
+        let mut word = String::new();
+        let mut quote = None;
+        for c in line.chars() {
+            match quote {
+                Some(q) if c == q => quote = None,
+                Some(_) => word.push(c),
+                None if c == '"' || c == '\'' => quote = Some(c),
+                None if c.is_whitespace() => {
+                    if !word.is_empty() {
+                        words.push(std::mem::take(&mut word));
+                    }
+                }
+                None => word.push(c),
+            }
+        }
+        if !word.is_empty() {
+            words.push(word);
+        }
+    }
+    words
+}
+
+/// `$VAR`, `${VAR}` and `$(VAR)` replaced by their values in the
+/// environment; `None` if one is not set.
+fn expand_env(word: &str) -> Option<String> {
+    let mut out = String::new();
+    let mut rest = word;
+    while let Some(at) = rest.find('$') {
+        out.push_str(&rest[..at]);
+        rest = &rest[at + 1..];
+        let (name, after) = match rest.chars().next() {
+            Some(open @ ('{' | '(')) => {
+                let close = if open == '{' { '}' } else { ')' };
+                let end = rest.find(close)?;
+                (&rest[1..end], &rest[end + 1..])
+            }
+            _ => {
+                let end = rest
+                    .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                    .unwrap_or(rest.len());
+                (&rest[..end], &rest[end..])
+            }
+        };
+        if name.is_empty() {
+            return None;
+        }
+        out.push_str(&std::env::var(name).ok()?);
+        rest = after;
+    }
+    out.push_str(rest);
+    Some(out)
+}
+
+// ---- hdlmake -------------------------------------------------------------------
+
+/// `library = "lib"` and `files = ["a.vhd", "dir"]` in a `Manifest.py`,
+/// read without running it; a directory stands for the VHDL files in it.
+/// Without `library`, the files are left to inference. `modules` need no
+/// following: each module's own `Manifest.py` is found by the walk.
+fn hdlmake(text: &str) -> Libraries {
+    let tokens = python_tokens(text);
+    let mut library = None;
+    let mut files = Vec::new();
+    let mut i = 0;
+    while i + 1 < tokens.len() {
+        if let (Py::Name(var), Py::Punct('=')) = (&tokens[i], &tokens[i + 1])
+            && tokens.get(i + 2) != Some(&Py::Punct('='))
+        {
+            let end = statement_end(&tokens, i + 2);
+            let mut strings = tokens[i + 2..end].iter().filter_map(|t| match t {
+                Py::Str(s) => Some(s.clone()),
+                _ => None,
+            });
+            match var.as_str() {
+                "library" => library = strings.next_back(),
+                "files" => files.extend(strings),
+                _ => {}
+            }
+            i = end;
+            continue;
+        }
+        // `files += [...]`.
+        if let (Py::Name(var), Py::Punct('+'), Some(Py::Punct('='))) =
+            (&tokens[i], &tokens[i + 1], tokens.get(i + 2))
+            && var == "files"
+        {
+            let end = statement_end(&tokens, i + 3);
+            files.extend(tokens[i + 3..end].iter().filter_map(|t| match t {
+                Py::Str(s) => Some(s.clone()),
+                _ => None,
+            }));
+            i = end;
+            continue;
+        }
+        i += 1;
+    }
+    let mut libraries = Libraries::new();
+    let Some(library) = library.filter(|l| !l.is_empty()) else {
+        return libraries;
+    };
+    for file in files {
+        let file = file.trim_end_matches('/');
+        let last = file.rsplit('/').next().unwrap_or(file);
+        if is_vhdl_path(file) {
+            add(&mut libraries, &library, literal(file));
+        } else if !last.contains('.') && !file.is_empty() {
+            for extension in ["vhd", "vhdl"] {
+                add(
+                    &mut libraries,
+                    &library,
+                    format!("{}/*.{extension}", literal(file)),
+                );
+            }
+        }
+    }
+    libraries
+}
+
+// ---- Questa / ModelSim ---------------------------------------------------------
+
+/// `Project_File_N = path` with `Project_File_P_N = ... compile_to lib ...`
+/// in a Questa or ModelSim project (`.mpf`).
+fn questa_project(text: &str) -> Libraries {
+    let mut paths: HashMap<&str, &str> = HashMap::new();
+    let mut properties: Vec<(&str, &str)> = Vec::new();
+    for line in text.lines() {
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let (key, value) = (key.trim(), value.trim());
+        if let Some(n) = key.strip_prefix("Project_File_P_") {
+            properties.push((n, value));
+        } else if let Some(n) = key.strip_prefix("Project_File_") {
+            paths.insert(n, value);
+        }
+    }
+    let mut libraries = Libraries::new();
+    for (n, value) in properties {
+        let words: Vec<&str> = value.split_whitespace().collect();
+        let property = |name: &str| {
+            words
+                .iter()
+                .position(|w| *w == name)
+                .and_then(|i| words.get(i + 1).copied())
+        };
+        let (Some(path), Some(library)) = (paths.get(n), property("compile_to")) else {
+            continue;
+        };
+        let Some(path) = expand_env(path.trim_matches('"')) else {
+            continue;
+        };
+        let vhdl = match property("file_type") {
+            Some(t) => t.eq_ignore_ascii_case("vhdl"),
+            None => is_vhdl_path(&path),
+        };
+        if vhdl {
+            add(&mut libraries, library, literal(&join_path("", &path)));
+        }
+    }
+    libraries
+}
+
 /// Every tool file's libraries, in path order.
 pub fn import_all(files: &[PathBuf]) -> Vec<(PathBuf, Libraries)> {
     files
@@ -992,7 +1322,125 @@ read_vhdl -library work_lib [glob -directory $src *.vhd]
         assert!(is_tool_file(Path::new("a/run.py")));
         assert!(is_tool_file(Path::new("a/x.core")));
         assert!(is_tool_file(Path::new("a/x.XPR")));
+        assert!(is_tool_file(Path::new("a/Manifest.py")));
+        assert!(is_tool_file(Path::new("a/files.f")));
+        assert!(is_tool_file(Path::new("a/sim.mpf")));
+        assert!(is_tool_file(Path::new("build/uart_0.eda.yml")));
+        assert!(is_tool_file(Path::new("edam.json")));
         assert!(!is_tool_file(Path::new("a/setup.py")));
         assert!(!is_tool_file(Path::new("a/x.vhd")));
+        assert!(!is_tool_file(Path::new("a/config.json")));
+    }
+
+    #[test]
+    fn edam_files() {
+        let text = r#"{
+  "name": "uart_0",
+  "files": [
+    {"name": "../src/uart_pkg.vhd", "file_type": "vhdlSource-2008", "logical_name": "uart_lib"},
+    {"name": "../src/uart.vhd", "file_type": "vhdlSource", "logical_name": "uart_lib"},
+    {"name": "../src/glue.vhd", "file_type": "vhdlSource"},
+    {"name": "../src/fifo.sv", "file_type": "systemVerilogSource", "logical_name": "uart_lib"}
+  ],
+  "toplevel": "uart"
+}"#;
+        assert_eq!(
+            edam(text),
+            libs(&[("uart_lib", &["../src/uart_pkg.vhd", "../src/uart.vhd"])])
+        );
+        let yaml = "files:\n- {name: a.vhd, file_type: vhdlSource, logical_name: lib}\n";
+        assert_eq!(edam(yaml), libs(&[("lib", &["a.vhd"])]));
+    }
+
+    #[test]
+    fn file_lists() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("ip/sub")).unwrap();
+        std::fs::write(
+            root.join("top.f"),
+            "// comment\n\
+             # another\n\
+             +incdir+include\n\
+             +define+SIM=1\n\
+             -v cells.v -y lib_dir\n\
+             untouched.vhd\n\
+             -work common\n\
+             // Cargo sets CARGO_PKG_NAME when it runs tests.\n\
+             $CARGO_PKG_NAME/pkg.vhd ${CARGO_PKG_NAME}/b.vhd /* x.vhd */\n\
+             $UNSET_VFL_VARIABLE/lost.vhd\n\
+             -makelib xcelium_lib/ip_lib\n\
+             -F ip/ip.f\n\
+             -endlib\n\
+             -f ip/sub/plain.f\n\
+             \"my dir/x.vhd\"\n",
+        )
+        .unwrap();
+        // `-F`: relative to this list; `-f`: to the top list's directory.
+        std::fs::write(root.join("ip/ip.f"), "core.vhd\n-F sub/deep.f\n").unwrap();
+        std::fs::write(root.join("ip/sub/deep.f"), "deep.vhd\n-F ../ip.f\n").unwrap();
+        std::fs::write(
+            root.join("ip/sub/plain.f"),
+            "-work plain\nrtl/p.vhd rtl/m.v\n",
+        )
+        .unwrap();
+        assert_eq!(
+            filelist(&root.join("top.f")),
+            libs(&[
+                ("common", &["vfl-project/pkg.vhd", "vfl-project/b.vhd"]),
+                ("ip_lib", &["ip/core.vhd", "ip/sub/deep.vhd"]),
+                ("plain", &["rtl/p.vhd", "my dir/x.vhd"]),
+            ])
+        );
+    }
+
+    #[test]
+    fn hdlmake_manifest() {
+        let text = r#"
+# hdlmake manifest
+library = "wb_lib"
+files = [
+    "wb_pkg.vhd",
+    "rtl/",  # a directory
+    "wb_crossbar.v",
+]
+if action == "simulation":
+    files += ["sim/wb_tb.vhd"]
+modules = {"local": ["../common"]}
+"#;
+        assert_eq!(
+            hdlmake(text),
+            libs(&[(
+                "wb_lib",
+                &["wb_pkg.vhd", "rtl/*.vhd", "rtl/*.vhdl", "sim/wb_tb.vhd"]
+            )])
+        );
+        // Without a library: left to inference.
+        assert!(hdlmake("files = ['a.vhd']\n").is_empty());
+    }
+
+    #[test]
+    fn questa_mpf() {
+        let text = r#"[Library]
+others = $MODEL_TECH/../modelsim.ini
+my_lib = my_lib
+
+[Project]
+Project_Version = 6
+Project_Files_Count = 3
+Project_File_0 = ../rtl/pkg.vhd
+Project_File_P_0 = vhdl_novitalcheck 0 file_type vhdl group_id 0 cover_nofec 0 compile_to my_lib compile_order 0 vhdl_2008 1
+Project_File_1 = C:/work/rtl/top.vhd
+Project_File_P_1 = file_type vhdl group_id 0 compile_to work compile_order 1
+Project_File_2 = ../rtl/core.sv
+Project_File_P_2 = file_type systemverilog compile_to my_lib compile_order 2
+"#;
+        assert_eq!(
+            questa_project(text),
+            libs(&[
+                ("my_lib", &["../rtl/pkg.vhd"]),
+                ("work", &["C:/work/rtl/top.vhd"]),
+            ])
+        );
     }
 }

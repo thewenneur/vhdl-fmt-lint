@@ -36,6 +36,8 @@ const EXAMPLES: &[(&str, Kind)] = &[
     ("format/10-width-case-blank-lines", Kind::Format),
     ("format/11-in-source-regions", Kind::Format),
     ("format/12-verilog", Kind::Format),
+    ("format/13-long-expressions", Kind::Format),
+    ("format/14-declaration-case-and-blank-lines", Kind::Format),
     ("lint/01-presets-and-levels", Kind::Manual),
     ("lint/02-safe-fixes", Kind::Fix),
     ("lint/03-unsafe-fixes", Kind::UnsafeFix),
