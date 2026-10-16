@@ -63,6 +63,10 @@ are ready, and are dropped if the file changed in the meantime.
   renamed too; a name that would clash with another is refused.
 - **Go to symbol in file** lists the file's declarations, nested; **Go to symbol in project**
   searches the declarations of the whole project.
+- **Show design hierarchy** lists the instantiation tree of the project, from each entity no
+  other entity instantiates, indented by depth, with generate statements and blocks as
+  groups and the instances that bind to nothing marked; choosing a line goes to the
+  instance.
 - **Code generation**: insert an entity or component instantiation or a component
   declaration at the caret, or generate a testbench next to the entity.
 - **Documentation and diagrams**: write the documentation of the project, or open the page
@@ -107,6 +111,7 @@ commands when the plugin is upgraded.
 | Go to symbol in file | Lists the declarations of the current file. |
 | Fold code | Notepad++ folds VHDL and Verilog itself, from the fold margin or the **View** menu; the language server's folding is for editors that have none. |
 | Go to symbol in project | Searches the declarations of the project by name, starting from the word at the caret. |
+| Show design hierarchy | Lists the instantiation tree of the project, with unsaved edits counted: each entity no other entity instantiates (testbenches included), then its instances as `label : entity (architecture)`, indented by depth. Generate statements and blocks group the instances inside them; instances of nothing in the project are marked `[not found]`. Choosing a line goes to the instance. It is a list rather than a docked tree panel: it is built from the same Scintilla list as the other commands, opens where you are, and filters as you type. |
 | Insert entity instantiation, Insert component instantiation, Insert component declaration | Lists the entities of the project, those of the current file first, and inserts the code for the one picked at the caret. |
 | Generate testbench | Lists the entities of the project and writes a testbench for the one picked next to it (`<entity>_tb.vhd`, see `[generate]` in `vfl.toml`), then opens it. |
 | Generate documentation | Writes the documentation of the current file's project as `vfl doc` does, where and how `[doc]` in `vfl.toml` says, then opens the index: an HTML one in the default browser, a Markdown or AsciiDoc one in Notepad++. It is written in the background, so Notepad++ stays responsive on large projects. |

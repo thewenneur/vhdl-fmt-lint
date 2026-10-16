@@ -345,6 +345,8 @@ client. It offers:
   names declared in the file;
 - code actions that insert an instantiation or a component declaration, or generate a
   testbench, from an entity;
+- the design hierarchy, with the custom `vfl/hierarchy` request
+  ([editors.md](editors.md#design-hierarchy));
 - settings from the editor for projects without a config file: `vfl.toml` keys under
   `config` in the initialization options or in `workspace/didChangeConfiguration`
   ([editors.md](editors.md#editor-settings)), the kinds of inlay hints under `inlayHints`

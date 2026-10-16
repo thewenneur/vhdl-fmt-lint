@@ -12,6 +12,7 @@
 
 mod actions;
 mod associate;
+pub mod design_tree;
 pub mod editor;
 pub mod format;
 pub mod generate;

@@ -14,6 +14,7 @@ use std::time::SystemTime;
 use vfl_config::{Config, Level, Preset, Style};
 use vfl_fmt::FormatError;
 use vfl_lsp::World;
+use vfl_lsp::design_tree::{Hierarchy, HierarchyParams, Node, NodeKind};
 use vfl_lsp::editor::{
     self, Call, Completion, Completions, FileEdits, HoverInfo, Location, ProjectProblem,
     ProjectSymbol, QuickFix, SignatureHelp, Symbol, TokenKind, Use, token_modifier,
@@ -408,6 +409,13 @@ impl Engine {
         editor::project_symbols(world, query)
     }
 
+    /// The design hierarchy of the buffer's project, from every entity no
+    /// other entity instantiates.
+    pub fn hierarchy(&mut self, path: Option<&Path>, text: &str) -> Hierarchy<Location> {
+        let (world, _) = self.sync(path, text);
+        editor::hierarchy(world, &HierarchyParams::default())
+    }
+
     /// The problems of every file of the buffer's project, by file and
     /// position.
     pub fn project_problems(&mut self, path: Option<&Path>, text: &str) -> Vec<ProjectProblem> {
@@ -673,6 +681,58 @@ pub fn signature_tip(help: &SignatureHelp) -> (String, Option<Range<usize>>) {
         ));
     }
     (text, highlight)
+}
+
+/// The design hierarchy as the lines of a list, indented by depth, each
+/// with where picking it goes: the instance, else the entity.
+///
+/// `tb_uart (sim)  [testbench]`, then `  dut : uart (rtl)` under it;
+/// generate statements and blocks as `  gen  [for i in 0 to 3]`.
+pub fn hierarchy_lines(tree: &Hierarchy<Location>) -> Vec<(String, Option<Location>)> {
+    fn walk(nodes: &[Node<Location>], depth: usize, out: &mut Vec<(String, Option<Location>)>) {
+        for node in nodes {
+            let mut line = format!("{}{}", "    ".repeat(depth), node.label);
+            match node.kind {
+                NodeKind::Generate | NodeKind::Block => {
+                    let what = match (&node.detail, node.kind) {
+                        (Some(detail), _) => detail.as_str(),
+                        (None, NodeKind::Block) => "block",
+                        (None, _) => "generate",
+                    };
+                    line.push_str(&format!("  [{what}]"));
+                }
+                NodeKind::Entity | NodeKind::Instance => {
+                    if let (NodeKind::Instance, Some(name)) = (node.kind, &node.name) {
+                        line.push_str(&format!(" : {name}"));
+                    }
+                    if let Some(architecture) = &node.architecture {
+                        line.push_str(&format!(" ({architecture})"));
+                    }
+                    let flags: Vec<&str> = [
+                        (node.testbench, "testbench"),
+                        (node.unresolved, "not found"),
+                        (node.recursive, "recursive"),
+                        (node.truncated, "not expanded"),
+                    ]
+                    .into_iter()
+                    .filter_map(|(on, flag)| on.then_some(flag))
+                    .collect();
+                    if !flags.is_empty() {
+                        line.push_str(&format!("  [{}]", flags.join(", ")));
+                    }
+                }
+            }
+            let place = node
+                .location
+                .clone()
+                .or_else(|| node.entity_location.clone());
+            out.push((line, place));
+            walk(&node.children, depth + 1, out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(&tree.roots, 0, &mut out);
+    out
 }
 
 /// Completions for Scintilla's list: unique labels ignoring case, sorted,
@@ -1366,6 +1426,38 @@ end architecture;
                 .generate(Some(&top), TOP, Kind::Component, "nope")
                 .is_err()
         );
+    }
+
+    #[test]
+    fn lists_the_design_hierarchy() {
+        let (_dir, _pkg, top) = project();
+        let leaf = top.with_file_name("leaf.vhd");
+        std::fs::write(
+            &leaf,
+            "entity leaf is\nend entity;\narchitecture rtl of leaf is\nbegin\nend architecture;\n",
+        )
+        .unwrap();
+        let mut engine = Engine::default();
+        // The unsaved buffer counts.
+        let text = TOP.replace(
+            "  n <= width;\n",
+            "  n <= width;\n  gen : for i in 0 to 1 generate\n    u_leaf : entity work.leaf;\n  end generate;\n  u_gone : entity work.gone;\n",
+        );
+        let tree = engine.hierarchy(Some(&top), &text);
+        let lines = hierarchy_lines(&tree);
+        let labels: Vec<&str> = lines.iter().map(|(l, _)| l.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "top (a)  [testbench]",
+                "    gen  [for i in 0 to 1]",
+                "        u_leaf : leaf (rtl)",
+                "    u_gone : gone  [not found]",
+            ]
+        );
+        let place = lines[2].1.as_ref().unwrap();
+        assert_eq!((place.path.as_path(), place.line), (top.as_path(), 10));
+        assert_eq!(&text[place.range.clone()], "u_leaf");
     }
 
     #[test]

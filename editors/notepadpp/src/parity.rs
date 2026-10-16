@@ -80,6 +80,7 @@ pub const FEATURES: &[(&str, &[&str])] = &[
         &["Generate project config (vfl.toml)"],
     ),
     ("vfl/projectConfig", &["Generate project config (vfl.toml)"]),
+    ("vfl/hierarchy", &["Show design hierarchy"]),
     (
         "vfl/entities",
         &[

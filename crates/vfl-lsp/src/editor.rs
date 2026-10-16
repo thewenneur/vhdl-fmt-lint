@@ -3,7 +3,7 @@
 //! hover, signature help, completion, go to definition, implementation and
 //! type definition, references, the call hierarchy, highlights, outline,
 //! project symbols, rename, quick fixes, selection ranges, the problems of
-//! the whole project and semantic tokens.
+//! the whole project, the design hierarchy and semantic tokens.
 //!
 //! Each query brings the analysis up to date first, then answers from the
 //! same code as the language server.
@@ -449,6 +449,22 @@ pub fn problems(world: &mut World) -> Vec<ProjectProblem> {
         (&a.location.path, a.location.range.start).cmp(&(&b.location.path, b.location.range.start))
     });
     out
+}
+
+/// The design hierarchy of the project, as the `vfl/hierarchy` request
+/// answers it, with places as [`Location`]s.
+pub fn hierarchy(
+    world: &mut World,
+    params: &crate::design_tree::HierarchyParams,
+) -> crate::design_tree::Hierarchy<Location> {
+    let tree = crate::design_tree::hierarchy(world, params);
+    let world = &*world;
+    let mut place = |(file, range)| location(world, file, range);
+    crate::design_tree::Hierarchy {
+        roots: tree.roots.into_iter().map(|n| n.map(&mut place)).collect(),
+        entities: tree.entities,
+        message: tree.message,
+    }
 }
 
 /// The declarations of the file at `path`, in order, nested as in the
