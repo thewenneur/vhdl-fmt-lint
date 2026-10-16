@@ -135,49 +135,62 @@ pub fn descendants_where_green<L: Language>(
 ) -> Vec<SyntaxNode<L>> {
     let mut out = Vec::new();
     let green = node.green();
-    let mut offset = node.text_range().start();
+    let start = node.text_range().start();
     if wanted(GreenAt {
         green: &green,
-        start: offset,
+        start,
         language: PhantomData,
     }) {
         out.push(node.clone());
     }
     // The children of each node on the current path (`node` at depth 0),
-    // with how many of them were taken so far.
-    let mut stack: Vec<(Children<'_>, u32)> = vec![(green.children(), 0)];
+    // with how many of them were taken so far and the range of the last
+    // one taken.
+    let mut stack: Vec<(Children<'_>, u32, TextRange)> =
+        vec![(green.children(), 0, TextRange::empty(start))];
     // The syntax nodes built so far on the current path, from `node` down.
     let mut built: Vec<SyntaxNode<L>> = vec![node.clone()];
-    while let Some((children, taken)) = stack.last_mut() {
+    while let Some((children, taken, last)) = stack.last_mut() {
         let Some(child) = children.next() else {
             stack.pop();
             built.truncate(stack.len());
             continue;
         };
         *taken += 1;
-        let child = match child {
-            NodeOrToken::Node(child) => child,
-            NodeOrToken::Token(token) => {
-                offset += token.text_len();
-                continue;
-            }
+        *last = TextRange::at(last.end(), child.text_len());
+        let range = *last;
+        let NodeOrToken::Node(child) = child else {
+            continue;
         };
         if wanted(GreenAt {
             green: child,
-            start: offset,
+            start: range.start(),
             language: PhantomData,
         }) {
             // Build the path down to this child, from the deepest node
             // already built on it.
             for depth in built.len()..=stack.len() {
                 let parent = &built[depth - 1];
-                built.push(nth_child(parent, stack[depth - 1].1 - 1));
+                let (_, taken, range) = stack[depth - 1];
+                built.push(child_at(parent, taken - 1, range));
             }
             out.push(built[stack.len()].clone());
         }
-        stack.push((child.children(), 0));
+        stack.push((child.children(), 0, TextRange::empty(range.start())));
     }
     out
+}
+
+/// The child node at this index among all children, whose range is
+/// `range`: found by its range, as the index alone would take a walk over
+/// the children before it (thousands, in a generated netlist's
+/// architecture).
+fn child_at<L: Language>(node: &SyntaxNode<L>, index: u32, range: TextRange) -> SyntaxNode<L> {
+    match node.child_or_token_at_range(range) {
+        Some(NodeOrToken::Node(child)) if child.index() == index as usize => child,
+        // An empty child shares its range with its neighbours.
+        _ => nth_child(node, index),
+    }
 }
 
 /// The child node at this index among all children, tokens included.

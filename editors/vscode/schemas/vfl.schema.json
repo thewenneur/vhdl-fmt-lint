@@ -71,6 +71,16 @@
           "description": "Load vfl's bundled declarations of vendor primitive libraries (`unisim`, `xpm`, `altera_mf`, `ecp5u`, `machxo2`, `sb_ice40_components_syn`) for a library the design uses and the project does not hold. See Vendor libraries.",
           "type": "boolean",
           "default": true
+        },
+        "max-file-size": {
+          "description": "The language server's limit for generated files such as netlists: in a VHDL file larger than this, only the entities and packages are analyzed and the file is not linted. A number of bytes, or a string with a `KB` or `MB` unit; `0` for no limit.",
+          "type": [
+            "integer",
+            "string"
+          ],
+          "minimum": 0,
+          "pattern": "^\\s*[0-9]+\\s*([KkMm]?[Bb])?\\s*$",
+          "default": "2MB"
         }
       },
       "additionalProperties": false

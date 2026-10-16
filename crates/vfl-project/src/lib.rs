@@ -140,15 +140,7 @@ pub fn collect_project(
     root: &Path,
     config: &Config,
 ) -> Result<(Vec<PathBuf>, Vec<PathBuf>), ignore::Error> {
-    let verilog = config.verilog.loaded();
-    let extensions: Vec<String> = config
-        .project
-        .extensions
-        .iter()
-        .chain(verilog_extensions(&config.verilog, verilog))
-        .cloned()
-        .collect();
-    walk(root, &config.project, &extensions, true)
+    walk(root, &config.project, &project_extensions(config), true)
 }
 
 /// Lists the VHDL sources and the Verilog and SystemVerilog sources under
@@ -206,8 +198,89 @@ pub fn collect_verilog_sources(
     Ok(walk(root, project, &extensions, false)?.0)
 }
 
+/// The sources directly in `dir`, a directory under `root` that
+/// [`collect_project`] walks into, that it would list: one directory read
+/// instead of a walk of the project, to tell whether new files in a
+/// directory belong to it. Sorted.
+pub fn collect_project_in(
+    root: &Path,
+    dir: &Path,
+    config: &Config,
+) -> Result<Vec<PathBuf>, ignore::Error> {
+    let extensions = project_extensions(config);
+    Ok(walk_from(root, dir, Some(1), &config.project, &extensions, false)?.0)
+}
+
+/// Every file under `root` whose change matters to the project: its
+/// sources (as [`collect_project`] lists them), the files of other tools
+/// that may list libraries, and config files (`vfl.toml`,
+/// `vhdl_ls.toml`, hidden ones too). For watching them when the editor
+/// does not. Sorted.
+pub fn collect_watched(root: &Path, config: &Config) -> Result<Vec<PathBuf>, ignore::Error> {
+    let extensions = project_extensions(config);
+    let mut overrides = OverrideBuilder::new(root);
+    for pattern in &config.project.exclude {
+        overrides.add(&format!("!{pattern}"))?;
+    }
+    fn is_config(name: &str) -> bool {
+        vfl_config::CONFIG_FILE_NAMES.contains(&name) || explicit::VHDL_LS_FILES.contains(&name)
+    }
+    let mut files = Vec::new();
+    // Hidden files and directories are skipped, as the project's walk
+    // does, except config files such as `.vfl.toml`.
+    for entry in WalkBuilder::new(root)
+        .overrides(overrides.build()?)
+        .hidden(false)
+        .require_git(false)
+        .filter_entry(|e| {
+            let name = e.file_name().to_str().unwrap_or_default();
+            e.depth() == 0 || !name.starts_with('.') || is_config(name)
+        })
+        .build()
+    {
+        let entry = entry?;
+        if !entry.file_type().is_some_and(|t| t.is_file()) {
+            continue;
+        }
+        let path = entry.path();
+        let name = entry.file_name().to_str().unwrap_or_default();
+        let is_source = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|ext| extensions.iter().any(|e| e.eq_ignore_ascii_case(ext)));
+        if is_source || is_config(name) || import::is_tool_file(path) {
+            files.push(entry.into_path());
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
+/// The extensions of the sources of a project, VHDL and Verilog.
+fn project_extensions(config: &Config) -> Vec<String> {
+    config
+        .project
+        .extensions
+        .iter()
+        .chain(verilog_extensions(&config.verilog, config.verilog.loaded()))
+        .cloned()
+        .collect()
+}
+
 fn walk(
     root: &Path,
+    config: &ProjectConfig,
+    extensions: &[String],
+    tools: bool,
+) -> Result<(Vec<PathBuf>, Vec<PathBuf>), ignore::Error> {
+    walk_from(root, root, None, config, extensions, tools)
+}
+
+/// Walks `start`, a directory under `root`, down to `depth` levels.
+fn walk_from(
+    root: &Path,
+    start: &Path,
+    depth: Option<usize>,
     config: &ProjectConfig,
     extensions: &[String],
     tools: bool,
@@ -219,9 +292,10 @@ fn walk(
 
     let mut sources = Vec::new();
     let mut tool_files = Vec::new();
-    for entry in WalkBuilder::new(root)
+    for entry in WalkBuilder::new(start)
         .overrides(overrides.build()?)
         .require_git(false)
+        .max_depth(depth)
         .build()
     {
         let entry = entry?;
@@ -440,6 +514,60 @@ mod tests {
                 PathBuf::from("rtl/B.VHDL"),
                 PathBuf::from("rtl/a.vhd"),
                 PathBuf::from("sim/tb.vhd"),
+            ]
+        );
+    }
+
+    #[test]
+    fn one_directory_lists_what_the_walk_would() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        touch(&root.join("rtl/a.vhd"));
+        touch(&root.join("rtl/a_netlist.vhd"));
+        touch(&root.join("rtl/.hidden.vhd"));
+        touch(&root.join("rtl/sub/deeper.vhd"));
+        touch(&root.join("rtl/skip_me.vhd"));
+        fs::write(root.join(".gitignore"), "*_netlist.vhd\n").unwrap();
+        let config = Config {
+            project: ProjectConfig {
+                exclude: vec!["rtl/skip_*".into()],
+                ..ProjectConfig::default()
+            },
+            ..Config::default()
+        };
+        let all = collect_project(root, &config).unwrap().0;
+        let found = collect_project_in(root, &root.join("rtl"), &config).unwrap();
+        assert_eq!(found, [root.join("rtl/a.vhd")]);
+        assert_eq!(
+            all,
+            [root.join("rtl/a.vhd"), root.join("rtl/sub/deeper.vhd")]
+        );
+    }
+
+    #[test]
+    fn watched_files_include_configs_and_tool_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        touch(&root.join("rtl/a.vhd"));
+        touch(&root.join("rtl/.vfl.toml"));
+        touch(&root.join("vhdl_ls.toml"));
+        touch(&root.join("run.py"));
+        touch(&root.join("other.toml"));
+        touch(&root.join(".git/config.toml"));
+        touch(&root.join("ignored/vfl.toml"));
+        fs::write(root.join(".gitignore"), "ignored/\n").unwrap();
+        let found: Vec<_> = collect_watched(root, &Config::default())
+            .unwrap()
+            .into_iter()
+            .map(|p| p.strip_prefix(root).unwrap().to_owned())
+            .collect();
+        assert_eq!(
+            found,
+            [
+                PathBuf::from("rtl/.vfl.toml"),
+                PathBuf::from("rtl/a.vhd"),
+                PathBuf::from("run.py"),
+                PathBuf::from("vhdl_ls.toml"),
             ]
         );
     }

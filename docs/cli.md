@@ -349,6 +349,18 @@ client. It offers:
   `config` in the initialization options or in `workspace/didChangeConfiguration`
   ([editors.md](editors.md#editor-settings)), the kinds of inlay hints under `inlayHints`
   (which win over `vfl.toml`), and a `source.vfl.generateConfig` code action
-  (with the `vfl/projectConfig` request) that writes the settings in effect to `vfl.toml`.
+  (with the `vfl/projectConfig` request) that writes the settings in effect to `vfl.toml`;
+- errors in `vfl.toml` (and the files it `extends`) as diagnostics on the file, where the
+  problem is, and once in a message. An invalid config file is left out until it is fixed:
+  the files under it get the config of the valid files above it, or the editor's settings;
+- progress while it loads the project (`$/progress`, with how many files are parsed), in
+  editors that show it;
+- files created, changed or deleted outside the editor (a `git checkout`, a generator)
+  are picked up: through the editor's file watcher where it has one, read in one go
+  however many arrive together, and otherwise through the server's own, which looks for
+  changes every few seconds;
+- files over `[project]` `max-file-size` (2 MB by default), generated netlists say, are
+  outlined: only their entities and packages are analyzed, and they are not linted
+  ([configuration.md](configuration.md#project)).
 
 Setup for each editor is in [editors.md](editors.md).
