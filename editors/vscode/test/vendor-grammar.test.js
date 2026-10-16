@@ -25,6 +25,8 @@ test.before(async () => {
   });
   grammars.quartus = await registry.loadGrammar("source.quartus");
   grammars.sdc = await registry.loadGrammar("source.sdc");
+  grammars.lpf = await registry.loadGrammar("source.lpf");
+  grammars.cst = await registry.loadGrammar("source.cst");
 });
 
 function tokenize(grammar, source) {
@@ -75,4 +77,26 @@ test("SDC and XDC constraints", () => {
   has("sdc", "set_property PACKAGE_PIN W5 [get_ports clk]", "PACKAGE_PIN", "support.constant.property.sdc");
   has("sdc", pin, "-dict", "variable.parameter.option.sdc");
   has("sdc", "derive_pll_clocks", "derive_pll_clocks", "support.function.vendor.sdc");
+});
+
+test("Libero and Radiant physical constraints", () => {
+  has("sdc", "set_io clk -pinname A1 -fixed yes", "set_io", "support.function.vendor.sdc");
+  has("sdc", "ldc_set_location -site {A1} [get_ports clk]", "ldc_set_location", "support.function.vendor.sdc");
+});
+
+test("Lattice preferences", () => {
+  const locate = 'LOCATE COMP "led[0]" SITE "A1" ; # first led';
+  has("lpf", locate, "LOCATE", "keyword.other.statement.lpf");
+  has("lpf", locate, "COMP", "storage.type.object.lpf");
+  has("lpf", locate, "led[0]", "string.quoted.double.lpf");
+  has("lpf", locate, "# first led", "comment.line.number-sign.lpf");
+  const iobuf = 'IOBUF PORT "clk" IO_TYPE=LVCMOS33 PULLMODE=UP;';
+  has("lpf", iobuf, "IO_TYPE", "support.constant.attribute.lpf");
+  has("lpf", 'FREQUENCY PORT "clk" 12.0 MHZ;', "12.0", "constant.numeric.lpf");
+});
+
+test("Gowin constraints", () => {
+  has("cst", 'IO_LOC "clk" 35; // clock', "IO_LOC", "keyword.other.statement.cst");
+  has("cst", 'IO_LOC "clk" 35; // clock', "// clock", "comment.line.double-slash.cst");
+  has("cst", 'IO_PORT "clk" IO_TYPE=LVCMOS33 PULL_MODE=UP;', "PULL_MODE", "support.constant.attribute.cst");
 });

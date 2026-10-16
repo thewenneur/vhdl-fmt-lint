@@ -1184,28 +1184,33 @@ with the `protected` option.
 ## `vendor`
 
 These rules check the files FPGA tools read besides the HDL: Quartus settings (`.qsf`) and
-IP file lists (`.qip`), timing constraints (`.sdc`, as Quartus, Vivado and others read
-them), Vivado constraints (`.xdc`) and Tcl build scripts (`.tcl`). `vfl lint` checks the
+IP file lists (`.qip`), timing constraints (`.sdc`, as Quartus, Vivado, Libero, Radiant,
+Gowin and Efinity read them), Vivado constraints (`.xdc`), Tcl build scripts (`.tcl`),
+Microchip Libero and Lattice Radiant physical constraints (`.pdc`, `.ldc`), Lattice Diamond
+preferences (`.lpf`) and Gowin physical constraints (`.cst`). `vfl lint` checks the
 vendor files under the paths it is given, and the language server those open in the editor.
 Each file is checked on its own, from its text: nothing is run, and what a command builds at
 run time (a path from an unknown variable, a `[glob]`) is not checked.
 
-Suppressions are written in Tcl comments: `# vfl-ignore vendor/pin-conflict` on a line of
+Suppressions are written in comments: `# vfl-ignore vendor/pin-conflict` on a line of
 its own or after `;` at the end of a command (`set_location_assignment PIN_A1 -to a ;#
-vfl-ignore`).
+vfl-ignore`), or `// vfl-ignore vendor/pin-conflict` in a `.lpf` or a `.cst`.
 
 ### `vendor/syntax`
 
 A brace, quote or bracket is not closed, or characters follow a closing brace or quote
 (`{a}b`). Tcl reads the rest of the file as part of the open word, so everything after it is
-lost to the tool.
+lost to the tool. In a `.lpf` or a `.cst`, a quote is not closed on its line, or a statement
+lacks its `;`, which joins it to the next.
 
 ### `vendor/unknown-command`
 
 A command is not known, and is one or two letters away from one that is: in a `.qsf` or a
 `.qip`, the Quartus settings commands and Tcl's own; in a `.sdc` or a `.xdc`, the SDC
-commands with their Quartus and Vivado extensions. Commands the file defines with `proc` are
-known.
+commands with their Quartus and Vivado extensions; in a `.pdc` or a `.ldc`, the Libero and
+Radiant constraint commands (`set_io`, `set_iobank`, `ldc_set_location`, `ldc_set_port`,
+...) and the SDC ones; in a `.lpf` or a `.cst`, the statements (`LOCATE`, `IOBUF`,
+`FREQUENCY`, `IO_LOC`, `IO_PORT`, ...). Commands the file defines with `proc` are known.
 
 ```tcl
 set_global_assignmnt -name FAMILY "Cyclone V"   # did you mean `set_global_assignment`?
@@ -1238,12 +1243,16 @@ set_global_assignment -name VHLD_INPUT_VERSION VHDL_2008   # did you mean `VHDL_
 set_property IOSTANDRD LVCMOS33 [get_ports led]           # did you mean `IOSTANDARD`?
 ```
 
+The attributes of `IOBUF` in a `.lpf` and of `IO_PORT` in a `.cst` are checked the same way
+(`PULLMODE=UP` in a `.cst`: did you mean `PULL_MODE`?).
+
 ### `vendor/missing-argument`
 
 A command lacks what it needs: `-name` or a value of an assignment, the location or `-to` of
 `set_location_assignment`, the value of an option at the end of the line, `-period` of
 `create_clock`, a delay or ports of `set_input_delay`, a `-group` of `set_clock_groups`, a
-property, value and objects of `set_property`. `set_false_path` without `-from`, `-to` or
+property, value and objects of `set_property`, `-iobuf` of `ldc_set_port`, the object and
+site of `LOCATE`, the port and pin of `IO_LOC`. `set_false_path` without `-from`, `-to` or
 `-through` is reported too: it cuts every path of the design.
 
 ### `vendor/missing-file`
@@ -1260,20 +1269,27 @@ build flows often run the tool in a directory below the file, `../x` is also loo
 ### `vendor/duplicate-assignment`
 
 The same assignment is made twice at the top level of a file: a Quartus global or instance
-assignment with the same name, target and section, a pin location of the same port, a Vivado
-property of the same objects, or a clock of the same name (without `-add`). The second
+assignment with the same name, target and section, a pin location of the same port (also
+`set_io -pinname`, `ldc_set_location -site`, `LOCATE COMP ... SITE` and `IO_LOC`), a Vivado
+property of the same objects, an `IOBUF` or `IO_PORT` attribute of the same port, or a clock
+of the same name (without `-add`). The second
 usually overrides the first by mistake. Assignments that take several values (source files,
 `SEARCH_PATH`, `VERILOG_MACRO`, ...) are reported only when the value repeats too.
 Assignments inside `if` or `proc` bodies are not compared.
 
 ### `vendor/pin-conflict`
 
-One pin is assigned to two ports: `set_location_assignment PIN_A1` in a `.qsf`, or
-`PACKAGE_PIN` in a `.xdc`. The fitter rejects it.
+One pin is assigned to two ports: `set_location_assignment PIN_A1` in a `.qsf`,
+`PACKAGE_PIN` in a `.xdc`, `set_io -pinname` or `ldc_set_location -site` in a `.pdc`,
+`LOCATE COMP ... SITE` in a `.lpf`, or `IO_LOC` in a `.cst`. The fitter rejects it. With
+the project's analysis, only ports the design has are compared: board files often give one
+pin several names (a bus bit and a single signal), of which a design uses one, and the tools
+ignore the assignments of ports the design does not have.
 
 ### `vendor/unknown-port`
 
-A pin assignment or a `[get_ports ...]` names a port that the design does not have, often
+A pin assignment, an I/O setting (`set_io`, `IOBUF PORT`, `IO_PORT`) or a `[get_ports ...]`
+names a port that the design does not have, often
 after a port was renamed. In a `.qsf`, the ports are those of `TOP_LEVEL_ENTITY`; elsewhere,
 those of any entity or module of the project. Bits (`data[3]`) count as their port, and
 patterns (`data[*]`, `-regexp`, `-filter`) are not checked. The rule needs the project's

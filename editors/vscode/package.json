@@ -100,15 +100,40 @@
       {
         "id": "sdc",
         "aliases": [
-          "SDC / XDC Constraints",
+          "SDC / XDC / PDC Constraints",
           "sdc",
-          "xdc"
+          "xdc",
+          "pdc"
         ],
         "extensions": [
           ".sdc",
-          ".xdc"
+          ".xdc",
+          ".pdc",
+          ".ldc"
         ],
         "configuration": "./language-configuration-tcl.json"
+      },
+      {
+        "id": "lpf",
+        "aliases": [
+          "Lattice Preferences",
+          "lpf"
+        ],
+        "extensions": [
+          ".lpf"
+        ],
+        "configuration": "./language-configuration-constraints.json"
+      },
+      {
+        "id": "cst",
+        "aliases": [
+          "Gowin Constraints",
+          "cst"
+        ],
+        "extensions": [
+          ".cst"
+        ],
+        "configuration": "./language-configuration-constraints.json"
       }
     ],
     "grammars": [
@@ -136,6 +161,16 @@
         "language": "sdc",
         "scopeName": "source.sdc",
         "path": "./syntaxes/sdc.tmLanguage.json"
+      },
+      {
+        "language": "lpf",
+        "scopeName": "source.lpf",
+        "path": "./syntaxes/lpf.tmLanguage.json"
+      },
+      {
+        "language": "cst",
+        "scopeName": "source.cst",
+        "path": "./syntaxes/cst.tmLanguage.json"
       }
     ],
     "snippets": [

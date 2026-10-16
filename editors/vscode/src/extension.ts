@@ -33,7 +33,7 @@ const LANGUAGES = ["vhdl", "verilog", "systemverilog"];
  * FPGA vendor files the server lints: Quartus settings, SDC and XDC
  * constraints, and Tcl scripts when a Tcl extension names them so.
  */
-const VENDOR_LANGUAGES = ["quartus", "sdc"];
+const VENDOR_LANGUAGES = ["quartus", "sdc", "lpf", "cst"];
 const SERVED_LANGUAGES = [...LANGUAGES, ...VENDOR_LANGUAGES, "tcl"];
 /** The config file names, in the order the server prefers them. */
 const CONFIG_FILES = ["vfl.toml", ".vfl.toml"];

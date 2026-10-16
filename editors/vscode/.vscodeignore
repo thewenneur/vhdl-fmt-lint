@@ -7,6 +7,7 @@
 !language-configuration.json
 !language-configuration-verilog.json
 !language-configuration-tcl.json
+!language-configuration-constraints.json
 !package.json
 !README.md
 !CHANGELOG.md

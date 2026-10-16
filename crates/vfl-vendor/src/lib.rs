@@ -1,6 +1,9 @@
 //! FPGA vendor files: Quartus settings (`.qsf`, `.qip`), timing
-//! constraints (`.sdc`), Vivado constraints (`.xdc`) and Tcl scripts
-//! (`.tcl`). [`tcl`] reads them keeping where everything is, [`eval`]
+//! constraints (`.sdc`), Vivado constraints (`.xdc`), Tcl scripts
+//! (`.tcl`), Microchip Libero and Lattice Radiant physical constraints
+//! (`.pdc`, `.ldc`), Lattice Diamond preferences (`.lpf`) and Gowin
+//! physical constraints (`.cst`). [`tcl`] reads the Tcl ones and [`stmt`]
+//! the others, keeping where everything is, [`eval`]
 //! resolves the paths they name, and [`check`] finds what is wrong in
 //! them: syntax, misspelled commands, options and names, missing
 //! arguments and files, duplicate assignments, pin conflicts and ports the
@@ -12,6 +15,7 @@
 pub mod check;
 pub mod eval;
 pub mod known;
+pub mod stmt;
 mod suggest;
 pub mod tcl;
 
@@ -36,6 +40,13 @@ pub enum Kind {
     Xdc,
     /// Tcl scripts (`.tcl`), such as Vivado build scripts.
     Tcl,
+    /// Physical constraints of Microchip Libero (`.pdc`) and Lattice
+    /// Radiant (`.pdc`, `.ldc`).
+    Pdc,
+    /// Lattice Diamond preferences (`.lpf`).
+    Lpf,
+    /// Gowin physical constraints (`.cst`).
+    Cst,
 }
 
 impl Kind {
@@ -48,6 +59,9 @@ impl Kind {
             "sdc" => Kind::Sdc,
             "xdc" => Kind::Xdc,
             "tcl" => Kind::Tcl,
+            "pdc" | "ldc" => Kind::Pdc,
+            "lpf" => Kind::Lpf,
+            "cst" => Kind::Cst,
             _ => return None,
         })
     }
@@ -59,12 +73,31 @@ impl Kind {
             Kind::Sdc => "SDC constraints",
             Kind::Xdc => "Vivado constraints",
             Kind::Tcl => "Tcl script",
+            Kind::Pdc => "physical constraints",
+            Kind::Lpf => "Lattice preferences",
+            Kind::Cst => "Gowin constraints",
+        }
+    }
+
+    /// Whether the file is made of `;`-ended statements rather than Tcl.
+    pub fn is_statements(self) -> bool {
+        matches!(self, Kind::Lpf | Kind::Cst)
+    }
+
+    /// The words that start a statement of a statement file.
+    pub fn statements(self) -> &'static [&'static str] {
+        match self {
+            Kind::Lpf => known::LPF_STATEMENTS,
+            Kind::Cst => known::CST_STATEMENTS,
+            _ => &[],
         }
     }
 }
 
 /// The extensions of the vendor files vfl lints.
-pub const EXTENSIONS: &[&str] = &["qsf", "qip", "sdc", "xdc", "tcl"];
+pub const EXTENSIONS: &[&str] = &[
+    "qsf", "qip", "sdc", "xdc", "tcl", "pdc", "ldc", "lpf", "cst",
+];
 
 /// Whether `path` is a vendor file vfl lints.
 pub fn is_vendor_file(path: &Path) -> bool {
@@ -138,7 +171,12 @@ pub struct Context<'a> {
     pub strict_commands: bool,
 }
 
-/// The comments of a file, for suppressions (`# vfl-ignore rule`).
-pub fn comments(text: &str) -> Vec<TextRange> {
+/// The comments of a file of `kind`, for suppressions (`# vfl-ignore
+/// rule`, or `// vfl-ignore rule`).
+pub fn comments(kind: Kind, text: &str) -> Vec<TextRange> {
+    if kind.is_statements() {
+        let keywords = kind.statements();
+        return stmt::parse(text, |w| keywords.iter().any(|k| k.eq_ignore_ascii_case(w))).comments;
+    }
     tcl::parse(text).comments
 }
