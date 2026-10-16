@@ -85,6 +85,27 @@ pub fn request(world: &mut World, method: &str, params: Value) -> Result<Value, 
                 json(crate::generate::resolve(world, action).map_err(Error::Failed)?)
             }
         }
+        "textDocument/implementation" => {
+            json(crate::navigate::implementation(world, parse(params)?))
+        }
+        "textDocument/typeDefinition" => {
+            json(crate::navigate::type_definition(world, parse(params)?))
+        }
+        "textDocument/declaration" => json(crate::navigate::declaration(world, parse(params)?)),
+        "textDocument/linkedEditingRange" => {
+            json(crate::navigate::linked_editing(world, parse(params)?))
+        }
+        "textDocument/selectionRange" => {
+            json(crate::navigate::selection_range(world, parse(params)?))
+        }
+        "textDocument/inlayHint" => json(crate::inlay::inlay_hints(world, parse(params)?)),
+        "textDocument/codeLens" => json(crate::hierarchy::code_lens(world, parse(params)?)),
+        "codeLens/resolve" => json(crate::hierarchy::resolve_code_lens(world, parse(params)?)),
+        "textDocument/prepareCallHierarchy" => {
+            json(crate::hierarchy::prepare(world, parse(params)?))
+        }
+        "callHierarchy/incomingCalls" => json(crate::hierarchy::incoming(world, parse(params)?)),
+        "callHierarchy/outgoingCalls" => json(crate::hierarchy::outgoing(world, parse(params)?)),
         "vfl/entities" => json(crate::generate::entities(world)),
         "vfl/projectConfig" => json(crate::settings::project_config(world).map_err(Error::Failed)?),
         "vfl/generate" => {

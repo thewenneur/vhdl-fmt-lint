@@ -93,6 +93,7 @@ pub struct Config {
     pub doc: DocConfig,
     pub generate: GenerateConfig,
     pub verilog: VerilogConfig,
+    pub lsp: LspConfig,
 }
 
 impl Config {
@@ -1024,6 +1025,38 @@ impl Default for GenerateConfig {
             clock_pattern: r"(?i)^(.*_)?(clk|clock)\d*(_i|_in|_p)?$".into(),
             reset_pattern: r"(?i)^(.*_)?(a|s)?(rst|reset)\d*(n|_n|_b|_i|_in|_ni|_n_i)?$".into(),
             active_low_pattern: r"(?i)([^i]n|_b|_ni|_n_i)$".into(),
+        }
+    }
+}
+
+/// `[lsp]`: features of the language server that are a matter of taste.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LspConfig {
+    pub inlay_hints: InlayHintsConfig,
+}
+
+/// `[lsp.inlay_hints]`: which names and types the editor shows inline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct InlayHintsConfig {
+    /// The port before each positional actual of a port map.
+    pub ports: bool,
+    /// The generic before each positional actual of a generic map.
+    pub generics: bool,
+    /// The parameter before each positional argument of a subprogram call.
+    pub parameters: bool,
+    /// The mode and type of the port after each actual of a port map.
+    pub port_types: bool,
+}
+
+impl Default for InlayHintsConfig {
+    fn default() -> Self {
+        InlayHintsConfig {
+            ports: true,
+            generics: true,
+            parameters: true,
+            port_types: false,
         }
     }
 }

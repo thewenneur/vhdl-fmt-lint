@@ -319,6 +319,24 @@ client. It offers:
   document highlights, rename (packages with their bodies, subprograms with their bodies,
   entities with their components, record elements; clashes refused), document and
   workspace symbols;
+- go to implementation (an entity's architectures, the entity a component binds to, a
+  package's body, a subprogram's or protected type's body), go to type definition (the type
+  mark of an object, alias, record element or function result) and go to declaration (from
+  a body to what it completes, from an architecture to its entity);
+- inlay hints, worked out only for the range the editor shows: the formal name before
+  each positional actual of a port map, generic map or subprogram call, and optionally the
+  mode and type of each port map actual (`[lsp.inlay_hints]`,
+  [configuration.md](configuration.md#lspinlay_hints));
+- linked editing of a name and the `end` name that repeats it (entities, architectures,
+  packages, components, subprogram bodies, record and protected types, labelled
+  statements), and selection ranges from the syntax tree;
+- an "N instances" code lens on each entity and component, counted when the editor shows
+  it (`codeLens/resolve`); its command, `vfl.showReferences`, is the client's to run, with
+  the document URI, the position and the instances' locations as arguments (the VS Code
+  extension shows them in the references view);
+- call hierarchy: the callers (subprograms, processes, units) and callees of a subprogram,
+  and the instance tree, whose items are design entities: the architectures that
+  instantiate an entity, and what an architecture instantiates;
 - semantic highlighting: signals, ports (with their mode), variables, constants,
   generics, types, subprograms, entities, components, packages and enumeration literals;
 - for Verilog and SystemVerilog files, with `[verilog]` `mode = "full"`: lint diagnostics with their fixes, formatting (document, range and on
@@ -329,7 +347,8 @@ client. It offers:
   testbench, from an entity;
 - settings from the editor for projects without a config file: `vfl.toml` keys under
   `config` in the initialization options or in `workspace/didChangeConfiguration`
-  ([editors.md](editors.md#editor-settings)), and a `source.vfl.generateConfig` code action
+  ([editors.md](editors.md#editor-settings)), the kinds of inlay hints under `inlayHints`
+  (which win over `vfl.toml`), and a `source.vfl.generateConfig` code action
   (with the `vfl/projectConfig` request) that writes the settings in effect to `vfl.toml`;
 - errors in `vfl.toml` (and the files it `extends`) as diagnostics on the file, where the
   problem is, and once in a message. An invalid config file is left out until it is fixed:
