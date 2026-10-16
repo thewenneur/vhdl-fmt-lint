@@ -48,5 +48,12 @@ module fifo #(
     for (genvar g = 0; g < W; g++) begin : gen_bits
         assign y[g] = {{4{din[g]}}, din[g+:2]};
     end
-    sub #(.N(4), .M(W)) u_sub (.clk(clk), .d(din[0]), .q());
+    sub #(
+        .N  (4),
+        .M  (W)
+    ) u_sub (
+        .clk(clk),
+        .d  (din[0]),
+        .q  ()
+    );
 endmodule : fifo

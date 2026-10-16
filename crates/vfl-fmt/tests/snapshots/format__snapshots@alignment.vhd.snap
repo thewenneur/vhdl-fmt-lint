@@ -57,7 +57,10 @@ begin
     end process;
 
     u_div : entity work.divider
-        generic map (WIDTH => 16, START => 0)
+        generic map (
+            WIDTH   => 16,
+            START   => 0
+        )
         port map (
             clk     => clk,
             reset_n => rst_n,

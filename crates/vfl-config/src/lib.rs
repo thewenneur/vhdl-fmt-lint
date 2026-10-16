@@ -403,7 +403,7 @@ impl Default for FormatConfig {
     fn default() -> Self {
         FormatConfig {
             style: Style::Default,
-            max_width: 100,
+            max_width: 120,
             indent: 4,
             continuation_indent: None,
             use_tabs: false,
@@ -413,9 +413,9 @@ impl Default for FormatConfig {
             end_keyword: EndKeyword::Preserve,
             space_before_label_colon: true,
             space_after_keyword: true,
-            max_blank_lines: 2,
+            max_blank_lines: 1,
             interface_list: ListLayout::Expand,
-            association_list: ListLayout::Auto,
+            association_list: ListLayout::Expand,
             close_paren: CloseParen::OwnLine,
             interface_separator: Separator::Trailing,
             association_separator: Separator::Trailing,
@@ -1312,7 +1312,7 @@ mod tests {
         );
         assert_eq!(Config::from_toml_str(&text).unwrap(), config);
         // Keys at their default, the style's included, are comments.
-        assert!(text.contains("\n# max_width = 100\n"), "{text}");
+        assert!(text.contains("\n# max_width = 120\n"), "{text}");
         assert!(text.contains("\n# indent = 2\n"), "{text}");
         assert!(text.contains("\n# standard = \"2008\"\n"), "{text}");
         let active: Vec<&str> = text

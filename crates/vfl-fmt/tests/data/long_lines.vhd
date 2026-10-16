@@ -1,15 +1,15 @@
 package long_lines is
-  constant DEFAULTS : config_t := (enable => true, threshold => 1024, name => "default configuration", mode => FAST);
+  constant DEFAULTS : config_t := (enable => true, threshold => 1024, name => "the default configuration of the core", mode => FAST);
   procedure log_message(constant level : in severity_level; constant message : in string; constant prefix : in string := "");
-  function saturate(value : integer; low : integer; high : integer; wrap : boolean := false) return integer;
+  function saturate(value : integer; low : integer; high : integer; wrap_around_instead_of_clamping : boolean := false) return integer;
 end package;
 
 architecture rtl of top is
 begin
   u_core : entity work.core generic map (DATA_WIDTH => DATA_WIDTH, ADDR_WIDTH => ADDR_WIDTH) port map (clk => clk, rst => rst, addr => addr, data => data);
 
-  result <= combine(first_operand_with_a_long_name, second_operand_with_a_long_name, third_operand);
+  result <= combine(first_operand_with_a_long_name, second_operand_with_a_long_name, third_operand_with_an_even_longer_name);
 
   -- An index or a single argument is never broken up, even when too long.
-  wide_signal_name(some_very_long_index_expression_name + another_long_term_in_the_index) <= '1';
+  wide_signal_name(some_very_long_index_expression_name + another_long_term_in_the_index + one_more_term) <= '1';
 end architecture;
