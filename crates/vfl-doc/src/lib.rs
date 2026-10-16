@@ -23,6 +23,7 @@ mod pages;
 pub mod relations;
 pub mod svg;
 pub mod text;
+pub mod theme;
 mod verilog;
 pub mod wave;
 
@@ -36,6 +37,7 @@ pub use fsm::{Fsm, Transition};
 pub use hierarchy::Node;
 pub use model::{Design, Entity, Instance, Interface, Package};
 pub use page::OutputFile;
+pub use theme::Theme;
 
 /// Builds the documentation model of a loaded project, leaving out the
 /// files `config.exclude` matches.
@@ -142,6 +144,12 @@ pub fn generate(design: &Design, config: &DocConfig) -> Vec<OutputFile> {
                     contents: page::html(page, &design.title, &nav),
                 });
             }
+        }
+    }
+    let theme = theme::Theme::new(&config.theme);
+    for file in &mut files {
+        if let std::borrow::Cow::Owned(themed) = theme.apply(&file.contents) {
+            file.contents = themed;
         }
     }
     files

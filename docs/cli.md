@@ -237,6 +237,7 @@ for an example.
 | `--format FORMAT` | `html`, `markdown` or `asciidoc` (default: `doc.format`). |
 | `--title TITLE` | Title of the index page (default: `doc.title`, else the project directory's name). |
 | `--page-for FILE` | Print the page of the first entity (else package) `FILE` declares instead of writing the whole documentation. Editors use it for their diagram views. |
+| `--theme MODE` | `light`, `dark` or `auto` (both, following the reader's system); default: `doc.theme.mode`. Colors and fonts are under [`[doc.theme]`](configuration.md#doctheme). |
 
 ## `vfl schema`
 
@@ -267,6 +268,7 @@ Draws one diagram. `ENTITY` is `name` or `library.name`.
 | `-f, --format FORMAT` | `svg` (default), `mermaid` or `dot`. Only `hierarchy` and `fsm` have Mermaid and DOT. |
 | `-o, --output FILE` | Write to `FILE` instead of standard output. |
 | `--project PATH` | A directory or file of the project (default: the current directory). |
+| `--theme MODE` | `light`, `dark` or `auto` (both, following the reader's system); default: `doc.theme.mode`. Colors and fonts are under [`[doc.theme]`](configuration.md#doctheme). |
 
 ```sh
 vfl schema symbol uart_tx -o uart_tx.svg

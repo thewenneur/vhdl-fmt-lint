@@ -1229,6 +1229,7 @@ pub struct DocConfig {
     /// Detect finite state machines and document their states and transitions.
     pub fsm: bool,
     pub diagrams: DiagramConfig,
+    pub theme: DocTheme,
 }
 
 impl Default for DocConfig {
@@ -1249,6 +1250,7 @@ impl Default for DocConfig {
             instances: true,
             fsm: true,
             diagrams: DiagramConfig::default(),
+            theme: DocTheme::default(),
         }
     }
 }
@@ -1345,6 +1347,125 @@ impl Default for DiagramConfig {
 pub enum MarkdownDiagrams {
     Svg,
     Mermaid,
+}
+
+/// `[doc.theme]`: the colors and fonts of the documentation pages and of
+/// every diagram, `vfl schema` included.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DocTheme {
+    /// Light, dark, or both, following the reader's system setting.
+    pub mode: ThemeMode,
+    /// The font family of the page text. Unset: the system's sans-serif.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font: Option<CssValue>,
+    /// The font family of code and of diagram text. Diagrams are laid out
+    /// for a monospace font. Unset: the system's monospace.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mono_font: Option<CssValue>,
+    /// Colors of the light theme that replace the built-in ones.
+    pub light: ThemeColors,
+    /// Colors of the dark theme that replace the built-in ones.
+    pub dark: ThemeColors,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ThemeMode {
+    /// Light or dark as the reader's system (or editor) is set.
+    #[default]
+    Auto,
+    Light,
+    Dark,
+}
+
+/// Colors of one theme. Each key left out keeps the built-in color.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ThemeColors {
+    /// The page background, and diagram parts drawn over it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub background: Option<CssValue>,
+    /// Text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub foreground: Option<CssValue>,
+    /// Secondary text: types, notes, the footer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub muted: Option<CssValue>,
+    /// Lines of tables and page sections.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub border: Option<CssValue>,
+    /// The sidebar, table headers, and the fill of blocks and states.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub surface: Option<CssValue>,
+    /// The background of inline code.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<CssValue>,
+    /// Links, wires and the initial state.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accent: Option<CssValue>,
+    /// The fill of block titles, terminals and the initial state.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<CssValue>,
+    /// Outlines of blocks, pins and waveforms.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stroke: Option<CssValue>,
+    /// Arrows between blocks and states.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edge: Option<CssValue>,
+    /// Dashed outlines of external blocks and separators.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dashed: Option<CssValue>,
+    /// The time grid of waveforms.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grid: Option<CssValue>,
+    /// Port map actuals.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<CssValue>,
+    /// Clock domain crossings.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<CssValue>,
+    /// The fills of waveform data, in order (WaveDrom `=`, then `3` to `9`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wave: Option<Vec<CssValue>>,
+}
+
+/// A CSS color or font family. Characters that could end the style sheet
+/// it is written into (`;{}<>&\` and line breaks) are refused.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct CssValue(pub String);
+
+impl CssValue {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for CssValue {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for CssValue {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        let value = text.trim();
+        if value.is_empty() {
+            return Err(serde::de::Error::custom("empty CSS value"));
+        }
+        if let Some(c) = value
+            .chars()
+            .find(|c| matches!(c, ';' | '{' | '}' | '<' | '>' | '&' | '\\') || c.is_control())
+        {
+            return Err(serde::de::Error::custom(format!(
+                "`{c}` is not allowed in a CSS value"
+            )));
+        }
+        Ok(CssValue(value.to_owned()))
+    }
 }
 
 #[cfg(test)]
@@ -1591,6 +1712,31 @@ mod tests {
             before_end: one,
             before_process: one,
             between_declaration_groups: one,
+        };
+        let css = || Some(CssValue("red".into()));
+        let colors = ThemeColors {
+            background: css(),
+            foreground: css(),
+            muted: css(),
+            border: css(),
+            surface: css(),
+            code: css(),
+            accent: css(),
+            highlight: css(),
+            stroke: css(),
+            edge: css(),
+            dashed: css(),
+            grid: css(),
+            value: css(),
+            error: css(),
+            wave: Some(vec![CssValue("red".into())]),
+        };
+        config.doc.theme = DocTheme {
+            mode: ThemeMode::Auto,
+            font: css(),
+            mono_font: css(),
+            light: colors.clone(),
+            dark: colors,
         };
     }
 

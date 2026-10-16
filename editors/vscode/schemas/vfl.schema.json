@@ -4091,6 +4091,170 @@
             }
           },
           "additionalProperties": false
+        },
+        "theme": {
+          "type": "object",
+          "description": "The colors and fonts of the HTML pages and of every diagram.",
+          "properties": {
+            "mode": {
+              "description": "`\"auto\"`: light, and dark where the reader's system or editor is dark. `\"light\"` or `\"dark\"`: always that one.",
+              "enum": [
+                "auto",
+                "light",
+                "dark"
+              ],
+              "default": "auto"
+            },
+            "font": {
+              "description": "The CSS font family of the page text. Unset: the system's sans-serif.",
+              "type": "string"
+            },
+            "mono_font": {
+              "description": "The CSS font family of code and of diagram text; diagrams are laid out for a monospace font. Unset: the system's monospace.",
+              "type": "string"
+            },
+            "light": {
+              "type": "object",
+              "description": "Colors that replace the built-in ones of the light theme; the keys left out keep theirs.",
+              "properties": {
+                "background": {
+                  "description": "The page background, and the diagram parts drawn over it. A CSS color.",
+                  "type": "string"
+                },
+                "foreground": {
+                  "description": "Text, on the pages and in the diagrams. A CSS color.",
+                  "type": "string"
+                },
+                "muted": {
+                  "description": "Secondary text: port types, notes, open ports, the footer. A CSS color.",
+                  "type": "string"
+                },
+                "border": {
+                  "description": "Lines of tables, of the sidebar and under headings. A CSS color.",
+                  "type": "string"
+                },
+                "surface": {
+                  "description": "The sidebar, table headers, and the fill of blocks and states. A CSS color.",
+                  "type": "string"
+                },
+                "code": {
+                  "description": "The background of inline code. A CSS color.",
+                  "type": "string"
+                },
+                "accent": {
+                  "description": "Links, wires between blocks and the outline of the initial state. A CSS color.",
+                  "type": "string"
+                },
+                "highlight": {
+                  "description": "The fill of block titles, port terminals and the initial state. A CSS color.",
+                  "type": "string"
+                },
+                "stroke": {
+                  "description": "Outlines of blocks, states and pins, and waveform lines. A CSS color.",
+                  "type": "string"
+                },
+                "edge": {
+                  "description": "Arrows between blocks and states. A CSS color.",
+                  "type": "string"
+                },
+                "dashed": {
+                  "description": "Dashed outlines of external blocks, and separators. A CSS color.",
+                  "type": "string"
+                },
+                "grid": {
+                  "description": "The time grid of waveforms. A CSS color.",
+                  "type": "string"
+                },
+                "value": {
+                  "description": "The actuals of a port map diagram. A CSS color.",
+                  "type": "string"
+                },
+                "error": {
+                  "description": "Signals crossing clock domains. A CSS color.",
+                  "type": "string"
+                },
+                "wave": {
+                  "description": "The fills of WaveDrom data: `=` and `2`, then `3` to `9`. Fewer colors repeat in order.",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "dark": {
+              "type": "object",
+              "description": "Colors that replace the built-in ones of the dark theme; the keys left out keep theirs.",
+              "properties": {
+                "background": {
+                  "description": "The page background, and the diagram parts drawn over it. A CSS color.",
+                  "type": "string"
+                },
+                "foreground": {
+                  "description": "Text, on the pages and in the diagrams. A CSS color.",
+                  "type": "string"
+                },
+                "muted": {
+                  "description": "Secondary text: port types, notes, open ports, the footer. A CSS color.",
+                  "type": "string"
+                },
+                "border": {
+                  "description": "Lines of tables, of the sidebar and under headings. A CSS color.",
+                  "type": "string"
+                },
+                "surface": {
+                  "description": "The sidebar, table headers, and the fill of blocks and states. A CSS color.",
+                  "type": "string"
+                },
+                "code": {
+                  "description": "The background of inline code. A CSS color.",
+                  "type": "string"
+                },
+                "accent": {
+                  "description": "Links, wires between blocks and the outline of the initial state. A CSS color.",
+                  "type": "string"
+                },
+                "highlight": {
+                  "description": "The fill of block titles, port terminals and the initial state. A CSS color.",
+                  "type": "string"
+                },
+                "stroke": {
+                  "description": "Outlines of blocks, states and pins, and waveform lines. A CSS color.",
+                  "type": "string"
+                },
+                "edge": {
+                  "description": "Arrows between blocks and states. A CSS color.",
+                  "type": "string"
+                },
+                "dashed": {
+                  "description": "Dashed outlines of external blocks, and separators. A CSS color.",
+                  "type": "string"
+                },
+                "grid": {
+                  "description": "The time grid of waveforms. A CSS color.",
+                  "type": "string"
+                },
+                "value": {
+                  "description": "The actuals of a port map diagram. A CSS color.",
+                  "type": "string"
+                },
+                "error": {
+                  "description": "Signals crossing clock domains. A CSS color.",
+                  "type": "string"
+                },
+                "wave": {
+                  "description": "The fills of WaveDrom data: `=` and `2`, then `3` to `9`. Fewer colors repeat in order.",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

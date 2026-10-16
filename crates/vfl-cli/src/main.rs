@@ -168,6 +168,9 @@ enum Command {
         /// declares instead of the index (the index if it declares none).
         #[arg(long, value_name = "FILE")]
         page_for: Option<PathBuf>,
+        /// Light, dark, or both following the reader's system (default: `doc.theme.mode`).
+        #[arg(long, value_enum)]
+        theme: Option<ThemeArg>,
     },
     /// Draw one diagram: an entity's symbol, the design hierarchy, the block
     /// diagram of an architecture or a state machine.
@@ -196,6 +199,9 @@ enum Command {
         /// A directory or file of the project.
         #[arg(long, default_value = ".")]
         project: PathBuf,
+        /// Light, dark, or both following the reader's system (default: `doc.theme.mode`).
+        #[arg(long, value_enum)]
+        theme: Option<ThemeArg>,
     },
     /// Generate code from an entity of the project: a testbench, an
     /// instantiation or a component declaration.
@@ -230,6 +236,23 @@ enum DocFormatArg {
     Html,
     Markdown,
     Asciidoc,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum ThemeArg {
+    Auto,
+    Light,
+    Dark,
+}
+
+impl From<ThemeArg> for vfl_config::ThemeMode {
+    fn from(arg: ThemeArg) -> Self {
+        match arg {
+            ThemeArg::Auto => vfl_config::ThemeMode::Auto,
+            ThemeArg::Light => vfl_config::ThemeMode::Light,
+            ThemeArg::Dark => vfl_config::ThemeMode::Dark,
+        }
+    }
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -331,6 +354,7 @@ fn run(cli: Cli) -> Result<bool> {
             format,
             title,
             page_for,
+            theme,
         } => doc::doc(
             &path,
             out.as_deref(),
@@ -341,6 +365,7 @@ fn run(cli: Cli) -> Result<bool> {
             }),
             title,
             page_for.as_deref(),
+            theme.map(Into::into),
         )
         .map(|()| true),
         Command::Schema {
@@ -352,6 +377,7 @@ fn run(cli: Cli) -> Result<bool> {
             format,
             output,
             project,
+            theme,
         } => doc::schema(&doc::SchemaOptions {
             kind,
             entity,
@@ -361,6 +387,7 @@ fn run(cli: Cli) -> Result<bool> {
             format,
             output,
             project,
+            theme: theme.map(Into::into),
         })
         .map(|()| true),
         Command::New {
