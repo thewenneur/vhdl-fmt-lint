@@ -111,7 +111,7 @@ commands when the plugin is upgraded.
 | Show parameters | Shows the parameter hints of the call around the caret. |
 | Complete word | Lists the completions at the caret. Notepad++ keeps **Ctrl+Space** for its own completion, so map this to another key if you use it often. |
 | Format on type | Formats the line of a `;` just typed, or the line above a new line (off by default). `on_type = false` under `[format]` in `vfl.toml` turns it off for a project. |
-| Format on save | Formats VHDL and Verilog files when they are saved (off by default). With **Save All**, only the file in front is formatted. |
+| Format on save | Formats VHDL and Verilog files when they are saved (off by default). With **Save All**, only the file in front is formatted. Files larger than 512 KB are saved unformatted, with a note in the status bar, so that saving stays quick; `format_on_save_max_kb` in the settings file changes the limit. |
 | Lint automatically | Lints VHDL and Verilog files as described above (on by default). |
 | Show messages under lines | Shows each message under its line (on by default); with it off, hover or use Next problem. |
 | Code assistance | Types on hover, parameter hints and completion after a dot (on by default). The three commands above work either way. |
@@ -135,9 +135,11 @@ or `.vht`. It is Verilog when Notepad++ shows it as Verilog, or its extension is
 
 Tested with Notepad++ 8.8.6, 64-bit.
 
-1. Download `vfl_npp-v<version>-x64.zip` from the
-   [latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest), or build
-   `vfl_npp.dll` yourself (below).
+1. Download the zip for your Notepad++ from the
+   [latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest):
+   `vfl_npp-v<version>-x64.zip` for 64-bit, `-x86.zip` for 32-bit, `-arm64.zip` for ARM64
+   (**? > About Notepad++** says which one you have). Or build `vfl_npp.dll` yourself
+   (below).
 2. Close Notepad++ and unzip it into the `plugins` folder of its install directory (usually
    `C:\Program Files\Notepad++\plugins`), so the DLL ends up in `plugins\vfl_npp\vfl_npp.dll`.
    A DLL you built goes in a new `plugins\vfl_npp` folder.

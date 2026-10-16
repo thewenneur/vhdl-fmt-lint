@@ -7,6 +7,12 @@ rules that `[lint.rules]` configures are described in [lints.md](lints.md).
 `vfl config show [path]` prints the effective configuration for a file or directory, with
 the config files it was built from.
 
+[editors/vscode/schemas/vfl.schema.json](../editors/vscode/schemas/vfl.schema.json) is a JSON
+schema of the file, for completion and checking in editors: the VS Code extension hands it
+to Even Better TOML, and any editor with [Taplo](https://taplo.tamasfe.dev) uses it with a
+`#:schema` line at the top of `vfl.toml`. Tests check that it lists every key on this page
+and every rule. A key added here must be added there too.
+
 For a guided tour, [examples/config](../examples/config/README.md) has one folder per
 topic, each with a `vfl.toml` and a file before and after `vfl fmt` or `vfl lint --fix`.
 
