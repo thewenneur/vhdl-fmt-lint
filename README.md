@@ -104,9 +104,9 @@ The extension ([editors/vscode](editors/vscode/README.md)) runs `vfl lsp`. When 
 `vfl`, it offers to download the release binary of its own version (checked against the
 release's `SHA256SUMS`), so installing `vfl` first (above) is optional. Then:
 
-1. Download `vfl-0.8.0.vsix` from the
+1. Download `vfl-0.9.0.vsix` from the
    [latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest).
-2. Install it with `code --install-extension vfl-0.8.0.vsix`, or in VS Code with
+2. Install it with `code --install-extension vfl-0.9.0.vsix`, or in VS Code with
    **Extensions > ... > Install from VSIX...**.
 3. Open a folder with VHDL files. If `vfl` is not on the `PATH` or in `~/.cargo/bin`, set
    `vfl.server.path` to it, or accept the download.
@@ -118,7 +118,7 @@ To build the `.vsix` yourself: `cd editors/vscode && npm ci && npm run package`.
 The plugin ([editors/notepadpp](editors/notepadpp/README.md)) has the formatter, the linter
 and the editor features of the language server (types on hover, parameter hints, completion,
 quick fixes, go to definition, references, rename, symbols) built in, so it does not need
-`vfl` installed. Download `vfl_npp-v0.8.0-x64.zip` (`-x86.zip` for 32-bit Notepad++,
+`vfl` installed. Download `vfl_npp-v0.9.0-x64.zip` (`-x86.zip` for 32-bit Notepad++,
 `-arm64.zip` for ARM64) from the
 [latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest), close Notepad++,
 unzip it into the `plugins` folder of its install directory (usually

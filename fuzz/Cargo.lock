@@ -609,6 +609,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "similar"
+version = "2.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
+
+[[package]]
 name = "smallvec"
 version = "1.16.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -750,7 +756,7 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
 name = "vfl-config"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "serde",
  "thiserror",
@@ -760,9 +766,10 @@ dependencies = [
 
 [[package]]
 name = "vfl-fmt"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "rowan",
+ "similar",
  "thiserror",
  "unicode-width",
  "vfl-config",
@@ -790,7 +797,7 @@ dependencies = [
 
 [[package]]
 name = "vfl-gen"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "regex",
  "rowan",
@@ -801,7 +808,7 @@ dependencies = [
 
 [[package]]
 name = "vfl-lint"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "globset",
  "rayon",
@@ -815,12 +822,13 @@ dependencies = [
  "vfl-project",
  "vfl-sema",
  "vfl-syntax",
+ "vfl-vendor",
  "vfl-verilog-syntax",
 ]
 
 [[package]]
 name = "vfl-lsp"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "lsp-server",
@@ -837,12 +845,13 @@ dependencies = [
  "vfl-project",
  "vfl-sema",
  "vfl-syntax",
+ "vfl-vendor",
  "vfl-verilog-syntax",
 ]
 
 [[package]]
 name = "vfl-project"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "globset",
  "ignore",
@@ -853,13 +862,14 @@ dependencies = [
  "vfl-config",
  "vfl-sema",
  "vfl-syntax",
+ "vfl-vendor",
  "vfl-verilog-syntax",
  "yaml-rust2",
 ]
 
 [[package]]
 name = "vfl-sema"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "rayon",
  "rowan",
@@ -870,14 +880,22 @@ dependencies = [
 
 [[package]]
 name = "vfl-syntax"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "rowan",
 ]
 
 [[package]]
+name = "vfl-vendor"
+version = "0.9.0"
+dependencies = [
+ "rustc-hash",
+ "vfl-syntax",
+]
+
+[[package]]
 name = "vfl-verilog-syntax"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "rowan",
  "rustc-hash",

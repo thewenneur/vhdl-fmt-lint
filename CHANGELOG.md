@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-16
+
+Library lists merged file by file with the code, so stale tool files and `vhdl_ls.toml`
+no longer break a project; linting of FPGA vendor files; `vfl spec` design
+specifications; themes for documentation and diagrams; clearer state machine diagrams;
+and formatting that no longer scrolls the editor.
+
 ### Added
 
 - **FPGA vendor files are linted and highlighted: Quartus `.qsf` and `.qip`, SDC, Vivado
@@ -17,7 +24,25 @@
   languages with their grammars, Notepad++ highlights them as Tcl (`.lpf` and `.cst` as C),
   and Zed the Tcl ones with the Tcl grammar. See [docs/lints.md](docs/lints.md#vendor).
 
+- **`[doc.theme]`**: the mode (`auto`, `light` or `dark`), the page and monospace fonts
+  and per-theme color overrides of the HTML pages and every SVG diagram of `vfl doc`,
+  `vfl schema` and `vfl spec`, which take `--theme` to fix the mode for one run. See
+  [docs/configuration.md](docs/configuration.md#doctheme).
+- **`project/library-conflict`** (info in `recommended`, warn in `strict`): a file whose
+  library sources disagree, with what each one said and why vfl chose as it did.
+
 ### Changed
+
+- **Library sources are merged file by file instead of one winning.** Tool files,
+  `vhdl_ls.toml` and the code each give their opinion; a file gets the library they agree
+  on, and where they disagree, the one leaving the fewest unresolved `library x; use x.`
+  references around it. A list written for another directory is re-rooted, and entries
+  matching no file are reported by `vfl project`. `[project.libraries]` in `vfl.toml` (and
+  `vhdl-ls = "prefer"`) still always win. On UVVM with a renamed library in its
+  `vhdl_ls.toml`, semantic errors drop from 3255 to 5. Re-inference after an edit is
+  faster. See [docs/design.md](docs/design.md#merging-library-sources).
+- **Formatting no longer scrolls the editor**: the language server and the Notepad++ plugin
+  replace only the changed lines, so the view, caret and selection stay where they were.
 
 - **The libraries listed in `.qsf`, `.qip` and Vivado `.tcl` files are read with a real Tcl
   reader**, the one the vendor rules use: commands separated by `;`, comments after `;#`,
