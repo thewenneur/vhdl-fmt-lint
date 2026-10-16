@@ -202,7 +202,7 @@ Settings of `vfl fmt` and of formatting in the language server.
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
 | `style` | string | `"default"` | A named set of defaults for the other keys: `"default"`, `"leading-comma"`, `"compact"` or `"classic"`; see [Styles](#styles). Keys set explicitly win over it. |
-| `max_width` | integer | `100` | Lines longer than this get their parenthesized lists broken up, one element per line, then their expressions broken at operators (`break_expressions`); see [Long lines](#long-lines). Columns are counted as displayed: Chinese, Japanese and Korean characters take two. |
+| `max_width` | integer | `120` | Lines longer than this get their parenthesized lists broken up, one element per line, then their expressions broken at operators (`break_expressions`); see [Long lines](#long-lines). Columns are counted as displayed: Chinese, Japanese and Korean characters take two. |
 | `indent` | integer | `4` | Columns per indentation level. Also the tab width with `use_tabs`. |
 | `continuation_indent` | integer | `indent` | Columns added for a statement continued on the next line, outside parentheses. |
 | `use_tabs` | boolean | `false` | Indent with tabs instead of spaces. Alignment padding is always spaces. |
@@ -212,9 +212,9 @@ Settings of `vfl fmt` and of formatting in the language server.
 | `end_keyword` | string | `"preserve"` | Whether `end` repeats the optional construct keyword (`end entity`, `end architecture`, `end package body`, `end function`, ...): `"add"`, `"remove"` or `"preserve"`. |
 | `space_before_label_colon` | boolean | `true` | `p_count : process` rather than `p_count: process`. |
 | `space_after_keyword` | boolean | `true` | A space between `(` and the keyword before it: `process (clk)`, `port map (`, `if (`. Applies after `process`, `port`, `generic`, `map`, `parameter`, `array`, `block`, `if`, `elsif`, `while` and `until`. Calls and indexing never get a space: `f(x)`, `v(7 downto 0)`. |
-| `max_blank_lines` | integer | `2` | Longer runs of blank lines are shortened to this many. |
+| `max_blank_lines` | integer | `1` | Longer runs of blank lines are shortened to this many. |
 | `interface_list` | string | `"expand"` | Layout of `generic (...)` and `port (...)` clauses; see [List layouts](#list-layouts). |
-| `association_list` | string | `"auto"` | Layout of `generic map (...)` and `port map (...)`; see [List layouts](#list-layouts). |
+| `association_list` | string | `"expand"` | Layout of `generic map (...)` and `port map (...)`; see [List layouts](#list-layouts). |
 | `close_paren` | string | `"own-line"` | Where `)` goes in a list laid out one element per line: `"own-line"` (on its own line, at the indentation of the line that opened the list) or `"attached"` (right after the last element). |
 | `interface_separator` | string | `"trailing"` | Where the `;` between the elements of `generic (...)`, `port (...)` and subprogram parameter lists goes when they are on separate lines: `"trailing"` (end of the line) or `"leading"` (start of the next line); see [Separators](#separators). |
 | `association_separator` | string | `"trailing"` | Where the `,` between the elements of `generic map (...)`, `port map (...)`, calls, aggregates and enumeration types goes when they are on separate lines: `"trailing"` or `"leading"`; see [Separators](#separators). |
@@ -313,10 +313,14 @@ entity counter is
 end;
 ...
   u0 : entity work.sub
-    port map (clk => clk, data_in => cnt, q => open);
+    port map (
+      clk     => clk,
+      data_in => cnt,
+      q       => open
+    );
 ```
 
-With `interface_list = "auto"`, `association_list = "expand"`, `close_paren = "attached"`:
+With `interface_list = "auto"`, `association_list = "auto"`, `close_paren = "attached"`:
 
 ```vhdl
 entity counter is
@@ -327,11 +331,16 @@ entity counter is
 end;
 ...
   u0 : entity work.sub
+    port map (clk => clk, data_in => cnt, q => open);
+  u1 : entity work.sub
     port map (
       clk     => clk,
       data_in => cnt,
-      q       => open);
+      q       => q_wide_data_output_of_the_second_instance);
 ```
+
+`u0` fits on one line and stays there; `u1` was written over several lines (or would not
+fit in `max_width`), so it gets one association per line.
 
 ### Separators
 
@@ -382,8 +391,8 @@ association_list = "auto" # wins over the style's "expand"
 | Style | Sets |
 |-------|------|
 | `"default"` | Nothing: every key has the default listed above. |
-| `"leading-comma"` | `interface_separator = "leading"`, `association_separator = "leading"`, `association_list = "expand"`. |
-| `"compact"` | `indent = 2`, `interface_list = "auto"`, `association_list = "auto"`, `close_paren = "attached"`, `max_blank_lines = 1`, and every `[format.align]` key off except `trailing_comment`, which aligns consecutive lines only (`scope = "contiguous"`). |
+| `"leading-comma"` | `interface_separator = "leading"`, `association_separator = "leading"`, and `association_list = "expand"` (also the default). |
+| `"compact"` | `indent = 2`, `interface_list = "auto"`, `association_list = "auto"`, `close_paren = "attached"`, and every `[format.align]` key off except `trailing_comment`, which aligns consecutive lines only (`scope = "contiguous"`). |
 | `"classic"` | `indent = 4`, `keyword_case = "upper"`, `end_label = "add"`, `end_keyword = "add"`, `association_list = "expand"`, `case_alternative = "break"`, and alignment of consecutive lines only, without the `;` (`scope = "contiguous"`, `semicolon = false`). |
 
 ## `[format.declaration_case]`
@@ -880,7 +889,7 @@ exclude = []
 
 [format]
 style = "default"
-max_width = 100
+max_width = 120
 indent = 4
 # continuation_indent = 4   # unset: follows `indent`
 use_tabs = false
@@ -890,9 +899,9 @@ end_label = "preserve"
 end_keyword = "preserve"
 space_before_label_colon = true
 space_after_keyword = true
-max_blank_lines = 2
+max_blank_lines = 1
 interface_list = "expand"
-association_list = "auto"
+association_list = "expand"
 close_paren = "own-line"
 interface_separator = "trailing"
 association_separator = "trailing"

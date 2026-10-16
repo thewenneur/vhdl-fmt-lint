@@ -3,6 +3,7 @@
 //! variables with more than one driver.
 
 use rustc_hash::{FxHashMap, FxHashSet};
+use vfl_sema::resets::{ResetUse, consistency, is_reset_name, named_active_low};
 use vfl_sema::{Edit, Fix, codes};
 use vfl_verilog_syntax::{SyntaxKind as K, SyntaxNode, SyntaxToken, TextRange, TextSize};
 
@@ -662,32 +663,6 @@ fn case_defaults(unit: &Unit, body: &SyntaxNode, out: &mut Vec<Finding>) {
     }
 }
 
-/// One reset of one clocked block.
-pub struct ResetUse {
-    name: String,
-    sync: bool,
-    active_high: Option<bool>,
-    range: TextRange,
-    in_generate: bool,
-}
-
-fn is_reset_name(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    name.contains("rst") || name.contains("reset")
-}
-
-/// Whether a reset's name says it is active low: `rst_n`, `rst_ni`,
-/// `resetn`, `nrst`, `arst_l`, `rst_b`.
-fn is_active_low_name(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    ["_n", "_ni", "_l", "_b", "rstn", "resetn"]
-        .iter()
-        .any(|s| name.ends_with(s))
-        || ["nrst", "nreset", "n_rst", "n_reset"]
-            .iter()
-            .any(|p| name.starts_with(p))
-}
-
 /// The value of a one-bit literal: `1'b0`, `0`, `'1`.
 fn bit_literal(node: &SyntaxNode) -> Option<bool> {
     if node.kind() != K::LITERAL {
@@ -755,7 +730,7 @@ fn reset(
     body: &SyntaxNode,
     enabled: &impl Fn(&str) -> bool,
     out: &mut Vec<Finding>,
-) -> Option<ResetUse> {
+) -> Option<ResetUse<String>> {
     let statements = statements(body);
     let [statement] = statements.as_slice() else {
         return None;
@@ -802,12 +777,8 @@ fn reset(
                     if high { "high" } else { "low" }
                 ),
             ));
-        } else if active_high == Some(true) && is_active_low_name(&name) {
-            out.push(Finding::new(
-                codes::RESET_POLARITY,
-                range,
-                format!("`{name}` is named as active low but resets when high here"),
-            ));
+        } else if let Some(message) = named_active_low(&name, active_high, true) {
+            out.push(Finding::new(codes::RESET_POLARITY, range, message));
         }
     }
     if enabled(codes::MISSING_RESET) {
@@ -846,6 +817,7 @@ fn reset(
         }
     }
     Some(ResetUse {
+        key: name.clone(),
         name,
         sync,
         active_high,
@@ -889,61 +861,15 @@ fn sets_constants(unit: &Unit, statement: &SyntaxNode) -> bool {
 /// with both polarities, within the unit.
 fn reset_consistency(
     unit: &Unit,
-    uses: &[ResetUse],
+    uses: &[ResetUse<String>],
     enabled: &impl Fn(&str) -> bool,
     out: &mut Vec<Finding>,
 ) {
-    let mut by_signal: Vec<(&str, Vec<&ResetUse>)> = Vec::new();
-    for u in uses.iter().filter(|u| !u.in_generate) {
-        match by_signal.iter_mut().find(|(n, _)| *n == u.name) {
-            Some((_, list)) => list.push(u),
-            None => by_signal.push((&u.name, vec![u])),
-        }
-    }
-    let line = |u: &ResetUse| unit.ctx.line(u.range.start());
-    for (name, uses) in by_signal {
-        let first = uses[0];
-        if enabled(codes::MIXED_RESET)
-            && let Some(other) = uses.iter().find(|u| u.sync != first.sync)
-        {
-            let describe = |sync: bool| {
-                if sync {
-                    "synchronously"
-                } else {
-                    "asynchronously"
-                }
-            };
-            out.push(Finding::new(
-                codes::MIXED_RESET,
-                other.range,
-                format!(
-                    "`{name}` resets this block {} but the block at line {} {}",
-                    describe(other.sync),
-                    line(first),
-                    describe(first.sync)
-                ),
-            ));
-        }
-        if !enabled(codes::RESET_POLARITY) {
-            continue;
-        }
-        let Some(level) = uses.iter().find_map(|u| u.active_high) else {
-            continue;
-        };
-        let first = uses.iter().find(|u| u.active_high == Some(level)).unwrap();
-        for other in uses.iter().filter(|u| u.active_high == Some(!level)) {
-            let describe = |high: bool| if high { "high" } else { "low" };
-            out.push(Finding::new(
-                codes::RESET_POLARITY,
-                other.range,
-                format!(
-                    "`{name}` resets when {} here but when {} at line {}",
-                    describe(!level),
-                    describe(level),
-                    line(first)
-                ),
-            ));
-        }
+    let line = |at| unit.ctx.line(at);
+    let mixed = enabled(codes::MIXED_RESET);
+    let polarity = enabled(codes::RESET_POLARITY);
+    for i in consistency(uses, "block", line, mixed, polarity) {
+        out.push(Finding::new(i.code, i.range, i.message));
     }
 }
 

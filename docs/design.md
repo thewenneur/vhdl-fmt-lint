@@ -326,7 +326,7 @@ osvvm = ["third_party/osvvm/**/*.vhd"]
 
 [format]
 style           = "default"  # "default" | "leading-comma" | "compact" | "classic"
-max_width       = 100
+max_width       = 120
 indent          = 4
 # continuation_indent = 4   # defaults to `indent`
 use_tabs        = false
@@ -336,9 +336,9 @@ end_label       = "preserve" # "add" | "remove" | "preserve": `end entity e;`
 end_keyword     = "preserve" # "add" | "remove" | "preserve": `end entity;`
 space_before_label_colon = true   # `lbl : process`
 space_after_keyword      = true   # `process (clk)`, `port map (`
-max_blank_lines  = 2
+max_blank_lines  = 1
 interface_list   = "expand"   # port/generic clauses: "expand" | "auto" | "preserve"
-association_list = "auto"     # port/generic maps: "expand" | "auto" | "preserve"
+association_list = "expand"   # port/generic maps: "expand" | "auto" | "preserve"
 close_paren      = "own-line" # "own-line" | "attached"
 interface_separator   = "trailing" # `;` of port/generic clauses: "trailing" | "leading"
 association_separator = "trailing" # `,` of maps, calls, aggregates: "trailing" | "leading"

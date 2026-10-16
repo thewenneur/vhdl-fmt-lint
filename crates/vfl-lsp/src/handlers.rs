@@ -245,35 +245,14 @@ fn formatting(world: &mut World, params: DocumentFormattingParams) -> Option<Vec
         return Some(Vec::new());
     }
     // One edit covering what changed, so the cursor keeps its place.
-    let old = doc.text;
-    let mut prefix = old
-        .bytes()
-        .zip(formatted.bytes())
-        .take_while(|(a, b)| a == b)
-        .count();
-    while !old.is_char_boundary(prefix) {
-        prefix -= 1;
-    }
-    let max_suffix = old.len().min(formatted.len()) - prefix;
-    let mut suffix = old
-        .bytes()
-        .rev()
-        .zip(formatted.bytes().rev())
-        .take(max_suffix)
-        .take_while(|(a, b)| a == b)
-        .count();
-    while !old.is_char_boundary(old.len() - suffix)
-        || !formatted.is_char_boundary(formatted.len() - suffix)
-    {
-        suffix -= 1;
-    }
+    let edit = vfl_fmt::minimal_edit(doc.text, &formatted);
     let range = TextRange::new(
-        TextSize::from(prefix as u32),
-        TextSize::from((old.len() - suffix) as u32),
+        TextSize::from(edit.range.start as u32),
+        TextSize::from(edit.range.end as u32),
     );
     Some(vec![TextEdit {
         range: doc.range(range),
-        new_text: formatted[prefix..formatted.len() - suffix].to_owned(),
+        new_text: edit.text,
     }])
 }
 

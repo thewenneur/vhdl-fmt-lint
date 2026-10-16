@@ -1,0 +1,19 @@
+---
+source: crates/vfl-sema/tests/sema.rs
+expression: analyze(&text)
+input_file: crates/vfl-sema/tests/data/usage.vhd
+---
+counter.vhd: work
+helpers.vhd: work
+copy_a.vhd: work
+copy_b.vhd: work
+same_file.vhd: work
+counter.vhd:9:5: sema/unused-generic: generic `UNUSED_LIMIT` is never used
+counter.vhd:10:5: sema/unused-generic: generic `SPARE` is never used
+counter.vhd:25:14: sema/unused-variable: variable `idle` is never used [fix: Remove the unused variable `idle`]
+counter.vhd:26:17: sema/unused-variable: variable `b` is never used [fix: Remove the unused variable `b`]
+helpers.vhd:7:14: sema/unused-variable: variable `unused_tmp` is never used [fix: Remove the unused variable `unused_tmp`]
+copy_a.vhd:2:8: sema/duplicate-unit: entity `twin` is also declared in library `work` at copy_b.vhd:1
+copy_b.vhd:1:8: sema/duplicate-unit: entity `twin` is also declared in library `work` at copy_a.vhd:2
+same_file.vhd:2:9: sema/duplicate-unit: package `dup_pkg` is also declared in library `work` at same_file.vhd:5
+same_file.vhd:5:9: sema/duplicate-unit: package `dup_pkg` is also declared in library `work` at same_file.vhd:2

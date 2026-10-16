@@ -1,3 +1,5 @@
+root = true # a project of its own, apart from the other examples
+
 # Each aligned token has its own switch. Here ports and declarations line up,
 # but assignments, case choices and end-of-line comments do not.
 [format.align]

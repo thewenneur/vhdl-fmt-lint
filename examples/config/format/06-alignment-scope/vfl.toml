@@ -1,3 +1,5 @@
+root = true # a project of its own, apart from the other examples
+
 # The layout of vfl 0.4 and earlier: only consecutive lines line up, and the
 # ";" at the end of the lines is not aligned. Compare with ../01-defaults,
 # where every token lines up across the whole block (scope = "block").

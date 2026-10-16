@@ -40,6 +40,7 @@ mod decl;
 mod diagnostic;
 mod drivers;
 mod foreign;
+pub mod resets;
 mod resolver;
 mod rtl;
 mod stdlib;

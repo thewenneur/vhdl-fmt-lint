@@ -103,7 +103,7 @@
           "description": "Lines longer than this get their parenthesized lists broken up, one element per line, then their expressions broken at operators (`break_expressions`); see Long lines. Columns are counted as displayed: Chinese, Japanese and Korean characters take two.",
           "type": "integer",
           "minimum": 0,
-          "default": 100
+          "default": 120
         },
         "indent": {
           "description": "Columns per indentation level. Also the tab width with `use_tabs`.",
@@ -171,7 +171,7 @@
           "description": "Longer runs of blank lines are shortened to this many.",
           "type": "integer",
           "minimum": 0,
-          "default": 2
+          "default": 1
         },
         "interface_list": {
           "description": "Layout of `generic (...)` and `port (...)` clauses; see List layouts.",
@@ -189,7 +189,7 @@
             "auto",
             "preserve"
           ],
-          "default": "auto"
+          "default": "expand"
         },
         "close_paren": {
           "description": "Where `)` goes in a list laid out one element per line: `\"own-line\"` (on its own line, at the indentation of the line that opened the list) or `\"attached\"` (right after the last element).",

@@ -12,6 +12,8 @@ mod instances;
 mod names;
 mod procedures;
 mod scope;
+#[cfg(test)]
+mod tests;
 mod width;
 
 use std::hash::{DefaultHasher, Hash, Hasher};

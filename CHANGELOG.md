@@ -124,6 +124,13 @@
 - Reading which units a file declares and uses no longer takes time quadratic in the
   number of statements of an architecture: 28 ms instead of 3.7 s for a 3 MB netlist,
   on every load and every edit of it.
+- **Format defaults follow VHDL Style Guide (VSG)**, which TerosHDL also uses: `max_width`
+  is 120 (was 100, now the same as the `style/line-length` rule), `max_blank_lines` is 1
+  (was 2) and `association_list` is `"expand"` (was `"auto"`), so port and generic maps get
+  one association per line like port and generic clauses. Code formatted with the old
+  defaults only loses its extra blank lines and gets its one-line maps expanded: no line
+  is joined. `max_width = 100`, `max_blank_lines = 2` and `association_list = "auto"` bring
+  the old layout back.
 - **Zed downloads the server of its own version**, not the latest release, and checks the
   archive against the release's `SHA256SUMS` before keeping the binary; Windows on ARM
   gets a binary too. The example tasks run from the worktree root (`$ZED_WORKTREE_ROOT`)
@@ -156,6 +163,16 @@
 - **Edits past the end of a CRLF line** are inserted before the `\r\n`, not between `\r`
   and `\n`.
 - Name resolution no longer panics on an unbalanced scope (a bug); it degrades instead.
+- Verilog: an empty position in an instance's connections (`sub u (a, , c)`) leaves its
+  input unconnected, which `verilog/unconnected-input` now reports, and the fix of
+  `style/positional-association` names it (`.b()`) instead of leaving an empty position
+  among named connections, which did not parse.
+- `style/file-name` suggests a name with the file's own extension (`top.vhdl` for a
+  `.vhdl` file) instead of always `.vhd`.
+- `vfl lint` run in `examples/` no longer mixes the configuration lessons with the UART
+  design (15 errors from duplicate entities): each lesson of `examples/config` is a
+  project of its own (`root = true`), and `examples/uart` is formatted with the default
+  style.
 
 ## [0.7.0] - 2026-10-15
 

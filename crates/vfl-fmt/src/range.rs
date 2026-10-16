@@ -56,6 +56,35 @@ pub fn apply_edits(text: &str, edits: &[Edit]) -> String {
     out
 }
 
+/// The one edit that turns `old` into `new`: the bytes between their common
+/// prefix and common suffix, both on character boundaries. Editors keep the
+/// cursor in place when a whole-file change comes as this edit.
+pub fn minimal_edit(old: &str, new: &str) -> Edit {
+    let mut prefix = old
+        .bytes()
+        .zip(new.bytes())
+        .take_while(|(a, b)| a == b)
+        .count();
+    while !old.is_char_boundary(prefix) {
+        prefix -= 1;
+    }
+    // The suffix may not overlap the prefix in either text.
+    let mut suffix = old[prefix..]
+        .bytes()
+        .rev()
+        .zip(new[prefix..].bytes().rev())
+        .take_while(|(a, b)| a == b)
+        .count();
+    // Equal bytes on both sides, so a boundary in `old` is one in `new`.
+    while !old.is_char_boundary(old.len() - suffix) {
+        suffix -= 1;
+    }
+    Edit {
+        range: prefix..old.len() - suffix,
+        text: new[prefix..new.len() - suffix].to_owned(),
+    }
+}
+
 /// Formats the lines of `text` that the byte range `range` touches: see
 /// [`format_ranges`].
 pub fn format_range(
@@ -821,5 +850,48 @@ impl<'a, L: Lang> View<'a, L> {
             range: start..end,
             text: text.to_owned(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn check(old: &str, new: &str) -> Edit {
+        let edit = minimal_edit(old, new);
+        assert_eq!(apply_edits(old, std::slice::from_ref(&edit)), new);
+        edit
+    }
+
+    #[test]
+    fn minimal_edit_covers_only_the_change() {
+        let edit = check("a := 1;\nb := 2;\n", "a := 1;\nb  := 2;\n");
+        assert_eq!(edit.range, 10..10);
+        assert_eq!(edit.text, " ");
+        let edit = check("abc", "abc");
+        assert_eq!((edit.range, edit.text.as_str()), (3..3, ""));
+        assert_eq!(check("", "x").range, 0..0);
+        assert_eq!(check("xyz", "").range, 0..3);
+    }
+
+    #[test]
+    fn minimal_edit_prefix_and_suffix_do_not_overlap() {
+        // "aa" -> "aaa": the common prefix and suffix are 2 bytes each.
+        let edit = check("aa", "aaa");
+        assert_eq!((edit.range, edit.text.as_str()), (2..2, "a"));
+        let edit = check("abab", "ab");
+        assert_eq!((edit.range, edit.text.as_str()), (2..4, ""));
+    }
+
+    #[test]
+    fn minimal_edit_stays_on_char_boundaries() {
+        // "é" (c3 a9) and "è" (c3 a8) share their first byte.
+        let edit = check("x é y", "x è y");
+        assert_eq!((edit.range, edit.text.as_str()), (2..4, "è"));
+        // "ä" (c3 a4) and "Ĥ" (c4 a4) share their last byte.
+        let edit = check("ä", "Ĥ");
+        assert_eq!((edit.range, edit.text.as_str()), (0..2, "Ĥ"));
+        check("\u{3000}a\u{a0}", "\u{3000}\u{a0}\u{a0}");
+        check("--  é", "-- é");
     }
 }
