@@ -58,6 +58,17 @@ pub struct World {
     defaults: Config,
 }
 
+/// The project root of `path`, in the form the editor's file URIs give
+/// back, which every path the server compares with it has: on Windows,
+/// `C:\dir` rather than the `\\?\C:\dir` of a canonical path.
+pub fn project_root(path: &Path) -> ProjectRoot {
+    let path = lsp_types::Url::from_file_path(path)
+        .ok()
+        .and_then(|uri| uri.to_file_path().ok())
+        .unwrap_or_else(|| path.to_owned());
+    find_root(&path)
+}
+
 impl World {
     pub fn new(root: &Path) -> World {
         World::with_defaults(root, Config::default())
@@ -76,7 +87,7 @@ impl World {
         defaults: Config,
         progress: &(dyn Fn(Progress) + Sync),
     ) -> World {
-        let root = find_root(root);
+        let root = project_root(root);
         let mut config_file_errors = Vec::new();
         let (project, load_error) = load(&root, &defaults, &mut config_file_errors, progress);
         progress(Progress::Analyzing {

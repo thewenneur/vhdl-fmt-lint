@@ -198,13 +198,15 @@ pub fn run(connection: &Connection) -> Result<()> {
         .as_ref()
         .and_then(|w| w.work_done_progress)
         .unwrap_or(false);
+    // Without file watchers of the editor's, the server watches itself,
+    // from before the load: what changes while it lasts is read after.
+    let _watcher =
+        (!watch).then(|| watch::spawn(world::project_root(&root).dir, defaults.clone(), events));
     let world = if progress {
-        load_with_progress(connection, &root, defaults.clone())?
+        load_with_progress(connection, &root, defaults)?
     } else {
-        World::with_defaults(&root, defaults.clone())
+        World::with_defaults(&root, defaults)
     };
-    // Without file watchers of the editor's, the server watches itself.
-    let _watcher = (!watch).then(|| watch::spawn(world.root.dir.clone(), defaults, events));
     let mut server = Server::new(connection, inbox, world);
     if let Some(error) = settings_error {
         server.warn(&error)?;
@@ -861,7 +863,7 @@ mod tests {
         loop {
             let message = client
                 .receiver
-                .recv_timeout(std::time::Duration::from_secs(60))
+                .recv_timeout(std::time::Duration::from_secs(20))
                 .expect("the server answers");
             if let Some(found) = wanted(&message) {
                 return found;

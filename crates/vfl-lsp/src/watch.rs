@@ -37,10 +37,15 @@ type Listing = FxHashMap<PathBuf, (Option<SystemTime>, u64)>;
 
 /// Watches the project at `root`, sending what changed to `server`.
 /// `defaults` is the config when no config file applies.
+///
+/// The first listing is taken before this returns: a file changed after
+/// it, while the project loads or as soon as it is loaded, is reported.
+/// Taken by the thread instead, it could come after such a change, which
+/// would then never be seen.
 pub fn spawn(root: PathBuf, defaults: Config, server: mpsc::Sender<Message>) -> Watcher {
     let (stop, stopped) = mpsc::channel::<()>();
+    let mut listing = list(&root, &defaults);
     std::thread::spawn(move || {
-        let mut listing = list(&root, &defaults);
         let mut interval = MIN_INTERVAL;
         // Waits, unless the server stopped.
         while let Err(mpsc::RecvTimeoutError::Timeout) = stopped.recv_timeout(interval) {
@@ -147,6 +152,24 @@ mod tests {
             ]
         );
         assert!(changes(&now, &now).is_empty());
+    }
+
+    /// A file made as soon as the watcher is started, before its thread
+    /// ran, is reported all the same.
+    #[test]
+    fn a_file_made_right_after_the_start_is_seen() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let (sender, inbox) = mpsc::channel();
+        let _watcher = spawn(root.clone(), Config::default(), sender);
+        std::fs::write(root.join("a.vhd"), "").unwrap();
+        let Ok(Message::Notification(n)) = inbox.recv_timeout(Duration::from_secs(20)) else {
+            panic!("the change is reported");
+        };
+        let params: lsp_types::DidChangeWatchedFilesParams =
+            serde_json::from_value(n.params).unwrap();
+        assert_eq!(params.changes.len(), 1);
+        assert_eq!(params.changes[0].typ, FileChangeType::CREATED);
     }
 
     #[test]
