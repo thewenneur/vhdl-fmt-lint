@@ -230,17 +230,14 @@ impl World {
             self.set_verilog_text(path, text);
             return;
         }
-        if self
-            .project
-            .file_index(&path)
-            .is_some_and(|i| *self.project.files[i].text == *text)
-        {
+        let index = self.project.file_index(&path);
+        if index.is_some_and(|i| *self.project.files[i].text == *text) {
             self.overlays.insert(path, text);
             return;
         }
         let standard = self.config(&path).standard();
-        let file = SourceFile::new(path.clone(), text.clone(), Encoding::Utf8, standard);
-        match self.project.file_index(&path) {
+        let file = SourceFile::new(path.clone(), &*text, Encoding::Utf8, standard);
+        match index {
             Some(i) => self.project.files[i] = file,
             None => {
                 self.project.files.push(file);
@@ -747,6 +744,7 @@ fn empty(root: &ProjectRoot, config: Config) -> Project {
         unreadable: Vec::new(),
         notes: Vec::new(),
         tool_files: Vec::new(),
+        paths: Default::default(),
     }
 }
 
@@ -777,10 +775,16 @@ impl Doc<'_> {
 /// The offset of a UTF-16 `position` in `text`, clamped to the line, its
 /// line break (`\r\n` or `\n`) excluded, and to the text.
 pub fn offset(text: &str, index: &LineIndex, position: lsp_types::Position) -> TextSize {
-    let Some(start) = index.line_start(position.line) else {
+    let start = index.line_start(position.line).map(usize::from);
+    offset_from(text, start, position)
+}
+
+/// [`offset`], given where the position's line starts, if it is in the
+/// text.
+pub fn offset_from(text: &str, start: Option<usize>, position: lsp_types::Position) -> TextSize {
+    let Some(start) = start else {
         return TextSize::of(text);
     };
-    let start = usize::from(start);
     let line_end = match text[start..].find('\n') {
         Some(i) if text[start..start + i].ends_with('\r') => start + i - 1,
         Some(i) => start + i,

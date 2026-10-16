@@ -20,6 +20,7 @@ mod handlers;
 mod hierarchy;
 mod inlay;
 mod navigate;
+mod publish;
 mod refactor;
 mod semantic;
 pub mod settings;
@@ -40,12 +41,13 @@ use lsp_types::{
     CodeActionKind, CodeActionOptions, CodeActionProviderCapability, CompletionOptions,
     DidChangeWatchedFilesRegistrationOptions, FileSystemWatcher, GlobPattern, InitializeParams,
     OneOf, Registration, RegistrationParams, RenameOptions, ServerCapabilities, ServerInfo,
-    TextDocumentSyncCapability, TextDocumentSyncKind, Url, notification as n, request::Shutdown,
+    TextDocumentSyncCapability, TextDocumentSyncKind, notification as n, request::Shutdown,
 };
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashSet;
 use serde::de::DeserializeOwned;
 
 pub use hierarchy::SHOW_REFERENCES;
+pub use publish::Published;
 pub use world::World;
 
 /// Answers one request against `world`, as the server would: for
@@ -132,17 +134,63 @@ pub fn capabilities() -> ServerCapabilities {
 /// text of a document. Positions past a line or the text are clamped.
 #[doc(hidden)]
 pub fn apply_changes(text: &mut String, changes: Vec<lsp_types::TextDocumentContentChangeEvent>) {
-    for change in changes {
+    // Where each line starts: found once for all the changes, then kept up
+    // to date after each.
+    let mut starts: Option<Vec<usize>> = None;
+    let count = changes.len();
+    for (i, change) in changes.into_iter().enumerate() {
         match change.range {
             Some(range) => {
-                let index = vfl_syntax::LineIndex::new(text);
-                let start = usize::from(world::offset(text, &index, range.start));
-                let end = usize::from(world::offset(text, &index, range.end));
-                text.replace_range(start..end.max(start), &change.text);
+                let lines = starts.get_or_insert_with(|| {
+                    std::iter::once(0)
+                        .chain(text.match_indices('\n').map(|(i, _)| i + 1))
+                        .collect()
+                });
+                let offset = |p: lsp_types::Position| {
+                    let start = lines.get(p.line as usize).copied();
+                    usize::from(world::offset_from(text, start, p))
+                };
+                let start = offset(range.start);
+                let end = offset(range.end).max(start);
+                text.replace_range(start..end, &change.text);
+                if i + 1 < count {
+                    shift_lines(lines, start, end, &change.text);
+                }
             }
-            None => *text = change.text,
+            None => {
+                *text = change.text;
+                starts = None;
+            }
         }
     }
+}
+
+/// Updates the line starts of a text after `start..end` was replaced by
+/// `new`.
+fn shift_lines(starts: &mut Vec<usize>, start: usize, end: usize, new: &str) {
+    let low = starts.partition_point(|&s| s <= start);
+    let high = starts.partition_point(|&s| s <= end);
+    let added = new.match_indices('\n').map(|(i, _)| start + i + 1);
+    starts.splice(low..high, added);
+    let after = low + new.matches('\n').count();
+    for s in &mut starts[after..] {
+        *s = *s + new.len() - (end - start);
+    }
+}
+
+/// Applies the changes of a `textDocument/didChange` notification to the
+/// open document at `path`, as the server does.
+#[doc(hidden)]
+pub fn did_change(
+    world: &mut World,
+    path: PathBuf,
+    changes: Vec<lsp_types::TextDocumentContentChangeEvent>,
+) {
+    // The document's text is changed in place, then parsed: its only copy
+    // is the one the parse keeps.
+    let mut text = world.overlays.remove(&path).unwrap_or_default();
+    apply_changes(&mut text, changes);
+    world.set_text(path, text);
 }
 
 /// Runs the server on stdin and stdout until the client shuts it down.
@@ -320,8 +368,8 @@ struct Server<'a> {
     /// Queued requests the client cancelled.
     cancelled: FxHashSet<RequestId>,
     world: World,
-    /// The diagnostics shown in the client, by file.
-    published: FxHashMap<Url, Vec<lsp_types::Diagnostic>>,
+    /// The diagnostics shown in the client.
+    published: Published,
     /// Configuration errors already shown, while they last.
     shown_errors: Vec<String>,
     next_request: i32,
@@ -341,7 +389,7 @@ impl<'a> Server<'a> {
             queue: VecDeque::new(),
             cancelled: FxHashSet::default(),
             world,
-            published: FxHashMap::default(),
+            published: Published::default(),
             shown_errors: Vec::new(),
             next_request: 0,
             changed_files: Vec::new(),
@@ -553,9 +601,7 @@ impl<'a> Server<'a> {
                     params::<lsp_types::DidChangeTextDocumentParams>(notification.params)
                     && let Ok(path) = p.text_document.uri.to_file_path()
                 {
-                    let mut text = world.overlays.get(&path).cloned().unwrap_or_default();
-                    apply_changes(&mut text, p.content_changes);
-                    world.set_text(path, text);
+                    did_change(world, path, p.content_changes);
                 }
             }
             n::DidCloseTextDocument::METHOD => {
@@ -600,23 +646,8 @@ impl<'a> Server<'a> {
     /// Sends the diagnostics of every file whose diagnostics changed, and
     /// clears those of files that no longer have any.
     fn publish(&mut self) -> Result<()> {
-        let mut previous = std::mem::take(&mut self.published);
-        for (uri, diagnostics) in handlers::diagnostics(&self.world) {
-            if previous.remove(&uri).as_ref() != Some(&diagnostics) {
-                self.notify::<n::PublishDiagnostics>(lsp_types::PublishDiagnosticsParams {
-                    uri: uri.clone(),
-                    diagnostics: diagnostics.clone(),
-                    version: None,
-                })?;
-            }
-            self.published.insert(uri, diagnostics);
-        }
-        for uri in previous.into_keys() {
-            self.notify::<n::PublishDiagnostics>(lsp_types::PublishDiagnosticsParams {
-                uri,
-                diagnostics: Vec::new(),
-                version: None,
-            })?;
+        for params in self.published.update(&self.world) {
+            self.notify::<n::PublishDiagnostics>(params)?;
         }
         // Each error is shown once while it lasts: fixed, then broken
         // again, it is shown again.
@@ -667,6 +698,7 @@ fn params<P: DeserializeOwned>(value: serde_json::Value) -> Option<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lsp_types::Url;
     use serde_json::json;
 
     /// Edits that wait in the queue are analyzed once, and cancelled
@@ -1044,6 +1076,46 @@ mod tests {
                     && n.params.to_string().contains("`t`"))
         });
         assert!(unused_t, "{messages:?}");
+    }
+
+    /// Several changes in one notification, each against the text the
+    /// previous ones left, give the same text as one at a time.
+    #[test]
+    fn batched_changes_apply_in_order() {
+        let mut text = "entity a is\r\nend entity;\nℵ -- é\n\narchitecture\n".to_owned();
+        // A small deterministic generator of positions and texts.
+        let mut seed = 7u32;
+        let mut next = |n: u32| {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            (seed >> 16) % n.max(1)
+        };
+        let inserts = ["", "x", "\n", "a\nb", "\r\n", "--\n\nℵ", "é"];
+        for _ in 0..200 {
+            let changes: Vec<lsp_types::TextDocumentContentChangeEvent> = (0..1 + next(5))
+                .map(|_| {
+                    let at = |next: &mut dyn FnMut(u32) -> u32| {
+                        lsp_types::Position::new(next(8), next(14))
+                    };
+                    let (a, b) = (at(&mut next), at(&mut next));
+                    let (start, end) = if (a.line, a.character) <= (b.line, b.character) {
+                        (a, b)
+                    } else {
+                        (b, a)
+                    };
+                    lsp_types::TextDocumentContentChangeEvent {
+                        range: Some(lsp_types::Range::new(start, end)),
+                        range_length: None,
+                        text: inserts[next(inserts.len() as u32) as usize].into(),
+                    }
+                })
+                .collect();
+            let mut one_by_one = text.clone();
+            for change in changes.clone() {
+                apply_changes(&mut one_by_one, vec![change]);
+            }
+            apply_changes(&mut text, changes);
+            assert_eq!(text, one_by_one);
+        }
     }
 
     /// A position past the end of a CRLF line is before its `\r`: an edit

@@ -14,7 +14,9 @@ use std::path::{Path, PathBuf};
 
 pub use import::is_tool_file;
 pub use infer::{BUNDLED_LIBRARIES, Inference, Reason, infer_libraries, library_conflicts};
-pub use load::{Encoding, LibrarySources, LoadError, Project, SourceFile, decode, encode};
+pub use load::{
+    Encoding, LibrarySources, LoadError, PathIndex, Project, SourceFile, decode, encode,
+};
 pub use order::{CompileOrder, CompileStep, Language, OrderError, compile_order};
 pub use summary::{
     FileSummary, UnitKind, UnitRef, UnitSummary, name_token, simple_name, summarize,
