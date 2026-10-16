@@ -52,6 +52,22 @@
   changed lines.
 - **`vfl lint --fix-only RULES`** applies the fixes of some rules or categories only.
 - **`vfl rules --explain RULE`** prints a rule's levels and full description.
+- **32-bit and ARM64 Notepad++**: releases have `vfl_npp-vX.Y.Z-x86.zip` and `-arm64.zip`
+  next to the 64-bit plugin, and a `vfl` binary for Windows on ARM.
+- **VHDL snippets** in VS Code (and a copy for Zed's snippets directory): entity and
+  architecture, clocked processes with a synchronous, asynchronous or no reset, a
+  combinational process, a state machine, a testbench, generate statements, a package with
+  its body and a record type.
+- **VS Code language status**: the server's version and state with a restart action, and
+  the `vfl.toml` in effect for the file in front with an action to open it (or to generate
+  one).
+- **A JSON schema of `vfl.toml`** ([editors/vscode/schemas/vfl.schema.json](editors/vscode/schemas/vfl.schema.json)),
+  which VS Code hands to Even Better TOML for completion, hover and checking. Tests keep it
+  in sync with the config keys, their accepted values and defaults, and the lint rules.
+- **VS Code downloads the server** of its own version when no `vfl` is found, after asking,
+  and checks it against the release's `SHA256SUMS`. `vfl.server.path`, the `PATH` and
+  `~/.cargo/bin` still come first.
+- **VS Code multi-root workspaces**: one server per workspace folder.
 - **Long expressions are broken**: a line still longer than `max_width` once its lists are
   broken up is broken at the operators of its expressions that bind loosest (`else` of
   conditional assignments, then `and`/`or`, relational, shift, `+`/`-`/`&`, `*`/`/`), in
@@ -78,13 +94,21 @@
 
 ### Changed
 
+- **Zed downloads the server of its own version**, not the latest release, and checks the
+  archive against the release's `SHA256SUMS` before keeping the binary; Windows on ARM
+  gets a binary too. The example tasks run from the worktree root (`$ZED_WORKTREE_ROOT`)
+  instead of the current file's directory, and the README says they need `vfl` on the
+  `PATH`.
+- **Notepad++ format on save skips files larger than 512 KB**, with a note in the status
+  bar, since it formats before the file is written and holds up the save;
+  `format_on_save_max_kb` in `vfl_npp.ini` sets the limit.
+- VS Code: vfl is the default formatter of Verilog and SystemVerilog files too, a workspace
+  you do not trust cannot set `vfl.server.path` or `vfl.server.extraEnv`, and the extension
+  has an icon and a changelog.
 - The formatter's `max_width` and the `style/line-length` rule count display columns:
   Chinese, Japanese and Korean characters take two.
 - A line continuing an element of a list (a port map actual broken over lines) is indented
   `continuation_indent` further than the elements.
-
-### Changed
-
 - LSP position conversion finds the line of an offset without scanning the line's text
   twice.
 - The fuzzing dictionary and seeds include non-ASCII text (no-break and ideographic spaces,

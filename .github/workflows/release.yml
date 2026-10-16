@@ -80,6 +80,7 @@ jobs:
           - { os: macos-latest, target: aarch64-apple-darwin }
           - { os: macos-latest, target: x86_64-apple-darwin }
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
+          - { os: windows-latest, target: aarch64-pc-windows-msvc }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -109,25 +110,35 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
 
+  # One plugin per Notepad++ build: 64-bit, 32-bit and ARM64.
   notepadpp:
     needs: version
     if: inputs.add_zed_to == ''
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-pc-windows-msvc, arch: x64 }
+          - { target: i686-pc-windows-msvc, arch: x86 }
+          - { target: aarch64-pc-windows-msvc, arch: arm64 }
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release --locked -p vfl-npp
+        with:
+          targets: ${{ matrix.target }}
+      - run: cargo build --release --locked -p vfl-npp --target ${{ matrix.target }}
       - name: Package
         shell: bash
         run: |
-          name=vfl_npp-v${{ needs.version.outputs.version }}-x64
+          name=vfl_npp-v${{ needs.version.outputs.version }}-${{ matrix.arch }}
           mkdir -p dist/vfl_npp
-          cp target/release/vfl_npp.dll dist/vfl_npp/
+          cp target/${{ matrix.target }}/release/vfl_npp.dll dist/vfl_npp/
           cp editors/notepadpp/README.md LICENSE-MIT LICENSE-APACHE dist/vfl_npp/
           (cd dist && 7z a "$name.zip" vfl_npp > /dev/null)
       - uses: actions/upload-artifact@v4
         with:
-          name: notepadpp
+          name: notepadpp-${{ matrix.arch }}
           path: dist/*.zip
 
   vscode:

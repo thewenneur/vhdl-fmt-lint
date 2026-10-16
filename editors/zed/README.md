@@ -21,10 +21,12 @@ The extension starts, in order:
 
 1. the binary in the `lsp.vfl.binary.path` setting, if set;
 2. `vfl` on the `PATH`;
-3. otherwise, the `vfl` of the latest
-   [GitHub release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest) for
-   the platform, which it downloads once (Linux and macOS on x86-64 and ARM, Windows on
-   x86-64).
+3. otherwise, the `vfl` of the
+   [GitHub release](https://github.com/thewenneur/vhdl-fmt-lint/releases) of the
+   extension's own version, for the platform (Linux, macOS and Windows on x86-64 and ARM).
+   It downloads it once, checks the archive against the release's `SHA256SUMS`, and keeps
+   only the binary in the extension's directory. A new version of the extension downloads
+   its own version, so the server and the extension always match.
 
 ```json
 {
@@ -101,8 +103,11 @@ To apply every safe fix when formatting, add to `settings.json`:
 }
 ```
 
-The rest runs `vfl` as a [task](https://zed.dev/docs/tasks). [`tasks.json`](tasks.json)
-has tasks to lint or fix the file, lint the project, generate the documentation, generate
+The rest runs `vfl` as a [task](https://zed.dev/docs/tasks). Tasks run `vfl` from the `PATH`,
+not the binary the extension downloads, so install it (see the
+[main README](../../README.md#installation)) to use them. They run from the root of the
+worktree (`$ZED_WORKTREE_ROOT`), so that the project ones cover the whole project.
+[`tasks.json`](tasks.json) has tasks to lint or fix the file, lint the project, generate the documentation, generate
 a testbench and print an instantiation or a component declaration. The last three use the
 selected text as the entity name, so select it first; Zed hides tasks whose variables are
 missing. Copy it to `~/.config/zed/tasks.json` (**zed: open tasks**), or to `.zed/tasks.json`
@@ -115,6 +120,17 @@ is bound to any key with:
 ```json
 { "ctrl-alt-v l": ["task::Spawn", { "task_name": "vfl: lint file" }] }
 ```
+
+## Snippets
+
+[`snippets/vhdl.json`](snippets/vhdl.json) has VHDL snippets: `entity` (an entity and its
+architecture), `architecture`, `process-sync` and `process-async` (clocked processes with a
+synchronous or asynchronous reset), `process-clocked`, `process-comb`, `fsm` (an
+architecture with a state machine), `fsm-process`, `testbench`, `for-generate`,
+`if-generate`, `package` (with its body) and `record`. Copy it to
+`~/.config/zed/snippets/vhdl.json` (**snippets: configure snippets** opens that directory).
+It is the VS Code extension's file without its choices and file-name variables, which
+become plain placeholders.
 
 ## Grammars
 

@@ -123,6 +123,22 @@ async function run() {
   assert.match(scratch.getText(), /^u_e2e_top : entity work\.e2e_top\n    port map \(/);
   await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor");
 
+  // The snippets are there for VHDL.
+  const snippet = await vscode.workspace.openTextDocument({ language: "vhdl", content: "" });
+  await vscode.window.showTextDocument(snippet);
+  await vscode.commands.executeCommand("editor.action.insertSnippet", {
+    langId: "vhdl",
+    name: "Record type",
+  });
+  assert.match(snippet.getText(), /^type name_t is record\n\s+field : std_logic;\nend record name_t;$/);
+  await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor");
+  for (const language of ["vhdl", "verilog", "systemverilog"]) {
+    const formatter = vscode.workspace
+      .getConfiguration("editor", { languageId: language })
+      .get("defaultFormatter");
+    assert.equal(formatter, "thewenneur.vfl", language);
+  }
+
   await vscode.commands.executeCommand("vfl.generateTestbench", "e2e_top");
   const tb = vscode.window.activeTextEditor?.document;
   assert.equal(tb && path.basename(tb.uri.fsPath), "e2e_top_tb.vhd");

@@ -1,6 +1,9 @@
 **
 !out/extension.js
 !syntaxes/**
+!snippets/**
+!schemas/**
+!images/icon.png
 !language-configuration.json
 !language-configuration-verilog.json
 !package.json

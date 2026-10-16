@@ -205,6 +205,9 @@ fn severity_index(severity: Severity) -> usize {
 #[derive(Clone, Copy)]
 pub(crate) struct Settings {
     format_on_save: bool,
+    /// Files larger than this many KB are not formatted on save: the
+    /// formatter runs on the UI thread, before Notepad++ writes the file.
+    format_on_save_max_kb: usize,
     /// Formats the line of a `;` just typed, or the line above a new line.
     format_on_type: bool,
     auto_lint: bool,
@@ -224,6 +227,7 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             format_on_save: false,
+            format_on_save_max_kb: 512,
             format_on_type: false,
             auto_lint: true,
             inline_messages: true,
@@ -638,8 +642,22 @@ fn on_notification(n: &ScNotification) {
         SCN_FOCUSIN if n.nmhdr.hwnd_from == current_scintilla().0 => rescan(true),
         NPPN_FILEBEFORESAVE if from_npp => {
             let id = n.nmhdr.id_from;
-            if with(|s| s.settings.get().format_on_save) && id == current_buffer() && is_hdl(id) {
-                format_current(Trigger::Auto);
+            let settings = with(|s| s.settings.get());
+            if settings.format_on_save && id == current_buffer() && is_hdl(id) {
+                let (sci, _) = current_scintilla();
+                let len = send(sci, SCI_GETLENGTH, 0, 0).max(0) as usize;
+                if len > settings.format_on_save_max_kb * 1024 {
+                    set_status_text(
+                        npp(),
+                        &format!(
+                            "vfl: not formatted on save, larger than {} KB \
+                             (format_on_save_max_kb in vfl_npp.ini)",
+                            settings.format_on_save_max_kb
+                        ),
+                    );
+                } else {
+                    format_current(Trigger::Auto);
+                }
             }
         }
         NPPN_FILESAVED if from_npp => {
@@ -2041,6 +2059,12 @@ fn load_settings() {
                     }
                     continue;
                 }
+                "format_on_save_max_kb" => {
+                    if let Ok(kb) = value.parse() {
+                        settings.format_on_save_max_kb = kb;
+                    }
+                    continue;
+                }
                 _ => {}
             }
             let value = value == "1";
@@ -2065,10 +2089,12 @@ fn save_settings() {
     };
     let s = with(|s| s.settings.get());
     let text = format!(
-        "format_on_save={}\nformat_on_type={}\nlint_automatically={}\nmessages_under_lines={}\n\
+        "format_on_save={}\nformat_on_save_max_kb={}\nformat_on_type={}\n\
+         lint_automatically={}\nmessages_under_lines={}\n\
          code_assistance={}\nhighlight_uses={}\ncolor_names={}\nlint_preset={}\n\
          format_style={}\n",
         s.format_on_save as u8,
+        s.format_on_save_max_kb,
         s.format_on_type as u8,
         s.auto_lint as u8,
         s.inline_messages as u8,
