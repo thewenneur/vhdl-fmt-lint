@@ -673,6 +673,42 @@ pub(crate) fn lines<L: Lang>(
     (lines, line_of)
 }
 
+/// A comment line before an `end`, `else`, `when` or `)` kept as written
+/// is placed on the same side of that code's column as in the source, so
+/// that the next time it stays where it is: the code keeps its column
+/// while the comment moves.
+pub(crate) fn indent_before_verbatim<L: Lang>(
+    elems: &[Elem<L>],
+    an: &Analysis<L>,
+    lines: &mut [Line],
+    line_of: &[usize],
+    config: &FormatConfig,
+) {
+    for li in 0..lines.len() {
+        if !lines[li].comment_only || lines[li].verbatim {
+            continue;
+        }
+        let first = &elems[lines[li].start];
+        if L::keeps_column(first.kind) {
+            continue;
+        }
+        let Some(k) = (lines[li].end..elems.len()).find(|&k| !elems[k].is_comment()) else {
+            continue;
+        };
+        let closes_block = an.section[k] || an.alternative_start[k] || elems[k].is_token(L::RPAREN);
+        if !closes_block || !lines[line_of[k]].verbatim {
+            continue;
+        }
+        let col = elems[k].src_col;
+        let indent = &mut lines[li].indent;
+        *indent = if first.src_col > col {
+            (*indent).max(col + config.indent)
+        } else {
+            (*indent).min(col)
+        };
+    }
+}
+
 /// For an element starting a line: how many statement bodies it is in
 /// that start on another line than their statement (`if (a)` then
 /// `x = 1;`), and whether it starts one.
