@@ -17,6 +17,7 @@ pub mod report;
 pub mod rules;
 mod style;
 mod suppress;
+pub mod vendor;
 mod verilog;
 mod waiver;
 

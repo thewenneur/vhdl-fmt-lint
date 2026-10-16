@@ -25,6 +25,7 @@ mod refactor;
 mod semantic;
 pub mod settings;
 mod types;
+mod vendor;
 mod verilog;
 mod watch;
 mod world;
@@ -387,6 +388,8 @@ struct Server<'a> {
     /// Whether the analyzer is analyzing. The world has no analysis
     /// meanwhile: requests that need one wait for it.
     analyzing: bool,
+    /// The open FPGA vendor files, linted apart from the project.
+    vendor: vendor::Documents,
 }
 
 /// The internal notification the analyzer wakes the server with when an
@@ -439,6 +442,7 @@ impl<'a> Server<'a> {
             reload: false,
             analyzer: None,
             analyzing: false,
+            vendor: vendor::Documents::default(),
         }
     }
 
@@ -558,6 +562,12 @@ impl<'a> Server<'a> {
         match done {
             Ok(done) => {
                 self.world.finish_refresh(done);
+                if !self.vendor.is_empty() {
+                    let sent = guard("vendor files", || self.vendor.analyzed(&mut self.world));
+                    for params in sent.unwrap_or_default() {
+                        self.notify::<n::PublishDiagnostics>(params)?;
+                    }
+                }
                 guard("analysis", || self.publish()).unwrap_or(Ok(()))
             }
             Err(_) => {
@@ -608,6 +618,11 @@ impl<'a> Server<'a> {
             // It only woke the server: the main loop takes the analysis.
             return;
         }
+        // Vendor files are handled as they come, apart from the project.
+        let message = match self.vendor_message(message) {
+            Some(message) => message,
+            None => return,
+        };
         if let Message::Notification(notification) = &message
             && notification.method == n::Cancel::METHOD
         {
@@ -627,6 +642,59 @@ impl<'a> Server<'a> {
             return;
         }
         self.queue.push_back(message);
+    }
+
+    /// Handles a message about an open vendor file (`.qsf`, `.sdc`, ...):
+    /// lints it, or answers a request on it with nothing. Other messages
+    /// are given back.
+    fn vendor_message(&mut self, message: Message) -> Option<Message> {
+        fn target(params: &serde_json::Value) -> Option<lsp_types::Url> {
+            let uri = params.get("textDocument")?.get("uri")?.as_str()?;
+            // A look at the extension first: HDL edits pay nothing more.
+            if !vendor::may_be_vendor_uri(uri) {
+                return None;
+            }
+            lsp_types::Url::parse(uri)
+                .ok()
+                .filter(vendor::is_vendor_uri)
+        }
+        match &message {
+            Message::Notification(notification) => {
+                let Some(uri) = target(&notification.params) else {
+                    return Some(message);
+                };
+                let world = &mut self.world;
+                let documents = &mut self.vendor;
+                let method = notification.method.as_str();
+                let sent = guard(method, || match method {
+                    n::DidOpenTextDocument::METHOD => {
+                        params::<lsp_types::DidOpenTextDocumentParams>(notification.params.clone())
+                            .and_then(|p| documents.open(world, uri, p.text_document.text))
+                    }
+                    n::DidChangeTextDocument::METHOD => {
+                        params::<lsp_types::DidChangeTextDocumentParams>(
+                            notification.params.clone(),
+                        )
+                        .and_then(|p| documents.change(world, &uri, p.content_changes))
+                    }
+                    n::DidCloseTextDocument::METHOD => documents.close(&uri),
+                    _ => None,
+                });
+                if let Ok(Some(params)) = sent {
+                    let _ = self.notify::<n::PublishDiagnostics>(params);
+                }
+                None
+            }
+            Message::Request(request) => {
+                if target(&request.params).is_none() {
+                    return Some(message);
+                }
+                let response = Response::new_ok(request.id.clone(), serde_json::Value::Null);
+                let _ = self.connection.sender.send(Message::Response(response));
+                None
+            }
+            Message::Response(_) => Some(message),
+        }
     }
 
     fn register_watchers(&mut self) -> Result<()> {
@@ -1055,6 +1123,82 @@ mod tests {
         let messages = step(&mut server, &client, vec![watched(&[(&config, 2)])]);
         assert_eq!(published(&messages, &config).map(|d| d.len()), Some(1));
         assert_eq!(warnings(&messages), 1, "shown again");
+    }
+
+    /// Vendor files are linted as they are opened and edited, apart from
+    /// the project: they never make it analyze again, requests on them get
+    /// nothing, and a port renamed in the design shows in them.
+    #[test]
+    fn vendor_files_are_linted_apart() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = world::tests::real_dir(dir.path());
+        let vhd = root.join("top.vhd");
+        let entity =
+            |port: &str| format!("entity top is\n  port ({port} : in bit);\nend entity;\n");
+        std::fs::write(&vhd, entity("clk")).unwrap();
+        let qsf = root.join("top.qsf");
+        let (server, client) = Connection::memory();
+        let (_, inbox) = mpsc::channel();
+        let mut server = Server::new(&server, inbox, World::new(&root));
+        let notification = |method: &str, params: serde_json::Value| {
+            Message::Notification(Notification::new(method.into(), params))
+        };
+        let uri = Url::from_file_path(&qsf).unwrap();
+        let text = "set_global_assignment -name TOP_LEVEL_ENTITY top\n\
+                    set_location_assignment PIN_A1 -to clk\n";
+        let open = notification(
+            "textDocument/didOpen",
+            serde_json::json!({"textDocument": {"uri": uri, "languageId": "quartus",
+                "version": 1, "text": text}}),
+        );
+        let messages = step(&mut server, &client, vec![open]);
+        assert_eq!(published(&messages, &qsf), None, "nothing to report");
+        assert!(!server.world.dirty);
+        let edit = notification(
+            "textDocument/didChange",
+            serde_json::json!({"textDocument": {"uri": uri, "version": 2},
+                "contentChanges": [{"text": format!("{text}set_location_assignment PIN_A1 -to rst\n")}]}),
+        );
+        let hover = Message::Request(Request::new(
+            7.into(),
+            "textDocument/hover".into(),
+            serde_json::json!({"textDocument": {"uri": uri}, "position": {"line": 0, "character": 1}}),
+        ));
+        let messages = step(&mut server, &client, vec![edit, hover]);
+        let rules: Vec<String> = published(&messages, &qsf)
+            .unwrap()
+            .iter()
+            .map(|d| match &d.code {
+                Some(lsp_types::NumberOrString::String(code)) => code.clone(),
+                _ => String::new(),
+            })
+            .collect();
+        assert_eq!(rules, ["vendor/pin-conflict", "vendor/unknown-port"]);
+        assert!(messages.iter().any(|m| matches!(m, Message::Response(r)
+            if r.id == 7.into() && r.result == Some(serde_json::Value::Null))));
+        assert!(!server.world.dirty, "the project is not analyzed again");
+
+        // `clk` renamed `clock` in the design: the `.qsf` shows it.
+        let vhd_uri = Url::from_file_path(&vhd).unwrap();
+        let rename = notification(
+            "textDocument/didOpen",
+            serde_json::json!({"textDocument": {"uri": vhd_uri, "languageId": "vhdl",
+                "version": 1, "text": entity("clock")}}),
+        );
+        let messages = step(&mut server, &client, vec![rename]);
+        let unknown = published(&messages, &qsf)
+            .unwrap()
+            .iter()
+            .filter(|d| d.message.contains("has no port"))
+            .count();
+        assert_eq!(unknown, 2);
+
+        let close = notification(
+            "textDocument/didClose",
+            serde_json::json!({"textDocument": {"uri": uri}}),
+        );
+        let messages = step(&mut server, &client, vec![close]);
+        assert_eq!(published(&messages, &qsf), Some(Vec::new()));
     }
 
     /// Files created by the hundred, in several notifications, are read

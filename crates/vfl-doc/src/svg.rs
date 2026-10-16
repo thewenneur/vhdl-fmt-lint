@@ -1,8 +1,8 @@
 //! SVG diagrams: entity symbols, the instantiation tree and state machines.
 //!
 //! Text is set in a monospace font so its width can be computed without
-//! font metrics. Every diagram carries its own style sheet, with a dark
-//! variant, so the files stand alone and also work inline in HTML.
+//! font metrics. Every diagram carries its own style sheet, that of the built-in
+//! theme with a dark variant ([`crate::theme`]), so the files stand alone and also work inline in HTML.
 
 use std::collections::BTreeMap;
 use std::fmt::Write;
@@ -15,57 +15,6 @@ use crate::model::{Direction, Entity, Interface};
 const FONT_SIZE: f64 = 12.0;
 /// The advance of one character of a 12px monospace font.
 const CHAR_WIDTH: f64 = 7.25;
-const STYLE: &str = "\
-.vfl-box{fill:#f6f8fa;stroke:#424a53;stroke-width:1.5}\
-.vfl-head{fill:#ddf4ff;stroke:#424a53;stroke-width:1.5}\
-.vfl-ext{fill:#ffffff;stroke:#8c959f;stroke-width:1.2;stroke-dasharray:4 3}\
-.vfl-sep{stroke:#8c959f;stroke-width:1;stroke-dasharray:3 3}\
-.vfl-pin{stroke:#424a53;stroke-width:1.5;fill:#424a53}\
-.vfl-edge{stroke:#57606a;stroke-width:1.2;fill:none}\
-.vfl-arrow{fill:#57606a}\
-.vfl-wire{stroke:#0969da;stroke-width:1.3;fill:none}\
-.vfl-dot{fill:#0969da}\
-.vfl-term{fill:#ddf4ff;stroke:#424a53;stroke-width:1.2}\
-.vfl-small{font-size:10px}\
-.vfl-actual{fill:#0550ae}\
-.vfl-cross{stroke:#cf222e;stroke-width:1.5;fill:none}\
-.vfl-cross-text{fill:#cf222e}\
-.vfl-grid{stroke:#d0d7de;stroke-width:0.8;stroke-dasharray:2 3}\
-.vfl-wave{stroke:#424a53;stroke-width:1.3;fill:none}\
-.vfl-wave-x{fill:url(#vfl-hatch)}\
-.vfl-wave-d0{fill:#ffffff}.vfl-wave-d2{fill:#ffffff}.vfl-wave-d3{fill:#fff8c5}.vfl-wave-d4{fill:#ffebe9}\
-.vfl-wave-d5{fill:#ddf4ff}.vfl-wave-d6{fill:#dafbe1}.vfl-wave-d7{fill:#fbefff}.vfl-wave-d8{fill:#fff1e5}.vfl-wave-d9{fill:#eaeef2}\
-.vfl-gap{fill:#ffffff;stroke:#424a53;stroke-width:1}\
-.vfl-state{fill:#f6f8fa;stroke:#424a53;stroke-width:1.5}\
-.vfl-initial{fill:#ddf4ff;stroke:#0969da;stroke-width:2}\
-.vfl-label-bg{fill:#ffffff}\
-text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,'DejaVu Sans Mono','Liberation Mono',monospace;font-size:12px;fill:#1f2328}\
-.vfl-title{font-weight:bold}\
-.vfl-muted{fill:#59636e}\
-a:hover text{text-decoration:underline}\
-@media (prefers-color-scheme:dark){\
-.vfl-box{fill:#151b23;stroke:#9198a1}\
-.vfl-head{fill:#0c2d6b;stroke:#9198a1}\
-.vfl-ext{fill:#0d1117;stroke:#656c76}\
-.vfl-pin{stroke:#9198a1;fill:#9198a1}\
-.vfl-edge{stroke:#9198a1}\
-.vfl-arrow{fill:#9198a1}\
-.vfl-wire{stroke:#4493f8}\
-.vfl-dot{fill:#4493f8}\
-.vfl-term{fill:#0c2d6b;stroke:#9198a1}\
-.vfl-state{fill:#151b23;stroke:#9198a1}\
-.vfl-initial{fill:#0c2d6b;stroke:#4493f8}\
-.vfl-label-bg{fill:#0d1117}\
-text{fill:#f0f6fc}\
-.vfl-actual{fill:#79c0ff}\
-.vfl-cross{stroke:#ff7b72}\
-.vfl-cross-text{fill:#ff7b72}\
-.vfl-grid{stroke:#3d444d}\
-.vfl-wave{stroke:#9198a1}\
-.vfl-wave-d0{fill:#151b23}.vfl-wave-d2{fill:#151b23}.vfl-wave-d3{fill:#3b2e00}.vfl-wave-d4{fill:#4c1d1d}\
-.vfl-wave-d5{fill:#0c2d6b}.vfl-wave-d6{fill:#0f3a1d}.vfl-wave-d7{fill:#3a1d4c}.vfl-wave-d8{fill:#4a2a10}.vfl-wave-d9{fill:#262c36}\
-.vfl-gap{fill:#0d1117;stroke:#9198a1}\
-.vfl-muted{fill:#9198a1}}";
 
 /// The most arrows of a state diagram that get their conditions written.
 const MAX_FSM_LABELS: usize = 24;
@@ -188,7 +137,7 @@ impl Canvas {
             x = x,
             y = y,
             title = escape(title),
-            style = STYLE,
+            style = crate::theme::DEFAULT_SVG_STYLE.as_str(),
             body = self.body,
         )
     }

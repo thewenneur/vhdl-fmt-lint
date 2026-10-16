@@ -184,3 +184,45 @@ fn uart_example_doc_is_up_to_date() {
         "examples/uart/doc is out of date ({stale:?}): run `vfl doc .` in examples/uart"
     );
 }
+
+#[test]
+fn doc_and_schema_use_the_configured_theme() {
+    let dir = project(&[
+        (
+            "vfl.toml",
+            "[doc.theme]\nmono_font = \"'Fira Code', monospace\"\n\
+             [doc.theme.light]\naccent = \"#8250df\"\n[doc.theme.dark]\nbackground = \"#000000\"\n",
+        ),
+        ("blink.vhd", BLINK),
+    ]);
+    let (ok, _, err) = vfl(dir.path(), &["doc", "."]);
+    assert!(ok, "{err}");
+    let page = std::fs::read_to_string(dir.path().join("doc/work.blink.html")).unwrap();
+    assert!(page.contains("--link:#8250df"), "{page}");
+    assert!(page.contains(":root{--bg:#000000;"), "{page}");
+    assert!(page.contains(".vfl-wire{stroke:#8250df;"), "{page}");
+    assert!(
+        page.contains("font-family:'Fira Code', monospace;"),
+        "{page}"
+    );
+    assert!(page.contains("prefers-color-scheme:dark"), "{page}");
+
+    // --theme fixes one mode, for this run only.
+    let (ok, svg, err) = vfl(
+        dir.path(),
+        &["schema", "symbol", "blink", "--theme", "dark"],
+    );
+    assert!(ok, "{err}");
+    assert!(!svg.contains("prefers-color-scheme"), "{svg}");
+    assert!(svg.contains(".vfl-label-bg{fill:#000000}"), "{svg}");
+    assert!(!svg.contains("#8250df"), "{svg}");
+
+    std::fs::write(
+        dir.path().join("vfl.toml"),
+        "[doc.theme.light]\naccent = \"red;}\"\n",
+    )
+    .unwrap();
+    let (ok, _, err) = vfl(dir.path(), &["doc", "."]);
+    assert!(!ok);
+    assert!(err.contains("not allowed in a CSS value"), "{err}");
+}

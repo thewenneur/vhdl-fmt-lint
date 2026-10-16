@@ -29,6 +29,12 @@ import { downloadServer, downloadedServer, release, releaseTarget } from "./down
 
 const INSTALL_URL = "https://github.com/thewenneur/vhdl-fmt-lint#installation";
 const LANGUAGES = ["vhdl", "verilog", "systemverilog"];
+/**
+ * FPGA vendor files the server lints: Quartus settings, SDC and XDC
+ * constraints, and Tcl scripts when a Tcl extension names them so.
+ */
+const VENDOR_LANGUAGES = ["quartus", "sdc"];
+const SERVED_LANGUAGES = [...LANGUAGES, ...VENDOR_LANGUAGES, "tcl"];
 /** The config file names, in the order the server prefers them. */
 const CONFIG_FILES = ["vfl.toml", ".vfl.toml"];
 
@@ -180,7 +186,8 @@ async function ensureClient(doc: vscode.TextDocument): Promise<void> {
 
 /** Which server serves `doc`: see `clients`. */
 function clientKey(doc: vscode.TextDocument): string | undefined {
-  if (doc.uri.scheme !== "file" || !LANGUAGES.includes(doc.languageId)) {
+  // A Tcl script alone does not start the server.
+  if (doc.uri.scheme !== "file" || ![...LANGUAGES, ...VENDOR_LANGUAGES].includes(doc.languageId)) {
     return undefined;
   }
   return folderKey(doc.uri);
@@ -249,7 +256,7 @@ async function createClient(key: string): Promise<void> {
   // multi-root workspace, only those of its folder.
   const pattern = key === "" ? undefined : `${folder!.uri.fsPath.replace(/\\/g, "/")}/**/*`;
   const clientOptions: LanguageClientOptions = {
-    documentSelector: LANGUAGES.map((language) => ({
+    documentSelector: SERVED_LANGUAGES.map((language) => ({
       scheme: "file",
       language,
       ...(pattern ? { pattern } : {}),

@@ -373,10 +373,8 @@ pub fn asciidoc(page: &Page, files: &mut Vec<OutputFile>) -> String {
 // -------------------------------------------------------------------- HTML
 
 const CSS: &str = "\
-:root{color-scheme:light dark;--bg:#ffffff;--fg:#1f2328;--muted:#59636e;--line:#d1d9e0;--side:#f6f8fa;--code:#eff2f5;--link:#0969da}\
-@media (prefers-color-scheme:dark){:root{--bg:#0d1117;--fg:#f0f6fc;--muted:#9198a1;--line:#3d444d;--side:#151b23;--code:#262c36;--link:#4493f8}}\
 *{box-sizing:border-box}\
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif}\
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--font)}\
 a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}\
 .layout{display:flex;min-height:100vh}\
 nav{width:260px;flex:none;background:var(--side);border-right:1px solid var(--line);padding:16px;position:sticky;top:0;height:100vh;overflow:auto}\
@@ -387,7 +385,7 @@ nav .current a{font-weight:600}\
 main{flex:1;min-width:0;max-width:1100px;padding:24px 32px}\
 h1{font-size:28px;margin:0 0 8px}h2{font-size:21px;margin:32px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--line)}\
 h3{font-size:17px;margin:24px 0 8px}h4{font-size:15px;margin:16px 0 8px}\
-code{font:13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--code);padding:1px 5px;border-radius:4px}\
+code{font:13px var(--mono);background:var(--code);padding:1px 5px;border-radius:4px}\
 .meta{color:var(--muted)}\
 table{border-collapse:collapse;margin:8px 0 16px;display:block;overflow-x:auto;max-width:100%}\
 th,td{border:1px solid var(--line);padding:5px 10px;text-align:left;vertical-align:top}\
@@ -402,7 +400,7 @@ td code{overflow-wrap:break-word}\
 .zoom .diagram.zoomed svg{max-width:none}\
 .zoom .tools{position:absolute;top:4px;right:4px;z-index:1;display:flex;gap:2px;opacity:0;transition:opacity .15s}\
 .zoom:hover .tools,.zoom .tools:focus-within{opacity:1}\
-.zoom button{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;min-width:28px;height:24px;padding:0 6px;color:var(--fg);background:var(--side);border:1px solid var(--line);border-radius:4px;cursor:pointer}\
+.zoom button{font:12px var(--mono);min-width:28px;height:24px;padding:0 6px;color:var(--fg);background:var(--side);border:1px solid var(--line);border-radius:4px;cursor:pointer}\
 .zoom button:hover{border-color:var(--muted)}\
 footer{color:var(--muted);font-size:13px;margin-top:48px}\
 @media (max-width:760px){.layout{display:block}nav{width:auto;height:auto;position:static}main{padding:16px}}";
@@ -535,9 +533,10 @@ pub fn html(page: &Page, site_title: &str, nav: &[NavItem]) -> String {
     let mut out = String::new();
     let _ = write!(
         out,
-        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{} - {}</title>\n<style>{CSS}</style>\n</head>\n<body>\n<div class=\"layout\">\n<nav>\n<div class=\"home\"><a href=\"index.html\">{}</a></div>\n",
+        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{} - {}</title>\n<style>{}{CSS}</style>\n</head>\n<body>\n<div class=\"layout\">\n<nav>\n<div class=\"home\"><a href=\"index.html\">{}</a></div>\n",
         escape(&page.title),
         escape(site_title),
+        crate::theme::DEFAULT_PAGE_VARS.as_str(),
         escape(site_title)
     );
     let mut section = "";

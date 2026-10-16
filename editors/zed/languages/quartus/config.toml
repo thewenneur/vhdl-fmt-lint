@@ -1,0 +1,10 @@
+name = "Quartus Settings"
+grammar = "tcl"
+path_suffixes = ["qsf", "qip"]
+line_comments = ["# "]
+tab_size = 2
+brackets = [
+  { start = "{", end = "}", close = true, newline = true },
+  { start = "[", end = "]", close = true, newline = false },
+  { start = "\"", end = "\"", close = true, newline = false, not_in = ["string", "comment"] },
+]

@@ -10,6 +10,11 @@ A fast, fully configurable VHDL formatter, linter and language server, in pure R
   crossings, design checks (missing or mixed resets, reset polarity, open inputs, `inout`
   ports used one way, unreachable or stuck state machine states), naming conventions and
   style. `recommended` and `strict` presets, every rule configurable.
+- **FPGA vendor files**: Quartus settings (`.qsf`, `.qip`), SDC and Vivado XDC constraints
+  and Vivado Tcl scripts are linted too: syntax, misspelled commands, options, assignment
+  and property names, missing arguments, files that do not exist, duplicate assignments,
+  pins assigned twice and ports the design does not have. The editors highlight them. The
+  same reader finds the libraries those files list, for the project discovery.
 - **Documentation**: `vfl doc` generates HTML, Markdown or AsciiDoc documentation of the design
   from its doc comments, with entity symbols, the instantiation tree, the top level and every
   architecture as block diagrams wired by signal, port maps, data flow, clock domains and their
@@ -203,6 +208,7 @@ statement with `-- vfl: skip`.
 | `vfl-sema`    | Semantic analysis |
 | `vfl-fmt`     | Formatter |
 | `vfl-lint`    | Linter |
+| `vfl-vendor`  | Reader and checks of FPGA vendor files (`.qsf`, `.qip`, `.sdc`, `.xdc`, `.tcl`) |
 | `vfl-gen`     | Code generation: instantiations, components, testbenches |
 | `vfl-doc`     | Documentation, specifications and diagrams (`vfl doc`, `vfl spec`, `vfl schema`) |
 | `vfl-lsp`     | Language server |

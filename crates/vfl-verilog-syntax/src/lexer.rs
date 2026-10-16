@@ -81,6 +81,10 @@ struct Lexer<'a> {
     reads_left: u32,
     /// Where the token being lexed starts.
     token_start: usize,
+    /// Lexing an included file, of which only the macros and the names it
+    /// includes are kept: tokens and errors are dropped, and the text that
+    /// cannot hold a directive is skipped.
+    skim: bool,
 }
 
 fn is_ident_start(c: u8) -> bool {
@@ -184,11 +188,12 @@ const PUNCTUATION: &[(&str, SyntaxKind)] = &[
 
 impl<'a> Lexer<'a> {
     fn new(text: &'a str, options: &Options<'a>, macros: Macros, depth: u32) -> Self {
+        let skim = depth > 0;
         Lexer {
             text,
             pos: 0,
             standards: vec![options.standard],
-            tokens: Vec::with_capacity(text.len() / 4),
+            tokens: Vec::with_capacity(if skim { 0 } else { text.len() / 4 }),
             errors: Vec::new(),
             macros,
             conditionals: Vec::new(),
@@ -197,11 +202,18 @@ impl<'a> Lexer<'a> {
             depth,
             reads_left: MAX_INCLUDE_READS,
             token_start: 0,
+            skim,
         }
     }
 
     fn run(&mut self) {
         while self.pos < self.text.len() {
+            if self.skim {
+                self.skip_to_backtick_or_container();
+                if self.pos == self.text.len() {
+                    break;
+                }
+            }
             let start = self.pos;
             self.token_start = start;
             let kind = self.next_token();
@@ -214,7 +226,30 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// When skimming: past the text up to the next `` ` `` or the next
+    /// token that may hold one (a string, a comment, an attribute or an
+    /// escaped identifier). No other token holds a `` ` ``, nor starts
+    /// before one of these characters and ends after it (`:/` ends where
+    /// its `/` would), so the directives found are those lexing finds.
+    fn skip_to_backtick_or_container(&mut self) {
+        let rest = &self.bytes()[self.pos..];
+        let next = |i: usize| rest.get(i + 1).copied();
+        let skip = (0..rest.len())
+            .find(|&i| match rest[i] {
+                b'`' | b'"' | b'\\' => true,
+                b'/' => matches!(next(i), Some(b'/' | b'*')),
+                b'(' => next(i) == Some(b'*'),
+                _ => false,
+            })
+            .unwrap_or(rest.len());
+        // ASCII, so on a char boundary.
+        self.pos += skip;
+    }
+
     fn push(&mut self, kind: SyntaxKind, start: usize) {
+        if self.skim {
+            return;
+        }
         if self.pos > start {
             self.tokens.push(Token {
                 kind,
@@ -244,6 +279,9 @@ impl<'a> Lexer<'a> {
     }
 
     fn error_at(&mut self, message: &str, start: usize, end: usize) {
+        if self.skim {
+            return;
+        }
         self.errors.push(SyntaxError::new(
             message,
             TextRange::new((start as u32).into(), (end as u32).into()),
@@ -674,15 +712,20 @@ impl<'a> Lexer<'a> {
                     };
                 }
                 // A line comment ends the body, unless it ends with a line
-                // continuation as most tools accept.
+                // continuation as most tools accept. White space after the
+                // `\` does not count, whatever it is: the formatter drops it.
                 b'/' if bytes.get(pos + 1) == Some(&b'/') => {
                     let end = self.text[pos..]
                         .find(['\n', '\r'])
                         .map_or(bytes.len(), |e| pos + e);
-                    if self.text[pos..end]
-                        .trim_end_matches([' ', '\t'])
-                        .ends_with('\\')
-                    {
+                    let comment = &self.text[pos..end];
+                    if comment.trim_end().ends_with('\\') {
+                        // At the end of the file, the line break the
+                        // formatter ends it with would be continued. Below
+                        // catches a `\` right at the end.
+                        if end == bytes.len() && !comment.ends_with('\\') {
+                            self.error_at("line continuation at the end of the file", pos, end);
+                        }
                         pos = end;
                         if bytes.get(pos) == Some(&b'\r') {
                             pos += 1;
@@ -830,12 +873,15 @@ impl<'a> Lexer<'a> {
                         None => bytes.len(),
                     };
                 }
+                // A string ends where it does in code that is compiled
+                // (`"""` strings too), so that the lines of a branch lexed
+                // alone hold the same tokens. Its errors do not count.
                 b'"' => {
-                    pos += 1;
-                    while pos < bytes.len() && !matches!(bytes[pos], b'"' | b'\n') {
-                        pos += if bytes[pos] == b'\\' { 2 } else { 1 };
-                    }
-                    pos += 1;
+                    self.pos = pos;
+                    let errors = self.errors.len();
+                    self.string();
+                    self.errors.truncate(errors);
+                    pos = self.pos;
                 }
                 b'`' => {
                     let word_start = pos + 1;
@@ -994,6 +1040,8 @@ impl<'t> Condition<'t> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
 
     fn kinds(text: &str, std: Standard) -> Vec<(SyntaxKind, &str)> {
@@ -1037,6 +1085,25 @@ mod tests {
         assert_eq!(toks[0], (DIRECTIVE, "`define A x \\  "), "{toks:?}");
     }
 
+    /// Found by fuzzing: a comment in a macro body ending in `\` and blanks
+    /// at the end of the file, or in `\` and a form feed, was continued
+    /// once formatted.
+    #[test]
+    fn backslash_and_blanks_ending_a_comment_in_a_define() {
+        for text in ["`define F//\\ ", "`define F // x \\\t"] {
+            let lexed = lex(text, &Options::default());
+            assert_eq!(lexed.errors.len(), 1, "{text:?}: {:?}", lexed.errors);
+        }
+        let lexed = lex("`define F//\\", &Options::default());
+        assert_eq!(lexed.errors.len(), 1, "{:?}", lexed.errors);
+        let toks = kinds("`define A//\\\x0c\nwire b;\n", Standard::default());
+        assert_eq!(
+            toks[0],
+            (DIRECTIVE, "`define A//\\\x0c\nwire b;"),
+            "{toks:?}"
+        );
+    }
+
     /// Found by fuzzing: protected text with no end ran to the end of the
     /// file with no error, so the file was formatted.
     #[test]
@@ -1075,6 +1142,80 @@ mod tests {
         );
         assert_eq!(reads.get(), MAX_INCLUDE_READS);
         assert!(lexed.includes.len() <= 2 * MAX_INCLUDE_READS as usize + 2);
+    }
+
+    /// Found by fuzzing: a 2 KB file that includes itself took 1024 times
+    /// as long as lexing it (about 0.2 s, in each standard). Included files
+    /// are now skimmed for their directives.
+    #[test]
+    fn included_files_are_skimmed() {
+        let body = "module m; wire [7:0] x = 8'hff; /* c */ assign y = \"s\" + (a) ÿ;\n";
+        let text = format!("`include \"a.vh\"\n{}`include \"a.vh\"\n", body.repeat(30));
+        let reads = std::cell::Cell::new(0u32);
+        let read = |_: &str| {
+            reads.set(reads.get() + 1);
+            Some(text.clone())
+        };
+        let options = Options {
+            include: Some(&read),
+            ..Options::default()
+        };
+        let lexed = lex(&text, &options);
+        assert_eq!(reads.get(), MAX_INCLUDE_READS);
+        let alone = lex(&text, &Options::default());
+        assert_eq!(lexed.tokens, alone.tokens);
+        assert_eq!(lexed.errors, alone.errors);
+    }
+
+    /// The macros and included names a file leaves, lexed as the main
+    /// file or skimmed as an included one.
+    fn effects(text: &str, skim: bool) -> (Vec<(String, bool)>, Vec<String>) {
+        let read = |name: &str| Some(format!("`define FROM_{name}\n"));
+        let options = Options {
+            include: Some(&read),
+            ..Options::default()
+        };
+        let mut lexer = Lexer::new(text, &options, Macros::default(), u32::from(skim));
+        lexer.run();
+        let mut macros: Vec<_> = lexer.macros.into_iter().collect();
+        macros.sort();
+        (macros, lexer.includes)
+    }
+
+    /// Included files are skimmed: the directives found must be those
+    /// lexing them finds.
+    #[test]
+    fn skimming_finds_the_same_directives() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data");
+        let mut texts: Vec<String> = [
+            "a \\x`define B\n`define A(x) x`include \"i\"",
+            "\"`define S\" /* `define C */ // `define L\n(* a = \"`x\" *) `define D",
+            "@(*) `define E (*) `define F *) x :/`define G\n:// `define H\n",
+            "`ifdef A `define X `else `define Y `endif `include <j> `undef Y\n",
+            "\"\"\"`define T\"\"\" 8'h`define N\n$x`define M `include `F(1)\n",
+            "\"unterminated `define U\n/* `define V",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        for path in walk(&dir) {
+            texts.push(String::from_utf8_lossy(&std::fs::read(path).unwrap()).into_owned());
+        }
+        for text in &texts {
+            assert_eq!(effects(text, true), effects(text, false), "{text}");
+        }
+    }
+
+    fn walk(dir: &Path) -> Vec<std::path::PathBuf> {
+        let mut out = Vec::new();
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            match entry.file_type().unwrap().is_dir() {
+                true => out.extend(walk(&path)),
+                false => out.push(path),
+            }
+        }
+        out
     }
 
     #[test]

@@ -1,0 +1,178 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "SDC",
+  "scopeName": "source.sdc",
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "match": "\\b(set_property)\\s+(?:(-dict)\\s+)?([A-Za-z_][A-Za-z0-9_.]*)",
+      "captures": {
+        "1": {
+          "name": "support.function.vendor.sdc"
+        },
+        "2": {
+          "name": "variable.parameter.option.sdc"
+        },
+        "3": {
+          "name": "support.constant.property.sdc"
+        }
+      }
+    },
+    {
+      "include": "#command"
+    },
+    {
+      "include": "#value"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.sdc",
+          "match": "(?:^|(?<=;))\\s*(#.*)$",
+          "captures": {
+            "1": {
+              "name": "comment.line.number-sign.sdc"
+            }
+          }
+        }
+      ]
+    },
+    "command": {
+      "patterns": [
+        {
+          "name": "keyword.control.sdc",
+          "match": "(?<![\\w:$-])(continue|foreach|switch|return|elseif|break|throw|catch|while|proc|else|then|try|for|if)(?![\\w:-])"
+        },
+        {
+          "name": "support.function.vendor.sdc",
+          "match": "(?<![\\w:$-])(set_operating_conditions|derive_clock_uncertainty|set_hierarchy_separator|config_timing_pessimism|create_generated_clock|set_switching_activity|set_clock_uncertainty|set_clock_transition|set_input_transition|make_diff_pair_ports|set_propagated_clock|set_max_time_borrow|remove_clock_groups|add_cells_to_pblock|set_multicycle_path|set_min_pulse_width|connect_debug_port|set_disable_timing|set_max_transition|set_external_delay|create_debug_port|create_debug_core|derive_pll_clocks|set_clock_latency|set_system_jitter|set_timing_derate|set_case_analysis|set_output_delay|set_clock_groups|current_instance|set_driving_cell|set_input_jitter|create_property|set_clock_sense|set_time_format|set_input_delay|set_false_path|set_msg_config|set_data_delay|set_logic_zero|delete_pblocks|set_data_check|set_max_fanout|current_design|set_power_opt|create_pblock|derive_clocks|resize_pblock|create_waiver|set_max_delay|set_net_delay|set_min_delay|set_logic_one|create_macro|set_bus_skew|set_property|create_clock|update_macro|set_max_skew|set_logic_dc|reset_path|place_cell|group_path|startgroup|set_units|set_param|set_drive|endgroup|set_load)(?![\\w:-])"
+        },
+        {
+          "name": "support.function.builtin.sdc",
+          "match": "(?<![\\w:$-])(fconfigure|namespace|lreverse|variable|encoding|lreplace|lrepeat|lassign|llength|lsearch|linsert|uplevel|lappend|package|append|format|binary|concat|global|source|rename|update|interp|regsub|lindex|string|lrange|regexp|split|unset|upvar|array|after|trace|vwait|clock|lsort|error|close|subst|apply|flush|expr|puts|lmap|list|dict|exit|scan|join|lset|read|glob|file|tell|eval|info|gets|incr|exec|seek|open|time|chan|pwd|eof|set|cd)(?![\\w:-])"
+        }
+      ]
+    },
+    "value": {
+      "patterns": [
+        {
+          "include": "#string"
+        },
+        {
+          "include": "#substitution"
+        },
+        {
+          "include": "#variable"
+        },
+        {
+          "include": "#braces"
+        },
+        {
+          "name": "variable.parameter.option.sdc",
+          "match": "(?<![\\w$-])-[A-Za-z_]\\w*"
+        },
+        {
+          "name": "constant.numeric.sdc",
+          "match": "(?<![\\w.$-])-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?(?![\\w.])"
+        },
+        {
+          "name": "punctuation.terminator.sdc",
+          "match": ";"
+        },
+        {
+          "name": "constant.character.escape.sdc",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "variable": {
+      "name": "variable.other.sdc",
+      "match": "\\$(?:\\{[^}]*\\}|(?:::)?[A-Za-z_][\\w:]*(?:\\([^)]*\\))?)"
+    },
+    "string": {
+      "name": "string.quoted.double.sdc",
+      "begin": "\"",
+      "end": "\"",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.begin.sdc"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.sdc"
+        }
+      },
+      "patterns": [
+        {
+          "name": "constant.character.escape.sdc",
+          "match": "\\\\."
+        },
+        {
+          "include": "#variable"
+        },
+        {
+          "include": "#substitution"
+        }
+      ]
+    },
+    "substitution": {
+      "begin": "\\[",
+      "end": "\\]",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.brackets.begin.sdc"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.brackets.end.sdc"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#getter"
+        },
+        {
+          "include": "#command"
+        },
+        {
+          "include": "#value"
+        }
+      ]
+    },
+    "getter": {
+      "name": "support.function.collection.sdc",
+      "match": "(?<![\\w:$-])(remove_from_collection|foreach_in_collection|get_assignment_groups|get_entity_instances|get_generated_clocks|get_collection_size|get_clock_regions|add_to_collection|query_collection|get_package_pins|get_debug_ports|get_debug_cores|get_object_name|get_partitions|get_registers|all_registers|get_site_pins|get_lib_cells|get_lib_pins|get_property|get_bel_pins|get_pblocks|get_designs|get_keepers|all_outputs|get_fanouts|get_iobanks|get_fanins|get_clocks|get_macros|all_fanout|all_clocks|all_inputs|get_ports|get_nodes|get_sites|all_fanin|get_tiles|get_cells|get_libs|get_nets|get_bels|get_slrs|get_pins|filter)(?![\\w:-])"
+    },
+    "braces": {
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.braces.begin.sdc"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.braces.end.sdc"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#command"
+        },
+        {
+          "include": "#value"
+        }
+      ]
+    }
+  }
+}

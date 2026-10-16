@@ -25,6 +25,7 @@ all = { level = "warn", priority = -1 }
 vfl-config.workspace = true
 vfl-doc.workspace = true
 vfl-fmt.workspace = true
+vfl-lint.workspace = true
 vfl-lsp.workspace = true
 vfl-project.workspace = true
 

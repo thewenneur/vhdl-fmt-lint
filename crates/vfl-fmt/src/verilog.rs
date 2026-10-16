@@ -180,6 +180,10 @@ impl Lang for Verilog {
         kind == DIRECTIVE
     }
 
+    fn keeps_blanks(kind: SyntaxKind) -> bool {
+        kind == INACTIVE
+    }
+
     fn is_chunk(kind: SyntaxKind) -> bool {
         matches!(
             kind,
@@ -210,6 +214,7 @@ impl Lang for Verilog {
         // directive after it.
         elems[i].kind == INACTIVE
             || prev.kind == INACTIVE
+            || ends_empty_branch(prev, &elems[i])
             || (prev.kind == ATTRIBUTE && elems[i].src_newlines == 0)
     }
 
@@ -396,6 +401,19 @@ fn lex_into(text: &str, options: &Options, tokens: &mut Vec<(SyntaxKind, usize)>
     }
 }
 
+/// Whether `cur` is a directive right after `prev`, one that opens a
+/// branch: the branch may not be compiled, and white space between them
+/// would then be code that is not.
+fn ends_empty_branch(prev: &Elem<Verilog>, cur: &Elem<Verilog>) -> bool {
+    prev.kind == DIRECTIVE
+        && cur.kind == DIRECTIVE
+        && !spaced_in_source(prev, cur)
+        // No other directive starts with these words.
+        && ["`ifdef", "`ifndef", "`elsif", "`else"]
+            .iter()
+            .any(|d| prev.text.starts_with(d))
+}
+
 /// Whether there was white space between two elements in the source.
 fn spaced_in_source(prev: &Elem<Verilog>, cur: &Elem<Verilog>) -> bool {
     match (prev.src, cur.src) {
@@ -409,9 +427,11 @@ fn spaced_in_source(prev: &Elem<Verilog>, cur: &Elem<Verilog>) -> bool {
 fn would_join(prev: &Elem<Verilog>, cur: &Elem<Verilog>) -> bool {
     let operator =
         |text: &str| !text.is_empty() && text.bytes().all(|b| b"+-*/%<>=!~&|^?:@#'.".contains(&b));
-    if !operator(&prev.text) || !operator(&cur.text) {
-        return false;
-    }
+    operator(&prev.text) && operator(&cur.text) && joined_lexes_differently(prev, cur)
+}
+
+/// Whether `prev` and `cur` lex differently once written together.
+fn joined_lexes_differently(prev: &Elem<Verilog>, cur: &Elem<Verilog>) -> bool {
     let joined = format!("{}{}", prev.text, cur.text);
     let lexed = vfl_verilog_syntax::lex(&joined, &Options::default());
     !matches!(&lexed.tokens[..], [a, b] if a.kind == prev.kind && b.kind == cur.kind)
@@ -464,7 +484,7 @@ fn is_binary_operator(elem: &Elem<Verilog>) -> bool {
 
 /// Whether a space goes between `prev` and `cur` when they share a line.
 fn space_between(prev: &Elem<Verilog>, cur: &Elem<Verilog>, config: &FormatConfig) -> bool {
-    if prev.kind == INACTIVE || cur.kind == INACTIVE {
+    if prev.kind == INACTIVE || cur.kind == INACTIVE || ends_empty_branch(prev, cur) {
         return false;
     }
     if prev.is_comment() || cur.is_comment() {
@@ -477,6 +497,16 @@ fn space_between(prev: &Elem<Verilog>, cur: &Elem<Verilog>, config: &FormatConfi
     // Operators written apart that would read as one: `- -a`, `~ &b`.
     if spaced_in_source(prev, cur) && would_join(prev, cur) {
         return true;
+    }
+    // `'1b` lexes as `'`, `1` and `b`: a space after the `1` would make
+    // `'1` one token.
+    if matches!(prev.kind, INT_NUMBER | REAL_NUMBER)
+        && !spaced_in_source(prev, cur)
+        && cur
+            .text
+            .starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return false;
     }
     // The arguments of a macro are kept as written.
     if cur.parent_kind() == Some(MACRO_ARGS) {
@@ -517,7 +547,10 @@ fn space_between(prev: &Elem<Verilog>, cur: &Elem<Verilog>, config: &FormatConfi
                         .is_some_and(|t| Some(t.text_range()) == cur.src)
             })
         }
-        _ if prev.kind == TICK => false,
+        // `' da` would read as a based number.
+        _ if prev.kind == TICK => {
+            spaced_in_source(prev, cur) && joined_lexes_differently(prev, cur)
+        }
         COLON => matches!(cur.parent_kind(), Some(CONDITIONAL_EXPR | END_LABEL)),
         PLUS2 | MINUS2 if cur.parent_kind() == Some(POSTFIX_EXPR) => false,
         LBRACKET => {

@@ -6,6 +6,7 @@
 !images/icon.png
 !language-configuration.json
 !language-configuration-verilog.json
+!language-configuration-tcl.json
 !package.json
 !README.md
 !CHANGELOG.md

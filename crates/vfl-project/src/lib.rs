@@ -176,6 +176,40 @@ pub fn collect_all_sources(
     }))
 }
 
+/// VHDL sources, Verilog sources and vendor files.
+pub type LintSources = (Vec<PathBuf>, Vec<PathBuf>, Vec<PathBuf>);
+
+/// Like [`collect_all_sources`], with the FPGA vendor files `vfl lint`
+/// checks (`.qsf`, `.qip`, `.sdc`, `.xdc`, `.tcl`) as a third list, in the
+/// same walk.
+pub fn collect_lint_sources(
+    root: &Path,
+    project: &ProjectConfig,
+    verilog: &VerilogConfig,
+) -> Result<LintSources, ignore::Error> {
+    let extensions: Vec<String> = project
+        .extensions
+        .iter()
+        .chain(verilog_extensions(verilog, verilog.full()))
+        .cloned()
+        .chain(vfl_vendor::EXTENSIONS.iter().map(|e| e.to_string()))
+        .collect();
+    let (all, _) = walk(root, project, &extensions, false)?;
+    let (vendor, sources): (Vec<PathBuf>, Vec<PathBuf>) = all.into_iter().partition(|path| {
+        vfl_vendor::is_vendor_file(path) && !has_extension(path, &project.extensions)
+    });
+    let (vhdl, verilog) = sources
+        .into_iter()
+        .partition(|path| has_extension(path, &project.extensions));
+    Ok((vhdl, verilog, vendor))
+}
+
+fn has_extension(path: &Path, extensions: &[String]) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| extensions.iter().any(|e| e.eq_ignore_ascii_case(ext)))
+}
+
 /// The Verilog and SystemVerilog extensions, when `wanted`.
 fn verilog_extensions(verilog: &VerilogConfig, wanted: bool) -> impl Iterator<Item = &String> {
     verilog

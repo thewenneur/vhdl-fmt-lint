@@ -73,6 +73,12 @@ are ready, and are dropped if the file changed in the meantime.
   of the current file's entity, with its symbol, block diagram, port maps, state machines
   and hierarchy, in the browser.
 
+- **FPGA vendor files**: Quartus settings (`.qsf`, `.qip`), SDC and XDC constraints
+  (`.sdc`, `.xdc`) and Tcl scripts are linted as you type with the `vendor/*` rules
+  (misspelled commands, options and names, missing arguments and files, duplicate
+  assignments, pin conflicts, ports the design does not have), and highlighted as Tcl
+  unless another language was chosen for them.
+
 - **Verilog and SystemVerilog**: set by `mode` under `[verilog]` in `vfl.toml` (see
   [configuration](../../docs/configuration.md#verilog)). By default (`mode = "names"`),
   VHDL that instantiates their modules resolves their ports and

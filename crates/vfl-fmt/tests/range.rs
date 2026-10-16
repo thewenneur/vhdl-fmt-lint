@@ -220,6 +220,20 @@ fn crlf_and_byte_order_mark_are_kept() {
 }
 
 #[test]
+fn crlf_dropped_with_blank_lines_is_kept() {
+    // With `line_ending = "auto"` the one CR LF makes the file CR LF. Range
+    // formatting drops the blank line it ends: the file must stay CR LF.
+    let text = "-- a\n\n\n\r\n-- b\n\n\n-- c\n";
+    let config = FormatConfig::default();
+    let whole = format(text, &config, Standard::Vhdl2019).unwrap();
+    assert_eq!(whole, "-- a\r\n\r\n-- b\r\n\r\n-- c\r\n");
+    let start = line(text, 5).start;
+    let ranged = apply_edits(text, &edits_with(text, start..start, &config));
+    assert!(ranged.contains("\r\n"), "{ranged:?}");
+    assert_eq!(format(&ranged, &config, Standard::Vhdl2019).unwrap(), whole);
+}
+
+#[test]
 fn formatting_every_line_matches_formatting_the_file() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data");
     for entry in std::fs::read_dir(dir).unwrap() {

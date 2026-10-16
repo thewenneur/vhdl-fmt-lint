@@ -4,6 +4,24 @@
 
 ### Added
 
+- **FPGA vendor files are linted and highlighted: Quartus `.qsf` and `.qip`, SDC, Vivado
+  `.xdc` and Tcl scripts.** Nine `vendor/*` rules report unbalanced braces, quotes and
+  brackets, misspelled commands, options, assignment and property names (with what was
+  meant), missing arguments (`create_clock` without `-period`, `set_false_path` without
+  `-from`/`-to`), source, IP and script files that do not exist, duplicate assignments,
+  one pin assigned to two ports, and ports the top-level entity does not have. `vfl lint`
+  checks the vendor files under its paths, and the language server and the Notepad++
+  plugin those open in the editor, without analyzing the project again. VS Code gets
+  Quartus Settings and SDC / XDC Constraints languages with their grammars, Notepad++
+  highlights them as Tcl, and Zed with the Tcl grammar. See [docs/lints.md](docs/lints.md#vendor).
+
+### Changed
+
+- **The libraries listed in `.qsf`, `.qip` and Vivado `.tcl` files are read with a real Tcl
+  reader**, the one the vendor rules use: commands separated by `;`, comments after `;#`,
+  commands and file lists over several lines, and braced words taken literally are now
+  understood, and `if` bodies are no longer read as if they always ran.
+
 - **`vfl spec` writes a design specification from the code and spec comments.** Each
   entity gets a page in numbered sections: overview, interface (with the timing of each
   port: clock, reset, registered or sampled on which clock, or combinational, followed
@@ -18,8 +36,6 @@
   menu, and a `vfl: generate specification` task (`ctrl-alt-v s`) for Zed.
   [docs/spec.md](docs/spec.md) is the guide, [examples/uart/spec](examples/uart/spec/index.md) the example.
 
-### Changed
-
 - **State machine diagrams are drawn with orthogonal lines, and the transitions into the
   same state merge into one arrow.** All the returns to `IDLE` join one trunk with a single
   arrowhead, as do all the errors into `FAULT`; trunks that many states join run down the
@@ -27,6 +43,16 @@
   state share one stem that branches out, each condition sits on its own branch, before
   it merges with others, and lines are lined up so that they run straight. The DOT export
   merges them too (`concentrate`).
+
+### Fixed
+
+- Bugs found by a 12-hour fuzzing campaign (`.github/workflows/fuzz-campaign.yml`):
+  `style/process-all` no longer panics on a sensitivity list cut short by a syntax error
+  (`process(==x)`); the Verilog formatter keeps `1'1b` as written instead of turning
+  `'1` into a literal; a `-- vfl: off` just before an `end` kept as written no longer
+  moves at each format; and a Verilog parameter used in a VHDL expression
+  (`2 ** WIDTH - 1` in an architecture of a Verilog module) no longer crashes the linter
+  and the language server.
 
 ## [0.8.0] - 2026-10-16
 

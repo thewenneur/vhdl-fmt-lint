@@ -75,7 +75,9 @@ across files and libraries, then reports the findings in the given files only. U
 `[verilog]` `mode` is off (it is `"names"` by default), the project's Verilog and SystemVerilog modules
 take part as entities: instances of them are checked against their parameters and ports.
 With `mode = "full"`, Verilog and SystemVerilog files are linted too (see
-[lints.md](lints.md#verilog-and-systemverilog)). Which rules
+[lints.md](lints.md#verilog-and-systemverilog)). FPGA vendor files under the paths
+(Quartus `.qsf` and `.qip`, `.sdc`, Vivado `.xdc` and `.tcl`) are linted with the
+[`vendor/*` rules](lints.md#vendor), with the ports of the analyzed design. Which rules
 run and at which level comes from `[lint]` ([configuration.md](configuration.md#lint));
 every rule is described in [lints.md](lints.md).
 
@@ -238,6 +240,7 @@ for an example.
 | `--format FORMAT` | `html`, `markdown` or `asciidoc` (default: `doc.format`). |
 | `--title TITLE` | Title of the index page (default: `doc.title`, else the project directory's name). |
 | `--page-for FILE` | Print the page of the first entity (else package) `FILE` declares instead of writing the whole documentation. Editors use it for their diagram views. |
+| `--theme MODE` | `light`, `dark` or `auto` (both, following the reader's system); default: `doc.theme.mode`. Colors and fonts are under [`[doc.theme]`](configuration.md#doctheme). |
 
 ## `vfl spec`
 
@@ -269,6 +272,7 @@ requirement) are printed as warnings and listed on the index.
 | `--title TITLE` | Title of the index page (default: `doc.spec.title`, else the documentation title followed by "specification"). |
 | `--page-for FILE` | Print the page of the first entity (else package) `FILE` declares instead of the index. Editors use it to open the specification of the current file. |
 | `--check` | Exit with `1` when there are problems. |
+| `--theme MODE` | `light`, `dark` or `auto` (both, following the reader's system); default: `doc.theme.mode`. Colors and fonts are under [`[doc.theme]`](configuration.md#doctheme). |
 
 ## `vfl schema`
 
@@ -299,6 +303,7 @@ Draws one diagram. `ENTITY` is `name` or `library.name`.
 | `-f, --format FORMAT` | `svg` (default), `mermaid` or `dot`. Only `hierarchy` and `fsm` have Mermaid and DOT. |
 | `-o, --output FILE` | Write to `FILE` instead of standard output. |
 | `--project PATH` | A directory or file of the project (default: the current directory). |
+| `--theme MODE` | `light`, `dark` or `auto` (both, following the reader's system); default: `doc.theme.mode`. Colors and fonts are under [`[doc.theme]`](configuration.md#doctheme). |
 
 ```sh
 vfl schema symbol uart_tx -o uart_tx.svg

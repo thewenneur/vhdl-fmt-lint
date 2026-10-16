@@ -255,6 +255,9 @@ impl Engine {
     /// Lints `text`, the content of the file at `path` (`None` for an
     /// unsaved buffer), within its project.
     pub fn lint(&mut self, path: Option<&Path>, text: &str) -> LintOutput {
+        if let Some(path) = path.filter(|p| is_vendor_path(p)) {
+            return self.lint_vendor(path, text);
+        }
         let (world, file_path) = self.sync(path, text);
         world.refresh();
         let mut output = LintOutput {
@@ -282,6 +285,36 @@ impl Engine {
                 .collect();
         }
         output
+    }
+
+    /// Lints an FPGA vendor file (`.qsf`, `.sdc`, `.xdc`, ...), on its
+    /// own, with the ports of its project's design.
+    fn lint_vendor(&mut self, path: &Path, text: &str) -> LintOutput {
+        let (world, _) = self.sync(Some(path), text);
+        world.refresh();
+        let ports = vfl_lint::vendor::ports(&world.analysis);
+        let root = world.root.dir.clone();
+        let config = world.config(path).clone();
+        let (diagnostics, config_errors) =
+            vfl_lint::vendor::lint(path, text, &config, Some(&root), Some(&ports), 0);
+        LintOutput {
+            findings: diagnostics
+                .iter()
+                .map(|d| Finding {
+                    start: usize::from(d.range.start()),
+                    end: usize::from(d.range.end()),
+                    severity: match d.level {
+                        Level::Error => Severity::Error,
+                        Level::Warn => Severity::Warning,
+                        _ => Severity::Info,
+                    },
+                    rule: d.rule,
+                    message: d.message.clone(),
+                })
+                .collect(),
+            config_errors,
+            notices: Vec::new(),
+        }
     }
 
     /// What to show when hovering byte `offset` of `text`: the kind, name
@@ -590,7 +623,10 @@ impl Engine {
                 PathBuf::from(UNTITLED),
             ),
         };
-        if world.overlays.get(&file_path).map(String::as_str) != Some(text) {
+        // Vendor files are not part of the analysis.
+        if world.overlays.get(&file_path).map(String::as_str) != Some(text)
+            && !is_vendor_path(&file_path)
+        {
             world.set_text(file_path.clone(), text.to_owned());
         }
         (world, file_path)
@@ -818,6 +854,12 @@ pub fn is_verilog_path(path: &Path) -> bool {
 }
 
 /// Whether a file name looks like VHDL.
+/// Whether `path` is an FPGA vendor file vfl lints: Quartus settings
+/// (`.qsf`, `.qip`), SDC or XDC constraints, a Tcl script.
+pub fn is_vendor_path(path: &Path) -> bool {
+    vfl_lint::vendor::is_vendor_file(path)
+}
+
 pub fn is_vhdl_path(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
         ["vhd", "vhdl", "vho", "vht"]
@@ -1078,6 +1120,41 @@ end architecture;
             .expect("unused signal reported");
         assert_eq!(&UNUSED[unused.start..unused.end], "s");
         assert_eq!(unused.severity, Severity::Warning);
+    }
+
+    /// A `.qsf` is linted with the ports of its project, and never read as
+    /// VHDL.
+    #[test]
+    fn lints_vendor_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("vfl.toml"), "").unwrap();
+        std::fs::write(
+            root.join("top.vhd"),
+            "entity top is\n  port (clk : in bit);\nend entity;\n",
+        )
+        .unwrap();
+        let qsf = root.join("top.qsf");
+        let text =
+            "set_location_assignment PIN_A1 -to clk\nset_location_assignment PIN_A2 -to rst\n";
+        let output = engine_lint(&qsf, text);
+        let rules: Vec<&str> = output.findings.iter().map(|f| f.rule).collect();
+        assert_eq!(rules, ["vendor/unknown-port"]);
+        assert_eq!(
+            &text[output.findings[0].start..output.findings[0].end],
+            "rst"
+        );
+        assert!(engine_hover(&qsf, text).is_none());
+    }
+
+    fn engine_lint(path: &Path, text: &str) -> LintOutput {
+        Engine::default().lint(Some(path), text)
+    }
+
+    fn engine_hover(path: &Path, text: &str) -> Option<HoverInfo> {
+        let mut engine = Engine::default();
+        engine.lint(Some(path), text);
+        engine.hover(Some(path), text, 30)
     }
 
     #[test]
