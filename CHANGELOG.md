@@ -98,6 +98,13 @@
 
 ### Changed
 
+- **Format defaults follow VHDL Style Guide (VSG)**, which TerosHDL also uses: `max_width`
+  is 120 (was 100, now the same as the `style/line-length` rule), `max_blank_lines` is 1
+  (was 2) and `association_list` is `"expand"` (was `"auto"`), so port and generic maps get
+  one association per line like port and generic clauses. Code formatted with the old
+  defaults only loses its extra blank lines and gets its one-line maps expanded: no line
+  is joined. `max_width = 100`, `max_blank_lines = 2` and `association_list = "auto"` bring
+  the old layout back.
 - **Zed downloads the server of its own version**, not the latest release, and checks the
   archive against the release's `SHA256SUMS` before keeping the binary; Windows on ARM
   gets a binary too. The example tasks run from the worktree root (`$ZED_WORKTREE_ROOT`)

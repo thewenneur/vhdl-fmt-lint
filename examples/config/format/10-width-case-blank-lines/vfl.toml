@@ -1,7 +1,8 @@
 root = true # a project of its own, apart from the other examples
 
 [format]
-max_width = 60             # lists of longer lines are broken one element per line (default 100)
+max_width = 60             # lists of longer lines are broken one element per line (default 120)
 case_alternative = "break" # every statement of a "when" on its own line (default "preserve")
-max_blank_lines = 1        # longer runs of blank lines are shortened (default 2)
+max_blank_lines = 2        # longer runs of blank lines are shortened (default 1)
+association_list = "auto"  # maps stay on one line when they fit (default "expand")
 space_after_keyword = false # process(clk), port map(...), if(...)

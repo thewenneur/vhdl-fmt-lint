@@ -252,6 +252,10 @@ fn blank_lines() {
     let text = "\n\npackage p is\n\n\n\n  constant a : bit := '0';\nend;\n\n\n";
     assert_eq!(
         fmt(text),
+        "package p is\n\n  constant a : bit := '0';\nend;\n"
+    );
+    assert_eq!(
+        fmt_with(text, &config("max_blank_lines = 2")),
         "package p is\n\n\n  constant a : bit := '0';\nend;\n"
     );
     assert_eq!(
@@ -288,15 +292,18 @@ fn association_list_layout() {
     let text = "architecture a of e is begin u : entity work.x port map (a => b, c => d); end;";
     assert_eq!(
         fmt(text),
-        "architecture a of e is\nbegin\n  u : entity work.x\n    port map (a => b, c => d);\nend;\n"
+        "architecture a of e is\nbegin\n  u : entity work.x\n    port map (\n      a => b,\n      c => d\n    );\nend;\n"
     );
     assert_eq!(
-        fmt_with(text, &config("association_list = \"expand\"")),
-        "architecture a of e is\nbegin\n  u : entity work.x\n    port map (\n      a => b,\n      c => d\n    );\nend;\n"
+        fmt_with(text, &config("association_list = \"auto\"")),
+        "architecture a of e is\nbegin\n  u : entity work.x\n    port map (a => b, c => d);\nend;\n"
     );
     // `auto` expands a list that is already split.
     assert_eq!(
-        fmt("architecture a of e is begin u : entity work.x port map (a => b,\nccc => d); end;"),
+        fmt_with(
+            "architecture a of e is begin u : entity work.x port map (a => b,\nccc => d); end;",
+            &config("association_list = \"auto\"")
+        ),
         "architecture a of e is\nbegin\n  u : entity work.x\n    port map (\n      a   => b,\n      ccc => d\n    );\nend;\n"
     );
 }

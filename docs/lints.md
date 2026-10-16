@@ -805,8 +805,8 @@ A line is longer than `max` columns. Columns are counted as displayed: wide char
 "style/line-length" = { max = 100 }
 ```
 
-This limit is separate from the formatter's `format.max_width` (100 by default), which is
-where the formatter starts breaking lists.
+This limit is separate from the formatter's `format.max_width` (also 120 by default), which
+is where the formatter starts breaking lines.
 
 ### `style/trailing-whitespace`
 

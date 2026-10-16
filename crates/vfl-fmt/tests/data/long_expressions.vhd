@@ -1,4 +1,4 @@
--- Expressions too long for max_width (100) break at the operators that bind
+-- Expressions too long for max_width (120) break at the operators that bind
 -- loosest; what fits stays as written.
 architecture rtl of arbiter is
 begin
@@ -11,7 +11,7 @@ begin
     u_fifo : entity work.fifo
         port map (
             clk   => clk,
-            write => write_request_from_upstream and not fifo_is_full_flag and not reset_in_progress_flag and enable,
+            write => write_request_from_upstream and not fifo_is_full_flag and not reset_in_progress_flag and not overflow_was_detected and enable,
             full  => fifo_is_full_flag
         );
 
@@ -22,7 +22,7 @@ begin
                 packet_counter_register <= (others => '0'); -- start over
             elsif packet_was_received = '1' and -- written broken: kept
                 counting_is_enabled = '1' then
-                packet_counter_register <= packet_counter_register + increment_for_this_packet + extra_increment;
+                packet_counter_register <= packet_counter_register + increment_for_this_packet + extra_increment_for_jumbo_packets;
             end if;
             assert packet_counter_register <= maximum_packet_count report "the packet counter overflowed: " & to_string(packet_counter_register) severity error;
         end if;
