@@ -15,8 +15,8 @@ use vfl_config::{Config, Level, Preset, Style};
 use vfl_fmt::FormatError;
 use vfl_lsp::World;
 use vfl_lsp::editor::{
-    self, Completion, Completions, FileEdits, HoverInfo, Location, ProjectProblem, ProjectSymbol,
-    QuickFix, SignatureHelp, Symbol, TokenKind, Use, token_modifier,
+    self, Call, Completion, Completions, FileEdits, HoverInfo, Location, ProjectProblem,
+    ProjectSymbol, QuickFix, SignatureHelp, Symbol, TokenKind, Use, token_modifier,
 };
 use vfl_lsp::generate::{self, EntityRef, Generated, Kind};
 use vfl_lsp::settings::ProjectConfig;
@@ -316,6 +316,48 @@ impl Engine {
     pub fn definition(&mut self, path: Option<&Path>, text: &str, offset: usize) -> Vec<Location> {
         let (world, file_path) = self.sync(path, text);
         editor::definition(world, &file_path, offset)
+    }
+
+    /// Where what is named at byte `offset` is implemented: an entity's
+    /// architectures, a component's entity, a package's or subprogram's
+    /// body.
+    pub fn implementation(
+        &mut self,
+        path: Option<&Path>,
+        text: &str,
+        offset: usize,
+    ) -> Vec<Location> {
+        let (world, file_path) = self.sync(path, text);
+        editor::implementation(world, &file_path, offset)
+    }
+
+    /// Where the type of what is named at byte `offset` is declared.
+    pub fn type_definition(
+        &mut self,
+        path: Option<&Path>,
+        text: &str,
+        offset: usize,
+    ) -> Vec<Location> {
+        let (world, file_path) = self.sync(path, text);
+        editor::type_definition(world, &file_path, offset)
+    }
+
+    /// The callers and callees of the subprogram at `offset`, or the
+    /// instantiations of the design entity there.
+    pub fn call_hierarchy(&mut self, path: Option<&Path>, text: &str, offset: usize) -> Vec<Call> {
+        let (world, file_path) = self.sync(path, text);
+        editor::call_hierarchy(world, &file_path, offset)
+    }
+
+    /// The syntax node around the selection `range`, to grow it to.
+    pub fn expand_selection(
+        &mut self,
+        path: Option<&Path>,
+        text: &str,
+        range: Range<usize>,
+    ) -> Option<Range<usize>> {
+        let (world, file_path) = self.sync(path, text);
+        editor::expand_selection(world, &file_path, range)
     }
 
     /// Every place in the project that names what is named at `offset`.

@@ -4,7 +4,10 @@
 //! around the workspace folder, as `vfl lint` does, and offers
 //! diagnostics with quick fixes, formatting, go to definition, find
 //! references, hover with types, signature help, document and workspace
-//! symbols, rename, completion and semantic tokens. [`editor`] answers hover, signature
+//! symbols, rename, completion and semantic tokens; go to implementation,
+//! type definition and declaration, linked editing, selection ranges
+//! (`navigate`), inlay hints (`inlay`), and instance-count code lenses
+//! and the call hierarchy (`hierarchy`). [`editor`] answers hover, signature
 //! help and completion directly, for editors that link it.
 
 mod actions;
@@ -13,6 +16,9 @@ pub mod editor;
 pub mod format;
 pub mod generate;
 mod handlers;
+mod hierarchy;
+mod inlay;
+mod navigate;
 mod refactor;
 mod semantic;
 pub mod settings;
@@ -37,6 +43,7 @@ use lsp_types::{
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::de::DeserializeOwned;
 
+pub use hierarchy::SHOW_REFERENCES;
 pub use world::World;
 
 /// Answers one request against `world`, as the server would: for
@@ -101,6 +108,20 @@ pub fn capabilities() -> ServerCapabilities {
             resolve_provider: Some(true),
             ..Default::default()
         })),
+        // Navigation, hints and hierarchies: see navigate.rs, inlay.rs and
+        // hierarchy.rs.
+        implementation_provider: Some(lsp_types::ImplementationProviderCapability::Simple(true)),
+        type_definition_provider: Some(lsp_types::TypeDefinitionProviderCapability::Simple(true)),
+        declaration_provider: Some(lsp_types::DeclarationCapability::Simple(true)),
+        linked_editing_range_provider: Some(
+            lsp_types::LinkedEditingRangeServerCapabilities::Simple(true),
+        ),
+        selection_range_provider: Some(lsp_types::SelectionRangeProviderCapability::Simple(true)),
+        inlay_hint_provider: Some(OneOf::Left(true)),
+        code_lens_provider: Some(lsp_types::CodeLensOptions {
+            resolve_provider: Some(true),
+        }),
+        call_hierarchy_provider: Some(lsp_types::CallHierarchyServerCapability::Simple(true)),
         ..Default::default()
     }
 }
@@ -196,6 +217,9 @@ pub fn run(connection: &Connection) -> Result<()> {
         shown_errors: Vec::new(),
         next_request: 0,
     };
+    if let Some(options) = &params.initialization_options {
+        inlay::editor_settings(&mut server.world, options);
+    }
     if let Some(error) = settings_error {
         server.warn(&error)?;
     }
@@ -386,6 +410,7 @@ impl Server<'_> {
                 if let Some(p) =
                     params::<lsp_types::DidChangeConfigurationParams>(notification.params)
                 {
+                    inlay::editor_settings(world, &p.settings);
                     match settings::editor_config(&p.settings) {
                         Some(Ok(config)) => world.set_defaults(config),
                         Some(Err(error)) => self.warn(&error)?,

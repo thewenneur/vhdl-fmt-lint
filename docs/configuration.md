@@ -23,6 +23,7 @@ topic, each with a `vfl.toml` and a file before and after `vfl fmt` or `vfl lint
 - [`[lint]`](#lint): presets and per-rule settings
 - [`[doc]`](#doc): documentation generation (`vfl doc`)
 - [`[doc.diagrams]`](#docdiagrams): the diagrams in the documentation (`vfl schema`)
+- [`[lsp]`](#lsp): language server features, such as inlay hints
 - [In-source comments](#in-source-comments): suppressing findings, switching the formatter off
 - [Default configuration](#default-configuration): every key with its default value
 
@@ -807,6 +808,32 @@ expanded.
 | `include_dirs` | array of strings | `[]` | Directories, relative to the project root, searched for `` `include `` files. |
 | `defines` | array of strings | `[]` | Macros defined before every file, as `"NAME"` or `"NAME=value"` (only whether a macro is defined matters so far). |
 
+## `[lsp]`
+
+Features of the language server (`vfl lsp`) that are a matter of taste. A project can set
+them for everyone in `vfl.toml`; an editor can override them for its user (see below).
+
+## `[lsp.inlay_hints]`
+
+Inlay hints are names and types the editor shows inline, in another color, without
+changing the text. They are only worked out for the lines on screen, from the analysis
+the language server already has.
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `ports` | boolean | `true` | The port name before each positional actual of a port map: `port map (clk:  sys_clk, ...)`. |
+| `generics` | boolean | `true` | The generic name before each positional actual of a generic map. |
+| `parameters` | boolean | `true` | The parameter name before each positional argument of a function or procedure call, `crc(data:  x, poly:  p)`. Calls of single-parameter subprograms of the bundled libraries (`rising_edge(clk)`, `to_integer(x)`) get none. |
+| `port_types` | boolean | `false` | The mode and type of the port after each actual of a port map, named or positional: `i => s : in std_logic`. |
+
+No hint is shown where the actual is already the formal's name (`clk` for port `clk`).
+
+An editor can override each key with the language server's initialization options (also
+accepted in `workspace/didChangeConfiguration`), whatever `vfl.toml` says:
+`{ "inlayHints": { "ports": false, "port_types": true } }`. A key it leaves out keeps the
+value of `vfl.toml`. The VS Code extension sends the `vfl.inlayHints.*` settings the user
+set this way; VS Code's own `editor.inlayHints.enabled` turns them all off.
+
 ## In-source comments
 
 These are not config keys, but they adjust settings for part of a file.
@@ -948,6 +975,12 @@ sv_extensions = ["sv", "svh"]
 sv_standard = "1800-2017"
 include_dirs = []
 defines = []
+
+[lsp.inlay_hints]
+ports = true
+generics = true
+parameters = true
+port_types = false
 ```
 
 Editor settings (the path to `vfl`, tracing, and the lint preset and format style of
