@@ -276,6 +276,83 @@ pub const RULES: &[Rule] = &[
         false,
     ),
     rule(
+        codes::INDEX_RANGE,
+        "An index or slice of an array is outside its static range, goes the other direction, or is a null range.",
+        Warn,
+        Error,
+        false,
+    ),
+    rule(
+        codes::VALUE_RANGE,
+        "A static integer value is outside the range of the integer subtype it is given to.",
+        Warn,
+        Error,
+        false,
+    ),
+    rule(
+        codes::UNREACHABLE_CODE,
+        "A statement follows a `return`, `exit`, `next` or `wait;` in the same sequence, so it never runs.",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        codes::CONSTANT_CONDITION,
+        "A condition of an `if`, `elsif`, `if` generate or conditional assignment is the literal `true` or `false`.",
+        Info,
+        Warn,
+        false,
+    ),
+    rule(
+        codes::UNUSED_SUBPROGRAM,
+        "A function or procedure declared in an architecture, process, subprogram or package body is never called.",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        codes::COMPARISON_WIDTH,
+        "Two arrays of different static widths are compared with a predefined `=`, `/=`, `<`, `<=`, `>` or `>=`.",
+        Warn,
+        Error,
+        false,
+    ),
+    rule(
+        codes::SYNTHESIS_DELAY,
+        "An `after` delay or a `wait for` in the architecture of an entity with ports.",
+        Off,
+        Warn,
+        false,
+    ),
+    rule(
+        codes::SYNTHESIS_FILE_IO,
+        "A process of the architecture of an entity with ports reads or writes files.",
+        Off,
+        Warn,
+        false,
+    ),
+    rule(
+        codes::SYNTHESIS_LOOP,
+        "A loop of a process of the architecture of an entity with ports has bounds or a condition that read a signal or variable.",
+        Off,
+        Warn,
+        false,
+    ),
+    rule(
+        codes::SYNTHESIS_INITIAL_VALUE,
+        "A signal of the architecture of an entity with ports has an initial value.",
+        Off,
+        Info,
+        false,
+    ),
+    rule(
+        codes::SYNTHESIS_REAL_PORT,
+        "A port has type `real` or an array of `real`.",
+        Off,
+        Warn,
+        false,
+    ),
+    rule(
         "verilog/blocking-in-clocked",
         "A clocked `always` block assigns a signal with a blocking assignment (`=`).",
         Warn,
@@ -390,6 +467,69 @@ pub const RULES: &[Rule] = &[
     rule(
         "style/file-name",
         "A file's name differs from the name of the primary unit it declares.",
+        Off,
+        Warn,
+        false,
+    ),
+    rule(
+        codes::IDENTIFIER_CASE,
+        "A name is written with another case than its declaration.",
+        Off,
+        Warn,
+        true,
+    ),
+    rule(
+        "style/boolean-comparison",
+        "A boolean is compared with `true` or `false`.",
+        Off,
+        Warn,
+        true,
+    ),
+    rule(
+        "style/magic-number",
+        "A number other than those of `allow` is written in a statement instead of a named constant.",
+        Off,
+        Off,
+        false,
+    ),
+    rule(
+        "style/file-header",
+        "The comments at the top of a file do not match the `pattern` option.",
+        Off,
+        Off,
+        false,
+    ),
+    rule(
+        "style/one-unit-per-file",
+        "A file declares more than one primary unit.",
+        Off,
+        Warn,
+        false,
+    ),
+    rule(
+        "style/generic-default",
+        "A generic of an entity or component has no default value.",
+        Off,
+        Info,
+        false,
+    ),
+    rule(
+        "style/port-order",
+        "A clock or reset port comes after another port.",
+        Off,
+        Info,
+        false,
+    ),
+    rule(
+        "style/process-all",
+        "A combinational process lists its signals instead of using `process (all)` (VHDL-2008).",
+        Off,
+        Info,
+        true,
+    ),
+    rule(
+        "style/shared-variable",
+        "A shared variable is declared (of a protected type too with the `protected` option).",
         Off,
         Warn,
         false,
@@ -529,6 +669,51 @@ pub fn resolved_drivers(config: &LintConfig) -> Result<ResolvedDrivers, String> 
             "`resolved` of `{}` must be \"rtl\", \"always\" or \"never\"",
             codes::MULTIPLE_DRIVERS
         )),
+    }
+}
+
+/// A boolean option of rule `id`, or `default` when it is not set.
+pub fn bool_option(
+    config: &LintConfig,
+    id: &str,
+    key: &str,
+    default: bool,
+) -> Result<bool, String> {
+    match options(config, id).and_then(|o| o.get(key)) {
+        None => Ok(default),
+        Some(v) => v
+            .as_bool()
+            .ok_or_else(|| format!("`{key}` of `{id}` must be true or false")),
+    }
+}
+
+/// A string option of rule `id`.
+pub fn string_option<'a>(
+    config: &'a LintConfig,
+    id: &str,
+    key: &str,
+) -> Result<Option<&'a str>, String> {
+    match options(config, id).and_then(|o| o.get(key)) {
+        None => Ok(None),
+        Some(v) => v
+            .as_str()
+            .map(Some)
+            .ok_or_else(|| format!("`{key}` of `{id}` must be a string")),
+    }
+}
+
+/// The `allow` option of `style/magic-number`: the numbers that may be
+/// written as they are.
+pub fn magic_number_allow(config: &LintConfig) -> Result<Vec<i64>, String> {
+    let id = "style/magic-number";
+    let error = || format!("`allow` of `{id}` must be a list of integers");
+    match options(config, id).and_then(|o| o.get("allow")) {
+        None => Ok(vec![0, 1, 2]),
+        Some(toml::Value::Array(values)) => values
+            .iter()
+            .map(|v| v.as_integer().ok_or_else(error))
+            .collect(),
+        Some(_) => Err(error()),
     }
 }
 

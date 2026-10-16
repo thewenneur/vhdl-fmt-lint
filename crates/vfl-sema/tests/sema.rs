@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use vfl_project::{infer_libraries, summarize};
-use vfl_sema::{Analysis, DriverChecks, FileInput, ResolvedDrivers};
+use vfl_sema::{Analysis, CodeChecks, DriverChecks, FileInput, ResolvedDrivers};
 use vfl_syntax::{Standard, parse};
 
 fn split(text: &str) -> Vec<(String, String)> {
@@ -22,6 +22,26 @@ fn split(text: &str) -> Vec<(String, String)> {
     }
     files
 }
+
+/// Every on-demand check of the code, with every option.
+const ALL_CODE_CHECKS: CodeChecks = CodeChecks {
+    index_range: true,
+    range_generics: true,
+    value_range: true,
+    unreachable_code: true,
+    constant_condition: true,
+    condition_constants: true,
+    unused_subprogram: true,
+    public_subprograms: true,
+    comparison_width: true,
+    synthesis_delay: true,
+    synthesis_file_io: true,
+    synthesis_loop: true,
+    synthesis_initial_value: true,
+    synthesis_real_port: true,
+    identifier_case: true,
+    case_libraries: false,
+};
 
 pub fn analyze(text: &str) -> String {
     let files = split(text);
@@ -63,6 +83,7 @@ pub fn analyze(text: &str) -> String {
                 loops: true,
             };
             found.extend(analysis.driver_checks(file, checks));
+            found.extend(analysis.code_checks(file, &ALL_CODE_CHECKS));
             found
         })
         .collect();

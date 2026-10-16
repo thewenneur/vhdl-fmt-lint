@@ -21,3 +21,5 @@ drivers.vhd:51:3: sema/multiple-drivers: `w` is also driven by the statement at 
 loops.vhd:18:3: sema/combinational-loop: combinational loop with no register on the way: `x1` -> `x2` -> `x3` -> `x1`
 loops.vhd:23:3: sema/combinational-loop: combinational loop: `s` depends on itself with no register on the way
 loops.vhd:49:7: sema/combinational-loop: combinational loop with no register on the way: `p` -> `q` -> `p`
+loops.vhd:14:36: sema/synthesis-initial-value: initial value of a signal in RTL: ASICs and some FPGAs ignore it; use a reset
+loops.vhd:42:26: sema/synthesis-delay: synthesis ignores `after` delays: simulation and hardware differ

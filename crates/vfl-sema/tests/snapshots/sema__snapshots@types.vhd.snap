@@ -37,6 +37,15 @@ invalid.vhd:45:14: sema/type-mismatch: expected `time`, found `universal_integer
 invalid.vhd:46:12: sema/type-mismatch: expected `boolean`, found `integer`
 invalid.vhd:49:61: sema/type-mismatch: expected `STD_LOGIC_VECTOR`, found `UNSIGNED`
 valid.vhd:91:7: sema/multiple-drivers: `dout` is also driven by the statement at line 31; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+valid.vhd:20:29: sema/synthesis-initial-value: initial value of a signal in RTL: ASICs and some FPGAs ignore it; use a reset
+valid.vhd:22:25: sema/synthesis-initial-value: initial value of a signal in RTL: ASICs and some FPGAs ignore it; use a reset
+valid.vhd:24:43: sema/synthesis-initial-value: initial value of a signal in RTL: ASICs and some FPGAs ignore it; use a reset
+valid.vhd:25:26: sema/synthesis-initial-value: initial value of a signal in RTL: ASICs and some FPGAs ignore it; use a reset
+valid.vhd:26:29: sema/synthesis-initial-value: initial value of a signal in RTL: ASICs and some FPGAs ignore it; use a reset
+valid.vhd:27:29: sema/synthesis-initial-value: initial value of a signal in RTL: ASICs and some FPGAs ignore it; use a reset
+valid.vhd:28:22: sema/synthesis-initial-value: initial value of a signal in RTL: ASICs and some FPGAs ignore it; use a reset
+valid.vhd:37:18: sema/synthesis-file-io: file input and output (`line`) in a process cannot be synthesized
+valid.vhd:107:12: sema/synthesis-delay: `wait for` cannot be synthesized
 invalid.vhd:28:3: sema/combinational-loop: combinational loop: `count` depends on itself with no register on the way
 invalid.vhd:30:3: sema/multiple-drivers: `rec` is also driven by the statement at line 29; a signal of an unresolved type can have only one driver
 invalid.vhd:31:3: sema/multiple-drivers: `dout` is also driven by the statement at line 23; its type is resolved, but two drivers are rarely intended outside a tri-state bus
@@ -44,3 +53,4 @@ invalid.vhd:32:3: sema/multiple-drivers: `n` is also driven by the statement at 
 invalid.vhd:33:3: sema/multiple-drivers: `dout` is also driven by the statement at line 23; its type is resolved, but two drivers are rarely intended outside a tri-state bus
 invalid.vhd:35:3: sema/multiple-drivers: `dout` is also driven by the statement at line 23; its type is resolved, but two drivers are rarely intended outside a tri-state bus
 invalid.vhd:36:3: sema/multiple-drivers: `b` is also driven by the statement at line 26; a signal of an unresolved type can have only one driver
+invalid.vhd:45:10: sema/synthesis-delay: `wait for` cannot be synthesized

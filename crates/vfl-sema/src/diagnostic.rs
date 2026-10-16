@@ -88,4 +88,16 @@ pub mod codes {
     pub const DUPLICATE_CHOICE: &str = "sema/duplicate-choice";
     pub const MULTIPLE_DRIVERS: &str = "sema/multiple-drivers";
     pub const COMBINATIONAL_LOOP: &str = "sema/combinational-loop";
+    pub const INDEX_RANGE: &str = "sema/index-range";
+    pub const VALUE_RANGE: &str = "sema/value-range";
+    pub const UNREACHABLE_CODE: &str = "sema/unreachable-code";
+    pub const CONSTANT_CONDITION: &str = "sema/constant-condition";
+    pub const UNUSED_SUBPROGRAM: &str = "sema/unused-subprogram";
+    pub const COMPARISON_WIDTH: &str = "sema/comparison-width";
+    pub const SYNTHESIS_DELAY: &str = "sema/synthesis-delay";
+    pub const SYNTHESIS_FILE_IO: &str = "sema/synthesis-file-io";
+    pub const SYNTHESIS_LOOP: &str = "sema/synthesis-loop";
+    pub const SYNTHESIS_INITIAL_VALUE: &str = "sema/synthesis-initial-value";
+    pub const SYNTHESIS_REAL_PORT: &str = "sema/synthesis-real-port";
+    pub const IDENTIFIER_CASE: &str = "style/identifier-case";
 }

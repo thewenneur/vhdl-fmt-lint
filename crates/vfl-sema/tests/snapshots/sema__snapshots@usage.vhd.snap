@@ -17,3 +17,4 @@ copy_a.vhd:2:8: sema/duplicate-unit: entity `twin` is also declared in library `
 copy_b.vhd:1:8: sema/duplicate-unit: entity `twin` is also declared in library `work` at copy_a.vhd:2
 same_file.vhd:2:9: sema/duplicate-unit: package `dup_pkg` is also declared in library `work` at same_file.vhd:5
 same_file.vhd:5:9: sema/duplicate-unit: package `dup_pkg` is also declared in library `work` at same_file.vhd:2
+helpers.vhd:2:12: sema/unused-subprogram: function `twice` is never called

@@ -49,3 +49,5 @@ top.vhd:30:3: sema/multiple-drivers: `w` is also driven by the statement at line
 top.vhd:31:3: sema/multiple-drivers: `w` is also driven by the statement at line 23; its type is resolved, but two drivers are rarely intended outside a tri-state bus
 top.vhd:35:61: sema/multiple-drivers: `w` is also driven by the statement at line 23; its type is resolved, but two drivers are rarely intended outside a tri-state bus
 top.vhd:36:50: sema/multiple-drivers: `small` is also driven by the statement at line 32; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:12:24: sema/synthesis-initial-value: initial value of a signal in RTL: ASICs and some FPGAs ignore it; use a reset
+top.vhd:13:53: sema/synthesis-initial-value: initial value of a signal in RTL: ASICs and some FPGAs ignore it; use a reset

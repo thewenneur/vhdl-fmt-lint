@@ -39,6 +39,35 @@
   definition, type checks of the actuals) instead of the library being left unchecked;
   primitives, ports and generics they do not declare are not reported. `[project]`
   `vendor-stubs = false` turns them off.
+- **Range checks**: `sema/index-range` (warn in `recommended`, error in `strict`) reports an
+  index or slice outside an array's static range, a slice that goes `to` on a `downto`
+  vector (or the reverse), a null slice, and a loop parameter that runs past the array;
+  bounds may come from constants and, with the `generics` option (on by default), from
+  generics' default values. `sema/value-range` (same levels) reports a static integer
+  value outside the range of the subtype it is given to (`natural := -1`).
+- **Dead code**: `sema/unreachable-code` (warn) reports statements after `return`, an
+  unconditional `exit` or `next`, or `wait;`. `sema/constant-condition` (info) reports
+  `if`, `elsif` and `when` conditions that are the literal `true` or `false` (boolean
+  constants too with the `constants` option; `if` generates are left alone).
+  `sema/unused-subprogram` (warn) reports functions and procedures nothing calls; those of
+  packages only with the `public` option, against the whole project.
+- **`sema/comparison-width`** (warn in `recommended`, error in `strict`): a predefined `=`,
+  `/=`, `<`, `<=`, `>` or `>=` between arrays of different static widths, which is always
+  false for `=` and compares from the left for the others. `numeric_std` comparisons are
+  not reported.
+- **Synthesis checks** for the architectures of entities with ports (off in `recommended`):
+  `sema/synthesis-delay` (`after`, `wait for`), `sema/synthesis-file-io` (files and
+  `std.textio` in processes), `sema/synthesis-loop` (loops bounded by a signal or
+  variable), `sema/synthesis-initial-value` (signal initial values, `info` in `strict`)
+  and `sema/synthesis-real-port` (ports of type `real`). Code between `synthesis
+  translate_off` and `translate_on` comments is skipped.
+- **Style rules** (off in `recommended`): `style/identifier-case` (a name written with
+  another case than its declaration, with a safe fix), `style/boolean-comparison`
+  (`x = true`, with a safe fix), `style/magic-number` (integer literals in statements,
+  with an `allow` list), `style/file-header` (the leading comments must match `pattern`),
+  `style/one-unit-per-file`, `style/generic-default`, `style/port-order` (clock and reset
+  ports first, by name), `style/process-all` (VHDL-2008 combinational processes, with an
+  unsafe fix) and `style/shared-variable` (of protected types too with `protected`).
 - **`sema/incomplete-case`** (error): a `case` statement or selected assignment whose
   choices leave out values of the selector's subtype (enumerations, integer subtypes with
   static bounds, `std_logic_vector` and other character arrays) and has no `when others`.
@@ -234,6 +263,9 @@ editor.
 
 - **`-- vfl: skip` keeps the comment at the end of the skipped statement** as written; the
   formatter used to change the spaces before it.
+- **A unit's references are kept in source order**, which the checks that look names up by
+  position (`sema/multiple-drivers`, `sema/combinational-loop`) assume. Operators were
+  recorded before their operands, so a binary search could miss a name next to one.
 
 ## [0.6.0] - 2026-10-15
 
