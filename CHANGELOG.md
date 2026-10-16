@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-16
+
+New design checks (multiple drivers, combinational loops, incomplete and duplicate
+case choices, range and width checks, dead code), waivers and baselines, `vfl order` for
+compile scripts, more project imports and bundled vendor primitives, inlay hints, call
+hierarchy and a design hierarchy view in the editor, VSG-style format defaults, and a
+language server that keeps typing responsive on large projects.
+
 ### Added
 
 - **Language server: invalid `vfl.toml` diagnostics.** A syntax error, unknown key or
