@@ -1,3 +1,5 @@
+root = true # a project of its own, apart from the other examples
+
 [format]
 keyword_case = "upper"      # "lower" (default) | "upper" | "preserve"
 identifier_case = "lower"   # "preserve" (default) | "lower" | "upper"

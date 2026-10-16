@@ -1,1 +1,3 @@
+root = true # a project of its own, apart from the other examples
+
 # The default settings: this example is about comments in the source.

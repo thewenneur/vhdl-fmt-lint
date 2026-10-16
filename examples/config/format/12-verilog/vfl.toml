@@ -1,3 +1,5 @@
+root = true # a project of its own, apart from the other examples
+
 # Verilog and SystemVerilog files are formatted only with mode = "full".
 [verilog]
 mode = "full"

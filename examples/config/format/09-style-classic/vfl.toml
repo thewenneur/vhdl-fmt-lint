@@ -1,3 +1,5 @@
+root = true # a project of its own, apart from the other examples
+
 # A style sets several keys at once; keys you set yourself win over it.
 [format]
 style = "classic"

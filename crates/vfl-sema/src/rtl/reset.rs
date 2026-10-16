@@ -2,27 +2,15 @@
 //! signals used both synchronously and asynchronously, and reset signals
 //! tested with both polarities.
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashSet;
 use vfl_syntax::{SyntaxKind, SyntaxNode, TextRange};
 
 use super::Checker;
 use crate::decl::DeclId;
 use crate::diagnostic::{Diagnostic, codes};
+use crate::resets::{consistency, is_reset_name, named_active_low};
 
-/// One reset of one clocked process.
-pub(super) struct ResetUse {
-    signal: DeclId,
-    /// Tested in the clocked branch rather than before it.
-    sync: bool,
-    /// `Some(true)` for `rst = '1'`, `Some(false)` for `rst = '0'`; `None`
-    /// when the level is a constant or generic.
-    active_high: Option<bool>,
-    /// The range of the reset signal's name in the test.
-    range: TextRange,
-    /// Inside an `if` or `case` generate, where alternatives are expected
-    /// to differ.
-    in_generate: bool,
-}
+pub(super) type ResetUse = crate::resets::ResetUse<DeclId>;
 
 /// The branches of an `if` statement: each condition (`None` for `else`)
 /// with its statements.
@@ -61,23 +49,6 @@ pub(crate) fn process_body(process: &SyntaxNode) -> Vec<SyntaxNode> {
         .skip_while(|e| e.kind() != SyntaxKind::BEGIN_KW)
         .filter_map(|e| e.into_node())
         .collect()
-}
-
-fn is_reset_name(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    name.contains("rst") || name.contains("reset")
-}
-
-/// Whether a reset's name says it is active low: `rst_n`, `resetn`,
-/// `nrst`, `arst_l`, `rst_b`.
-fn is_active_low_name(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    ["_n", "_l", "_b", "rstn", "resetn"]
-        .iter()
-        .any(|s| name.ends_with(s))
-        || ["nrst", "nreset", "n_rst", "n_reset"]
-            .iter()
-            .any(|p| name.starts_with(p))
 }
 
 impl Checker<'_> {
@@ -196,13 +167,7 @@ impl Checker<'_> {
                 .iter()
                 .flat_map(|(_, s)| s.iter().cloned())
                 .collect();
-            self.record_reset(ResetUse {
-                signal,
-                sync: false,
-                active_high,
-                range,
-                in_generate,
-            });
+            self.record_reset(signal, false, active_high, range, in_generate);
             self.unreset(signal, &reset, clocked);
             return;
         }
@@ -217,13 +182,7 @@ impl Checker<'_> {
             (is_reset_name(name) && test.0 != clock).then_some((test, branches))
         };
         if let Some(((signal, range, active_high), inner)) = clocked.first().and_then(sync_test) {
-            self.record_reset(ResetUse {
-                signal,
-                sync: true,
-                active_high,
-                range,
-                in_generate,
-            });
+            self.record_reset(signal, true, active_high, range, in_generate);
             let others: Vec<SyntaxNode> = inner[1..]
                 .iter()
                 .flat_map(|(_, s)| s.iter().cloned())
@@ -236,33 +195,41 @@ impl Checker<'_> {
         {
             // A reset that overrides the assignments before it: registers
             // it leaves out are not affected by it.
-            self.record_reset(ResetUse {
-                signal,
-                sync: true,
-                active_high,
-                range,
-                in_generate,
-            });
+            self.record_reset(signal, true, active_high, range, in_generate);
             self.reset_ranges
                 .extend(inner[0].1.iter().map(|s| s.text_range()));
         }
     }
 
-    fn record_reset(&mut self, reset: ResetUse) {
+    fn record_reset(
+        &mut self,
+        signal: DeclId,
+        sync: bool,
+        active_high: Option<bool>,
+        range: TextRange,
+        in_generate: bool,
+    ) {
         let name = self
-            .decl(reset.signal)
+            .decl(signal)
             .map(|d| d.spelling.clone())
             .unwrap_or_default();
-        if reset.active_high == Some(true) && is_active_low_name(&name) {
+        if let Some(message) = named_active_low(&name, active_high, false) {
             self.diags.push(Diagnostic {
                 code: codes::RESET_POLARITY,
                 file: self.file,
-                range: reset.range,
-                message: format!("`{name}` is named as active low but resets when high here"),
+                range,
+                message,
                 fix: None,
             });
         }
-        self.reset_uses.push(reset);
+        self.reset_uses.push(ResetUse {
+            key: signal,
+            name,
+            sync,
+            active_high,
+            range,
+            in_generate,
+        });
     }
 
     /// Reports the signals `clocked` assigns that `reset` does not.
@@ -321,59 +288,14 @@ impl Checker<'_> {
     /// with both polarities, within the unit.
     pub(super) fn reset_consistency(&mut self) {
         let uses = std::mem::take(&mut self.reset_uses);
-        let mut by_signal: FxHashMap<DeclId, Vec<&ResetUse>> = FxHashMap::default();
-        for u in uses.iter().filter(|u| !u.in_generate) {
-            by_signal.entry(u.signal).or_default().push(u);
-        }
-        let mut signals: Vec<_> = by_signal.into_iter().collect();
-        signals.sort_by_key(|(_, u)| u[0].range.start());
-        for (signal, uses) in signals {
-            let name = self
-                .decl(signal)
-                .map(|d| d.spelling.clone())
-                .unwrap_or_default();
-            let line = |u: &ResetUse| self.ctx.line_of(self.file, u.range.start());
-            let first = uses[0];
-            if let Some(other) = uses.iter().find(|u| u.sync != first.sync) {
-                let describe = |sync: bool| {
-                    if sync {
-                        "synchronously"
-                    } else {
-                        "asynchronously"
-                    }
-                };
-                self.diags.push(Diagnostic {
-                    code: codes::MIXED_RESET,
-                    file: self.file,
-                    range: other.range,
-                    message: format!(
-                        "`{name}` resets this process {} but the process at line {} {}",
-                        describe(other.sync),
-                        line(first),
-                        describe(first.sync)
-                    ),
-                    fix: None,
-                });
-            }
-            let Some(level) = uses.iter().find_map(|u| u.active_high) else {
-                continue;
-            };
-            let first = uses.iter().find(|u| u.active_high == Some(level)).unwrap();
-            for other in uses.iter().filter(|u| u.active_high == Some(!level)) {
-                let describe = |high: bool| if high { "high" } else { "low" };
-                self.diags.push(Diagnostic {
-                    code: codes::RESET_POLARITY,
-                    file: self.file,
-                    range: other.range,
-                    message: format!(
-                        "`{name}` resets when {} here but when {} at line {}",
-                        describe(!level),
-                        describe(level),
-                        line(first)
-                    ),
-                    fix: None,
-                });
-            }
-        }
+        let line = |at| self.ctx.line_of(self.file, at) as usize;
+        let found = consistency(&uses, "process", line, true, true);
+        self.diags.extend(found.into_iter().map(|i| Diagnostic {
+            code: i.code,
+            file: self.file,
+            range: i.range,
+            message: i.message,
+            fix: None,
+        }));
     }
 }
