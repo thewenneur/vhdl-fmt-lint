@@ -108,13 +108,13 @@ The rest runs `vfl` as a [task](https://zed.dev/docs/tasks). Tasks run `vfl` fro
 not the binary the extension downloads, so install it (see the
 [main README](../../README.md#installation)) to use them. They run from the root of the
 worktree (`$ZED_WORKTREE_ROOT`), so that the project ones cover the whole project.
-[`tasks.json`](tasks.json) has tasks to lint or fix the file, lint the project, generate the documentation, generate
-a testbench and print an instantiation or a component declaration. The last three use the
+[`tasks.json`](tasks.json) has tasks to lint or fix the file, lint the project, generate the documentation or the
+specification, generate a testbench and print an instantiation or a component declaration. The last three use the
 selected text as the entity name, so select it first; Zed hides tasks whose variables are
 missing. Copy it to `~/.config/zed/tasks.json` (**zed: open tasks**), or to `.zed/tasks.json`
 in a project, and run the tasks with **task: spawn**. [`keymap.json`](keymap.json) binds them
 to `ctrl-alt-v` followed by a letter (`l` lint file, `x` fix file, `p` lint project, `d`
-documentation, `t` testbench, `r` restart the server) in VHDL and Verilog files; none of
+documentation, `s` specification, `t` testbench, `r` restart the server) in VHDL and Verilog files; none of
 these is taken in Zed's default keymaps. Merge its section into your `keymap.json`. A task
 is bound to any key with:
 

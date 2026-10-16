@@ -4091,6 +4091,82 @@
             }
           },
           "additionalProperties": false
+        },
+        "spec": {
+          "type": "object",
+          "description": "Design specifications (`vfl spec`): a page per entity built from the code and its spec comments, and an index with every requirement.",
+          "properties": {
+            "out_dir": {
+              "description": "Where `vfl spec` writes, relative to the project root. Existing files there are overwritten, others are kept.",
+              "type": "string",
+              "default": "spec"
+            },
+            "format": {
+              "description": "`\"html\"`, `\"markdown\"` or `\"asciidoc\"`, as for `doc.format`. Unset: `doc.format`.",
+              "enum": [
+                "html",
+                "markdown",
+                "asciidoc"
+              ]
+            },
+            "title": {
+              "description": "The title of the index page. Unset: the documentation title followed by \"specification\".",
+              "type": "string"
+            },
+            "tag": {
+              "description": "The tag that starts a spec comment: `-- @spec text`. The comment lines below it, up to a blank comment line, continue it. Empty: no spec comments.",
+              "type": "string",
+              "default": "@spec"
+            },
+            "requirement_tag": {
+              "description": "The tag that starts a requirement: `-- @req ID text`. Empty: no requirements.",
+              "type": "string",
+              "default": "@req"
+            },
+            "verifies_tag": {
+              "description": "The tag naming the requirements a test checks: `-- @verifies ID, ID`. Empty: none.",
+              "type": "string",
+              "default": "@verifies"
+            },
+            "sections": {
+              "description": "The sections of an entity's specification, in order. Leave one out to drop it.",
+              "type": "array",
+              "items": {
+                "enum": [
+                  "overview",
+                  "interface",
+                  "clocks",
+                  "behavior",
+                  "fsm",
+                  "registers",
+                  "instances",
+                  "requirements"
+                ]
+              },
+              "uniqueItems": true,
+              "default": [
+                "overview",
+                "interface",
+                "clocks",
+                "behavior",
+                "fsm",
+                "registers",
+                "instances",
+                "requirements"
+              ]
+            },
+            "annotated_only": {
+              "description": "Only entities with spec comments or requirements get a specification.",
+              "type": "boolean",
+              "default": false
+            },
+            "testbenches": {
+              "description": "Entities without ports get a specification too. Their `@verifies` comments count either way.",
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

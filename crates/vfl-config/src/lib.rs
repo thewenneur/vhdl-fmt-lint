@@ -1229,6 +1229,7 @@ pub struct DocConfig {
     /// Detect finite state machines and document their states and transitions.
     pub fsm: bool,
     pub diagrams: DiagramConfig,
+    pub spec: SpecConfig,
 }
 
 impl Default for DocConfig {
@@ -1249,6 +1250,7 @@ impl Default for DocConfig {
             instances: true,
             fsm: true,
             diagrams: DiagramConfig::default(),
+            spec: SpecConfig::default(),
         }
     }
 }
@@ -1345,6 +1347,86 @@ impl Default for DiagramConfig {
 pub enum MarkdownDiagrams {
     Svg,
     Mermaid,
+}
+
+/// `[doc.spec]`: design specifications (`vfl spec`), from the code and the
+/// spec comments.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SpecConfig {
+    /// Where `vfl spec` writes, relative to the project root.
+    pub out_dir: String,
+    /// The format of the pages. Defaults to `doc.format`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<DocFormat>,
+    /// The title of the index page. Defaults to the documentation title
+    /// followed by "specification".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// The tag of a spec comment: `-- @spec text`.
+    pub tag: String,
+    /// The tag of a requirement: `-- @req ID text`.
+    pub requirement_tag: String,
+    /// The tag naming the requirements a testbench checks:
+    /// `-- @verifies ID, ID`.
+    pub verifies_tag: String,
+    /// The sections of an entity's specification, in order.
+    pub sections: Vec<SpecSection>,
+    /// Only entities with spec comments or requirements get a specification.
+    pub annotated_only: bool,
+    /// Entities without ports (testbenches) get a specification too. Their
+    /// `verifies` comments count either way.
+    pub testbenches: bool,
+}
+
+impl Default for SpecConfig {
+    fn default() -> Self {
+        SpecConfig {
+            out_dir: "spec".into(),
+            format: None,
+            title: None,
+            tag: "@spec".into(),
+            requirement_tag: "@req".into(),
+            verifies_tag: "@verifies".into(),
+            sections: SpecSection::ALL.to_vec(),
+            annotated_only: false,
+            testbenches: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SpecSection {
+    /// The purpose: the entity's description and its unit-level spec comments.
+    Overview,
+    /// Generics and ports, with the clock each port is timed by.
+    Interface,
+    /// Clocks, resets and clock domain crossings.
+    Clocks,
+    /// The processes and statements of each architecture, with their specs.
+    Behavior,
+    /// State machines: states, transitions and diagrams.
+    Fsm,
+    /// The signals clocked processes drive.
+    Registers,
+    /// The instances of each architecture.
+    Instances,
+    /// The requirements, with where they apply and what verifies them.
+    Requirements,
+}
+
+impl SpecSection {
+    pub const ALL: [SpecSection; 8] = [
+        SpecSection::Overview,
+        SpecSection::Interface,
+        SpecSection::Clocks,
+        SpecSection::Behavior,
+        SpecSection::Fsm,
+        SpecSection::Registers,
+        SpecSection::Instances,
+        SpecSection::Requirements,
+    ];
 }
 
 #[cfg(test)]
@@ -1602,6 +1684,8 @@ mod tests {
         config.format.continuation_indent = Some(2);
         set_unset_keys(&mut config);
         config.doc.title = Some("Design".into());
+        config.doc.spec.title = Some("Specification".into());
+        config.doc.spec.format = Some(DocFormat::Markdown);
         let toml::Value::Table(table) = toml::Value::try_from(&config).unwrap() else {
             panic!("the config is not a table");
         };
@@ -1650,6 +1734,8 @@ mod tests {
         config.format.continuation_indent = Some(2);
         set_unset_keys(&mut config);
         config.doc.title = Some("Design".into());
+        config.doc.spec.title = Some("Specification".into());
+        config.doc.spec.format = Some(DocFormat::Markdown);
         config.lint.baseline = Some("baseline.json".into());
         config.lint.waivers.push(Waiver {
             message: Some("x".into()),

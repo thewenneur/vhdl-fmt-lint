@@ -1,8 +1,10 @@
 //! Doc comments: the comments directly above a declaration, or at the end
 //! of its line.
 
-use vfl_config::DocComments;
+use vfl_config::{DocComments, DocConfig};
 use vfl_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
+
+use crate::spec::{Reader, Role, Tags, comment_body};
 
 /// Which comments of one file document declarations.
 #[derive(Debug, Clone)]
@@ -11,11 +13,15 @@ pub struct CommentStyle {
     marked: bool,
     off: bool,
     marker: String,
+    /// Spec comments are left to the specification.
+    tags: Tags,
 }
 
 impl CommentStyle {
     /// The style for a file: `auto` means marked comments if the file has any.
-    pub fn for_file(root: &SyntaxNode, comments: DocComments, marker: &str) -> CommentStyle {
+    pub fn for_file(root: &SyntaxNode, config: &DocConfig) -> CommentStyle {
+        let comments = config.comments;
+        let marker = config.comment_marker.as_str();
         let prefix = format!("--{marker}");
         let marked = match comments {
             DocComments::Marked => true,
@@ -34,6 +40,7 @@ impl CommentStyle {
             marked,
             off: comments == DocComments::None,
             marker: marker.to_owned(),
+            tags: Tags::new(&config.spec),
         }
     }
 
@@ -102,7 +109,8 @@ impl CommentStyle {
     }
 
     fn leading(&self, node: &SyntaxNode) -> Vec<String> {
-        let mut found = Vec::new();
+        // The comments above, up to a blank line or code.
+        let mut run = Vec::new();
         let mut at: Option<SyntaxElement> = previous(&SyntaxElement::Node(node.clone()));
         loop {
             let Some(element) = at else { break };
@@ -123,16 +131,27 @@ impl CommentStyle {
                     if !starts_line(&token) {
                         break;
                     }
-                    match self.text(&token) {
-                        Some(text) => found.push(text),
-                        None => break,
-                    }
+                    run.push(token);
                 }
                 _ => break,
             }
             at = previous(&element);
         }
-        found.reverse();
+        run.reverse();
+        // Without the spec comments, the doc comments directly above.
+        let mut reader = Reader::default();
+        let mut found = Vec::new();
+        for token in &run {
+            let body = comment_body(token, &self.marker);
+            let block = token.kind() == SyntaxKind::BLOCK_COMMENT;
+            if reader.next(body, block, true, &self.tags) != Role::Other {
+                continue;
+            }
+            match self.text(token) {
+                Some(text) => found.push(text),
+                None => found.clear(),
+            }
+        }
         found
     }
 
@@ -147,6 +166,9 @@ impl CommentStyle {
             let comment = newline
                 .prev_token()
                 .filter(|t| matches!(t.kind(), SyntaxKind::LINE_COMMENT))?;
+            if self.is_spec(&comment) {
+                return None;
+            }
             return self.text(&comment).filter(|t| !t.is_empty());
         }
         let mut at = node.next_sibling_or_token();
@@ -159,13 +181,25 @@ impl CommentStyle {
                 }
                 SyntaxKind::SEMI | SyntaxKind::COMMA => {}
                 SyntaxKind::LINE_COMMENT => {
-                    return self.text(element.as_token()?).filter(|t| !t.is_empty());
+                    let token = element.as_token()?;
+                    if self.is_spec(token) {
+                        return None;
+                    }
+                    return self.text(token).filter(|t| !t.is_empty());
                 }
                 _ => return None,
             }
             at = element.next_sibling_or_token();
         }
         None
+    }
+}
+
+impl CommentStyle {
+    fn is_spec(&self, token: &SyntaxToken) -> bool {
+        self.tags
+            .tagged(comment_body(token, &self.marker))
+            .is_some()
     }
 }
 

@@ -1,4 +1,5 @@
-# The documentation in doc/ is generated from these sources with `vfl doc`.
+# The documentation in doc/ is generated from these sources with `vfl doc`,
+# the specification in spec/ with `vfl spec`.
 root = true
 
 [doc]

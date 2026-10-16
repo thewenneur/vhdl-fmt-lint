@@ -3,6 +3,11 @@ use ieee.std_logic_1164.all;
 
 --! Deserializes frames of eight data bits and one stop bit, sampling each
 --! bit in its middle.
+--!
+--! @req RX-1: Samples each bit `CYCLES_PER_BIT / 2` cycles after its start,
+--! and ignores a start bit that is high again by then.
+--! @req RX-2: Gives each byte on `data` with `valid` high for one cycle, or
+--! `error` high for one cycle when the stop bit is low.
 entity uart_rx is
     generic (
         CYCLES_PER_BIT : positive := 868 --! Clock cycles per bit
@@ -30,6 +35,8 @@ architecture rtl of uart_rx is
     end record;
 
     signal engine, engine_next : engine_t                    ; --! Current and next registers
+    --! @spec `rxd` goes through two registers before it is read, as it is
+    --! not synchronous to `clk`.
     signal rxd_sync            : std_logic_vector(1 downto 0); --! Synchronizer
 
 begin
