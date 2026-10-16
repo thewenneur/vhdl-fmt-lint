@@ -2,7 +2,7 @@
   "name": "vfl",
   "displayName": "vfl: VHDL and Verilog formatter and linter",
   "description": "Formatting, linting, navigation and syntax highlighting for VHDL, Verilog and SystemVerilog, powered by the vfl language server.",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "publisher": "thewenneur",
   "license": "MIT OR Apache-2.0",
   "icon": "images/icon.png",
@@ -185,7 +185,7 @@
           "vfl.toml",
           ".vfl.toml"
         ],
-        "url": "https://raw.githubusercontent.com/thewenneur/vhdl-fmt-lint/v0.8.0/editors/vscode/schemas/vfl.schema.json"
+        "url": "https://raw.githubusercontent.com/thewenneur/vhdl-fmt-lint/v0.9.0/editors/vscode/schemas/vfl.schema.json"
       }
     ],
     "semanticTokenTypes": [

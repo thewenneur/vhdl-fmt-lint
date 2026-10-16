@@ -6,6 +6,17 @@ the [vfl changelog](https://github.com/thewenneur/vhdl-fmt-lint/blob/main/CHANGE
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-16
+
+### Added
+
+- **vfl: Generate Specification** writes the design specification of the workspace
+  (`vfl spec`), themed like the documentation.
+
+### Changed
+
+- **Formatting no longer scrolls the editor**: only the changed lines are replaced.
+
 ## [0.8.0] - 2026-10-16
 
 ### Added
