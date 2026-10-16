@@ -796,6 +796,16 @@ pub fn offset(text: &str, index: &LineIndex, position: lsp_types::Position) -> T
 mod tests {
     use super::*;
 
+    /// `dir` as the server sees it: canonical, in the form a file URI gives
+    /// (no `\\?\` prefix on Windows), like [`project_root`].
+    fn real_dir(dir: &Path) -> PathBuf {
+        let dir = std::fs::canonicalize(dir).unwrap();
+        lsp_types::Url::from_file_path(&dir)
+            .unwrap()
+            .to_file_path()
+            .unwrap()
+    }
+
     #[test]
     fn invalid_config_keeps_sources_and_reports() {
         let dir = tempfile::tempdir().unwrap();
@@ -809,7 +819,7 @@ mod tests {
     #[test]
     fn an_invalid_nested_config_falls_back_to_the_parent_one() {
         let dir = tempfile::tempdir().unwrap();
-        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let root = real_dir(dir.path());
         std::fs::write(root.join("vfl.toml"), "[format]\nindent = 3\n").unwrap();
         std::fs::create_dir(root.join("sub")).unwrap();
         std::fs::write(root.join("sub/vfl.toml"), "[format\nindent = 5\n").unwrap();
@@ -836,7 +846,7 @@ mod tests {
     #[test]
     fn new_files_in_known_directories_join_without_a_walk() {
         let dir = tempfile::tempdir().unwrap();
-        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let root = real_dir(dir.path());
         std::fs::create_dir(root.join("rtl")).unwrap();
         std::fs::write(root.join("rtl/a.vhd"), TOP).unwrap();
         std::fs::write(root.join(".gitignore"), "*_netlist.vhd\n").unwrap();
@@ -873,7 +883,7 @@ mod tests {
     #[test]
     fn files_over_the_size_limit_are_outlined() {
         let dir = tempfile::tempdir().unwrap();
-        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let root = real_dir(dir.path());
         std::fs::write(root.join("vfl.toml"), "[project]\nmax-file-size = 400\n").unwrap();
         let mut netlist = String::from(
             "library ieee;\nuse ieee.std_logic_1164.all;\n\
