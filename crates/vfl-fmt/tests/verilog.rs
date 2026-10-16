@@ -314,3 +314,89 @@ fn a_range_ending_in_a_continued_directive() {
         fmt(text)
     );
 }
+
+/// `text` after formatting the line at byte `at` alone.
+fn fmt_line(text: &str, at: usize) -> String {
+    let edits = format_ranges_verilog(
+        text,
+        std::slice::from_ref(&(at..at)),
+        &legacy(),
+        &Options::default(),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    apply_edits(text, &edits)
+}
+
+/// Found by the `format_verilog` fuzz target: code that is not compiled lost
+/// its trailing blanks, all of it when it was nothing else, and range
+/// formatting then lexed it differently.
+#[test]
+fn code_not_compiled_keeps_its_blanks() {
+    let text = "module m;\n`ifdef B `endif\nendmodule\n";
+    assert_eq!(fmt(text), text);
+    let text = "module m;\n`ifdef B ;\u{a0}`endif\nendmodule\n";
+    assert_eq!(fmt(text), text);
+    assert_eq!(fmt_line(text, 10), text);
+}
+
+/// Found by the `format_verilog` fuzz target: a directive right after an
+/// `` `ifdef `` whose branch is not compiled went to a line of its own,
+/// which made the line break code that is not compiled.
+#[test]
+fn a_directive_closing_an_empty_branch_stays_on_its_line() {
+    assert_eq!(
+        fmt("module m;\n`ifdef e`endif\nendmodule"),
+        "module m;\n`ifdef e`endif\nendmodule\n"
+    );
+    assert_eq!(fmt("`ifdef S`elsif i`endif"), "`ifdef S`elsif i`endif\n");
+    assert_eq!(
+        fmt("module a;\n`ifdef O`else initial;\n`endif\nendmodule"),
+        "module a;\n`ifdef O`else\n  initial;\n`endif\nendmodule\n"
+    );
+}
+
+/// Found by the `format_verilog` fuzz target: a comment in a macro body
+/// ending in `\` and blanks continued the macro once a line break followed
+/// it, and one ending in `\` and a form feed did once the form feed was
+/// trimmed.
+#[test]
+fn a_comment_ending_in_a_backslash_and_blanks_in_a_define() {
+    let options = Options::default();
+    for text in ["`define F//\\ ", "`define F//\\\t"] {
+        let result = format_verilog(text, &legacy(), &options);
+        assert!(matches!(result, Err(FormatError::Syntax(_))), "{result:?}");
+    }
+    let text = "`define A//\\\x0c\nwire b;\n";
+    assert_eq!(fmt(text), text);
+}
+
+/// Found by the `format_verilog` fuzz target: a branch that is not compiled
+/// was skipped reading `"""` as three quotes, and its lines lexed alone for
+/// range formatting as a string: a directive after it ended the branch in
+/// one and was in a string in the other.
+#[test]
+fn a_triple_quoted_string_in_a_branch_not_compiled() {
+    let text = "`ifndef S\n`elsif s \"\"\"a\"b\"\"\" `endif\nmodule m;\nendmodule\n";
+    assert_eq!(fmt(text), text);
+    assert_eq!(fmt_line(text, 10), text);
+    let text = "`ifndef S\n`elsif s \"\"\"\"`endif`A";
+    let result = format_verilog(text, &legacy(), &Options::default());
+    assert!(matches!(result, Err(FormatError::Syntax(_))), "{result:?}");
+}
+
+/// Found by the `format_verilog` fuzz target: the space after a `'` was
+/// dropped, and `' da` became the based number `'da`.
+#[test]
+fn a_tick_keeps_its_space_before_a_base() {
+    let text = "module m;\n  initial assert (p with {' da});\nendmodule\n";
+    assert_eq!(fmt(text), text);
+}
+
+/// Found by the `format_verilog` fuzz target: range formatting dropped the
+/// only CR LF of a file that mixes CR LF and LF, which was then formatted
+/// with LF rather than CR LF.
+#[test]
+fn a_range_in_a_file_mixing_line_endings() {
+    let text = "//\n\n\r\n`t";
+    assert_eq!(fmt(&fmt_line(text, 0)), fmt(text));
+}

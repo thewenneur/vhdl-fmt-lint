@@ -402,10 +402,17 @@ fn ranges_with<L: Lang>(
         return Ok(Vec::new());
     }
     // Lines are found by `\n`: a file that also breaks lines with a lone
-    // `\r` is formatted whole.
+    // `\r` is formatted whole. So is one that mixes CR LF and LF: the
+    // lines replaced may hold all its CR LF, after which the whole file
+    // would be formatted with LF rather than CR LF.
+    let bytes = text.as_bytes();
     if text
         .match_indices('\r')
-        .any(|(i, _)| text.as_bytes().get(i + 1) != Some(&b'\n'))
+        .any(|(i, _)| bytes.get(i + 1) != Some(&b'\n'))
+        || (text.contains("\r\n")
+            && text
+                .match_indices('\n')
+                .any(|(i, _)| i == 0 || bytes[i - 1] != b'\r'))
     {
         let out = format_with::<L>(text, config, std)?;
         return Ok(match out == text {

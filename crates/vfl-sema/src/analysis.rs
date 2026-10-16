@@ -224,6 +224,8 @@ pub struct Analysis {
     uses: Vec<Vec<UnitId>>,
     /// Per file: its units with the names they mention.
     per_file: Vec<Arc<Vec<UnitWithDeps>>>,
+    /// Every library of the files, sorted: what `per_file` was built with.
+    library_names: Vec<String>,
     diagnostics: Vec<Diagnostic>,
     user_files: usize,
     /// Per unit: whether it was analyzed rather than reused.
@@ -246,8 +248,22 @@ impl std::fmt::Debug for Analysis {
 /// A bundled source: library, file name, text and tree.
 type Bundled = (String, String, Arc<str>, GreenNode);
 
-/// A unit with the `(library, unit)` names it mentions.
-type UnitWithDeps = (UnitInfo, Vec<(String, String)>);
+/// A unit with the names it mentions that may be other units.
+type UnitWithDeps = (UnitInfo, UnitNames);
+
+/// The selected names of a design unit that may name other units.
+#[derive(Debug, Clone, Default)]
+struct UnitNames {
+    /// `(library, unit)`: those whose prefix is `work`, `std` or a library
+    /// that the unit's own context names.
+    units: Vec<(String, String)>,
+    /// The libraries that the unit's own library clauses name.
+    libraries: Vec<String>,
+    /// The other `(library, unit)` pairs, of a unit that may see libraries
+    /// its own context does not name: units too when it sees the library
+    /// through its primary unit or a context it references.
+    others: Vec<(String, String)>,
+}
 
 /// The bundled libraries, parsed once.
 fn bundled() -> &'static [Bundled] {
@@ -404,6 +420,7 @@ impl Analysis {
             interfaces: Vec::new(),
             uses: Vec::new(),
             per_file: Vec::new(),
+            library_names: Vec::new(),
             diagnostics: Vec::new(),
             user_files: 0,
             fresh: Vec::new(),
@@ -506,18 +523,33 @@ impl Analysis {
             });
         }
 
+        // The libraries of the files: a few, each of many files. Which
+        // names may be units depends on them.
+        let mut names: Vec<&str> = Vec::new();
+        for library in files.iter().flat_map(|f| &f.libraries) {
+            if !names.contains(&library.as_str()) {
+                names.push(library);
+            }
+        }
+        names.sort_unstable();
+        let same_libraries = previous.is_some_and(|p| p.library_names.iter().eq(names.iter()));
+        let library_names: Vec<String> = match previous {
+            Some(p) if same_libraries => p.library_names.clone(),
+            _ => names.into_iter().map(str::to_owned).collect(),
+        };
         // Units, per file and library.
         let per_file: Vec<Arc<Vec<UnitWithDeps>>> = files
             .par_iter()
             .enumerate()
             .map(|(id, file)| {
                 if let Some(p) = previous
+                    && same_libraries
                     && unchanged(id, &file.path, &file.green, &file.foreign).is_some()
                     && p.files[id].libraries == file.libraries
                 {
                     return p.per_file[id].clone();
                 }
-                Arc::new(file_units(id as FileId, file))
+                Arc::new(file_units(id as FileId, file, &library_names))
             })
             .collect();
         let mut units = Vec::new();
@@ -575,29 +607,56 @@ impl Analysis {
         };
 
         // Dependencies between units.
-        let deps: Vec<Vec<UnitId>> = raw_deps
+        let resolve = |id: usize, (lib, name): &(String, String)| -> Option<UnitId> {
+            let unit = &units[id];
+            let lib = if lib == "work" { &unit.library } else { lib };
+            ctx.unit_in_library(lib, name, unit.file)
+                .filter(|&d| d != id as UnitId)
+        };
+        let primaries: Vec<Option<UnitId>> = units
+            .iter()
+            .map(|unit| {
+                let primary = unit.primary.as_ref()?;
+                ctx.unit_in_library(&unit.library, primary, unit.file)
+            })
+            .collect();
+        let mut deps: Vec<Vec<UnitId>> = raw_deps
             .iter()
             .enumerate()
-            .map(|(id, deps)| {
-                let unit = &units[id];
-                let mut out: Vec<UnitId> = deps
-                    .iter()
-                    .filter_map(|(lib, name)| {
-                        let lib = if lib == "work" { &unit.library } else { lib };
-                        ctx.unit_in_library(lib, name, unit.file)
-                    })
-                    .filter(|&d| d != id as UnitId)
-                    .collect();
-                if let Some(primary) = &unit.primary
-                    && let Some(p) = ctx.unit_in_library(&unit.library, primary, unit.file)
-                {
-                    out.push(p);
-                }
+            .map(|(id, names)| {
+                let mut out: Vec<UnitId> =
+                    names.units.iter().filter_map(|n| resolve(id, n)).collect();
+                out.extend(primaries[id]);
                 out.sort_unstable();
                 out.dedup();
                 out
             })
             .collect();
+        // The units a unit names in a library that it sees only through
+        // its primary unit or a context: it depends on them as much, or
+        // it could be analyzed before them, and then see none of them,
+        // unless their results were reused.
+        let inherited: Vec<(usize, Vec<UnitId>)> = (0..units.len())
+            .filter(|&id| !raw_deps[id].others.is_empty())
+            .filter_map(|id| {
+                let libraries = inherited_libraries(id, &units, &primaries, &raw_deps, &deps);
+                if libraries.is_empty() {
+                    return None;
+                }
+                let extra: Vec<UnitId> = raw_deps[id]
+                    .others
+                    .iter()
+                    .filter(|(prefix, _)| libraries.contains(&prefix.as_str()))
+                    .filter_map(|n| resolve(id, n))
+                    .collect();
+                (!extra.is_empty()).then_some((id, extra))
+            })
+            .collect();
+        for (id, extra) in inherited {
+            deps[id].extend(extra);
+            deps[id].sort_unstable();
+            deps[id].dedup();
+        }
 
         let design_unit = |unit: UnitId| -> SyntaxNode {
             let info = &units[unit as usize];
@@ -821,6 +880,7 @@ impl Analysis {
             interfaces,
             uses,
             per_file,
+            library_names,
             diagnostics,
             user_files,
             fresh,
@@ -998,7 +1058,8 @@ fn empty_tree() -> &'static GreenNode {
 
 /// The design units of a file, one per library it is in, with the
 /// `(library, unit)` pairs each refers to.
-fn file_units(file_id: FileId, file: &AnalyzedFile) -> Vec<UnitWithDeps> {
+/// `libraries` are those of every file, sorted.
+fn file_units(file_id: FileId, file: &AnalyzedFile, libraries: &[String]) -> Vec<UnitWithDeps> {
     if let Some(modules) = &file.foreign {
         let mut out = Vec::new();
         for (index, module) in modules.iter().enumerate() {
@@ -1013,7 +1074,7 @@ fn file_units(file_id: FileId, file: &AnalyzedFile) -> Vec<UnitWithDeps> {
                         library: library.clone(),
                         name_range: module.name_range,
                     },
-                    Vec::new(),
+                    UnitNames::default(),
                 ));
             }
         }
@@ -1054,7 +1115,20 @@ fn file_units(file_id: FileId, file: &AnalyzedFile) -> Vec<UnitWithDeps> {
             DeclKind::PackageBody => Some(vfl_syntax::identifier_key(name.text())),
             _ => None,
         };
-        let deps = unit_dependencies(&design_unit);
+        // Only a secondary unit or one that references a context sees
+        // libraries its own context does not name.
+        let inherits = matches!(kind, DeclKind::Architecture | DeclKind::PackageBody)
+            || design_unit
+                .children()
+                .filter(|n| {
+                    matches!(
+                        n.kind(),
+                        SyntaxKind::CONTEXT_CLAUSE | SyntaxKind::CONTEXT_DECL
+                    )
+                })
+                .flat_map(|n| n.children())
+                .any(|n| n.kind() == SyntaxKind::CONTEXT_REFERENCE);
+        let names = unit_names(&design_unit, inherits.then_some(libraries));
         for library in &file.libraries {
             out.push((
                 UnitInfo {
@@ -1066,25 +1140,29 @@ fn file_units(file_id: FileId, file: &AnalyzedFile) -> Vec<UnitWithDeps> {
                     library: library.clone(),
                     name_range: name.text_range(),
                 },
-                deps.clone(),
+                names.clone(),
             ));
         }
     }
     out
 }
 
-/// The `library.unit` names a design unit mentions.
-fn unit_dependencies(design_unit: &SyntaxNode) -> Vec<(String, String)> {
-    let mut libraries: FxHashSet<String> =
-        ["work".to_owned(), "std".to_owned()].into_iter().collect();
+/// The selected names a design unit mentions that may be other units. The
+/// `others` of [`UnitNames`] are only those whose prefix is one of
+/// `libraries` (sorted), and none without.
+fn unit_names(design_unit: &SyntaxNode, libraries: Option<&[String]>) -> UnitNames {
+    let mut own: Vec<String> = Vec::new();
     for clause in descendants_where(design_unit, |k| k == SyntaxKind::LIBRARY_CLAUSE) {
         for list in clause.children() {
             for token in crate::syntax::idents(&list) {
-                libraries.insert(vfl_syntax::identifier_key(token.text()));
+                own.push(vfl_syntax::identifier_key(token.text()));
             }
         }
     }
-    let mut deps = Vec::new();
+    own.sort();
+    own.dedup();
+    let mut units = Vec::new();
+    let mut others = Vec::new();
     for node in descendants_where(design_unit, |k| k == SyntaxKind::SELECTED_NAME) {
         let Some(prefix) = node.children().next() else {
             continue;
@@ -1094,18 +1172,59 @@ fn unit_dependencies(design_unit: &SyntaxNode) -> Vec<(String, String)> {
         else {
             continue;
         };
-        if !libraries.contains(&library) {
-            continue;
-        }
+        let list =
+            if matches!(library.as_str(), "work" | "std") || own.binary_search(&library).is_ok() {
+                &mut units
+            } else if libraries.is_some_and(|l| l.binary_search(&library).is_ok()) {
+                &mut others
+            } else {
+                continue;
+            };
         if let Some(suffix) =
             node.child_token(|k| matches!(k, SyntaxKind::IDENT | SyntaxKind::EXT_IDENT))
         {
-            deps.push((library, vfl_syntax::identifier_key(suffix.text())));
+            list.push((library, vfl_syntax::identifier_key(suffix.text())));
         }
     }
-    deps.sort();
-    deps.dedup();
-    deps
+    for list in [&mut units, &mut others] {
+        list.sort();
+        list.dedup();
+    }
+    own.retain(|l| l != "work" && l != "std");
+    UnitNames {
+        units,
+        libraries: own,
+        others,
+    }
+}
+
+/// The libraries unit `id` sees through its primary unit and the contexts
+/// it references, and theirs, apart from its own.
+fn inherited_libraries<'a>(
+    id: usize,
+    units: &[UnitInfo],
+    primaries: &[Option<UnitId>],
+    names: &[&'a UnitNames],
+    deps: &[Vec<UnitId>],
+) -> Vec<&'a str> {
+    let sources = |u: usize| {
+        let contexts = deps[u]
+            .iter()
+            .filter(|&&d| units[d as usize].kind == DeclKind::Context);
+        primaries[u].iter().chain(contexts).map(|&d| d as usize)
+    };
+    let mut seen = vec![id];
+    let mut stack: Vec<usize> = sources(id).collect();
+    let mut libraries = Vec::new();
+    while let Some(u) = stack.pop() {
+        if seen.contains(&u) {
+            continue;
+        }
+        seen.push(u);
+        libraries.extend(names[u].libraries.iter().map(String::as_str));
+        stack.extend(sources(u));
+    }
+    libraries
 }
 
 /// Whether `files` and `units` are those of `previous`, in the same order,
