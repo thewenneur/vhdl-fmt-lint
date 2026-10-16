@@ -99,6 +99,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("vfl.generateTestbench", generateTestbench),
     vscode.commands.registerCommand("vfl.generateConfig", generateConfig),
     vscode.commands.registerCommand("vfl.generateDocs", generateDocs),
+    vscode.commands.registerCommand("vfl.generateSpec", generateSpec),
     vscode.commands.registerCommand("vfl.showDiagrams", showDiagrams),
     // The VHDL Hierarchy view asks the running server.
     registerHierarchy(() => {
@@ -815,6 +816,45 @@ async function generateDocs(uri?: vscode.Uri): Promise<string | undefined> {
     .showInformationMessage(`vfl: documentation written to ${path.dirname(index)}`, "Open")
     .then((choice) => (choice === "Open" ? openIndex(index) : undefined));
   return index;
+}
+
+/**
+ * Writes the specification of the project around `uri` (or the active file,
+ * or the workspace folder) where `[doc.spec]` in `vfl.toml` says, then
+ * offers to open the specification of the file's entity, else the index.
+ * Returns the page offered.
+ */
+async function generateSpec(uri?: vscode.Uri): Promise<string | undefined> {
+  const target = docTarget(uri instanceof vscode.Uri ? uri : undefined);
+  if (!target) {
+    void vscode.window.showErrorMessage("vfl: open a folder or a VHDL file to specify.");
+    return undefined;
+  }
+  const args = ["spec", target];
+  const file = uri instanceof vscode.Uri ? uri : vscode.window.activeTextEditor?.document.uri;
+  if (file?.scheme === "file" && !directoryIs(file.fsPath)) {
+    args.push("--page-for", file.fsPath);
+  }
+  const stdout = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: "vfl: generating the specification" },
+    () => runVfl(args, directoryOf(target)),
+  );
+  const page = stdout && printedPath(stdout);
+  if (!page) {
+    return undefined;
+  }
+  void vscode.window
+    .showInformationMessage(`vfl: specification written to ${path.dirname(page)}`, "Open")
+    .then((choice) => (choice === "Open" ? openIndex(page) : undefined));
+  return page;
+}
+
+function directoryIs(target: string): boolean {
+  try {
+    return fs.statSync(target).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 /** Opens an HTML index in the browser, a Markdown or AsciiDoc one in the editor. */

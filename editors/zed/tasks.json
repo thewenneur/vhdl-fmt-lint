@@ -40,6 +40,14 @@
     "hide": "on_success"
   },
   {
+    "label": "vfl: generate specification",
+    "command": "vfl",
+    "args": ["spec", "--page-for", "$ZED_FILE"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "no_focus",
+    "hide": "on_success"
+  },
+  {
     "label": "vfl: generate testbench",
     "command": "vfl",
     "args": ["new", "tb", "$ZED_SELECTED_TEXT", "--project", "$ZED_WORKTREE_ROOT"],

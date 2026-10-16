@@ -21,6 +21,7 @@ pub mod model;
 mod page;
 mod pages;
 pub mod relations;
+pub mod spec;
 pub mod svg;
 pub mod text;
 mod verilog;
@@ -40,6 +41,23 @@ pub use page::OutputFile;
 /// Builds the documentation model of a loaded project, leaving out the
 /// files `config.exclude` matches.
 pub fn load(project: &Project, config: &DocConfig) -> Result<Design, globset::Error> {
+    load_inner(project, config, false).map(|(design, _)| design)
+}
+
+/// Builds the documentation model of a loaded project with its spec
+/// comments, for [`spec::generate`].
+pub fn load_spec(
+    project: &Project,
+    config: &DocConfig,
+) -> Result<(Design, Vec<spec::SpecItem>), globset::Error> {
+    load_inner(project, config, true)
+}
+
+fn load_inner(
+    project: &Project,
+    config: &DocConfig,
+    with_spec: bool,
+) -> Result<(Design, Vec<spec::SpecItem>), globset::Error> {
     let mut excluded = GlobSetBuilder::new();
     for pattern in &config.exclude {
         let pattern = pattern.trim_start_matches('/');
@@ -84,12 +102,13 @@ pub fn load(project: &Project, config: &DocConfig) -> Result<Design, globset::Er
         let library = libraries.first().map_or("work", |(l, _)| l.as_str());
         verilog.extend(verilog::entities(&file.modules, &file.text, &path, library));
     }
-    Ok(model::build(
-        &inputs,
-        verilog,
-        config,
-        title(project, config),
-    ))
+    let items = if with_spec {
+        spec::collect(&inputs, config)
+    } else {
+        Vec::new()
+    };
+    let design = model::build(&inputs, verilog, config, title(project, config));
+    Ok((design, items))
 }
 
 fn title(project: &Project, config: &DocConfig) -> String {
@@ -109,11 +128,25 @@ pub fn generate(design: &Design, config: &DocConfig) -> Vec<OutputFile> {
     let mut roots = hierarchy::build(design);
     hierarchy::collapse_repeats(&mut roots);
     let pages = pages::pages(design, &roots, config);
+    let nav = match config.format {
+        DocFormat::Html => pages::nav(design),
+        _ => Vec::new(),
+    };
+    render(&pages, &design.title, &nav, config)
+}
+
+/// The files of `pages` in `config.format`.
+fn render(
+    pages: &[page::Page],
+    title: &str,
+    nav: &[page::NavItem],
+    config: &DocConfig,
+) -> Vec<OutputFile> {
     let mut files = Vec::new();
     match config.format {
         DocFormat::Markdown => {
             let mermaid = config.diagrams.markdown == MarkdownDiagrams::Mermaid;
-            for page in &pages {
+            for page in pages {
                 let mut extra = Vec::new();
                 let contents = page::markdown(page, mermaid, &mut extra);
                 files.push(OutputFile {
@@ -124,7 +157,7 @@ pub fn generate(design: &Design, config: &DocConfig) -> Vec<OutputFile> {
             }
         }
         DocFormat::Asciidoc => {
-            for page in &pages {
+            for page in pages {
                 let mut extra = Vec::new();
                 let contents = page::asciidoc(page, &mut extra);
                 files.push(OutputFile {
@@ -135,11 +168,10 @@ pub fn generate(design: &Design, config: &DocConfig) -> Vec<OutputFile> {
             }
         }
         DocFormat::Html => {
-            let nav = pages::nav(design);
-            for page in &pages {
+            for page in pages {
                 files.push(OutputFile {
                     path: format!("{}.html", page.id),
-                    contents: page::html(page, &design.title, &nav),
+                    contents: page::html(page, title, nav),
                 });
             }
         }
@@ -150,7 +182,21 @@ pub fn generate(design: &Design, config: &DocConfig) -> Vec<OutputFile> {
 /// Writes the documentation of `design` under `dir`. Returns the files
 /// written.
 pub fn write(design: &Design, config: &DocConfig, dir: &Path) -> std::io::Result<Vec<OutputFile>> {
-    let files = generate(design, config);
+    write_files(generate(design, config), dir)
+}
+
+/// Writes the specification of `design` under `dir`. Returns the files
+/// written.
+pub fn write_spec(
+    design: &Design,
+    items: &[spec::SpecItem],
+    config: &DocConfig,
+    dir: &Path,
+) -> std::io::Result<Vec<OutputFile>> {
+    write_files(spec::generate(design, items, config), dir)
+}
+
+fn write_files(files: Vec<OutputFile>, dir: &Path) -> std::io::Result<Vec<OutputFile>> {
     std::fs::create_dir_all(dir)?;
     for file in &files {
         std::fs::write(dir.join(&file.path), &file.contents)?;

@@ -18,6 +18,11 @@ A fast, fully configurable VHDL formatter, linter and language server, in pure R
   Mermaid or DOT. In HTML pages every diagram zooms (buttons over it, Ctrl or Cmd + wheel,
   `+` `-` `0`) and pans by dragging.
   See [examples/uart/doc](examples/uart/doc/index.md) for an example.
+- **Specification**: `vfl spec` writes a design specification per entity, from the code and
+  its `@spec`, `@req` and `@verifies` comments: overview, interface with the clock each
+  port is registered or sampled on, clocks and resets, behavior, state machines, registers,
+  sub-blocks and requirements with the tests that verify them, and an index of every
+  requirement. See [examples/uart/spec](examples/uart/spec/index.md).
   In VS Code, **vfl: Generate Documentation** and **vfl: Show Diagrams** (a button in the
   editor title bar, showing the current file's entity in a view beside it); in Notepad++,
   **Generate documentation** and **Show diagrams** in the plugin's menu.
@@ -142,6 +147,7 @@ vfl fmt --lines 10:20 f.vhd  # format only those lines (and the statements aroun
 vfl lint [--fix] ...   # lint, resolving names across the whole project
 vfl rules              # list lint rules and their levels
 vfl doc [-o dir]       # write HTML (or --format markdown|asciidoc) documentation with diagrams
+vfl spec [-o dir]      # write the design specification, with its requirements
 vfl schema block top   # draw one diagram: block, fsm, dataflow, clocks, resets, ...
 vfl new tb counter     # write counter_tb.vhd, a testbench for entity counter
 vfl new instance counter     # print an instantiation (also: component, component-instance)
@@ -196,7 +202,7 @@ statement with `-- vfl: skip`.
 | `vfl-fmt`     | Formatter |
 | `vfl-lint`    | Linter |
 | `vfl-gen`     | Code generation: instantiations, components, testbenches |
-| `vfl-doc`     | Documentation and diagrams (`vfl doc`, `vfl schema`) |
+| `vfl-doc`     | Documentation, specifications and diagrams (`vfl doc`, `vfl spec`, `vfl schema`) |
 | `vfl-lsp`     | Language server |
 | `vfl-cli`     | The `vfl` binary |
 | `vfl-npp`     | [Notepad++ plugin](editors/notepadpp/README.md) (`editors/notepadpp`) |

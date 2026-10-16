@@ -12,7 +12,7 @@ use crate::svg::{self, SymbolOptions};
 use crate::text as diagram_text;
 
 /// A file name from a unit name: lower case, and only safe characters.
-fn file_safe(text: &str) -> String {
+pub(crate) fn file_safe(text: &str) -> String {
     let safe: String = identifier_key(text)
         .chars()
         .map(|c| {
@@ -64,7 +64,7 @@ fn heading(level: u8, content: Vec<Inline>, id: Option<String>) -> Block {
     Block::Heading { level, content, id }
 }
 
-fn doc(text: &str, blocks: &mut Vec<Block>, config: &DocConfig) {
+pub(crate) fn doc(text: &str, blocks: &mut Vec<Block>, config: &DocConfig) {
     if text.is_empty() {
         return;
     }
@@ -598,7 +598,7 @@ fn index(design: &Design, roots: &[Node], config: &DocConfig) -> Page {
     }
 }
 
-fn symbol_options(config: &DocConfig) -> SymbolOptions {
+pub(crate) fn symbol_options(config: &DocConfig) -> SymbolOptions {
     SymbolOptions {
         port_types: config.diagrams.port_types,
         generics: config.diagrams.generics,

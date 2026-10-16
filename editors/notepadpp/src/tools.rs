@@ -1018,6 +1018,20 @@ fn write_docs(
     out: Option<PathBuf>,
     then: impl FnOnce(Result<crate::docs::Written, String>) + 'static,
 ) {
+    write_pages(
+        move |file| crate::docs::write(file, out.as_deref()),
+        "vfl: writing the documentation...",
+        then,
+    );
+}
+
+/// Runs `job` on the current file as [`write_docs`] does, with `writing`
+/// in the status bar meanwhile.
+fn write_pages(
+    job: impl FnOnce(&std::path::Path) -> Result<crate::docs::Written, String> + Send + 'static,
+    writing: &'static str,
+    then: impl FnOnce(Result<crate::docs::Written, String>) + 'static,
+) {
     let Some(file) = saved_file() else {
         return;
     };
@@ -1025,16 +1039,15 @@ fn write_docs(
         tell("The documentation is still being written.");
         return;
     }
-    const WRITING: &str = "vfl: writing the documentation...";
     let before = status_text(npp());
-    set_status_text(npp(), WRITING);
+    set_status_text(npp(), writing);
     // No key: it must not be dropped for a later request, and runs in
     // order with them.
     request(
         None,
         move |_engine| {
             // A panic here must still reach `then`, which clears the flag.
-            std::panic::catch_unwind(|| crate::docs::write(&file, out.as_deref()))
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| job(&file)))
                 .unwrap_or_else(|_| Err("vfl hit an internal error".into()))
         },
         move |result| {
@@ -1042,7 +1055,7 @@ fn write_docs(
             // Put back the file type, unless Notepad++ already did (on a
             // switch of buffer).
             if let Some(before) = before
-                && status_text(npp()).as_deref() == Some(WRITING)
+                && status_text(npp()).as_deref() == Some(writing)
             {
                 set_status_text(npp(), &before);
             }
@@ -1067,6 +1080,29 @@ pub(crate) fn generate_docs() {
         }
         Err(why) => tell(&format!("Could not write the documentation: {why}.")),
     });
+}
+
+/// Writes the specification of the current file's project where
+/// `[doc.spec]` says, then opens the page of the file's entity (else the
+/// index): an HTML one in the browser, others here.
+pub(crate) fn generate_spec() {
+    write_pages(
+        crate::docs::write_spec,
+        "vfl: writing the specification...",
+        |result| match result {
+            Ok(written) => {
+                let opened = if written.html {
+                    shell_open(npp(), &written.page)
+                } else {
+                    open(&written.page)
+                };
+                if !opened {
+                    tell(&format!("Wrote {}.", written.page.display()));
+                }
+            }
+            Err(why) => tell(&format!("Could not write the specification: {why}.")),
+        },
+    );
 }
 
 /// Writes the HTML documentation of the current file's project to a

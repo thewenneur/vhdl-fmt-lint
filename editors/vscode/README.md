@@ -152,6 +152,11 @@ the line above; `on_type = false` under `[format]` in `vfl.toml` turns it off fo
   `vfl doc` on the project and offers to open the index: an HTML one in the browser, a
   Markdown or AsciiDoc one in the editor. Where and how it is written comes from `[doc]`
   in `vfl.toml`.
+- `vfl: Generate Specification` (also in the explorer context menu) runs `vfl spec` on
+  the project and offers to open the specification of the file's first entity, else the
+  index: the interface with the clock of each port, clocks and resets, behavior, state
+  machines, registers, sub-blocks and requirements, from the code and its `@spec`, `@req`
+  and `@verifies` comments. Where and how it is written comes from `[doc.spec]` in `vfl.toml`.
 - `vfl: Show Diagrams`, the diagram button in the title bar of a VHDL editor, shows the
   documentation page of the first entity (else package) of the file, with its diagrams, in
   a view beside the editor. Diagrams zoom with the buttons over them, Ctrl or Cmd + wheel,

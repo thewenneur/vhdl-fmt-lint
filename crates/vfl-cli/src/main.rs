@@ -169,6 +169,36 @@ enum Command {
         #[arg(long, value_name = "FILE")]
         page_for: Option<PathBuf>,
     },
+    /// Generate the design specification, from the code and spec comments.
+    ///
+    /// Writes an index of the units and requirements, and a specification
+    /// per entity: overview, interface (with the clock each port is timed
+    /// by), clocks and resets, behavior, state machines, registers,
+    /// sub-blocks and requirements with the tests that verify them. Spec
+    /// comments start with `@spec`, `@req ID` or `@verifies ID, ...`.
+    /// Settings are under `[doc.spec]` in vfl.toml.
+    Spec {
+        /// A directory or file of the project (default: the current directory).
+        #[arg(default_value = ".")]
+        path: PathBuf,
+        /// Output directory (default: `doc.spec.out_dir`, relative to the project root).
+        #[arg(long, short)]
+        out: Option<PathBuf>,
+        /// Output format (default: `doc.spec.format`, else `doc.format`).
+        #[arg(long, value_enum)]
+        format: Option<DocFormatArg>,
+        /// Title of the index page (default: `doc.spec.title`).
+        #[arg(long)]
+        title: Option<String>,
+        /// Print the specification of the first entity (else package) this
+        /// file declares instead of the index (the index if it has none).
+        #[arg(long, value_name = "FILE")]
+        page_for: Option<PathBuf>,
+        /// Exit with 1 if a requirement has no ID or is given twice, or a
+        /// test verifies an unknown one.
+        #[arg(long)]
+        check: bool,
+    },
     /// Draw one diagram: an entity's symbol, the design hierarchy, the block
     /// diagram of an architecture or a state machine.
     Schema {
@@ -343,6 +373,25 @@ fn run(cli: Cli) -> Result<bool> {
             page_for.as_deref(),
         )
         .map(|()| true),
+        Command::Spec {
+            path,
+            out,
+            format,
+            title,
+            page_for,
+            check,
+        } => doc::spec(
+            &path,
+            out.as_deref(),
+            format.map(|f| match f {
+                DocFormatArg::Html => vfl_config::DocFormat::Html,
+                DocFormatArg::Markdown => vfl_config::DocFormat::Markdown,
+                DocFormatArg::Asciidoc => vfl_config::DocFormat::Asciidoc,
+            }),
+            title,
+            page_for.as_deref(),
+        )
+        .map(|problems| !(check && problems)),
         Command::Schema {
             kind,
             entity,

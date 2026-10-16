@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`vfl spec` writes a design specification from the code and spec comments.** Each
+  entity gets a page in numbered sections: overview, interface (with the timing of each
+  port: clock, reset, registered or sampled on which clock, or combinational, followed
+  through the instances), clocks and resets with what uses them, behavior, state machines,
+  registers with their clock and reset, sub-blocks and requirements. `-- @spec text`,
+  `-- @req ID: text` and `-- @verifies ID, ID` comments add to the place they apply to,
+  and the index lists every requirement with the tests that verify it. Duplicate IDs and
+  unknown verified requirements are reported (`--check` fails on them). Pages are HTML,
+  Markdown or AsciiDoc; tags, sections and output are set under `[doc.spec]`. Spec
+  comments are left out of `vfl doc`. The editors have the action too: **vfl: Generate
+  Specification** in VS Code, **Generate specification** at the end of the Notepad++
+  menu, and a `vfl: generate specification` task (`ctrl-alt-v s`) for Zed.
+  [examples/uart/spec](examples/uart/spec/index.md) is the example's specification.
+
 ### Changed
 
 - **State machine diagrams are drawn with orthogonal lines, and the transitions into the

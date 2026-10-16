@@ -1716,8 +1716,8 @@ fn design_hierarchy_of_the_uart_example() {
         dut["entityLocation"]["uri"],
         url(&root.join("rtl/uart.vhd"))
     );
-    assert_eq!(dut["entityLocation"]["range"]["start"]["line"], 9);
-    assert_eq!(dut["architectureLocation"]["range"]["start"]["line"], 34);
+    assert_eq!(dut["entityLocation"]["range"]["start"]["line"], 16);
+    assert_eq!(dut["architectureLocation"]["range"]["start"]["line"], 43);
 
     // Without testbenches, what they instantiate is the top.
     let tree = client.request("vfl/hierarchy", json!({ "testbenches": false }));

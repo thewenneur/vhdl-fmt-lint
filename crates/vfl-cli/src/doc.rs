@@ -110,6 +110,68 @@ pub fn doc(
     Ok(())
 }
 
+/// Writes the specification; returns whether the spec comments have
+/// problems (printed as warnings).
+pub fn spec(
+    path: &Path,
+    out: Option<&Path>,
+    format: Option<DocFormat>,
+    title: Option<String>,
+    page_for: Option<&Path>,
+) -> Result<bool> {
+    if !path.exists() {
+        bail!("{}: no such file or directory", path.display());
+    }
+    let root = find_root(&std::path::absolute(path)?);
+    let project = Project::load(root)?;
+    let mut config: DocConfig = project.config.doc.clone();
+    if let Some(format) = format {
+        config.spec.format = Some(format);
+    }
+    if title.is_some() {
+        config.spec.title = title;
+    }
+    let (design, items) =
+        vfl_doc::load_spec(&project, &config).context("invalid pattern in doc.exclude")?;
+    let dir = match out {
+        Some(out) => out.to_owned(),
+        None => project.root.dir.join(&config.spec.out_dir),
+    };
+    let files = vfl_doc::write_spec(&design, &items, &config, &dir)
+        .with_context(|| format!("writing {}", dir.display()))?;
+    let extension = match config.spec.format.unwrap_or(config.format) {
+        DocFormat::Html => "html",
+        DocFormat::Markdown => "md",
+        DocFormat::Asciidoc => "adoc",
+    };
+    let mut page = format!("index.{extension}");
+    if let Some(file) = page_for {
+        let file = std::path::absolute(file)?;
+        if let Some(id) = vfl_doc::page_for(&design, &project.root.dir, &file) {
+            let name = format!("{id}.{extension}");
+            if files.iter().any(|f| f.path == name) {
+                page = name;
+            }
+        }
+    }
+    let problems = vfl_doc::spec::problems(&items);
+    for problem in &problems {
+        eprintln!("warning: {problem}");
+    }
+    let requirements = items
+        .iter()
+        .filter(|i| i.kind == vfl_doc::spec::TagKind::Requirement)
+        .count();
+    eprintln!(
+        "{requirements} requirements, {} spec comments: {} files written to {}",
+        items.len() - requirements,
+        files.len(),
+        dir.display()
+    );
+    println!("{}", std::path::absolute(dir.join(page))?.display());
+    Ok(!problems.is_empty())
+}
+
 /// The entity `name` (`name` or `library.name`) names.
 fn find_entity(design: &Design, name: &str) -> Result<usize> {
     let (library, name) = match name.split_once('.') {

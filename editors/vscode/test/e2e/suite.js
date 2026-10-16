@@ -149,6 +149,11 @@ async function run() {
   assert.equal(index, path.join(folder, "doc", "index.html"));
   assert.ok(fs.existsSync(path.join(folder, "doc", "work.e2e_top.html")));
 
+  // Specification: written where `[doc.spec]` says, the file's page returned.
+  const spec = await vscode.commands.executeCommand("vfl.generateSpec", uri);
+  assert.equal(spec, path.join(folder, "spec", "work.e2e_top.html"));
+  assert.ok(fs.existsSync(path.join(folder, "spec", "index.html")));
+
   // Diagrams: the page of the file's entity, in a webview beside the editor.
   const page = await vscode.commands.executeCommand("vfl.showDiagrams", uri);
   assert.equal(path.basename(page), "work.e2e_top.html");
