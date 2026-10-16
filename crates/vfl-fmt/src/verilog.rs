@@ -214,6 +214,7 @@ impl Lang for Verilog {
         // directive after it.
         elems[i].kind == INACTIVE
             || prev.kind == INACTIVE
+            || ends_empty_branch(prev, &elems[i])
             || (prev.kind == ATTRIBUTE && elems[i].src_newlines == 0)
     }
 
@@ -400,6 +401,19 @@ fn lex_into(text: &str, options: &Options, tokens: &mut Vec<(SyntaxKind, usize)>
     }
 }
 
+/// Whether `cur` is a directive right after `prev`, one that opens a
+/// branch: the branch may not be compiled, and white space between them
+/// would then be code that is not.
+fn ends_empty_branch(prev: &Elem<Verilog>, cur: &Elem<Verilog>) -> bool {
+    prev.kind == DIRECTIVE
+        && cur.kind == DIRECTIVE
+        && !spaced_in_source(prev, cur)
+        // No other directive starts with these words.
+        && ["`ifdef", "`ifndef", "`elsif", "`else"]
+            .iter()
+            .any(|d| prev.text.starts_with(d))
+}
+
 /// Whether there was white space between two elements in the source.
 fn spaced_in_source(prev: &Elem<Verilog>, cur: &Elem<Verilog>) -> bool {
     match (prev.src, cur.src) {
@@ -468,7 +482,7 @@ fn is_binary_operator(elem: &Elem<Verilog>) -> bool {
 
 /// Whether a space goes between `prev` and `cur` when they share a line.
 fn space_between(prev: &Elem<Verilog>, cur: &Elem<Verilog>, config: &FormatConfig) -> bool {
-    if prev.kind == INACTIVE || cur.kind == INACTIVE {
+    if prev.kind == INACTIVE || cur.kind == INACTIVE || ends_empty_branch(prev, cur) {
         return false;
     }
     if prev.is_comment() || cur.is_comment() {

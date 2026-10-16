@@ -338,3 +338,19 @@ fn code_not_compiled_keeps_its_blanks() {
     assert_eq!(fmt(text), text);
     assert_eq!(fmt_line(text, 10), text);
 }
+
+/// Found by the `format_verilog` fuzz target: a directive right after an
+/// `` `ifdef `` whose branch is not compiled went to a line of its own,
+/// which made the line break code that is not compiled.
+#[test]
+fn a_directive_closing_an_empty_branch_stays_on_its_line() {
+    assert_eq!(
+        fmt("module m;\n`ifdef e`endif\nendmodule"),
+        "module m;\n`ifdef e`endif\nendmodule\n"
+    );
+    assert_eq!(fmt("`ifdef S`elsif i`endif"), "`ifdef S`elsif i`endif\n");
+    assert_eq!(
+        fmt("module a;\n`ifdef O`else initial;\n`endif\nendmodule"),
+        "module a;\n`ifdef O`else\n  initial;\n`endif\nendmodule\n"
+    );
+}
