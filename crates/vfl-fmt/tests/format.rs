@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use vfl_config::{AlignConfig, AlignScope, Config, FormatConfig};
-use vfl_fmt::{FormatError, format};
+use vfl_fmt::{FormatError, apply_edits, format, minimal_edits};
 use vfl_syntax::Standard;
 
 /// Formats `text` and checks that formatting the result changes nothing.
@@ -61,6 +61,20 @@ fn snapshots() {
         let text = std::fs::read_to_string(path).unwrap();
         insta::assert_snapshot!(fmt_with(&text, &FormatConfig::default()));
     });
+}
+
+/// Editors apply a formatted file as the edits of `minimal_edits`, so they
+/// must rebuild it exactly.
+#[test]
+fn minimal_edits_rebuild_formatted_files() {
+    for entry in
+        std::fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data")).unwrap()
+    {
+        let text = std::fs::read_to_string(entry.unwrap().path()).unwrap();
+        let out = fmt_with(&text, &FormatConfig::default());
+        let edits = minimal_edits(&text, &out);
+        assert_eq!(apply_edits(&text, &edits), out);
+    }
 }
 
 #[test]

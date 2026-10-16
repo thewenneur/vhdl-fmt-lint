@@ -26,9 +26,9 @@ use vfl_lsp::editor::CompletionKind;
 use vfl_lsp::generate::Kind;
 
 use crate::engine::{
-    BufferText, Engine, FormatFailure, NameColor, Severity, completes_after_dot, completion_list,
-    editor_config, is_library_copy, is_project_file, is_verilog_path, is_vhdl_path, minimal_edit,
-    plain_text, signature_tip,
+    BufferText, Engine, FormatFailure, NameColor, Severity, buffer_edits, completes_after_dot,
+    completion_list, editor_config, is_library_copy, is_project_file, is_verilog_path,
+    is_vhdl_path, plain_text, signature_tip,
 };
 use crate::menu;
 use crate::tools;
@@ -1129,30 +1129,26 @@ fn show_format_result(
 }
 
 /// Replaces the buffer's text with `new`, as one undo step, touching only
-/// the part that changed and keeping the caret and scroll position.
+/// the lines that changed. Scintilla keeps the caret, the selection and
+/// the view where they are: lines added or removed above the view shift it
+/// with the text it shows, and nothing scrolls the caret into view.
 pub(crate) fn replace_text(sci: Hwnd, buffer: &BufferText, new: &str) {
-    let old = buffer.encode(&buffer.text);
-    let new = buffer.encode(new);
-    let (start, end, with) = minimal_edit(&old, &new);
-    let caret = send(sci, SCI_GETCURRENTPOS, 0, 0).max(0) as usize;
-    let caret_line = send(sci, SCI_LINEFROMPOSITION, caret, 0);
-    let caret_column = send(sci, SCI_GETCOLUMN, caret, 0);
-    let first_visible = send(sci, SCI_GETFIRSTVISIBLELINE, 0, 0);
-
+    let edits = buffer_edits(buffer, new);
+    if edits.is_empty() {
+        return;
+    }
     send(sci, SCI_BEGINUNDOACTION, 0, 0);
-    send(sci, SCI_SETTARGETRANGE, start, end as isize);
-    send(sci, SCI_REPLACETARGET, with.len(), with.as_ptr() as isize);
+    // From the end, so the positions of the edits still to apply hold.
+    for edit in edits.iter().rev() {
+        send(sci, SCI_SETTARGETRANGE, edit.start, edit.end as isize);
+        send(
+            sci,
+            SCI_REPLACETARGET,
+            edit.text.len(),
+            edit.text.as_ptr() as isize,
+        );
+    }
     send(sci, SCI_ENDUNDOACTION, 0, 0);
-
-    let caret = if caret <= start {
-        caret
-    } else if caret >= end {
-        caret + with.len() - (end - start)
-    } else {
-        send(sci, SCI_FINDCOLUMN, caret_line as usize, caret_column).max(0) as usize
-    };
-    send(sci, SCI_GOTOPOS, caret, 0);
-    send(sci, SCI_SETFIRSTVISIBLELINE, first_visible as usize, 0);
 }
 
 // Linting.

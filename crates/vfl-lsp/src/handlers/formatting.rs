@@ -41,19 +41,12 @@ pub(super) fn formatting(
     };
     let root = || world.root.dir.clone();
     let formatted = crate::format::document(Some(&path), doc.text, &config, root).ok()?;
-    if formatted == doc.text {
-        return Some(Vec::new());
-    }
-    // One edit covering what changed, so the cursor keeps its place.
-    let edit = vfl_fmt::minimal_edit(doc.text, &formatted);
-    let range = TextRange::new(
-        TextSize::from(edit.range.start as u32),
-        TextSize::from(edit.range.end as u32),
-    );
-    Some(vec![TextEdit {
-        range: doc.range(range),
-        new_text: edit.text,
-    }])
+    // Only the changed lines, so the editor keeps its cursor, selection
+    // and scroll position.
+    Some(text_edits(
+        doc,
+        vfl_fmt::minimal_edits(doc.text, &formatted),
+    ))
 }
 
 /// Formats the line just finished: the one holding a `;` just typed, or

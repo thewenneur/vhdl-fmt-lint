@@ -894,33 +894,38 @@ impl BufferText {
     }
 }
 
-/// The smallest edit turning `old` into `new`: the byte range of `old` to
-/// replace, and its replacement.
-pub fn minimal_edit<'a>(old: &[u8], new: &'a [u8]) -> (usize, usize, &'a [u8]) {
-    let mut prefix = old.iter().zip(new).take_while(|(a, b)| a == b).count();
-    // Keep multi-byte UTF-8 sequences whole.
-    while prefix > 0 && (is_continuation(old.get(prefix)) || is_continuation(new.get(prefix))) {
-        prefix -= 1;
-    }
-    let max_suffix = old.len().min(new.len()) - prefix;
-    let mut suffix = old
-        .iter()
-        .rev()
-        .zip(new.iter().rev())
-        .take(max_suffix)
-        .take_while(|(a, b)| a == b)
-        .count();
-    while suffix > 0
-        && (is_continuation(old.get(old.len() - suffix))
-            || is_continuation(new.get(new.len() - suffix)))
-    {
-        suffix -= 1;
-    }
-    (prefix, old.len() - suffix, &new[prefix..new.len() - suffix])
+/// A change to a buffer: replace positions `start..end` by `text`, in the
+/// buffer's encoding.
+#[derive(Debug, PartialEq, Eq)]
+pub struct BufferEdit {
+    pub start: usize,
+    pub end: usize,
+    pub text: Vec<u8>,
 }
 
-fn is_continuation(byte: Option<&u8>) -> bool {
-    byte.is_some_and(|b| b & 0xC0 == 0x80)
+/// The edits turning the buffer's text into `new`, only where lines
+/// changed, sorted. Applied from the last one up, they leave the rest of
+/// the buffer, and so the caret and the view, in place.
+pub fn buffer_edits(buffer: &BufferText, new: &str) -> Vec<BufferEdit> {
+    let edits = vfl_fmt::minimal_edits(&buffer.text, new);
+    let mut out = Vec::with_capacity(edits.len());
+    // Positions counted incrementally: in Latin-1 a position is a character.
+    let (mut offset, mut position) = (0, 0);
+    let mut advance = |to: usize| {
+        position += buffer.encoded_len(&buffer.text[offset..to]);
+        offset = to;
+        position
+    };
+    for edit in edits {
+        let start = advance(edit.range.start);
+        let end = advance(edit.range.end);
+        out.push(BufferEdit {
+            start,
+            end,
+            text: buffer.encode(&edit.text),
+        });
+    }
+    out
 }
 
 #[cfg(test)]
@@ -1567,13 +1572,37 @@ end architecture;
     }
 
     #[test]
-    fn edits_only_what_changed() {
-        assert_eq!(minimal_edit(b"abcXdef", b"abcYYdef"), (3, 4, &b"YY"[..]));
-        assert_eq!(minimal_edit(b"same", b"same"), (4, 4, &b""[..]));
-        assert_eq!(minimal_edit(b"aaa", b"aaaa"), (3, 3, &b"a"[..]));
-        // é (C3 A9) to è (C3 A8): the whole character is replaced.
-        let (start, end, with) = minimal_edit("é".as_bytes(), "è".as_bytes());
-        assert_eq!((start, end, with), (0, 2, "è".as_bytes()));
+    fn edits_only_the_changed_lines() {
+        let buffer = BufferText::new(b"a;\n\n\nx;\nb  :=1;\nc;\n", true);
+        let edits = buffer_edits(&buffer, "a;\n\nx;\nb := 1;\nc;\n");
+        let text = |t: &str| t.as_bytes().to_vec();
+        assert_eq!(
+            edits,
+            [
+                BufferEdit {
+                    start: 4,
+                    end: 5,
+                    text: text("")
+                },
+                BufferEdit {
+                    start: 10,
+                    end: 13,
+                    text: text(":= ")
+                },
+            ]
+        );
+        // Latin-1 positions count characters, not UTF-8 bytes.
+        let buffer = BufferText::new(b"-- caf\xe9\nx  ;\n", false);
+        let edits = buffer_edits(&buffer, "-- caf\u{e9}\nx;\n");
+        assert_eq!(
+            edits,
+            [BufferEdit {
+                start: 9,
+                end: 11,
+                text: text("")
+            }]
+        );
+        assert!(buffer_edits(&buffer, &buffer.text.clone()).is_empty());
     }
 
     #[test]
