@@ -23,6 +23,7 @@ topic, each with a `vfl.toml` and a file before and after `vfl fmt` or `vfl lint
 - [`[lint]`](#lint): presets and per-rule settings
 - [`[doc]`](#doc): documentation generation (`vfl doc`)
 - [`[doc.diagrams]`](#docdiagrams): the diagrams in the documentation (`vfl schema`)
+- [`[doc.theme]`](#doctheme): the colors and fonts of the pages and diagrams
 - [`[lsp]`](#lsp): language server features, such as inlay hints
 - [In-source comments](#in-source-comments): suppressing findings, switching the formatter off
 - [Default configuration](#default-configuration): every key with its default value
@@ -755,6 +756,59 @@ characters are `0 1 l h L H u d` (levels), `p n P N` (clocks), `x` (unknown), `z
 | `generics` | boolean | `true` | Write the generics in a symbol. |
 | `markdown` | string | `"svg"` | How Markdown pages draw the hierarchy and state diagrams: `"svg"` files, or `"mermaid"` blocks, which GitHub and GitLab render. Symbols are always SVG. |
 
+### `[doc.theme]`
+
+The colors and fonts of the HTML pages and of every diagram, in `vfl doc` (any format) and
+`vfl schema`. By default the pages and the SVG files are light, and dark when the reader's
+system is (in VS Code, when the editor theme is). `mode` fixes one of them; `--theme light`
+(or `dark`, `auto`) on the command line replaces it for one run.
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `mode` | string | `"auto"` | `"auto"`: light, and dark where the reader's system or editor is dark. `"light"` or `"dark"`: always that one, as in a PDF or a printed page. |
+| `font` | string | system sans-serif | The CSS font family of the page text, such as `"Inter, sans-serif"`. |
+| `mono_font` | string | system monospace | The CSS font family of code and of diagram text. Diagrams are laid out for a monospace font at 12px, so a proportional font overflows its boxes. |
+
+#### `[doc.theme.light]`
+
+Colors that replace the built-in ones of the light theme (and in `[doc.theme.dark]`, of the dark theme); the keys left out
+keep theirs. A color is any CSS color: `"#0969da"`, `"rgb(9 105 218)"`, `"teal"`. The same
+names color the pages and the diagrams, so a change carries to both.
+
+| Key | Type | Default (light / dark) | Meaning |
+|-----|------|------------------------|---------|
+| `background` | string | `"#ffffff"` / `"#0d1117"` | The page background, and the diagram parts drawn over it (external blocks, label backgrounds). |
+| `foreground` | string | `"#1f2328"` / `"#f0f6fc"` | Text, on the pages and in the diagrams. |
+| `muted` | string | `"#59636e"` / `"#9198a1"` | Secondary text: port types, notes, open ports, the footer. |
+| `border` | string | `"#d1d9e0"` / `"#3d444d"` | Lines of tables, of the sidebar and under headings. |
+| `surface` | string | `"#f6f8fa"` / `"#151b23"` | The sidebar, table headers, and the fill of blocks and states. |
+| `code` | string | `"#eff2f5"` / `"#262c36"` | The background of inline code. |
+| `accent` | string | `"#0969da"` / `"#4493f8"` | Links, wires between blocks and the outline of the initial state. |
+| `highlight` | string | `"#ddf4ff"` / `"#0c2d6b"` | The fill of block titles, port terminals and the initial state. |
+| `stroke` | string | `"#424a53"` / `"#9198a1"` | Outlines of blocks, states and pins, and waveform lines. |
+| `edge` | string | `"#57606a"` / `"#9198a1"` | Arrows between blocks and states. |
+| `dashed` | string | `"#8c959f"` / `"#656c76"` | Dashed outlines of external blocks, and separators. |
+| `grid` | string | `"#d0d7de"` / `"#3d444d"` | The time grid of waveforms. |
+| `value` | string | `"#0550ae"` / `"#79c0ff"` | The actuals of a port map diagram. |
+| `error` | string | `"#cf222e"` / `"#ff7b72"` | Signals crossing clock domains. |
+| `wave` | array of strings | 8 pastels | The fills of WaveDrom data: `=` and `2`, then `3` to `9`. Fewer colors repeat in order. |
+
+```toml
+[doc.theme]
+mode = "light"
+font = "'Source Sans 3', sans-serif"
+mono_font = "'JetBrains Mono', monospace"
+
+[doc.theme.light]
+accent = "#8250df"     # links, wires, initial state
+highlight = "#fbefff"  # block titles
+```
+
+#### `[doc.theme.dark]`
+
+The keys of `[doc.theme.light]`, for the dark theme. Its defaults are the second ones of the
+table above.
+
 ### `[doc.spec]`
 
 `vfl spec [path]` writes the design specification: an index of the units and of every
@@ -1046,6 +1100,17 @@ fsm = true
 port_types = true
 generics = true
 markdown = "svg"
+
+[doc.theme]
+mode = "auto"
+# font, mono_font = "..."   # unset: the system's sans-serif and monospace
+
+[doc.theme.light]
+# background, foreground, muted, border, surface, code, accent, highlight,
+# stroke, edge, dashed, grid, value, error = "..."; wave = [...]: see above
+
+[doc.theme.dark]
+# the same keys as [doc.theme.light]
 
 [generate]
 instance_label = "u_{entity}"

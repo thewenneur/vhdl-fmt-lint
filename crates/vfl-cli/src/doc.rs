@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::ValueEnum;
-use vfl_config::{DocConfig, DocFormat};
+use vfl_config::{DocConfig, DocFormat, ThemeMode};
 use vfl_doc::{Design, hierarchy, svg, text};
 use vfl_project::{Project, find_root};
 use vfl_syntax::identifier_key;
@@ -50,6 +50,8 @@ pub struct SchemaOptions {
     pub format: SchemaFormat,
     pub output: Option<PathBuf>,
     pub project: PathBuf,
+    /// Replaces `doc.theme.mode`.
+    pub theme: Option<ThemeMode>,
 }
 
 fn load(path: &Path) -> Result<(Project, Design)> {
@@ -69,11 +71,15 @@ pub fn doc(
     format: Option<DocFormat>,
     title: Option<String>,
     page_for: Option<&Path>,
+    theme: Option<ThemeMode>,
 ) -> Result<()> {
     let (project, mut design) = load(path)?;
     let mut config: DocConfig = project.config.doc.clone();
     if let Some(format) = format {
         config.format = format;
+    }
+    if let Some(mode) = theme {
+        config.theme.mode = mode;
     }
     if let Some(title) = title {
         design.title = title;
@@ -118,6 +124,7 @@ pub fn spec(
     format: Option<DocFormat>,
     title: Option<String>,
     page_for: Option<&Path>,
+    theme: Option<ThemeMode>,
 ) -> Result<bool> {
     if !path.exists() {
         bail!("{}: no such file or directory", path.display());
@@ -130,6 +137,9 @@ pub fn spec(
     }
     if title.is_some() {
         config.spec.title = title;
+    }
+    if let Some(mode) = theme {
+        config.theme.mode = mode;
     }
     let (design, items) =
         vfl_doc::load_spec(&project, &config).context("invalid pattern in doc.exclude")?;
@@ -233,7 +243,9 @@ pub fn schema(options: &SchemaOptions) -> Result<()> {
         };
         let source = std::fs::read_to_string(file).with_context(|| format!("reading {file}"))?;
         let svg = vfl_doc::wave::draw(&source).map_err(|e| anyhow::anyhow!("{file}: {e}"))?;
-        return emit(options, svg);
+        let root = find_root(&std::path::absolute(&options.project)?);
+        let config = vfl_config::load_for_dir(&root.dir)?;
+        return emit(options, &config.doc, svg);
     }
     let (project, design) = load(&options.project)?;
     let config = &project.config.doc;
@@ -388,10 +400,16 @@ pub fn schema(options: &SchemaOptions) -> Result<()> {
             }
         }
     };
-    emit(options, output)
+    emit(options, config, output)
 }
 
-fn emit(options: &SchemaOptions, output: String) -> Result<()> {
+/// Writes `output` in the configured theme.
+fn emit(options: &SchemaOptions, config: &DocConfig, output: String) -> Result<()> {
+    let mut theme = config.theme.clone();
+    if let Some(mode) = options.theme {
+        theme.mode = mode;
+    }
+    let output = vfl_doc::Theme::new(&theme).apply(&output).into_owned();
     match &options.output {
         Some(path) => {
             std::fs::write(path, output).with_context(|| format!("writing {}", path.display()))?
