@@ -55,6 +55,7 @@ pub(crate) struct ConfigFile {
     doc: DocConfig,
     generate: GenerateConfig,
     verilog: VerilogConfig,
+    lsp: LspConfig,
     extends: Option<String>,
     pub root: bool,
 }
@@ -69,6 +70,7 @@ impl Default for ConfigFile {
             doc,
             generate,
             verilog,
+            lsp,
         } = Config::default();
         ConfigFile {
             project,
@@ -77,6 +79,7 @@ impl Default for ConfigFile {
             doc,
             generate,
             verilog,
+            lsp,
             extends: None,
             root: false,
         }
