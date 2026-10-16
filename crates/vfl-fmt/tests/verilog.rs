@@ -400,3 +400,13 @@ fn a_range_in_a_file_mixing_line_endings() {
     let text = "//\n\n\r\n`t";
     assert_eq!(fmt(&fmt_line(text, 0)), fmt(text));
 }
+
+/// Found by the `format_verilog` fuzz target: `'1b` in a constraint lexes
+/// as `'`, `1` and `b`, and a space before the `b` made `'1` one token.
+#[test]
+fn a_number_stays_glued_to_the_name_after_it() {
+    let text = "module tb;\n  initial assert (p.randomize() with { d < 1'1b; });\nendmodule\n";
+    let out = fmt(text);
+    assert!(out.contains("1'1b"), "{out}");
+    assert_eq!(fmt(&out), out);
+}

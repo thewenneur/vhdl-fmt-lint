@@ -599,6 +599,22 @@ fn when_and_case_choice_alignment() {
     );
 }
 
+/// Found by the `format` fuzz target: a `-- vfl: off` just before an
+/// `end` kept as written moved one indentation further each time.
+#[test]
+fn off_before_an_end_kept_as_written_stays_put() {
+    let text = "architecture a of e is\nbegin\n  process (a) is\n  begin\n    if a = '1' then\n    -- vfl: off\n    end if;\n  end process;\nend;\n";
+    // `fmt_with` formats twice and checks nothing moved.
+    for indent in 2..=4 {
+        let config = config(&format!("indent = {indent}"));
+        fmt_with(text, &config);
+        fmt_with(
+            &text.replace("    -- vfl: off", "      -- vfl: off"),
+            &config,
+        );
+    }
+}
+
 #[test]
 fn verbatim_regions() {
     let text = "architecture a of e is begin\n-- vfl: off\nx<=y;\n-- vfl: on\nz<=w;\n-- VFL: skip\nkeep  <=  this;\nq<=r;\nend;";

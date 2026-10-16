@@ -426,13 +426,15 @@ fn process_all_check(ctx: &StyleContext, process: &SyntaxNode, out: &mut Vec<Fin
     if clocked {
         return;
     }
+    // A list cut short by a syntax error (`process (`) has no inside.
+    let written = &ctx.text[list.text_range()];
+    if written.len() < 2 || !written.starts_with('(') || !written.ends_with(')') {
+        return;
+    }
     let inner = TextRange::new(
         list.text_range().start() + TextSize::from(1),
         list.text_range().end() - TextSize::from(1),
     );
-    if !ctx.text[list.text_range()].ends_with(')') {
-        return;
-    }
     out.push(
         Finding::new(
             "style/process-all",

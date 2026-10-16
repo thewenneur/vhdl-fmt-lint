@@ -539,6 +539,10 @@ impl<'a> Checker<'a> {
 /// name at `range`.
 pub(crate) fn declaration_node(root: &SyntaxNode, range: TextRange) -> Option<SyntaxNode> {
     use SyntaxKind::*;
+    // A Verilog declaration has no VHDL syntax: its file's tree is empty.
+    if !root.text_range().contains_range(range) {
+        return None;
+    }
     let element = root.covering_element(range);
     let node = match element {
         rowan::NodeOrToken::Node(n) => n,

@@ -498,6 +498,16 @@ fn space_between(prev: &Elem<Verilog>, cur: &Elem<Verilog>, config: &FormatConfi
     if spaced_in_source(prev, cur) && would_join(prev, cur) {
         return true;
     }
+    // `'1b` lexes as `'`, `1` and `b`: a space after the `1` would make
+    // `'1` one token.
+    if matches!(prev.kind, INT_NUMBER | REAL_NUMBER)
+        && !spaced_in_source(prev, cur)
+        && cur
+            .text
+            .starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return false;
+    }
     // The arguments of a macro are kept as written.
     if cur.parent_kind() == Some(MACRO_ARGS) {
         return cur.kind != LPAREN && spaced_in_source(prev, cur);

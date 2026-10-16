@@ -232,6 +232,7 @@ pub(crate) fn lay_out<L: Lang>(
     for line in &mut lines {
         line.verbatim = protected[line.start..line.end].iter().any(|&p| p);
     }
+    layout::indent_before_verbatim(&elems, &an, &mut lines, &line_of, config);
     let (pads, runs) = align::align(&elems, &an, &mut lines, &line_of, &config.align);
     let (raw, positions) = layout::render(&elems, &an, &lines, &pads, config);
     let mut out = String::new();

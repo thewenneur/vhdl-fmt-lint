@@ -466,3 +466,34 @@ fn range_and_dead_code_rules_are_on_by_default() {
         assert!(stdout.contains(expected), "{expected}\n{stdout}");
     }
 }
+
+#[test]
+fn process_all_skips_a_list_cut_short() {
+    // Found by fuzzing: the list stops at `(` when an expression is missing.
+    let config = "[project]\nstandard = \"2008\"\n[lint.rules]\n\"style/process-all\" = \"warn\"\n";
+    let source = "entity e is end;\narchitecture a of e is\n  signal x, y : bit;\nbegin\n  \
+                  process(==x)\n  begin\n    y <= x;\n  end process;\nend;\n";
+    let dir = project(&[("vfl.toml", config), ("e.vhd", source)]);
+    let (_, stdout, stderr) = vfl(dir.path(), &["lint", "--output-format", "concise"]);
+    assert!(!stderr.contains("panicked"), "{stderr}");
+    assert!(!stdout.contains("process-all"), "{stdout}");
+}
+
+#[test]
+fn a_verilog_parameter_in_a_vhdl_expression() {
+    // Found by fuzzing: the VHDL syntax of a Verilog declaration was looked
+    // up in the Verilog file's empty VHDL tree.
+    let dir = project(&[
+        ("vfl.toml", "[verilog]\nmode = \"full\"\n"),
+        (
+            "counter.sv",
+            "module counter (input clk);\n  parameter WIDTH = 4;\nendmodule\n",
+        ),
+        (
+            "rtl.vhd",
+            "architecture rtl of counter is\n  constant MAX : natural := 2 ** WIDTH - 1;\nbegin\nend;\n",
+        ),
+    ]);
+    let (_, _, stderr) = vfl(dir.path(), &["lint"]);
+    assert!(!stderr.contains("panicked"), "{stderr}");
+}

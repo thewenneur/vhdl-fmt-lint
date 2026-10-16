@@ -44,6 +44,16 @@
   it merges with others, and lines are lined up so that they run straight. The DOT export
   merges them too (`concentrate`).
 
+### Fixed
+
+- Bugs found by a 12-hour fuzzing campaign (`.github/workflows/fuzz-campaign.yml`):
+  `style/process-all` no longer panics on a sensitivity list cut short by a syntax error
+  (`process(==x)`); the Verilog formatter keeps `1'1b` as written instead of turning
+  `'1` into a literal; a `-- vfl: off` just before an `end` kept as written no longer
+  moves at each format; and a Verilog parameter used in a VHDL expression
+  (`2 ** WIDTH - 1` in an architecture of a Verilog module) no longer crashes the linter
+  and the language server.
+
 ## [0.8.0] - 2026-10-16
 
 New design checks (multiple drivers, combinational loops, incomplete and duplicate
