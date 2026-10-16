@@ -200,8 +200,9 @@ pub fn run(connection: &Connection) -> Result<()> {
         .unwrap_or(false);
     // Without file watchers of the editor's, the server watches itself,
     // from before the load: what changes while it lasts is read after.
+    let root = world::uri_form(&root);
     let _watcher =
-        (!watch).then(|| watch::spawn(world::project_root(&root).dir, defaults.clone(), events));
+        (!watch).then(|| watch::spawn(vfl_project::find_root(&root).dir, defaults.clone(), events));
     let world = if progress {
         load_with_progress(connection, &root, defaults)?
     } else {
@@ -769,7 +770,7 @@ mod tests {
     #[test]
     fn invalid_config_is_shown_on_the_file_while_it_lasts() {
         let dir = tempfile::tempdir().unwrap();
-        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let root = world::tests::real_dir(dir.path());
         let config = root.join("vfl.toml");
         let broken = "[format]\nindnet = 2\n";
         std::fs::write(&config, broken).unwrap();
@@ -808,7 +809,7 @@ mod tests {
     #[test]
     fn a_burst_of_new_files_is_read_at_once() {
         let dir = tempfile::tempdir().unwrap();
-        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let root = world::tests::real_dir(dir.path());
         std::fs::create_dir(root.join("rtl")).unwrap();
         std::fs::write(root.join("rtl/a.vhd"), "entity a is\nend entity;\n").unwrap();
         let (server, client) = Connection::memory();
@@ -876,7 +877,7 @@ mod tests {
     #[test]
     fn loading_shows_progress() {
         let dir = tempfile::tempdir().unwrap();
-        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let root = world::tests::real_dir(dir.path());
         for i in 0..5 {
             std::fs::write(
                 root.join(format!("e{i}.vhd")),
@@ -931,7 +932,7 @@ mod tests {
     #[test]
     fn without_client_watchers_the_server_watches() {
         let dir = tempfile::tempdir().unwrap();
-        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let root = world::tests::real_dir(dir.path());
         std::fs::write(root.join("a.vhd"), "entity a is\nend entity;\nfoo\n").unwrap();
         let client = client_of_run(json!({}), &root);
         // The first diagnostics: the project is loaded, and watched.

@@ -58,15 +58,14 @@ pub struct World {
     defaults: Config,
 }
 
-/// The project root of `path`, in the form the editor's file URIs give
-/// back, which every path the server compares with it has: on Windows,
-/// `C:\dir` rather than the `\\?\C:\dir` of a canonical path.
-pub fn project_root(path: &Path) -> ProjectRoot {
-    let path = lsp_types::Url::from_file_path(path)
+/// `path` in the form the editor's file URIs give back, which every path
+/// the server compares with the project root has: on Windows, `C:\dir`
+/// rather than the `\\?\C:\dir` of a canonical path.
+pub fn uri_form(path: &Path) -> PathBuf {
+    lsp_types::Url::from_file_path(path)
         .ok()
         .and_then(|uri| uri.to_file_path().ok())
-        .unwrap_or_else(|| path.to_owned());
-    find_root(&path)
+        .unwrap_or_else(|| path.to_owned())
 }
 
 impl World {
@@ -87,7 +86,7 @@ impl World {
         defaults: Config,
         progress: &(dyn Fn(Progress) + Sync),
     ) -> World {
-        let root = project_root(root);
+        let root = find_root(root);
         let mut config_file_errors = Vec::new();
         let (project, load_error) = load(&root, &defaults, &mut config_file_errors, progress);
         progress(Progress::Analyzing {
@@ -793,17 +792,13 @@ pub fn offset(text: &str, index: &LineIndex, position: lsp_types::Position) -> T
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// `dir` as the server sees it: canonical, in the form a file URI gives
-    /// (no `\\?\` prefix on Windows), like [`project_root`].
-    fn real_dir(dir: &Path) -> PathBuf {
-        let dir = std::fs::canonicalize(dir).unwrap();
-        lsp_types::Url::from_file_path(&dir)
-            .unwrap()
-            .to_file_path()
-            .unwrap()
+    /// (no `\\?\` prefix on Windows).
+    pub(crate) fn real_dir(dir: &Path) -> PathBuf {
+        uri_form(&std::fs::canonicalize(dir).unwrap())
     }
 
     #[test]
