@@ -88,6 +88,28 @@ shared between the old and the new analysis instead of being built again. The sl
 edits change a package that most of the project uses (UVVM's `types_pkg`), which
 re-analyzes everything that depends on it.
 
+Each edit is sent as an editor sends it, an incremental `didChange`; the example also
+prints how long applying it takes (mostly parsing the file again: 0.1 to 0.7 ms) and how
+long working out the diagnostics to send after the refresh takes. Only the files whose
+findings or text changed are converted again: 0.01 / 0.05 / 0.08 / 0.09 ms (neorv32,
+OSVVM, UVVM, VUnit; median) instead of 0.03 / 0.2 / 0.24 / 0.26 ms when every file's
+diagnostics were converted and compared after each edit.
+
+The analysis runs on a thread of its own: meanwhile the server reads edits, formats and
+takes cancellations. `scripts/bench_busy.py` edits UVVM's `types_pkg` (about 300 ms of
+re-analysis) and, while the server analyzes, formats another file, hovers in another
+file, and sends a hover it cancels 5 ms later; then hovers in the edited file. Median of
+8 rounds:
+
+| | Formatting | Hover | Cancelled hover | Hover after |
+|---|---:|---:|---:|---:|
+| Analysis on its own thread | 14 ms | 319 ms | 5.6 ms | 302 ms |
+| Before, on the server's | 329 ms | 314 ms | 326 ms | 0.4 ms |
+
+A hover still waits for the analysis of the latest edits ("hover after" pays for what
+formatting no longer waits for). A request that already runs is not stopped by its
+cancellation; one waiting for the analysis is answered at once.
+
 ### Memory
 
 `scripts/bench_memory.py` starts `vfl lsp` on a project as an editor does: it opens the
