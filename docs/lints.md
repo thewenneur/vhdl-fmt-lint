@@ -9,6 +9,7 @@ table of `vfl.toml`; see [configuration.md](configuration.md#lint).
 - [Summary](#summary)
 - [`syntax/*`](#syntax): parse errors
 - [`sema/*`](#sema): semantic checks across the whole project
+- [`project/*`](#project): the library sources of the project
 - [`verilog/*`](#verilog): checks of Verilog and SystemVerilog only
 - [`style/*`](#style): checks on the text and syntax of one file
 - [`vendor/*`](#vendor): checks of FPGA vendor files (Quartus `.qsf`/`.qip`, `.sdc`, Vivado `.xdc`, `.tcl`)
@@ -62,6 +63,7 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`sema/unresolved-name`](#semaunresolved-name) | error | error | |
 | [`sema/unresolved-unit`](#semaunresolved-unit) | error | error | |
 | [`sema/unknown-library`](#semaunknown-library) | info | info | |
+| [`project/library-conflict`](#projectlibrary-conflict) | info | warn | |
 | [`sema/duplicate-declaration`](#semaduplicate-declaration) | error | error | |
 | [`sema/duplicate-unit`](#semaduplicate-unit) | warn | warn | |
 | [`sema/unassociated-port`](#semaunassociated-port) | error | error | |
@@ -902,6 +904,25 @@ needs a reset instead. Off in `recommended`, as FPGA designs often rely on initi
 A port of an entity has the type `real`, or an array of `real` (`real_vector`). Synthesis
 does not support floating-point ports. Generics of type `real` are fine. `off` in
 `recommended`, `warn` in `strict`.
+
+## `project`
+
+### `project/library-conflict`
+
+The library sources of the project disagree about the library of a file: two tool files
+(a VUnit `run.py`, a Vivado or Quartus project...), `vhdl_ls.toml` or the code itself (a
+`lib.unit` reference that can only mean this file) put it in different libraries. vfl
+picks the opinion that leaves the fewest unresolved library references around the file,
+or all of them together when that is what resolves them, and reports here what each
+source said and what it chose. `[project.libraries]` in `vfl.toml` is never questioned:
+list the file there to settle it. See
+[Merging library sources](design.md#merging-library-sources).
+
+```text
+rtl/pkg.vhd:1:1: info[project/library-conflict] The library sources disagree about this
+file: old.tcl puts it in `stale`; build.tcl and the code put it in `good`. vfl uses `good`:
+it leaves 0 unresolved library references around the file, the other choices at least 3.
+```
 
 ## `verilog`
 

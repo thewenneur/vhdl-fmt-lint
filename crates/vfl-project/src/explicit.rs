@@ -2,7 +2,7 @@
 //! library lists of other tools found in the tree (rust_hdl's
 //! `vhdl_ls.toml`), so that migrating needs no configuration.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use globset::{GlobSet, GlobSetBuilder};
@@ -15,7 +15,13 @@ pub(crate) const VHDL_LS_FILES: [&str; 2] = ["vhdl_ls.toml", ".vhdl_ls.toml"];
 /// One source of explicit assignments: library name to glob set.
 pub struct LibraryGlobs {
     source: String,
-    libraries: Vec<(String, GlobSet)>,
+    /// Library names, as identifier keys.
+    names: Vec<String>,
+    /// Every pattern, relative to the root, with the index of its library.
+    patterns: Vec<(usize, String)>,
+    /// The patterns, in that order, matched at once.
+    set: GlobSet,
+    literal_separator: bool,
 }
 
 impl LibraryGlobs {
@@ -47,46 +53,172 @@ impl LibraryGlobs {
         libraries: &BTreeMap<String, Vec<String>>,
         literal_separator: bool,
     ) -> Result<Self, globset::Error> {
-        let mut out = Vec::new();
+        let mut names = Vec::new();
+        let mut all = Vec::new();
         for (library, patterns) in libraries {
-            let mut set = GlobSetBuilder::new();
+            names.push(vfl_syntax::identifier_key(library));
             for pattern in patterns {
-                set.add(
-                    globset::GlobBuilder::new(&relative_pattern(base, root, pattern))
-                        .literal_separator(literal_separator)
-                        .build()?,
-                );
+                all.push((names.len() - 1, relative_pattern(base, root, pattern)));
             }
-            out.push((vfl_syntax::identifier_key(library), set.build()?));
         }
         Ok(LibraryGlobs {
             source,
-            libraries: out,
+            names,
+            set: glob_set(all.iter().map(|(_, p)| p), literal_separator)?,
+            patterns: all,
+            literal_separator,
         })
     }
 
-    /// The libraries `path` (relative to the root, `/`-separated) is listed in.
-    /// The file the lists come from.
-    pub fn source(&self) -> &str {
-        &self.source
+    /// Checks the patterns against the sources of the project (`files`,
+    /// relative to `root`). A pattern that matches none, as when the list
+    /// was written for another directory or the tree moved since, is
+    /// read without its leading directories when that makes it match
+    /// (`old/rtl/*.vhd` as `rtl/*.vhd`), if `rebase`. Returns what is
+    /// worth telling the user.
+    pub fn check(&mut self, root: &Path, files: &[String], rebase: bool) -> Vec<String> {
+        let known: HashSet<&str> = files.iter().map(String::as_str).collect();
+        let mut matched = vec![false; self.patterns.len()];
+        let mut hits = Vec::new();
+        for file in files {
+            self.set.matches_into(file.as_str(), &mut hits);
+            for &i in &hits {
+                matched[i] = true;
+            }
+        }
+        let mut rebased: Vec<(String, String)> = Vec::new();
+        let mut unmatched: Vec<String> = Vec::new();
+        let literal_separator = self.literal_separator;
+        for ((_, pattern), matched) in self.patterns.iter_mut().zip(matched) {
+            if matched {
+                continue;
+            }
+            let literal = !is_glob(pattern);
+            // A file of the tree the project does not hold (ignored, or of
+            // another language) is not missing.
+            if literal && root.join(&*pattern).exists() {
+                continue;
+            }
+            let found = if rebase {
+                rerooted(pattern, |candidate| {
+                    if literal {
+                        known.contains(candidate)
+                    } else {
+                        // Only files under its plain leading directories can match.
+                        let fixed = &candidate[..candidate.find(is_meta).unwrap_or(0)];
+                        let prefix = &fixed[..fixed.rfind('/').map_or(0, |i| i + 1)];
+                        let mut under = files.iter().filter(|f| f.starts_with(prefix)).peekable();
+                        under.peek().is_some()
+                            && globset::GlobBuilder::new(candidate)
+                                .literal_separator(literal_separator)
+                                .build()
+                                .map(|g| g.compile_matcher())
+                                .is_ok_and(|m| under.any(|f| m.is_match(f.as_str())))
+                    }
+                })
+            } else {
+                None
+            };
+            match found {
+                Some(new) => {
+                    rebased.push((pattern.clone(), new.clone()));
+                    *pattern = new;
+                }
+                None => unmatched.push(pattern.clone()),
+            }
+        }
+        if !rebased.is_empty()
+            && let Ok(set) = glob_set(self.patterns.iter().map(|(_, p)| p), literal_separator)
+        {
+            self.set = set;
+        }
+        let mut notes = Vec::new();
+        if let Some((old, new)) = rebased.first() {
+            notes.push(format!(
+                "{}: {} no source as written; they were read without their leading \
+                 directories (`{old}` as `{new}`{}).",
+                self.source,
+                entries(rebased.len()),
+                if rebased.len() > 1 { ", ..." } else { "" },
+            ));
+        }
+        unmatched.sort();
+        unmatched.dedup();
+        if let Some(first) = unmatched.first() {
+            notes.push(format!(
+                "{}: {} no source ({first}{}); its other entries are used.",
+                self.source,
+                entries(unmatched.len()),
+                if unmatched.len() > 1 { ", ..." } else { "" },
+            ));
+        }
+        notes
     }
 
+    /// The libraries `path` (relative to the root, `/`-separated) is listed in.
     pub fn assign(&self, relative: &str) -> Option<Vec<(String, Reason)>> {
-        let libs: Vec<(String, Reason)> = self
-            .libraries
-            .iter()
-            .filter(|(_, set)| set.is_match(relative))
-            .map(|(lib, _)| {
-                (
-                    lib.clone(),
-                    Reason::Explicit {
-                        source: self.source.clone(),
-                    },
-                )
-            })
+        let mut hits: Vec<usize> = self
+            .set
+            .matches(relative)
+            .into_iter()
+            .map(|i| self.patterns[i].0)
             .collect();
-        (!libs.is_empty()).then_some(libs)
+        if hits.is_empty() {
+            return None;
+        }
+        hits.sort_unstable();
+        hits.dedup();
+        let reason = Reason::Explicit {
+            source: self.source.clone(),
+        };
+        Some(
+            hits.into_iter()
+                .map(|l| (self.names[l].clone(), reason.clone()))
+                .collect(),
+        )
     }
+}
+
+fn entries(n: usize) -> String {
+    if n == 1 {
+        "1 entry matches".to_owned()
+    } else {
+        format!("{n} entries match")
+    }
+}
+
+fn glob_set<'a>(
+    patterns: impl IntoIterator<Item = &'a String>,
+    literal_separator: bool,
+) -> Result<GlobSet, globset::Error> {
+    let mut set = GlobSetBuilder::new();
+    for pattern in patterns {
+        set.add(
+            globset::GlobBuilder::new(pattern)
+                .literal_separator(literal_separator)
+                .build()?,
+        );
+    }
+    set.build()
+}
+
+fn is_meta(c: char) -> bool {
+    matches!(c, '*' | '?' | '[' | '{')
+}
+
+fn is_glob(pattern: &str) -> bool {
+    pattern.contains(is_meta)
+}
+
+/// `pattern` without its first directories, as few as make it match
+/// (`matches`). What is left must still start with a plain directory, so
+/// that it cannot match everywhere.
+fn rerooted(pattern: &str, matches: impl Fn(&str) -> bool) -> Option<String> {
+    let segments: Vec<&str> = pattern.split('/').collect();
+    (1..segments.len().saturating_sub(1))
+        .filter(|&k| !is_glob(segments[k]) && segments[k] != "..")
+        .map(|k| segments[k..].join("/"))
+        .find(|candidate| matches(candidate))
 }
 
 /// Turns a pattern written relative to `base` into one relative to `root`.

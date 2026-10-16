@@ -304,7 +304,8 @@ impl<'de> Deserialize<'de> for FileSize {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum VhdlLsMode {
-    /// Only for the files library inference places nowhere.
+    /// Merged file by file with tool files and the code, ranking last on
+    /// a tie.
     #[default]
     Fallback,
     /// Over inference, as `[project.libraries]` entries are.

@@ -63,6 +63,7 @@ fn settings<'a>(
             config,
             verilog,
             root: None,
+            library_conflict: None,
         })
         .collect()
 }

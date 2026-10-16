@@ -461,6 +461,10 @@ impl World {
         // not linted.
         let vhdl = self.project.files.len();
         let outlines = &self.outlines;
+        // Usually none: decided when the library lists are read.
+        let conflicts: FxHashMap<&Path, String> = (self.project.library_conflicts.iter())
+            .map(|c| (c.path.as_path(), c.message()))
+            .collect();
         let files: Vec<LintFile> = (self.project.files.iter())
             .map(|file| (file.parse.errors(), None))
             .chain(
@@ -480,6 +484,7 @@ impl World {
                 syntax_errors: syntax_errors.to_vec(),
                 config: Arc::clone(config),
                 verilog: verilog.cloned(),
+                library_conflict: conflicts.get(paths[i].as_path()).cloned(),
             })
             .collect();
         let too_large: Vec<vfl_lint::Diagnostic> = (paths[..vhdl].iter().enumerate())
@@ -656,6 +661,7 @@ struct LintFile {
     syntax_errors: Vec<vfl_syntax::SyntaxError>,
     config: Arc<Config>,
     verilog: Option<vfl_verilog_syntax::Parse>,
+    library_conflict: Option<String>,
 }
 
 /// The result of a [`Refresh`].
@@ -686,6 +692,7 @@ impl Refresh {
                 config: &f.config,
                 verilog: f.verilog.as_ref(),
                 root: Some(&root),
+                library_conflict: f.library_conflict.as_deref(),
             })
             .collect();
         let result = vfl_lint::lint_cached(&analysis, &settings, &mut cache);
@@ -830,6 +837,7 @@ fn empty(root: &ProjectRoot, config: Config) -> Project {
         verilog_libraries: Vec::new(),
         unreadable: Vec::new(),
         notes: Vec::new(),
+        library_conflicts: Vec::new(),
         tool_files: Vec::new(),
         paths: Default::default(),
     }
@@ -969,6 +977,38 @@ pub(crate) mod tests {
         );
         world.reread_all(&new);
         assert_eq!(world.project.files.len(), 3);
+    }
+
+    #[test]
+    fn library_conflicts_are_shown_on_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = real_dir(dir.path());
+        std::fs::create_dir(root.join(".git")).unwrap();
+        std::fs::create_dir(root.join("rtl")).unwrap();
+        std::fs::write(root.join("rtl/pkg.vhd"), "package pkg is end;\n").unwrap();
+        std::fs::write(
+            root.join("tb.vhd"),
+            "library good; use good.pkg.all;\nentity tb is end;\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("a_old.tcl"),
+            "read_vhdl -library stale rtl/pkg.vhd\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("build.tcl"),
+            "read_vhdl -library good rtl/pkg.vhd\n",
+        )
+        .unwrap();
+        let world = World::new(&root);
+        let pkg = world.file_id(&root.join("rtl/pkg.vhd")).unwrap();
+        let found: Vec<&vfl_lint::Diagnostic> =
+            world.lint.iter().filter(|d| d.file == pkg).collect();
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].rule, vfl_lint::LIBRARY_CONFLICT);
+        assert_eq!(found[0].level, vfl_config::Level::Info);
+        assert!(found[0].message.contains("vfl uses `good`"));
     }
 
     #[test]

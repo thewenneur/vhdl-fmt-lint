@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::summary::FileSummary;
 
@@ -63,6 +63,18 @@ pub fn infer_libraries(
     explicit: &[Option<Vec<(String, Reason)>>],
     fallback: &[Option<Vec<(String, Reason)>>],
 ) -> Inference {
+    infer_in(paths, &Dirs::new(paths), summaries, explicit, fallback, &[])
+}
+
+/// [`infer_libraries`], with the files' directories worked out.
+pub(crate) fn infer_in(
+    paths: &[PathBuf],
+    dirs: &Dirs,
+    summaries: &[FileSummary],
+    explicit: &[Option<Vec<(String, Reason)>>],
+    fallback: &[Option<Vec<(String, Reason)>>],
+    seeds: &[Option<Vec<(String, Reason)>>],
+) -> Inference {
     let n = paths.len();
     let mut libs: Vec<Vec<(String, Reason)>> = explicit
         .iter()
@@ -72,6 +84,14 @@ pub fn infer_libraries(
     let mut fixed: Vec<bool> = (0..n)
         .map(|i| explicit.get(i).is_some_and(Option::is_some))
         .collect();
+    // Seeded files start in those libraries and may gain more.
+    for (i, seed) in seeds.iter().enumerate() {
+        if let Some(seed) = seed
+            && !fixed[i]
+        {
+            libs[i] = seed.clone();
+        }
+    }
     let mut notes = Vec::new();
 
     // Primary unit name -> files declaring it.
@@ -87,7 +107,7 @@ pub fn infer_libraries(
 
     let has = |libs: &[(String, Reason)], lib: &str| libs.iter().any(|(l, _)| l == lib);
 
-    let closest = |from: usize, candidates: &[usize]| closest(paths, from, candidates);
+    let closest = |from: usize, candidates: &[usize]| dirs.closest(from, candidates);
 
     // 1. Named libraries: `lib.unit` puts unit's file in lib.
     for (file, summary) in summaries.iter().enumerate() {
@@ -119,7 +139,10 @@ pub fn infer_libraries(
     }
 
     // 2. Propagate along `work` references until nothing changes.
-    propagate(paths, summaries, &declared, &fixed, &mut libs);
+    let mut memo = Memo::new(summaries);
+    propagate(
+        paths, dirs, &mut memo, summaries, &declared, &fixed, &mut libs,
+    );
 
     // 3. Files the code placed nowhere take their fallback libraries
     // (`vhdl_ls.toml`), which then propagate in turn.
@@ -134,7 +157,11 @@ pub fn infer_libraries(
         }
     }
     if fell_back {
-        propagate(paths, summaries, &declared, &fixed, &mut libs);
+        // What is open changed: forget which files were.
+        let mut memo = Memo::new(summaries);
+        propagate(
+            paths, dirs, &mut memo, summaries, &declared, &fixed, &mut libs,
+        );
     }
 
     for file_libs in &mut libs {
@@ -153,6 +180,8 @@ pub fn infer_libraries(
 /// placed joins those of the units it uses.
 fn propagate(
     paths: &[PathBuf],
+    dirs: &Dirs,
+    memo: &mut Memo,
     summaries: &[FileSummary],
     declared: &HashMap<&str, Vec<usize>>,
     fixed: &[bool],
@@ -160,11 +189,13 @@ fn propagate(
 ) {
     let n = paths.len();
     let has = |libs: &[(String, Reason)], lib: &str| libs.iter().any(|(l, _)| l == lib);
-    let closest = |from: usize, candidates: &[usize]| closest(paths, from, candidates);
     loop {
         let mut changed = false;
         for file in 0..n {
-            for r in summaries[file].refs.iter().filter(|r| r.library == "work") {
+            for (k, r) in summaries[file].refs.iter().enumerate() {
+                if r.library != "work" {
+                    continue;
+                }
                 let Some(candidates) = declared.get(r.unit.as_str()) else {
                     continue;
                 };
@@ -179,12 +210,12 @@ fn propagate(
                     if candidates.iter().any(|&c| has(&libs[c], lib)) {
                         continue;
                     }
-                    let open: Vec<usize> =
-                        candidates.iter().copied().filter(|&c| !fixed[c]).collect();
-                    if open.is_empty() {
-                        continue;
-                    }
-                    for c in closest(file, &open) {
+                    let picked = memo.forward[file][k].get_or_insert_with(|| {
+                        let open: Vec<usize> =
+                            candidates.iter().copied().filter(|&c| !fixed[c]).collect();
+                        dirs.closest(file, &open)
+                    });
+                    for &c in picked.iter() {
                         libs[c].push((
                             lib.clone(),
                             Reason::Work {
@@ -205,19 +236,19 @@ fn propagate(
             }
             let mut joined: BTreeSet<String> = BTreeSet::new();
             let mut via = String::new();
-            for r in summaries[file]
-                .refs
-                .iter()
-                .filter(|r| r.library == "work" && !r.implicit)
-            {
+            for (k, r) in summaries[file].refs.iter().enumerate() {
+                if r.library != "work" || r.implicit {
+                    continue;
+                }
                 let Some(candidates) = declared.get(r.unit.as_str()) else {
                     continue;
                 };
                 if candidates.contains(&file) {
                     continue;
                 }
-                let picked = closest(file, candidates);
-                for c in picked {
+                let picked =
+                    memo.backward[file][k].get_or_insert_with(|| dirs.closest(file, candidates));
+                for &c in picked.iter() {
                     for (lib, _) in &libs[c] {
                         if joined.insert(lib.clone()) && via.is_empty() {
                             via = r.unit.clone();
@@ -293,23 +324,69 @@ pub fn library_conflicts(summaries: &[FileSummary], libs: &[Vec<(String, Reason)
     missing
 }
 
-/// Picks the files a reference from `from` means among the `candidates`
-/// declaring the unit: those closest to `from` in the directory tree.
-fn closest(paths: &[PathBuf], from: usize, candidates: &[usize]) -> Vec<usize> {
-    let depth = |c: usize| common_depth(&paths[from], &paths[c]);
-    let best = candidates.iter().map(|&c| depth(c)).max().unwrap_or(0);
-    candidates
-        .iter()
-        .copied()
-        .filter(|&c| depth(c) == best)
-        .collect()
+/// Which files each `work` reference means, worked out once per
+/// propagation: by file, by index in its references.
+struct Memo {
+    /// Among the declaring files inference may still place.
+    forward: Vec<Vec<Option<Vec<usize>>>>,
+    /// Among all the declaring files.
+    backward: Vec<Vec<Option<Vec<usize>>>>,
 }
 
-/// How many leading path components two files' directories share.
-fn common_depth(a: &Path, b: &Path) -> usize {
-    let a = a.parent().unwrap_or(a).components();
-    let b = b.parent().unwrap_or(b).components();
-    a.zip(b).take_while(|(x, y)| x == y).count()
+impl Memo {
+    fn new(summaries: &[FileSummary]) -> Self {
+        let empty = || summaries.iter().map(|s| vec![None; s.refs.len()]).collect();
+        Memo {
+            forward: empty(),
+            backward: empty(),
+        }
+    }
+}
+
+/// Each file's directory, as numbers standing for its components, to
+/// compare directories without parsing paths again.
+pub(crate) struct Dirs(Vec<Vec<u32>>);
+
+impl Dirs {
+    pub(crate) fn new(paths: &[PathBuf]) -> Self {
+        let mut ids: HashMap<&std::ffi::OsStr, u32> = HashMap::new();
+        Dirs(
+            paths
+                .iter()
+                .map(|path| {
+                    path.parent()
+                        .unwrap_or(path)
+                        .components()
+                        .map(|c| {
+                            let next = ids.len() as u32;
+                            *ids.entry(c.as_os_str()).or_insert(next)
+                        })
+                        .collect()
+                })
+                .collect(),
+        )
+    }
+
+    /// How many leading components two files' directories share.
+    fn common_depth(&self, a: usize, b: usize) -> usize {
+        (self.0[a].iter())
+            .zip(&self.0[b])
+            .take_while(|(x, y)| x == y)
+            .count()
+    }
+
+    /// Picks the files a reference from `from` means among the
+    /// `candidates` declaring the unit: those closest to `from` in the
+    /// directory tree.
+    pub(crate) fn closest(&self, from: usize, candidates: &[usize]) -> Vec<usize> {
+        let depth = |c: usize| self.common_depth(from, c);
+        let best = candidates.iter().map(|&c| depth(c)).max().unwrap_or(0);
+        candidates
+            .iter()
+            .copied()
+            .filter(|&c| depth(c) == best)
+            .collect()
+    }
 }
 
 fn ambiguity(paths: &[PathBuf], library: &str, unit: &str, files: &[usize]) -> String {

@@ -124,36 +124,38 @@ language server applies its `max-file-size` to the files under it.
 | `extensions` | array of strings | `["vhd", "vhdl"]` | File extensions, without the dot, of the files treated as VHDL sources. |
 | `exclude` | array of strings | `[]` | Gitignore-style globs, relative to the project root, of files and directories to skip. `.gitignore` files are honoured as well. |
 | `libraries` | table | `{}` | Explicit library assignments; see below. |
-| `vhdl-ls` | string | `"fallback"` | How rust_hdl's `vhdl_ls.toml` places files in libraries: `"fallback"` (only the files inference places nowhere, or over inference when that leaves fewer library conflicts), `"prefer"` (over inference and tool files, below `[project.libraries]`) or `"off"` (not read). See below. |
+| `vhdl-ls` | string | `"fallback"` | How rust_hdl's `vhdl_ls.toml` places files in libraries: `"fallback"` (merged file by file with tool files and the code, ranking last on a tie), `"prefer"` (taken as is, like `[project.libraries]`) or `"off"` (not read). See below. |
 | `max-file-size` | integer or string | `"2MB"` | The language server's limit for generated files such as netlists: in a VHDL file larger than this, only the entities and packages are analyzed (so other files can still instantiate and use them), and the file is not linted; an information diagnostic at its start says so. Formatting is not affected. A number of bytes, or a string with a `KB` or `MB` unit (1024 bytes, 1024 KB); `0` for no limit. `vfl lint` is not limited. |
 | `vendor-stubs` | boolean | `true` | Load vfl's bundled declarations of vendor primitive libraries (`unisim`, `xpm`, `altera_mf`, `ecp5u`, `machxo2`, `sb_ice40_components_syn`) for a library the design uses and the project does not hold. See [Vendor libraries](#vendor-libraries). |
 
 ### `[project.libraries]`
 
-Normally not needed: vfl puts each file in a library by itself. In order of priority:
+Normally not needed: vfl puts each file in a library by itself, from these sources:
 
-1. `[project.libraries]` in `vfl.toml`.
+1. `[project.libraries]` in `vfl.toml`, which always wins.
 2. Library lists of other tools found in the tree, read without running them: VUnit
    `run.py`, FuseSoC `.core`, Edalize EDAM (`*.eda.yml`, `edam.json`), Vivado `.xpr` and Tcl
    `read_vhdl -library` scripts, Quartus `.qsf` / `.qip`, `.f` file lists (`-makelib` and
    `-work` libraries, nested `-f`/`-F`), hdlmake `Manifest.py` (`library` and `files`) and
    Questa/ModelSim `.mpf` projects (`compile_to`). See
    [design.md](design.md#project-autodiscovery) for what each one is read for.
-3. Inference from the code: a unit referenced as `lib.unit` puts the file that declares it
+3. rust_hdl's `vhdl_ls.toml` (or `.vhdl_ls.toml`) in the project root, with `$VAR`
+   expansion.
+4. Inference from the code: a unit referenced as `lib.unit` puts the file that declares it
    in `lib`, and `work.unit` references keep files together.
-4. rust_hdl's `vhdl_ls.toml` (or `.vhdl_ls.toml`) in the project root, with `$VAR`
-   expansion, for the files inference placed nowhere. The libraries it gives them spread
-   along `work.unit` references in turn.
 5. Files nothing places stay in `work`.
 
-A `vhdl_ls.toml` written by hand often lags behind the code, so by default it only fills
-the gaps. When the result has library conflicts (a `lib.unit` or `work.unit` reference to
-a unit of the project that is not in that library, or a unit declared twice in one
-library), vfl also tries ranking `vhdl_ls.toml` above tool files and inference, and keeps
-that if it leaves fewer conflicts; `vfl project` then says so. The language server makes
-this choice when it loads the project or a library list changes, not on every edit. This is what happens with
-UVVM, whose VIPs each declare packages of the same names. Set `vhdl-ls = "prefer"` to
-always rank it there, as earlier versions did, or `vhdl-ls = "off"` to ignore it.
+Apart from `vfl.toml`, no source is taken whole. Each file takes what its sources agree on;
+where they disagree (two tool files, a stale `vhdl_ls.toml`, a list against the code), vfl
+picks per file the choice that leaves the fewest unresolved library references, and
+reports it as [`project/library-conflict`](lints.md#projectlibrary-conflict). Entries that
+match no file, as in a list written for another directory, are read without their leading
+directories when that makes them match. A `vhdl_ls.toml` written by hand often lags behind
+the code, so on a tie it ranks below the code. The choice is made when the project is
+loaded or a library list changes, not on every edit. See
+[Merging library sources](design.md#merging-library-sources) for the algorithm. Set
+`vhdl-ls = "prefer"` to take `vhdl_ls.toml` as is, like `[project.libraries]`, or
+`vhdl-ls = "off"` to ignore it.
 
 `vfl project` shows the library of each file and why it was chosen. Add an entry here only
 when that guess is wrong. Each key is a library name and its value a list of globs,

@@ -59,7 +59,7 @@
           }
         },
         "vhdl-ls": {
-          "description": "How rust_hdl's `vhdl_ls.toml` places files in libraries: `\"fallback\"` (only the files inference places nowhere, or over inference when that leaves fewer library conflicts), `\"prefer\"` (over inference and tool files, below `[project.libraries]`) or `\"off\"` (not read). See below.",
+          "description": "How rust_hdl's `vhdl_ls.toml` places files in libraries: `\"fallback\"` (merged file by file with tool files and the code, ranking last on a tie), `\"prefer\"` (taken as is, like `[project.libraries]`) or `\"off\"` (not read). See below.",
           "enum": [
             "fallback",
             "prefer",
@@ -698,6 +698,34 @@
             },
             "sema/unknown-library": {
               "description": "A library is not part of the project, so names from it are not checked.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "project/library-conflict": {
+              "description": "The library sources of the project (vfl.toml aside) disagree about a file's library.",
               "anyOf": [
                 {
                   "enum": [

@@ -66,6 +66,13 @@ pub const RULES: &[Rule] = &[
         false,
     ),
     rule(
+        crate::LIBRARY_CONFLICT,
+        "The library sources of the project (vfl.toml aside) disagree about a file's library.",
+        Info,
+        Warn,
+        false,
+    ),
+    rule(
         codes::DUPLICATE_DECLARATION,
         "Two declarations of a region have the same name.",
         Error,

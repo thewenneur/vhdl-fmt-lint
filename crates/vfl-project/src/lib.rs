@@ -6,6 +6,7 @@ mod explicit;
 mod import;
 mod infer;
 mod load;
+mod merge;
 mod order;
 mod summary;
 mod verilog;
@@ -17,6 +18,7 @@ pub use infer::{BUNDLED_LIBRARIES, Inference, Reason, infer_libraries, library_c
 pub use load::{
     Encoding, LibrarySources, LoadError, PathIndex, Project, SourceFile, decode, encode,
 };
+pub use merge::LibraryConflict;
 pub use order::{CompileOrder, CompileStep, Language, OrderError, compile_order};
 pub use summary::{
     FileSummary, UnitKind, UnitRef, UnitSummary, name_token, simple_name, summarize,
