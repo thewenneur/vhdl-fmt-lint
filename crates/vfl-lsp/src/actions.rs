@@ -122,7 +122,7 @@ pub(crate) fn actions(world: &World, file: FileId, start: TextSize, end: TextSiz
                 }
             }
         }
-        if d.rule != "syntax/error" {
+        if d.rule != "syntax/error" && d.rule != crate::world::TOO_LARGE {
             for (title, edit) in silence(world, file, d.range, d.rule) {
                 if silencing.iter().any(|a: &Action| a.title == title) {
                     continue;

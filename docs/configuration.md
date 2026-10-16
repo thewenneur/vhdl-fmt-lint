@@ -113,8 +113,9 @@ To keep two VHDL projects in one repository apart, give each its own `vfl.toml` 
 `root = true`.
 
 `[project]` is read from the configs that apply to the root. In a nested config, only
-`standard` has an effect: `vfl fmt` and `vfl check` parse the files under it with that
-standard (the semantic analysis of `vfl lint` uses the root's).
+`standard` and `max-file-size` have an effect: `vfl fmt` and `vfl check` parse the files
+under it with that standard (the semantic analysis of `vfl lint` uses the root's), and the
+language server applies its `max-file-size` to the files under it.
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
@@ -123,6 +124,7 @@ standard (the semantic analysis of `vfl lint` uses the root's).
 | `exclude` | array of strings | `[]` | Gitignore-style globs, relative to the project root, of files and directories to skip. `.gitignore` files are honoured as well. |
 | `libraries` | table | `{}` | Explicit library assignments; see below. |
 | `vhdl-ls` | string | `"fallback"` | How rust_hdl's `vhdl_ls.toml` places files in libraries: `"fallback"` (only the files inference places nowhere, or over inference when that leaves fewer library conflicts), `"prefer"` (over inference and tool files, below `[project.libraries]`) or `"off"` (not read). See below. |
+| `max-file-size` | integer or string | `"2MB"` | The language server's limit for generated files such as netlists: in a VHDL file larger than this, only the entities and packages are analyzed (so other files can still instantiate and use them), and the file is not linted; an information diagnostic at its start says so. Formatting is not affected. A number of bytes, or a string with a `KB` or `MB` unit (1024 bytes, 1024 KB); `0` for no limit. `vfl lint` is not limited. |
 | `vendor-stubs` | boolean | `true` | Load vfl's bundled declarations of vendor primitive libraries (`unisim`, `xpm`, `altera_mf`, `ecp5u`, `machxo2`, `sb_ice40_components_syn`) for a library the design uses and the project does not hold. See [Vendor libraries](#vendor-libraries). |
 
 ### `[project.libraries]`

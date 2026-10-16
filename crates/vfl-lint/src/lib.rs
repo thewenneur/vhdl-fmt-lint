@@ -554,7 +554,7 @@ pub fn reanalyze(project: &vfl_project::Project, previous: Analysis) -> Analysis
 }
 
 /// The Verilog files of a project, whose modules VHDL instantiates.
-fn foreign_inputs(project: &vfl_project::Project) -> Vec<vfl_sema::ForeignInput> {
+pub fn foreign_inputs(project: &vfl_project::Project) -> Vec<vfl_sema::ForeignInput> {
     project
         .verilog
         .iter()
@@ -568,7 +568,8 @@ fn foreign_inputs(project: &vfl_project::Project) -> Vec<vfl_sema::ForeignInput>
         .collect()
 }
 
-fn analysis_inputs(project: &vfl_project::Project) -> Vec<vfl_sema::FileInput> {
+/// The VHDL files of a project, as the analysis takes them.
+pub fn analysis_inputs(project: &vfl_project::Project) -> Vec<vfl_sema::FileInput> {
     project
         .files
         .iter()
