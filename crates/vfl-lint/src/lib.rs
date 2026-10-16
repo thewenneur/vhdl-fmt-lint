@@ -89,6 +89,24 @@ pub struct FileSettings<'a> {
     /// The project root, which the file patterns of `[[lint.waiver]]` are
     /// relative to. Without it they match the path at any depth.
     pub root: Option<&'a Path>,
+    /// What the library sources of the project disagree about for this
+    /// file, as [`library_conflict`] gives it: reported as
+    /// `project/library-conflict`.
+    pub library_conflict: Option<&'a str>,
+}
+
+/// The rule reporting files the library sources of a project disagree
+/// about.
+pub const LIBRARY_CONFLICT: &str = "project/library-conflict";
+
+/// The `project/library-conflict` message for the file at `path`, if the
+/// library sources of `project` disagree about it.
+pub fn library_conflict(project: &vfl_project::Project, path: &Path) -> Option<String> {
+    project
+        .library_conflicts
+        .iter()
+        .find(|c| c.path == path)
+        .map(vfl_project::LibraryConflict::message)
 }
 
 /// The diagnostics of a lint run, sorted by file and position, and
@@ -118,6 +136,7 @@ struct CachedFile {
     /// other files.
     verilog: Option<(GreenNode, u64)>,
     config: Config,
+    library_conflict: Option<String>,
     sema: Vec<vfl_sema::Diagnostic>,
     diagnostics: Vec<Diagnostic>,
     errors: Vec<String>,
@@ -197,6 +216,7 @@ pub fn lint_cached(
                         _ => false,
                     }
                     && cached.config == *settings.config
+                    && cached.library_conflict.as_deref() == settings.library_conflict
                     && cached.sema.len() == file_sema.len()
                     && cached.sema.iter().zip(file_sema).all(|(a, b)| a == *b)
                     && !analysis.file_reanalyzed(settings.file)
@@ -245,6 +265,7 @@ pub fn lint_cached(
                 green: file.green.clone(),
                 verilog: verilog_key(settings),
                 config: settings.config.clone(),
+                library_conflict: settings.library_conflict.map(str::to_owned),
                 sema: file_sema.iter().map(|d| (*d).clone()).collect(),
                 diagnostics: diagnostics.clone(),
                 errors: errors.clone(),
@@ -305,6 +326,15 @@ fn lint_file(
     let enabled = |id: &str| enabled_cache.get(id).copied().unwrap_or(false);
 
     let mut findings = Vec::new();
+    if let Some(message) = settings.library_conflict
+        && enabled(LIBRARY_CONFLICT)
+    {
+        findings.push(Finding::new(
+            LIBRARY_CONFLICT,
+            TextRange::empty(0.into()),
+            message,
+        ));
+    }
     for error in settings.syntax_errors {
         findings.push(Finding::new(
             "syntax/error",

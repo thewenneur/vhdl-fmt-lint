@@ -138,6 +138,32 @@ for expected in "OSVVM 9" "UVVM 5" "vunit 37" "neorv32 0"; do
     status=1
   fi
 done
+# Library lists that are stale or wrong: vfl merges them with the code
+# file by file, so these must stay as clean as the projects' own lists.
+broken=$(mktemp -d)
+trap 'rm -rf "$alt_config" "$leading_config" "$broken"' EXIT
+variant() {
+  mkdir -p "$broken/$1/.git"
+  git -C "$cache/$2" archive HEAD | tar -x -C "$broken/$1"
+}
+uvvm_list=$cache/UVVM/vhdl_ls.toml
+# A library renamed since the list was written.
+variant uvvm-renamed UVVM
+sed 's/^uvvm_util.files/uvvm_util_v1.files/' "$uvvm_list" >"$broken/uvvm-renamed/vhdl_ls.toml"
+# A list written for another directory.
+variant uvvm-moved UVVM
+sed "s#^'#'old/#" "$uvvm_list" >"$broken/uvvm-moved/vhdl_ls.toml"
+# An old build script naming another library.
+variant neorv32-old neorv32
+printf 'read_vhdl -library neorv32_old [glob rtl/core/*.vhd]\n' >"$broken/neorv32-old/old_build.tcl"
+for expected in "uvvm-renamed 5" "uvvm-moved 5" "neorv32-old 0"; do
+  read -r name known <<<"$expected"
+  found=$(lint_errors "$broken/$name")
+  if [ "$found" -gt "$known" ]; then
+    echo "$name: $found semantic errors, expected at most $known" >&2
+    status=1
+  fi
+done
 # Incremental analysis: after edits to a spread of files, reusing the
 # previous analysis must give exactly what a full analysis gives.
 cargo build --release -q -p vfl-sema --example incremental_corpus

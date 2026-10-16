@@ -37,6 +37,7 @@ fn run(files: &[(&str, &str)], config: &str) -> (Vec<String>, Vec<Diagnostic>) {
             config: &config,
             verilog: None,
             root: None,
+            library_conflict: None,
         })
         .collect();
     let result = lint(&analysis, &settings);

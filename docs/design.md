@@ -426,13 +426,9 @@ use them. Implemented, all read without running the tool:
   Quartus's `$::quartus(qip_path)`. A word using anything else is skipped.
 
 These files are found by the same walk as sources (so `.gitignore` applies). Their globs
-use the tools' semantics: `*` stays within a directory. `vfl.toml` wins over tool files;
-a file a tool lists in no library is still inferred. `vhdl_ls.toml` ranks below inference
-by default: it places only the files inference leaves in no library, and its libraries then
-propagate along `work` references. If that leaves library conflicts (references to project
-units missing from the library meant, units declared twice in a library), the ranking with
-`vhdl_ls.toml` above inference is tried too and kept when it leaves fewer (`[project]` `vhdl-ls = "prefer"` ranks it just below
-`vfl.toml` instead, `"off"` ignores it). This makes migration a no-op.
+use the tools' semantics: `*` stays within a directory. None of them is taken whole: each
+file's library is chosen among what they and the code say, see
+[Merging library sources](#merging-library-sources). This makes migration a no-op.
 
 **4. Infer libraries from the code.** For everything else, every file is parsed (fast,
 parallel) and indexed by the primary units it declares and the references it makes
@@ -446,6 +442,77 @@ parallel) and indexed by the primary units it declares and the references it mak
 - Conflicts (one unit name declared in two files of the same library, or contradicting
   constraints) are resolved by directory proximity, and surfaced as a diagnostic that
   suggests a one-line `[project.libraries]` entry.
+
+### Merging library sources
+
+A project often carries several library lists, and none is quite right: a `vhdl_ls.toml`
+written by hand and not kept up, a `run.py` that lists only the testbenches it runs, an old
+Vivado script next to the current Quartus project, a list copied from another checkout.
+Instead of trusting one source whole and ignoring the others, vfl merges them file by file
+and lets the code decide where they disagree. Implemented in `crates/vfl-project/src/merge.rs`.
+
+**Sources.** `[project.libraries]` in `vfl.toml` is never questioned: a file it lists is in
+those libraries, whatever else says. Every other source gives an *opinion* about a file:
+
+- each tool file that lists it (step 3);
+- `vhdl_ls.toml`, when it lists it (with `vhdl-ls = "prefer"` it is never questioned
+  either, like `vfl.toml`; with `"off"` it is not read);
+- the code: the libraries its `lib.unit` references demand, a reference counting only
+  when the file is the one declaring the unit, or the only one closest to the reference.
+  What follows from `work.unit` references, or from a unit several files declare as close,
+  depends on where the other files are, so it does not stand against a list.
+
+Equal opinions merge (a `run.py` and the code agreeing count as one opinion held by two
+sources), and when they differ, all their libraries together is one more opinion.
+
+**Clean-up first.** Before merging, each list is checked against the sources of the project.
+An entry that matches no source, as when the list was written for another directory or the
+tree moved since, is read without its leading directories when that makes it match:
+`old/rtl/*.vhd` becomes `rtl/*.vhd`; what is left must still start with a plain directory,
+so a pattern never ends up matching everything. Entries that still match nothing are
+reported by `vfl project` and otherwise ignored. A file listed twice in one library counts
+once.
+
+**Choosing.** With one opinion, a file takes it: a tool file's is kept as is (inference does
+not add to it), a `vhdl_ls.toml` one is what the file falls back on when inference places it
+nowhere, as before. Where opinions differ, the measure is *library conflicts*: references
+to units of the project that are not in the library they mean (each `work.unit` once per
+library of the referencing file), and units declared twice in one library. Then:
+
+1. From each of three starting points, the project is inferred: the best ranked opinion
+   of every file (more sources agreeing first, then tool files, the code, `vhdl_ls.toml`);
+   every list kept as is, `vhdl_ls.toml` first (what earlier versions did when inference
+   left conflicts); and the same with the files `vhdl_ls.toml` puts in several libraries
+   (UVVM's shared VVC framework files) open to more libraries.
+2. From each, every file the opinions disagree about takes the opinion leaving the fewest
+   conflicts around it: the references it makes, the references to its units, and its
+   units declared twice. On a tie it keeps the one it has. This repeats until nothing
+   changes (at most four rounds), and the project is inferred again with the result; a
+   result leaving more conflicts than its starting point is dropped.
+3. The result leaving the fewest conflicts in the whole project wins, ties going to the
+   first starting point.
+
+Each file where a list's opinion was set aside gets a `project/library-conflict` finding
+(info), naming what each source said and why vfl chose as it did; `vfl project` shows
+the reasons too. Listing the file in `[project.libraries]` settles it.
+
+**Cost.** The decision is made when the project is loaded or a library list changes, and
+kept: an edit runs inference once, as before, without reading or matching the lists again.
+Inference itself computes each file's directory once and remembers which files a `work`
+reference means. On the corpus, reading the lists and inferring on load takes 0 to 2.7 ms
+more than before (UVVM 7.4 to 10.1 ms, VUnit 5.1 to 6.6 ms, OSVVM and neorv32 under 1 ms),
+and inference on an edit 0.6 to 1.1 ms less (UVVM 1.7 to 1.2 ms, VUnit 2.2 to 1.1 ms; 6.3
+to 1.4 ms with a renamed library in UVVM's list). The LSP's keystroke path is unchanged.
+
+| Project, library lists | Semantic errors before | after |
+|------------------------|-----------------------:|------:|
+| UVVM, its `vhdl_ls.toml` | 5 | 5 |
+| UVVM, `uvvm_util` renamed in the list | 3255 | 5 |
+| UVVM, the list's paths under an old prefix | 3262 | 5 |
+| UVVM, half of the VIPs missing from the list | 3259 | 1863 |
+| UVVM, two VIPs swapped in the list | 121 | 117 |
+| neorv32, an old Tcl script naming another library | 160 | 0 |
+| OSVVM, VUnit, neorv32, as they are | 9, 37, 0 | 9, 37, 0 |
 
 Vendor primitive libraries (`unisim`, `xpm`, `altera_mf`, Lattice's) are not part of the
 project. vfl bundles declarations of their common primitives, written from public

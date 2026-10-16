@@ -11,7 +11,10 @@ use vfl_config::{Config, VhdlLsMode};
 use vfl_syntax::{Parse, Standard};
 
 use crate::explicit::{LibraryGlobs, VHDL_LS_FILES, path_to_slash, vhdl_ls_libraries};
-use crate::infer::{Inference, Reason, infer_libraries, library_conflicts};
+use crate::infer::{Dirs, Inference, Reason, infer_in, infer_libraries};
+use crate::merge::{
+    Decision, Kind, LibraryConflict, Libs, Opinions, Pick, apply, decide, default_pick,
+};
 use crate::summary::{FileSummary, summarize};
 use crate::verilog::{VerilogFile, verilog_standard};
 use crate::{ProjectRoot, collect_project};
@@ -106,6 +109,8 @@ pub struct Project {
     pub unreadable: Vec<(PathBuf, String)>,
     /// Inference ambiguities and other things worth telling the user.
     pub notes: Vec<String>,
+    /// Files the library sources disagree about, and what vfl chose.
+    pub library_conflicts: Vec<LibraryConflict>,
     /// Files of other tools that may list libraries (VUnit `run.py`,
     /// FuseSoC `.core`, Vivado and Quartus projects), read on each
     /// inference.
@@ -117,18 +122,19 @@ pub struct Project {
 /// The library lists of a project, as [`Project::library_sources`] read
 /// them, with when each file they come from was last modified.
 pub struct LibrarySources {
-    /// The config's list, if any, then those of tool files.
-    globs: Vec<LibraryGlobs>,
-    /// How many of `globs` come from the config.
-    config_lists: usize,
+    /// The config's list, if any.
+    config: Option<LibraryGlobs>,
+    /// Those of tool files.
+    tools: Vec<LibraryGlobs>,
     /// `vhdl_ls.toml`'s list, unless `[project]` `vhdl-ls` is off.
     vhdl_ls: Option<LibraryGlobs>,
     vhdl_ls_mode: VhdlLsMode,
-    /// In fallback mode, when ranking `vhdl_ls.toml` above inference left
-    /// fewer library conflicts, the note saying so. Decided on the first
-    /// inference with these lists and kept, so that later ones run
-    /// inference once.
-    vhdl_ls_first: OnceLock<Option<String>>,
+    /// How the lists and the code are merged, file by file. Decided on
+    /// the first inference with these lists and kept, so that later ones
+    /// (on edits) run inference once.
+    decision: OnceLock<Decision>,
+    /// What checking the lists against the sources found.
+    notes: Vec<String>,
     stamps: Vec<(PathBuf, Option<SystemTime>)>,
 }
 
@@ -254,6 +260,7 @@ impl Project {
             verilog_libraries: Vec::new(),
             unreadable,
             notes: Vec::new(),
+            library_conflicts: Vec::new(),
             tool_files,
             paths: PathIndex::default(),
         };
@@ -272,20 +279,21 @@ impl Project {
     /// config's, those of tool files and `vhdl_ls.toml`.
     pub fn library_sources(&self) -> Result<LibrarySources, LoadError> {
         let root = self.root.dir.clone();
-        let mut globs = Vec::new();
-        if !self.config.project.libraries.is_empty() {
+        let mut config = if self.config.project.libraries.is_empty() {
+            None
+        } else {
             let source = vfl_config::find_config(&root)
                 .map(|p| p.display().to_string())
                 .unwrap_or_else(|| "vfl.toml".into());
-            globs.push(
+            Some(
                 LibraryGlobs::new(source.clone(), &root, &root, &self.config.project.libraries)
                     .map_err(|error| LoadError::Glob {
                         source_file: source,
                         error,
                     })?,
-            );
-        }
-        let vhdl_ls = match self.config.project.vhdl_ls {
+            )
+        };
+        let mut vhdl_ls = match self.config.project.vhdl_ls {
             VhdlLsMode::Off => None,
             VhdlLsMode::Fallback | VhdlLsMode::Prefer => vhdl_ls_libraries(&root),
         }
@@ -295,12 +303,12 @@ impl Project {
             // A broken vhdl_ls.toml is not ours to reject; skip it.
             LibraryGlobs::new(source, &base, &root, &libraries).ok()
         });
-        let config_lists = globs.len();
+        let mut tools = Vec::new();
         for (path, libraries) in crate::import::import_all(&self.tool_files) {
             let source = path.display().to_string();
             let base = path.parent().unwrap_or(&root).to_owned();
             if let Ok(g) = LibraryGlobs::new_strict(source, &base, &root, &libraries) {
-                globs.push(g);
+                tools.push(g);
             }
         }
         let stamps = VHDL_LS_FILES
@@ -312,20 +320,45 @@ impl Project {
                 (path, time)
             })
             .collect();
+        // Lists that lag behind the tree: entries matching nothing are
+        // read without their leading directories when that makes them
+        // match (not those of vfl.toml, which is ours to get right).
+        let relative = self.relative_paths();
+        let mut notes = Vec::new();
+        if let Some(config) = &mut config {
+            notes.extend(config.check(&root, &relative, false));
+        }
+        for list in tools.iter_mut().chain(&mut vhdl_ls) {
+            notes.extend(list.check(&root, &relative, true));
+        }
         Ok(LibrarySources {
-            globs,
-            config_lists,
+            config,
+            tools,
             vhdl_ls,
             vhdl_ls_mode: self.config.project.vhdl_ls,
-            vhdl_ls_first: OnceLock::new(),
+            decision: OnceLock::new(),
+            notes,
             stamps,
         })
+    }
+
+    /// The paths of the sources, VHDL then Verilog, relative to the root and
+    /// `/`-separated, as library lists match them.
+    fn relative_paths(&self) -> Vec<String> {
+        let root = &self.root.dir;
+        (self.files.iter().map(|f| &f.path))
+            .chain(self.verilog.iter().map(|f| &f.path))
+            .map(|path| {
+                path.strip_prefix(root)
+                    .map(path_to_slash)
+                    .unwrap_or_else(|_| path_to_slash(path))
+            })
+            .collect()
     }
 
     /// Computes every file's libraries from `sources` and what the files
     /// declare and refer to.
     pub fn infer_with(&mut self, sources: &LibrarySources) {
-        let root = &self.root.dir;
         // Verilog files take part like VHDL files, after them.
         let paths: Vec<PathBuf> = self
             .files
@@ -333,85 +366,79 @@ impl Project {
             .map(|f| f.path.clone())
             .chain(self.verilog.iter().map(|f| f.path.clone()))
             .collect();
-        let relative: Vec<String> = paths
-            .iter()
-            .map(|path| {
-                path.strip_prefix(root)
-                    .map(path_to_slash)
-                    .unwrap_or_else(|_| path_to_slash(path))
-            })
-            .collect();
-        let assign = |lists: &[&LibraryGlobs]| -> Vec<Option<Vec<(String, Reason)>>> {
-            if lists.is_empty() {
-                return vec![None; relative.len()];
-            }
-            relative
-                .iter()
-                .map(|r| lists.iter().find_map(|s| s.assign(r)))
-                .collect()
-        };
-        // Preferred, `vhdl_ls.toml` ranks below the config and above tool
-        // files.
-        let (config, tools) = sources.globs.split_at(sources.config_lists);
-        let preferred: Vec<&LibraryGlobs> =
-            config.iter().chain(&sources.vhdl_ls).chain(tools).collect();
-        let others: Vec<&LibraryGlobs> = sources.globs.iter().collect();
+        let relative = self.relative_paths();
         let summaries: Vec<FileSummary> = self
             .files
             .iter()
             .map(|f| f.summary.clone())
             .chain(self.verilog.iter().map(|f| f.summary.clone()))
             .collect();
-        let none = vec![None; paths.len()];
+        // `vfl.toml` is never questioned, nor `vhdl_ls.toml` when
+        // preferred.
+        let preferred = match sources.vhdl_ls_mode {
+            VhdlLsMode::Prefer => sources.vhdl_ls.as_ref(),
+            _ => None,
+        };
+        let fixed: Vec<Option<Libs>> = relative
+            .iter()
+            .map(|r| (sources.config.iter().chain(preferred)).find_map(|s| s.assign(r)))
+            .collect();
+        let merged = match sources.vhdl_ls_mode {
+            VhdlLsMode::Fallback => sources.vhdl_ls.as_ref(),
+            _ => None,
+        };
+        if sources.tools.is_empty() && merged.is_none() {
+            let none = vec![None; paths.len()];
+            let Inference {
+                mut libraries,
+                mut notes,
+            } = infer_libraries(&paths, &summaries, &fixed, &none);
+            notes.splice(0..0, sources.notes.iter().cloned());
+            self.verilog_libraries = libraries.split_off(self.files.len());
+            self.libraries = libraries;
+            self.notes = notes;
+            self.library_conflicts = Vec::new();
+            return;
+        }
+        let opinions_of = |r: &str| -> Opinions {
+            (sources.tools.iter().map(|t| (Kind::Tool, t)))
+                .chain(merged.map(|v| (Kind::VhdlLs, v)))
+                .filter_map(|(kind, list)| Some((kind, list.assign(r)?)))
+                .collect()
+        };
+        let mut fresh = None;
+        let decision = sources.decision.get_or_init(|| {
+            let opinions: Vec<Opinions> = relative.iter().map(|r| opinions_of(r)).collect();
+            let (mut decision, result) = decide(&paths, &relative, &summaries, &fixed, &opinions);
+            decision.notes.splice(0..0, sources.notes.iter().cloned());
+            fresh = Some(result);
+            decision
+        });
+        // Just decided: with the libraries that came of it.
         let Inference {
             mut libraries,
-            notes,
-        } = match (&sources.vhdl_ls, sources.vhdl_ls_mode) {
-            (Some(vhdl_ls), VhdlLsMode::Fallback) => {
-                let infer =
-                    || infer_libraries(&paths, &summaries, &assign(&others), &assign(&[vhdl_ls]));
-                let listed = || infer_libraries(&paths, &summaries, &assign(&preferred), &none);
-                let note = |listed: usize, inferred: usize| {
-                    format!(
-                        "{} ranks above library inference: it leaves {listed} library \
-                         conflicts (unresolved references, units declared twice in a \
-                         library), inference {inferred}. Set [project] vhdl-ls = \"prefer\" \
-                         to always rank it so.",
-                        vhdl_ls.source()
-                    )
-                };
-                match sources.vhdl_ls_first.get() {
-                    Some(None) => infer(),
-                    Some(Some(note)) => {
-                        let mut listed = listed();
-                        listed.notes.push(note.clone());
-                        listed
-                    }
-                    None => {
-                        let inferred = infer();
-                        let conflicts = library_conflicts(&summaries, &inferred.libraries);
-                        // Inference leaves conflicts: rank vhdl_ls.toml
-                        // above it instead if that leaves fewer.
-                        let better = (conflicts > 0)
-                            .then(listed)
-                            .map(|mut listed| {
-                                let left = library_conflicts(&summaries, &listed.libraries);
-                                listed.notes.push(note(left, conflicts));
-                                (listed, left)
-                            })
-                            .filter(|(_, left)| *left < conflicts);
-                        let _ = sources.vhdl_ls_first.set(
-                            better
-                                .as_ref()
-                                .and_then(|(listed, _)| listed.notes.last().cloned()),
-                        );
-                        better.map_or(inferred, |(listed, _)| listed)
-                    }
-                }
-            }
-            (Some(_), _) => infer_libraries(&paths, &summaries, &assign(&preferred), &none),
-            (None, _) => infer_libraries(&paths, &summaries, &assign(&others), &none),
-        };
+            mut notes,
+        } = fresh.unwrap_or_else(|| {
+            let picks: Vec<Pick> = relative
+                .iter()
+                .map(|r| match decision.picks.get(r) {
+                    Some(pick) => pick.clone(),
+                    None => default_pick(&opinions_of(r)),
+                })
+                .collect();
+            let a = apply(&fixed, &picks);
+            infer_in(
+                &paths,
+                &Dirs::new(&paths),
+                &summaries,
+                &a.explicit,
+                &a.fallback,
+                &a.seeds,
+            )
+        });
+        notes.splice(0..0, decision.notes.iter().cloned());
+        notes.dedup();
+        self.library_conflicts = decision.conflicts.clone();
         self.verilog_libraries = libraries.split_off(self.files.len());
         self.libraries = libraries;
         self.notes = notes;
@@ -803,7 +830,8 @@ mod tests {
         let project = load();
         assert_eq!(libs(&project, "uart/methods.vhd"), ["uart"]);
         assert_eq!(libs(&project, "clk/methods.vhd"), ["clk"]);
-        assert!(project.notes[0].contains("ranks above library inference"));
+        // The code is set aside for the list: nothing to report.
+        assert!(project.library_conflicts.is_empty());
 
         // Off: inference alone.
         fs::write(root.join("vfl.toml"), "[project]\nvhdl-ls = \"off\"\n").unwrap();
@@ -863,5 +891,178 @@ mod tests {
         assert_eq!(library("a.vhd"), "mylib");
         // `*` stays within `rtl/`, as in Vivado.
         assert_eq!(library("b.vhd"), "work");
+    }
+
+    fn write(root: &Path, files: &[(&str, &str)]) {
+        for (name, text) in files {
+            let path = root.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, text).unwrap();
+        }
+    }
+
+    fn libraries_of(project: &Project, root: &Path, name: &str) -> Vec<String> {
+        let i = project.file_index(&root.join(name)).unwrap();
+        project.libraries[i]
+            .iter()
+            .map(|(l, _)| l.clone())
+            .collect()
+    }
+
+    #[test]
+    fn the_code_decides_between_disagreeing_tool_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir(root.join(".git")).unwrap();
+        write(
+            root,
+            &[
+                ("rtl/pkg.vhd", "package pkg is end;"),
+                ("rtl/core.vhd", "use work.pkg.all; entity core is end;"),
+                (
+                    "tb/tb.vhd",
+                    "library good; use good.pkg.all; use good.core; entity tb is end;",
+                ),
+                // An old script, first in path order, names another library.
+                ("a_old.tcl", "read_vhdl -library stale [glob rtl/*.vhd]\n"),
+                ("build.tcl", "read_vhdl -library good [glob rtl/*.vhd]\n"),
+            ],
+        );
+        let project = Project::load(crate::find_root(root)).unwrap();
+        assert_eq!(libraries_of(&project, root, "rtl/pkg.vhd"), ["good"]);
+        assert_eq!(libraries_of(&project, root, "rtl/core.vhd"), ["good"]);
+        let conflict = project
+            .library_conflicts
+            .iter()
+            .find(|c| c.path.ends_with("rtl/pkg.vhd"))
+            .unwrap();
+        assert_eq!(conflict.chosen, ["good"]);
+        let message = conflict.message();
+        assert!(
+            message.contains("a_old.tcl puts it in `stale`"),
+            "{message}"
+        );
+        assert!(message.contains("vfl uses `good`"), "{message}");
+    }
+
+    #[test]
+    fn a_stale_vhdl_ls_toml_is_merged_file_by_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir(root.join(".git")).unwrap();
+        // Two VIPs declare packages of the same name, which inference
+        // alone cannot tell apart; the list does, but names the library
+        // of util/ as it was before a rename.
+        let mut files = vec![
+            (
+                "util/types.vhd".to_owned(),
+                "package types is end;".to_owned(),
+            ),
+            (
+                "uart/tb.vhd".to_owned(),
+                "library clk; use clk.methods.all; entity tb is end;".to_owned(),
+            ),
+            (
+                "other.vhd".to_owned(),
+                "library uart, clk; use uart.uart_vvc; use clk.clk_vvc; entity t is end;"
+                    .to_owned(),
+            ),
+            (
+                "vhdl_ls.toml".to_owned(),
+                "[libraries]\nclk.files = ['clk/*.vhd']\nuart.files = ['uart/*.vhd']\n\
+                 util_v1.files = ['util/*.vhd']\n"
+                    .to_owned(),
+            ),
+        ];
+        for vip in ["clk", "uart"] {
+            files.push((
+                format!("{vip}/methods.vhd"),
+                "package methods is end;".to_owned(),
+            ));
+            files.push((
+                format!("{vip}/vvc.vhd"),
+                format!(
+                    "library {vip}, util; use util.types.all; use work.methods.all; \
+                     entity {vip}_vvc is end;"
+                ),
+            ));
+        }
+        let files: Vec<(&str, &str)> = files
+            .iter()
+            .map(|(p, t)| (p.as_str(), t.as_str()))
+            .collect();
+        write(root, &files);
+        let project = Project::load(crate::find_root(root)).unwrap();
+        // The list where the code cannot tell...
+        assert_eq!(libraries_of(&project, root, "uart/methods.vhd"), ["uart"]);
+        assert_eq!(libraries_of(&project, root, "clk/methods.vhd"), ["clk"]);
+        // ...and the code where it can.
+        assert_eq!(libraries_of(&project, root, "util/types.vhd"), ["util"]);
+        assert_eq!(project.library_conflicts.len(), 1);
+        assert!(
+            project.library_conflicts[0]
+                .path
+                .ends_with("util/types.vhd")
+        );
+    }
+
+    #[test]
+    fn a_list_written_for_another_directory_is_rebased() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir(root.join(".git")).unwrap();
+        write(
+            root,
+            &[
+                ("src/a.vhd", "entity a is end;"),
+                ("src/b.vhd", "entity b is end;"),
+                (
+                    "vhdl_ls.toml",
+                    "[libraries]\nmylib.files = ['old/src/*.vhd', 'old/src/b.vhd', 'gone.vhd']\n",
+                ),
+            ],
+        );
+        let project = Project::load(crate::find_root(root)).unwrap();
+        assert_eq!(libraries_of(&project, root, "src/a.vhd"), ["mylib"]);
+        assert_eq!(libraries_of(&project, root, "src/b.vhd"), ["mylib"]);
+        let notes = project.notes.join("\n");
+        assert!(
+            notes.contains("2 entries match no source as written"),
+            "{notes}"
+        );
+        assert!(notes.contains("`old/src/*.vhd` as `src/*.vhd`"), "{notes}");
+        assert!(
+            notes.contains("1 entry matches no source (gone.vhd)"),
+            "{notes}"
+        );
+    }
+
+    #[test]
+    fn inferring_again_keeps_the_decision() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir(root.join(".git")).unwrap();
+        write(
+            root,
+            &[
+                ("rtl/pkg.vhd", "package pkg is end;"),
+                (
+                    "tb/tb.vhd",
+                    "library good; use good.pkg.all; entity tb is end;",
+                ),
+                ("a_old.tcl", "read_vhdl -library stale [glob rtl/*.vhd]\n"),
+                ("build.tcl", "read_vhdl -library good [glob rtl/*.vhd]\n"),
+            ],
+        );
+        let mut project = Project::load(crate::find_root(root)).unwrap();
+        let sources = project.library_sources().unwrap();
+        project.infer_with(&sources);
+        let first = project.libraries.clone();
+        let conflicts = project.library_conflicts.clone();
+        // As on an edit: the lists are kept, the decision too.
+        project.infer_with(&sources);
+        assert_eq!(project.libraries, first);
+        assert_eq!(project.library_conflicts, conflicts);
+        assert_eq!(libraries_of(&project, root, "rtl/pkg.vhd"), ["good"]);
     }
 }

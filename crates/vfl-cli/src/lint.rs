@@ -159,6 +159,12 @@ pub fn run(options: Options) -> Result<bool> {
                 }
             }
 
+            let conflicts: HashMap<&std::path::Path, String> = project
+                .library_conflicts
+                .iter()
+                .map(|c| (c.path.as_path(), c.message()))
+                .collect();
+            let conflict = |path: &std::path::Path| conflicts.get(path).map(String::as_str);
             let settings: Vec<FileSettings> = file_configs
                 .iter()
                 .filter_map(|(i, config)| {
@@ -169,6 +175,7 @@ pub fn run(options: Options) -> Result<bool> {
                         config,
                         verilog: None,
                         root: Some(&project.root.dir),
+                        library_conflict: conflict(&file.path),
                     })
                 })
                 .chain(verilog_configs.iter().filter_map(|(i, config)| {
@@ -179,6 +186,7 @@ pub fn run(options: Options) -> Result<bool> {
                         config,
                         verilog: Some(&file.parse),
                         root: Some(&project.root.dir),
+                        library_conflict: conflict(&file.path),
                     })
                 }))
                 .collect();
