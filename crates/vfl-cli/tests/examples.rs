@@ -43,6 +43,7 @@ const EXAMPLES: &[(&str, Kind)] = &[
     ("lint/03-unsafe-fixes", Kind::UnsafeFix),
     ("lint/04-naming", Kind::Manual),
     ("lint/05-suppressions", Kind::Manual),
+    ("lint/06-bus-widths", Kind::Manual),
 ];
 
 fn root() -> PathBuf {

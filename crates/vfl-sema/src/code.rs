@@ -30,8 +30,10 @@ use crate::decl::{Access, Decl, DeclId, DeclKind, FileId, Reference, Target, Typ
 use crate::diagnostic::{Diagnostic, Edit, Fix, codes};
 use crate::resolver::mark_token;
 use crate::rtl::cases::declaration_node;
-use crate::rtl::{literal_width, static_int};
+use crate::rtl::static_int;
 use crate::syntax::is_designator;
+
+mod widths;
 
 /// Which checks to run, with their options.
 #[derive(Debug, Clone, Copy, Default)]
@@ -55,6 +57,13 @@ pub struct CodeChecks {
     pub public_subprograms: bool,
     /// `sema/comparison-width`.
     pub comparison_width: bool,
+    /// Its `generics` option: widths that depend on generics are compared
+    /// at the generics' default values.
+    pub comparison_generics: bool,
+    /// `sema/width-mismatch`.
+    pub width_mismatch: bool,
+    /// Its `generics` option.
+    pub width_generics: bool,
     /// `sema/synthesis-delay`.
     pub synthesis_delay: bool,
     /// `sema/synthesis-file-io`.
@@ -79,6 +88,7 @@ impl CodeChecks {
             || self.constant_condition
             || self.unused_subprogram
             || self.comparison_width
+            || self.width_mismatch
             || self.synthesis()
             || self.identifier_case
     }
@@ -160,6 +170,10 @@ impl Analysis {
             integer_bounds: RefCell::default(),
             roots: RefCell::default(),
             used_generic: Cell::new(false),
+            linears: RefCell::default(),
+            lin_bounds: RefCell::default(),
+            widths: RefCell::default(),
+            defaults: RefCell::default(),
         };
         values.roots.borrow_mut().insert(file, root.clone());
         let mut out = Vec::new();
@@ -213,6 +227,14 @@ struct Values<'a> {
     /// Set when a value used since it was last cleared came from a
     /// generic's default.
     used_generic: Cell<bool>,
+    /// The values of names as linear expressions of generics.
+    linears: RefCell<FxHashMap<DeclId, Option<widths::Linear>>>,
+    /// The bounds of array objects as linear expressions of generics.
+    lin_bounds: RefCell<FxHashMap<DeclId, Option<widths::LinBounds>>>,
+    /// The widths of vector objects.
+    widths: RefCell<FxHashMap<DeclId, Option<widths::Linear>>>,
+    /// The static default values of generics.
+    defaults: RefCell<FxHashMap<DeclId, Option<i64>>>,
 }
 
 impl<'a> Values<'a> {
@@ -672,19 +694,36 @@ impl<'a> Checker<'a, '_> {
         // them out before a syntax node is built for them.
         // Units with syntax errors may have lost statements.
         let has_error = Cell::new(false);
+        // The declarations and assignments of integers (`sema/value-range`)
+        // and of vectors (`sema/width-mismatch`).
+        let mut integers = FxHashSet::default();
+        let mut vectors = FxHashSet::default();
         let wanted = |g: Green<'_>| match g.kind() {
             ERROR => {
                 has_error.set(true);
                 false
             }
             CALL_EXPR => checks.index_range && self.may_index(g),
-            SIGNAL_DECL if rtl && checks.synthesis_initial_value => true,
             SIGNAL_DECL | VARIABLE_DECL | CONSTANT_DECL | INTERFACE_OBJECT_DECL => {
-                checks.value_range && self.initializes_integer(g)
+                if checks.value_range && self.initializes_integer(g) {
+                    integers.insert(g.range());
+                } else if checks.width_mismatch && self.initializes_vector(g) {
+                    vectors.insert(g.range());
+                }
+                (g.kind() == SIGNAL_DECL && rtl && checks.synthesis_initial_value)
+                    || integers.contains(&g.range())
+                    || vectors.contains(&g.range())
             }
             VARIABLE_ASSIGN_STMT | SIGNAL_ASSIGN_STMT => {
-                checks.value_range && self.assigns_integer(g)
+                if checks.value_range && self.assigns_integer(g) {
+                    integers.insert(g.range());
+                    true
+                } else {
+                    checks.width_mismatch && self.assigns_vector(g)
+                }
             }
+            SELECTED_ASSIGN_STMT => checks.width_mismatch && self.assigns_vector(g),
+            COMPONENT_INSTANTIATION_STMT => checks.width_mismatch,
             RETURN_STMT | EXIT_STMT | NEXT_STMT => checks.unreachable_code,
             WAIT_STMT => checks.unreachable_code || (rtl && checks.synthesis_delay),
             IF_STMT | CONDITIONAL_WAVEFORMS => checks.constant_condition,
@@ -699,14 +738,24 @@ impl<'a> Checker<'a, '_> {
             match node.kind() {
                 CALL_EXPR => self.index_range(&node),
                 SIGNAL_DECL | VARIABLE_DECL | CONSTANT_DECL | INTERFACE_OBJECT_DECL => {
-                    if checks.value_range {
+                    if integers.contains(&node.text_range()) {
                         self.initial_value_range(&node);
+                    }
+                    if vectors.contains(&node.text_range()) {
+                        self.width_declaration(&node);
                     }
                     if node.kind() == SIGNAL_DECL && rtl && checks.synthesis_initial_value {
                         self.initial_value(&node);
                     }
                 }
-                VARIABLE_ASSIGN_STMT | SIGNAL_ASSIGN_STMT => self.assigned_value_range(&node),
+                VARIABLE_ASSIGN_STMT | SIGNAL_ASSIGN_STMT | SELECTED_ASSIGN_STMT => {
+                    if integers.contains(&node.text_range()) {
+                        self.assigned_value_range(&node);
+                    } else {
+                        self.width_assignment(&node);
+                    }
+                }
+                COMPONENT_INSTANTIATION_STMT => self.width_instance(&node),
                 RETURN_STMT | EXIT_STMT | NEXT_STMT if parses => self.unreachable(&node),
                 WAIT_STMT => {
                     if checks.unreachable_code && parses {
@@ -787,7 +836,9 @@ impl<'a> Checker<'a, '_> {
         if index.kind() == RANGE_EXPR {
             return true;
         }
-        if self.values.object_bounds(id).is_none_or(|b| b.is_null()) {
+        if self.values.object_bounds(id).is_none_or(|b| b.is_null())
+            && self.values.bounds(id, 0).is_none()
+        {
             return false;
         }
         match index.kind() {
@@ -867,6 +918,9 @@ impl<'a> Checker<'a, '_> {
         };
         if !matches!(self.values.object_type(decl), Some(TypeDef::Array { indexes, .. }) if indexes.len() == 1)
         {
+            return;
+        }
+        if self.symbolic_index(id, &decl.spelling, &index) {
             return;
         }
         self.values.used_generic.set(false);
@@ -1232,10 +1286,10 @@ impl<'a> Checker<'a, '_> {
         if self.reference_at(operator.text_range()).is_some() {
             return;
         }
-        let (Some((lw, lobj)), Some((rw, robj))) = (self.width(&left), self.width(&right)) else {
+        let Some((lw, rw, defaults)) = self.compared_widths(&left, &right) else {
             return;
         };
-        if lw == rw || !(lobj || robj) {
+        if defaults && Self::in_conditional_generate(node) {
             return;
         }
         let result = if matches!(operator.kind(), EQ | NEQ) {
@@ -1250,52 +1304,15 @@ impl<'a> Checker<'a, '_> {
         self.report(
             codes::COMPARISON_WIDTH,
             node.text_range(),
-            format!("comparison of {lw} elements with {rw} elements, {result}"),
+            format!(
+                "comparison of {lw} elements with {rw} elements, {result}{}",
+                if defaults {
+                    ", with generics at their default values"
+                } else {
+                    ""
+                }
+            ),
         );
-    }
-
-    /// The static number of elements of an array operand, and whether it is
-    /// (part of) an object rather than a literal.
-    fn width(&self, expr: &SyntaxNode) -> Option<(u32, bool)> {
-        use SyntaxKind::*;
-        let expr = unparen(expr);
-        match expr.kind() {
-            LITERAL => Some((literal_width(&expr.first_token()?)?, false)),
-            NAME | SELECTED_NAME => {
-                let (_, decl) = self.named(&expr)?;
-                if !decl.kind.is_object() {
-                    return None;
-                }
-                match self.values.object_type(decl)? {
-                    TypeDef::Array { indexes, .. } if indexes.len() == 1 => {
-                        Some((decl.width?, true))
-                    }
-                    _ => None,
-                }
-            }
-            CALL_EXPR => {
-                let (_, decl) = self.named(&expr.children().next()?)?;
-                if !decl.kind.is_object() {
-                    return None;
-                }
-                let list = expr.children().find(|n| n.kind() == ASSOCIATION_LIST)?;
-                let range = single_association(&list)?;
-                let bounds = self.values.range(&range, self.unit, 0)?;
-                let width = (bounds.hi() - bounds.lo() + 1).max(0);
-                Some((u32::try_from(width).ok()?, true))
-            }
-            BINARY_EXPR => {
-                let operator = expr.child_token(|k| !k.is_trivia())?;
-                if operator.kind() != AMP {
-                    return None;
-                }
-                let mut operands = expr.children();
-                let (a, ao) = self.width(&operands.next()?)?;
-                let (b, bo) = self.width(&operands.next()?)?;
-                Some((a + b, ao || bo))
-            }
-            _ => None,
-        }
     }
 
     // ---- sema/unused-subprogram ---------------------------------------------

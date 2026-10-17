@@ -179,7 +179,7 @@ pub const RULES: &[Rule] = &[
     ),
     rule(
         codes::WIDTH_MISMATCH,
-        "An assignment, initial value or port association gives a vector a value with a different static number of elements.",
+        "An assignment, initial value or port association gives a vector a value with a different number of elements, widths being worked out through generics and generic maps.",
         Warn,
         Error,
         false,

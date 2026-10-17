@@ -608,8 +608,9 @@ Each entry is either a level, or a table with an optional `level` and rule optio
 - Rules with options: `style/line-length` (`max`), `sema/unassociated-port` (`undeclared`,
   for its quick fix), `sema/missing-branch-assignment` (`clocked`, to check clocked
   processes too), `sema/multiple-drivers` (`resolved`: `"rtl"`, `"always"` or `"never"`,
-  for signals of resolved types such as `std_logic`), `sema/index-range` (`generics`, to
-  use generics' default values), `sema/constant-condition` (`constants`, to follow boolean
+  for signals of resolved types such as `std_logic`), `sema/index-range`,
+  `sema/width-mismatch` and `sema/comparison-width` (`generics`, to use generics' default
+  values), `sema/constant-condition` (`constants`, to follow boolean
   constants), `sema/unused-subprogram` (`public`, to check the subprograms of packages
   across the project), `style/identifier-case` (`libraries`, to check names from `std` and
   `ieee` too), `style/magic-number` (`allow`, a list of integers), `style/file-header`

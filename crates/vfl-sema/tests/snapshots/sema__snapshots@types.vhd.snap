@@ -25,7 +25,6 @@ invalid.vhd:31:11: sema/no-matching-overload: no overload of `to_byte` accepts (
 invalid.vhd:32:8: sema/no-matching-overload: no overload of `to_integer` accepts (`STD_LOGIC_VECTOR`)
 invalid.vhd:33:28: sema/type-mismatch: cannot convert `integer` to `STD_LOGIC_VECTOR`
 invalid.vhd:34:7: sema/type-mismatch: expected `integer`, found `STD_LOGIC_VECTOR`
-invalid.vhd:35:11: sema/width-mismatch: `dout` has 8 elements but the value has 4
 invalid.vhd:36:8: sema/type-mismatch: expected `boolean`, found `STD_ULOGIC`
 invalid.vhd:38:11: sema/sensitivity-list: the process reads `n` but its sensitivity list does not name it [fix: Add `n` to the sensitivity list]
 invalid.vhd:38:12: sema/unneeded-sensitivity: `clk` is in the sensitivity list but the process never reads it
@@ -53,4 +52,5 @@ invalid.vhd:32:3: sema/multiple-drivers: `n` is also driven by the statement at 
 invalid.vhd:33:3: sema/multiple-drivers: `dout` is also driven by the statement at line 23; its type is resolved, but two drivers are rarely intended outside a tri-state bus
 invalid.vhd:35:3: sema/multiple-drivers: `dout` is also driven by the statement at line 23; its type is resolved, but two drivers are rarely intended outside a tri-state bus
 invalid.vhd:36:3: sema/multiple-drivers: `b` is also driven by the statement at line 26; a signal of an unresolved type can have only one driver
+invalid.vhd:35:11: sema/width-mismatch: `dout` has 8 elements but the value has 4
 invalid.vhd:45:10: sema/synthesis-delay: `wait for` cannot be synthesized
