@@ -1,7 +1,7 @@
-//! Hardware checks on resolved units: width mismatches in assignments and
-//! associations, latches inferred by combinational processes, signals
-//! that cross clock domains, input ports left open, resets, state
-//! machines, and the choices of `case` statements.
+//! Hardware checks on resolved units: latches inferred by combinational
+//! processes, signals that cross clock domains, input ports left open,
+//! resets, state machines, and the choices of `case` statements. Width
+//! mismatches are checked on demand (`code/widths.rs`).
 
 pub(crate) mod cases;
 mod fsm;
@@ -138,18 +138,22 @@ pub(crate) fn literal_width(token: &SyntaxToken) -> Option<u32> {
     let text = token.text();
     match token.kind() {
         SyntaxKind::STRING_LITERAL => {
+            // `"..."`, or `%...%` (the replacement delimiter), with the
+            // delimiter doubled inside.
+            let delimiter = text.chars().next()?;
             let inner = text.get(1..text.len().checked_sub(1)?)?;
-            Some(inner.replace("\"\"", "\"").chars().count() as u32)
+            let doubled = inner.matches(&format!("{delimiter}{delimiter}")).count();
+            Some((inner.chars().count() - doubled) as u32)
         }
         SyntaxKind::BIT_STRING_LITERAL => {
-            let quote = text.find('"')?;
+            let quote = text.find(['"', '%'])?;
             let (prefix, rest) = text.split_at(quote);
             let digits: String = prefix.chars().take_while(char::is_ascii_digit).collect();
             if !digits.is_empty() {
                 return digits.parse().ok();
             }
             let base = prefix.chars().last()?.to_ascii_lowercase();
-            let content = rest.trim_matches('"').replace('_', "");
+            let content = rest.trim_matches(['"', '%']).replace('_', "");
             let n = content.chars().count() as u32;
             match base {
                 'b' => Some(n),
@@ -162,18 +166,22 @@ pub(crate) fn literal_width(token: &SyntaxToken) -> Option<u32> {
     }
 }
 
+/// The values of a waveform, conditional waveforms or selected waveforms:
+/// every expression that is assigned.
+pub(crate) fn assigned_values(node: &SyntaxNode, out: &mut Vec<SyntaxNode>) {
+    Checker::assigned_values(node, out);
+}
+
 // ---- The checks --------------------------------------------------------
 
-/// Runs the checks on one unit; `refs_at` and `decls_at` are the type
-/// checker's tables of references and declarations by range, `elements`
-/// its names of record elements.
+/// Runs the checks on one unit; `refs_at` is the type checker's table of
+/// references by range, `elements` its names of record elements.
 pub(crate) fn check_unit(
     ctx: &Ctx,
     unit: UnitId,
     design_unit: &SyntaxNode,
     result: &UnitResult,
     refs_at: &FxHashMap<TextRange, usize>,
-    decls_at: &FxHashMap<TextRange, DeclId>,
     elements: &[ElementRef],
 ) -> Vec<Diagnostic> {
     let file = ctx.units[unit as usize].file;
@@ -183,7 +191,6 @@ pub(crate) fn check_unit(
         file,
         result,
         refs_at,
-        decls_at,
         elements,
         by_start: std::cell::OnceCell::new(),
         clocked: Vec::new(),
@@ -205,8 +212,6 @@ struct Checker<'a> {
     file: u32,
     result: &'a UnitResult,
     refs_at: &'a FxHashMap<TextRange, usize>,
-    /// This unit's declarations by name range.
-    decls_at: &'a FxHashMap<TextRange, DeclId>,
     /// The type checker's names of record elements.
     elements: &'a [ElementRef],
     /// Reference indexes in source order, built when needed.
@@ -285,31 +290,6 @@ impl<'a> Checker<'a> {
     /// The definition of the type of an object.
     fn object_type(&self, decl: &Decl) -> Option<&'a TypeDef> {
         self.type_def(decl.subtype?)
-    }
-
-    /// Whether an object is an array of scalars, such as a vector of bits:
-    /// what widths are checked for.
-    fn is_vector(&self, decl: &Decl) -> bool {
-        match self.object_type(decl) {
-            Some(TypeDef::Array {
-                indexes,
-                element: Some(element),
-            }) if indexes.len() == 1 => self.type_def(*element).is_some_and(|d| {
-                matches!(d, TypeDef::Enum(_) | TypeDef::Integer | TypeDef::Scalar)
-            }),
-            _ => false,
-        }
-    }
-
-    /// Whether a declaration is a vector port of a module of another
-    /// language, whose width is literal.
-    fn is_foreign_vector(&self, decl: &Decl) -> bool {
-        decl.width.is_some()
-            && self
-                .ctx
-                .files
-                .get(decl.file as usize)
-                .is_some_and(|f| f.foreign.is_some())
     }
 
     /// Whether an object is an array of arrays: a memory.
@@ -415,44 +395,6 @@ impl<'a> Checker<'a> {
         self.width_at(expr, depth)
     }
 
-    /// The width of an assignment target: a name or a slice.
-    fn target_width(&self, target: &SyntaxNode) -> Option<(u32, String)> {
-        let name = match target.kind() {
-            SyntaxKind::CALL_EXPR => target.children().next()?,
-            _ => target.clone(),
-        };
-        let decl = self.named(&name)?;
-        if !(decl.kind.is_object() || decl.kind == DeclKind::Alias) || !self.is_vector(decl) {
-            return None;
-        }
-        Some((self.width(target)?, decl.spelling.clone()))
-    }
-
-    fn mismatch(&self, target: (u32, String), value: &SyntaxNode) -> Option<Diagnostic> {
-        let width = self.width(value)?;
-        if width == target.0 {
-            return None;
-        }
-        Some(Diagnostic {
-            code: codes::WIDTH_MISMATCH,
-            file: self.file,
-            range: value.text_range(),
-            message: format!(
-                "`{}` has {} elements but the value has {width}",
-                target.1, target.0
-            ),
-            fix: None,
-        })
-    }
-
-    fn check_value(&mut self, target: &Option<(u32, String)>, value: &SyntaxNode) {
-        if let Some(target) = target
-            && let Some(diag) = self.mismatch(target.clone(), value)
-        {
-            self.diags.push(diag);
-        }
-    }
-
     /// The values of a waveform, conditional waveforms or selected
     /// waveforms: every expression that is assigned.
     fn assigned_values(node: &SyntaxNode, out: &mut Vec<SyntaxNode>) {
@@ -493,67 +435,6 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn assignment(&mut self, node: &SyntaxNode) {
-        use SyntaxKind::*;
-        let selected = node.kind() == SELECTED_ASSIGN_STMT;
-        let mut seen_select = !selected;
-        let mut target = None;
-        let mut target_seen = false;
-        let mut values = Vec::new();
-        for element in node.children_with_tokens() {
-            let n = match element {
-                rowan::NodeOrToken::Token(t) => {
-                    if t.kind() == SELECT_KW {
-                        seen_select = true;
-                    }
-                    continue;
-                }
-                rowan::NodeOrToken::Node(n) => n,
-            };
-            if n.kind() == LABEL || !seen_select {
-                continue;
-            }
-            if !target_seen {
-                target_seen = true;
-                target = self.target_width(&n);
-                continue;
-            }
-            if n.kind() != DELAY_MECHANISM {
-                Self::assigned_values(&n, &mut values);
-            }
-        }
-        for value in values {
-            self.check_value(&target, &value);
-        }
-    }
-
-    /// An object declaration's initial value against its width.
-    fn object_decl(&mut self, node: &SyntaxNode) {
-        let Some(list) = node.children().find(|n| n.kind() == SyntaxKind::IDENT_LIST) else {
-            return;
-        };
-        let Some(first) = list.first_token() else {
-            return;
-        };
-        let Some(decl) = self
-            .decls_at
-            .get(&first.text_range())
-            .and_then(|&id| self.decl(id))
-        else {
-            return;
-        };
-        let Some(width) = decl.width.filter(|_| self.is_vector(decl)) else {
-            return;
-        };
-        let after_default = node
-            .children_with_tokens()
-            .skip_while(|e| e.kind() != SyntaxKind::COLON_EQ)
-            .find_map(|e| e.into_node());
-        if let Some(value) = after_default {
-            self.check_value(&Some((width, decl.spelling.clone())), &value);
-        }
-    }
-
     /// The associations of a port or generic map against the instantiated
     /// unit's interface.
     fn associations(&mut self, list: &SyntaxNode, interface: &[DeclId], ports: bool) {
@@ -570,29 +451,10 @@ impl<'a> Checker<'a> {
             } else {
                 (None, parts.next())
             };
-            let Some(actual) = actual else {
-                // `p => open`.
-                if ports && element.has_child(|k| k == SyntaxKind::OPEN_KW) {
-                    self.open_input(&element, formal.as_ref(), interface.get(position));
-                }
-                continue;
-            };
-            if actual
-                .descendants_with_tokens()
-                .any(|e| matches!(e.kind(), SyntaxKind::OPEN_KW | SyntaxKind::INERTIAL_KW))
-            {
-                continue;
+            // `p => open`.
+            if actual.is_none() && ports && element.has_child(|k| k == SyntaxKind::OPEN_KW) {
+                self.open_input(&element, formal.as_ref(), interface.get(position));
             }
-            let formal_width = match formal {
-                // A whole formal; `f(3 downto 0) => x` and conversions are
-                // left alone.
-                Some(f) if matches!(f.kind(), SyntaxKind::NAME) => self.named(&f),
-                Some(_) => None,
-                None => interface.get(position).and_then(|&id| self.decl(id)),
-            }
-            .filter(|d| self.is_vector(d) || self.is_foreign_vector(d))
-            .and_then(|d| Some((d.width?, d.spelling.clone())));
-            self.check_value(&formal_width, &actual);
         }
     }
 
@@ -649,7 +511,6 @@ impl<'a> Checker<'a> {
         for aspect in node.children() {
             let ports = match aspect.kind() {
                 SyntaxKind::PORT_MAP_ASPECT => true,
-                SyntaxKind::GENERIC_MAP_ASPECT => false,
                 _ => continue,
             };
             let interface: Vec<DeclId> = members
@@ -688,11 +549,9 @@ impl<'a> Checker<'a> {
                     if node.kind() == SELECTED_ASSIGN_STMT {
                         self.case_choices(&node);
                     }
-                    self.assignment(&node);
                     events.skip_subtree();
                 }
                 SIGNAL_DECL | VARIABLE_DECL | CONSTANT_DECL | INTERFACE_OBJECT_DECL => {
-                    self.object_decl(&node);
                     events.skip_subtree();
                 }
                 COMPONENT_INSTANTIATION_STMT => {

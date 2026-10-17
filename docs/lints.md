@@ -366,22 +366,59 @@ since a process without a sensitivity list and without a `wait` never stops.
 ### `sema/width-mismatch`
 
 An assignment, an initial value, or a port or generic association gives a vector a value
-with a different number of elements, when both sizes are known statically. Synthesis tools
-usually reject this, and simulation fails at run time.
+with a different number of elements. Synthesis tools usually reject this, and simulation
+fails at run time.
 
-Sizes are known for objects declared with a static index constraint (`(7 downto 0)`,
-`(WIDTH - 1 downto 0)` with a constant `WIDTH`), slices, string and bit-string literals
-(`"101"`, `x"0F"`, `8x"FF"`) and concatenations (`&`) of these; constants with a static
-integer value are followed.
+Widths are linear expressions of generics and of loop and generate parameters, so a
+mismatch is found whatever their values are: `std_logic_vector(W - 1 downto 0)` has `W`
+elements, one fewer than `std_logic_vector(W downto 0)`. Constants are followed to their
+value, or to their initial value when it depends on generics.
 
 ```vhdl
 signal narrow : std_logic_vector(3 downto 0) := "101";  -- `narrow` has 4 elements but the value has 3
-dout <= din(3 downto 0);   -- `dout` has 8 elements but the value has 4
+dout <= din(3 downto 0);    -- `dout` has 8 elements but the value has 4
+reg <= din & '0';           -- `reg` has `W` elements but the value has `W + 1`
+u <= resize(u16, 4);        -- `u` has 8 elements but the value has 4
 ```
 
+Widths are known for objects declared with an index constraint (`(7 downto 0)`, `(W - 1
+downto 0)`, `(din'range)`), or a constrained subtype or array type; constants of an
+unconstrained type (`constant C : std_logic_vector := x"00"`); slices; words of memories
+(`mem(i)`, when the array type gives the element's width); string and bit-string literals
+(`"101"`, `x"0F"`, `8x"FF"`); concatenations (`&`); `'length`, `'high`, `'low`, `'left`
+and `'right` of objects; type conversions; the logical operators and, for `numeric_std`,
+`+` and `-` (the wider operand), `*` (the sum of the widths), `/`, `mod` and `rem`;
+`resize`, `to_unsigned`, `to_signed`, `to_slv` and the like (their size argument), and
+`shift_left`, `shift_right`, `rotate_left`, `rotate_right` and the `to_01` / `to_x01`
+family (the width of their argument).
+
+At an instantiation, the generics of the instantiated entity or component are replaced by
+the actuals of its generic map, or by their default values, so each port has the width of
+that instance:
+
+```vhdl
+u_fifo : entity work.fifo
+  generic map (W => 16)
+  port map (din => byte);   -- `din` has 16 elements (`W` in `fifo`) but the value has 8
+```
+
+An actual can depend on the generics of the instantiating unit (`W => DATA_W + 1`); one
+that is not a linear expression of them (`W => log2(N)`) leaves the ports that depend on it
+unchecked.
+
+With the `generics` option (on by default), two widths that differ by an amount that
+depends on generics (`W` and `N`) are compared with the generics at their default values,
+and the finding says so (`, with generics at their default values`); such findings are not
+reported under an `if` or `case` generate, which often exists for other values.
+
+| Option | Type | Default |
+|--------|------|---------|
+| `generics` | boolean | `true` |
+
 Only one-dimensional arrays of scalars (bit and logic vectors, `unsigned`, `signed`,
-strings) are checked; aggregates, function results and anything whose size depends on a
-generic or a run-time value are skipped. `warn` in `recommended`, `error` in `strict`.
+strings) are checked; aggregates (`(others => '0')`), other function results and
+anything whose size depends on a run-time value are skipped. `warn` in `recommended`,
+`error` in `strict`.
 
 ### `sema/inferred-latch`
 
@@ -753,7 +790,9 @@ The range of an object comes from its subtype indication (`(7 downto 0)`,
 `t_slv_array(0 to 3)(7 downto 0)`), or from the constrained subtype or array type it names
 (`subtype word_t is std_logic_vector(15 downto 0)`, `type mem_t is array (0 to 3) of
 ...`). Indexes and bounds are static when they are made of literals and constants of known
-value. An index that is a loop or `for` generate parameter is checked over the parameter's
+value. Bounds that depend on generics are compared as expressions of them: in `s :
+std_logic_vector(W - 1 downto 0)`, the index `W` and the slice `W downto 1` are outside the
+range of `s` whatever `W` is, and are reported without the `generics` option. An index that is a loop or `for` generate parameter is checked over the parameter's
 static range. Only one-dimensional arrays are checked, and only the first index of an array
 of arrays (`mem(4)(0)`).
 
@@ -851,11 +890,19 @@ signal s : std_logic_vector(7 downto 0);
 if s = "0000" then   -- comparison of 8 elements with 4 elements, so `=` is always false
 ```
 
-Widths are those of objects with a static index constraint, slices with static bounds,
-string and bit-string literals, and concatenations of these. Comparisons that use
-an operator declared by a package (`numeric_std`'s on `unsigned`, `numeric_std_unsigned`'s
-on `std_logic_vector`) compare values and are not reported. `warn` in `recommended`, `error`
-in `strict`.
+Widths are worked out as for [`sema/width-mismatch`](#semawidth-mismatch), through
+generics and constants: `a = b` is reported when `a` has `W` elements and `b` has `W + 1`.
+With the `generics` option (on by default), widths that differ by an amount that depends on
+generics are compared at the generics' default values, and the finding says so; not under
+an `if` or `case` generate. Comparisons that use an operator declared by a package
+(`numeric_std`'s on `unsigned`, `numeric_std_unsigned`'s on `std_logic_vector`) compare
+values and are not reported.
+
+| Option | Type | Default |
+|--------|------|---------|
+| `generics` | boolean | `true` |
+
+`warn` in `recommended`, `error` in `strict`.
 
 ### `sema/synthesis-delay`
 
