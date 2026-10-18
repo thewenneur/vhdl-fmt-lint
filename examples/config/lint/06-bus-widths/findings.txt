@@ -1,0 +1,3 @@
+before.vhd:27:20: error[sema/width-mismatch] `n` has 4 elements but the value has 8, with generics at their default values
+before.vhd:32:18: error[sema/index-range] index `WIDTH + 1` is outside the range of `acc` (WIDTH downto 0)
+before.vhd:56:51: error[sema/width-mismatch] `sum` has `DATA_W + 1` elements (`WIDTH + 1` in `accumulator`) but the value has `DATA_W`

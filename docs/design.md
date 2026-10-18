@@ -112,15 +112,20 @@ Each crate is usable as a library; only `vfl-cli` and `vfl-lsp` do I/O policy.
   units of the same name in one library.
 - Each resolved reference records its access (read, write, both), which feeds the
   unused / unread / undriven / sensitivity checks.
+- `sema/width-mismatch` (`crates/vfl-sema/src/code/widths.rs`) runs on demand, with the
+  other code checks: an assignment, initial value or port / generic association where a
+  vector of scalars gets a value with a different number of elements. Widths and bounds are
+  linear expressions of generics and loop / generate parameters (constants followed to
+  their value or initial value), so `W - 1 downto 0` and `W downto 0` are known to differ
+  by one whatever `W` is. Expression widths come from literals, objects, slices, memory
+  words, `&`, logical operators, type conversions, `'length` and the bound attributes,
+  `numeric_std` arithmetic and sized functions (`resize`, `to_unsigned`). At an
+  instantiation the instantiated unit's generics are replaced by the generic map's actuals
+  (linear in the instantiating unit's generics) or their defaults. Widths that differ by a
+  generic-dependent amount are compared at the generics' defaults with the `generics`
+  option. The same widths serve `sema/comparison-width`, and the same bounds the symbolic
+  part of `sema/index-range`.
 - Hardware checks (`crates/vfl-sema/src/rtl.rs`) run with type checking, per unit:
-  - `sema/width-mismatch`: an assignment, initial value or port / generic association
-    where a vector of scalars gets a value with a different static number of elements.
-    Declarations record a width when their one-dimensional constraint has static bounds
-    (literals and constants with a static integer value, through subtypes); expression
-    widths come from string and bit string literals, objects, slices, `&`, logical
-    operators, type conversions, and `numeric_std` `+` / `-` (the wider operand).
-    Aggregates, function calls and anything generic-dependent are unknown and never
-    reported.
   - `sema/inferred-latch`: a combinational process (a sensitivity list or a single
     trailing `wait on`, no clock edge, no delayed `after` assignments) that assigns a
     signal on some paths but not all. Paths follow `if` (an `else` is needed), `case`

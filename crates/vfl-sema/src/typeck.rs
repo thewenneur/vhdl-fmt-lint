@@ -216,7 +216,6 @@ pub(crate) fn check_unit(
             design_unit,
             result,
             &checker.refs_at,
-            &checker.decls_at,
             &checker.elements,
         );
         checker.diags.extend(rtl);

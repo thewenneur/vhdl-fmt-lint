@@ -16,7 +16,6 @@ ranges.vhd:22:10: sema/unread-signal: signal `small` is assigned but never read
 ranges.vhd:23:10: sema/unread-signal: signal `nat` is assigned but never read
 ranges.vhd:24:10: sema/undriven-signal: signal `u` is read but never assigned
 ranges.vhd:26:12: sema/unused-constant: constant `BAD` is never used [fix: Remove the unused constant `BAD`]
-ranges.vhd:30:23: sema/width-mismatch: `dout` has 4 elements but the value has 0
 synth.vhd:8:5: sema/unused-port: port `level` is never used
 synth.vhd:15:10: sema/undriven-signal: signal `n` is read but never assigned
 pkg.vhd:8:12: sema/unused-subprogram: function `public_unused` is never called
@@ -37,9 +36,10 @@ ranges.vhd:22:42: sema/value-range: 8 is outside the range of `small` (0 to 7)
 ranges.vhd:26:42: sema/value-range: 0 is outside the range of `BAD` (1 to 4)
 ranges.vhd:28:13: sema/index-range: the slice `8 downto 1` is outside the range of `s` (7 downto 0)
 ranges.vhd:29:13: sema/index-range: the slice `0 to 7` goes `to` but `s` is declared `downto` (7 downto 0)
+ranges.vhd:30:23: sema/width-mismatch: `dout` has 4 elements but the value has 0
 ranges.vhd:30:25: sema/index-range: the slice `3 downto 4` of `s` is a null range: it has no elements
 ranges.vhd:31:16: sema/index-range: index 8 is outside the range of `s` (7 downto 0)
-ranges.vhd:32:18: sema/index-range: index 8 is outside the range of `din` (7 downto 0), with generics at their default values
+ranges.vhd:32:18: sema/index-range: index `WIDTH` is outside the range of `din` (WIDTH - 1 downto 0)
 ranges.vhd:33:16: sema/index-range: index 16 is outside the range of `w` (15 downto 0)
 ranges.vhd:35:18: sema/index-range: index 4 is outside the range of `mem` (0 to 3)
 ranges.vhd:37:10: sema/value-range: -1 is outside the range of `nat` (at least 0)

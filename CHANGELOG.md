@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Bus widths and index ranges through generics.** `sema/width-mismatch`,
+  `sema/comparison-width` and `sema/index-range` work out widths and bounds as expressions
+  of generics and loop parameters, so `reg <= din & '0'` with `W`-bit vectors is reported
+  (`W` elements against `W + 1`), as is the index `W` of a `W - 1 downto 0` vector,
+  whatever `W` is. At an instantiation, each port gets the width of that instance, from the
+  generic map or the generics' defaults (`din` has 16 elements with `W => 16`), including
+  actuals that depend on the instantiating unit's generics (`W => DATA_W + 1`). Widths also
+  come from constants of unconstrained types, memory words, `'length` and `'range`,
+  `numeric_std` arithmetic and `resize` / `to_unsigned` / `to_signed`. A new `generics`
+  option of `sema/width-mismatch` and `sema/comparison-width` (on by default) compares
+  widths that differ by a generic-dependent amount at the generics' default values. See
+  [docs/lints.md](docs/lints.md#semawidth-mismatch) and the
+  [example](examples/config/lint/06-bus-widths).
+
+### Changed
+
+- `sema/width-mismatch` is computed on demand with the other code checks rather than
+  during analysis, so it costs nothing when it is off.
+
 ## [0.9.0] - 2026-10-16
 
 Library lists merged file by file with the code, so stale tool files and `vhdl_ls.toml`

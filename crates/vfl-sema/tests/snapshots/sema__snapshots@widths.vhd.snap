@@ -1,0 +1,78 @@
+---
+source: crates/vfl-sema/tests/sema.rs
+expression: analyze(&text)
+input_file: crates/vfl-sema/tests/data/widths.vhd
+---
+widths_pkg.vhd: work
+fifo.vhd: work
+top.vhd: work
+fifo.vhd:8:5: sema/unused-generic: generic `INIT` is never used
+fifo.vhd:20:10: sema/unread-signal: signal `other` is assigned but never read
+fifo.vhd:21:10: sema/unread-signal: signal `len` is assigned but never read
+top.vhd:12:14: sema/unread-signal: signal `c8` is assigned but never read
+top.vhd:14:10: sema/unread-signal: signal `b32` is assigned but never read
+top.vhd:15:10: sema/unread-signal: signal `lvl` is assigned but never read
+top.vhd:16:10: sema/unread-signal: signal `lvl4` is assigned but never read
+top.vhd:20:10: sema/unread-signal: signal `word` is assigned but never read
+fifo.vhd:31:3: sema/multiple-drivers: `reg` is also driven by the statement at line 24; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+fifo.vhd:32:3: sema/multiple-drivers: `dout` is also driven by the statement at line 25; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+fifo.vhd:33:3: sema/multiple-drivers: `wide` is also driven by the statement at line 27; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+fifo.vhd:37:3: sema/multiple-drivers: `dout` is also driven by the statement at line 25; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+fifo.vhd:38:3: sema/multiple-drivers: `dout` is also driven by the statement at line 25; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+fifo.vhd:39:3: sema/multiple-drivers: `dout` is also driven by the statement at line 25; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+fifo.vhd:41:3: sema/multiple-drivers: `dout` is also driven by the statement at line 25; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+fifo.vhd:31:10: sema/width-mismatch: `reg` has `W` elements but the value has `W + 1`
+fifo.vhd:32:11: sema/width-mismatch: `dout` has `W` elements but the value has `W - 1`
+fifo.vhd:33:11: sema/width-mismatch: `wide` has `2 * W` elements but the value has `2 * W + 1`
+fifo.vhd:35:12: sema/width-mismatch: `small` has 4 elements but the value has 8, with generics at their default values
+fifo.vhd:37:18: sema/index-range: index `W` is outside the range of `din` (W - 1 downto 0)
+fifo.vhd:38:11: sema/width-mismatch: `dout` has `W` elements but the value has `W + 1`
+fifo.vhd:38:15: sema/index-range: the slice `W + 1 downto 1` is outside the range of `big` (W downto 0)
+fifo.vhd:39:20: sema/index-range: index `DEPTH` is outside the range of `small` (DEPTH - 1 downto 0)
+top.vhd:26:76: sema/multiple-drivers: `b16` is also driven by the statement at line 25; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:27:65: sema/multiple-drivers: `lvl4` is also driven by the statement at line 26; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:27:71: sema/multiple-drivers: `b16` is also driven by the statement at line 25; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:29:68: sema/multiple-drivers: `lvl` is also driven by the statement at line 25; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:29:81: sema/multiple-drivers: `b16` is also driven by the statement at line 25; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:31:91: sema/multiple-drivers: `lvl` is also driven by the statement at line 25; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:32:96: sema/multiple-drivers: `lvl` is also driven by the statement at line 25; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:34:117: sema/multiple-drivers: `lvl` is also driven by the statement at line 25; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:34:130: sema/multiple-drivers: `b8` is also driven by the statement at line 29; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:36:99: sema/multiple-drivers: `b8` is also driven by the statement at line 29; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:36:112: sema/multiple-drivers: `lvl` is also driven by the statement at line 25; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:36:125: sema/multiple-drivers: `b16` is also driven by the statement at line 25; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:39:3: sema/combinational-loop: combinational loop with no register on the way: `u` -> `u16` -> `u`
+top.vhd:40:3: sema/multiple-drivers: `u` is also driven by the statement at line 39; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:42:3: sema/multiple-drivers: `u16` is also driven by the statement at line 41; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:43:3: sema/multiple-drivers: `u16` is also driven by the statement at line 41; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:44:3: sema/multiple-drivers: `u` is also driven by the statement at line 39; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:45:3: sema/multiple-drivers: `u16` is also driven by the statement at line 41; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:46:3: sema/multiple-drivers: `u` is also driven by the statement at line 39; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:47:3: sema/multiple-drivers: `b8` is also driven by the statement at line 29; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:48:3: sema/multiple-drivers: `b8` is also driven by the statement at line 29; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:52:3: sema/multiple-drivers: `b16` is also driven by the statement at line 25; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:57:3: sema/multiple-drivers: `b8` is also driven by the statement at line 29; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:58:3: sema/multiple-drivers: `b16` is also driven by the statement at line 25; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:62:5: sema/multiple-drivers: `b16` is also driven by the statement at line 25; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:63:5: sema/multiple-drivers: `b16` is also driven by the statement at line 25; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:67:3: sema/multiple-drivers: `y` is also driven by the statement at line 31; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:68:3: sema/multiple-drivers: `y` is also driven by the statement at line 31; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:69:3: sema/multiple-drivers: `y` is also driven by the statement at line 31; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:70:3: sema/multiple-drivers: `y` is also driven by the statement at line 31; its type is resolved, but two drivers are rarely intended outside a tri-state bus
+top.vhd:26:64: sema/width-mismatch: `din` has 16 elements (`W` in `fifo`) but the value has 8
+top.vhd:26:90: sema/width-mismatch: `level` has 3 elements (`ADDR + 1` in `fifo`) but the value has 4
+top.vhd:26:104: sema/width-mismatch: `wide` has 32 elements (`2 * W` in `fifo`) but the value has 16
+top.vhd:29:42: sema/width-mismatch: `din` has 8 elements (`W` in `fifo`) but the value has 16
+top.vhd:32:72: sema/width-mismatch: `din` has `DATA_W + 1` elements (`W` in `fifo`) but the value has `DATA_W`
+top.vhd:34:54: sema/width-mismatch: `INIT` has 4 elements (`W` in `fifo`) but the value has 8
+top.vhd:40:8: sema/width-mismatch: `u` has 8 elements but the value has 4
+top.vhd:42:10: sema/width-mismatch: `u16` has 16 elements but the value has 8
+top.vhd:44:8: sema/width-mismatch: `u` has 8 elements but the value has 16
+top.vhd:46:8: sema/width-mismatch: `u` has 8 elements but the value has 16
+top.vhd:48:9: sema/width-mismatch: `b8` has 8 elements but the value has 16
+top.vhd:52:10: sema/width-mismatch: `b16` has 16 elements but the value has 8
+top.vhd:54:13: sema/width-mismatch: `mem(3)` has 8 elements but the value has 16
+top.vhd:57:9: sema/width-mismatch: `b8` has 8 elements but the value has 12
+top.vhd:63:36: sema/width-mismatch: `b16` has 8 elements but the value has 16
+top.vhd:68:20: sema/comparison-width: comparison of `DATA_W` elements with `DATA_W + 1` elements, so `=` is always false
+top.vhd:70:20: sema/comparison-width: comparison of 8 elements with 9 elements, so `=` is always false

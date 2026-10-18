@@ -1181,7 +1181,7 @@
               ]
             },
             "sema/width-mismatch": {
-              "description": "An assignment, initial value or port association gives a vector a value with a different static number of elements.",
+              "description": "An assignment, initial value or port association gives a vector a value with a different number of elements, widths being worked out through generics and generic maps.",
               "anyOf": [
                 {
                   "enum": [
@@ -1202,6 +1202,11 @@
                         "error"
                       ],
                       "description": "The level of the rule."
+                    },
+                    "generics": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "Compare widths that depend on generics at the generics' default values."
                     }
                   },
                   "additionalProperties": false
@@ -1791,6 +1796,11 @@
                         "error"
                       ],
                       "description": "The level of the rule."
+                    },
+                    "generics": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "Compare widths that depend on generics at the generics' default values."
                     }
                   },
                   "additionalProperties": false

@@ -1,0 +1,8 @@
+root = true # a project of its own, apart from the other examples
+
+[project]
+exclude = ["after.vhd"] # keep the two copies of the example from clashing
+
+[lint.rules]
+"sema/width-mismatch" = { level = "error", generics = true } # compare at generics' defaults too
+"sema/index-range" = { level = "error", generics = false } # only what holds for any generics
