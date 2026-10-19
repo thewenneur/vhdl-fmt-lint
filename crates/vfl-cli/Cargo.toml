@@ -32,3 +32,16 @@ toml.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+
+# `cargo binstall` downloads the release archives built by
+# .github/workflows/release.yml instead of compiling.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/vfl-v{ version }-{ target }{ archive-suffix }"
+bin-dir = "vfl-v{ version }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+
+[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
+pkg-fmt = "zip"

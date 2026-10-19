@@ -87,6 +87,14 @@ Download the archive for your platform from the
 [latest release](https://github.com/thewenneur/vhdl-fmt-lint/releases/latest), unzip it and
 put `vfl` (`vfl.exe` on Windows) somewhere on the `PATH`.
 
+With [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), the same archive is
+downloaded and installed in `~/.cargo/bin` without compiling (the crates are not on crates.io,
+so name the repository; plain `cargo binstall vfl` finds an unrelated crate):
+
+```sh
+cargo binstall --git https://github.com/thewenneur/vhdl-fmt-lint vfl-cli
+```
+
 Or build it with Rust 1.88 or later ([rustup.rs](https://rustup.rs)):
 
 ```sh
