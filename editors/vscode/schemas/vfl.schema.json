@@ -4337,7 +4337,7 @@
               "default": true
             },
             "datapath": {
-              "description": "Draw the data path of each architecture, top to bottom: ports as terminals, signals as boxes (registers with a clock mark), instances as blocks and operators and functions as rounded boxes (`+ 1` when the other operand is a constant). Conditions, selects and constants are left out, type conversions are wires, and a `mux` appears only where two or more signals meet. Data paths of more than 200 nodes are not drawn.",
+              "description": "Draw the data path of each architecture, top to bottom: inputs and registers start at the top, data flows down, and only feedback into registers goes back up. Ports are terminals, signals boxes (registers with a clock mark), instances blocks, multiplexers trapezoids, `xor` a circled plus, `+`, `-` and `*` circles (with a constant operand beside them), `and`, `or` and `not` gates, and other operators and functions rounded boxes. Conditions, selects and constants are left out, type conversions are wires, and a `mux` appears only where two or more signals meet. Data paths of more than 200 nodes are not drawn.",
               "type": "boolean",
               "default": true
             },

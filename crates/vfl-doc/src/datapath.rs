@@ -171,6 +171,46 @@ impl Graph<'_> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Gate {
+    And,
+    Or,
+    Xor,
+    Not,
+}
+
+/// How an operator is drawn, from its label (`+ 1`: the operator, then a
+/// constant operand).
+enum Shape<'a> {
+    Mux,
+    /// A gate pointing down, inverted output.
+    Gate(Gate, bool),
+    /// An arithmetic operator in a circle, with its constant operand.
+    Circle(&'static str, Option<&'a str>),
+    Box,
+}
+
+fn shape(label: &str) -> Shape<'_> {
+    let (op, constant) = match label.split_once(' ') {
+        Some((op, rest)) => (op, Some(rest)),
+        None => (label, None),
+    };
+    match (op, constant) {
+        ("mux", _) => Shape::Mux,
+        ("xor", None) => Shape::Circle("⊕", None),
+        ("+", _) => Shape::Circle("+", constant),
+        ("-", _) => Shape::Circle("−", constant),
+        ("*", _) => Shape::Circle("×", constant),
+        ("and", None) => Shape::Gate(Gate::And, false),
+        ("nand", None) => Shape::Gate(Gate::And, true),
+        ("or", None) => Shape::Gate(Gate::Or, false),
+        ("nor", None) => Shape::Gate(Gate::Or, true),
+        ("xnor", None) => Shape::Gate(Gate::Xor, true),
+        ("not", None) => Shape::Gate(Gate::Not, true),
+        _ => Shape::Box,
+    }
+}
+
 /// An actual without its type conversions: `counter` for
 /// `std_logic_vector(counter)`.
 fn unconverted(text: &str) -> &str {
@@ -335,7 +375,11 @@ pub fn datapath(
     let sizes: Vec<(f64, f64)> = nodes
         .iter()
         .map(|(kind, name)| match kind {
-            Kind::Op => (width(&cut(name, LABEL)) + 20.0, OP_HEIGHT),
+            Kind::Op => match shape(name) {
+                Shape::Mux | Shape::Gate(..) => (40.0, 30.0),
+                Shape::Circle(..) => (28.0, 28.0),
+                Shape::Box => (width(&cut(name, LABEL)) + 20.0, OP_HEIGHT),
+            },
             Kind::Instance(unit, _) => (
                 width(&cut(name, LABEL)).max(width(&cut(unit, LABEL))) + 20.0,
                 38.0,
@@ -354,10 +398,31 @@ pub fn datapath(
             slot,
         })
         .collect();
-    let layout = layered::layout(&sizes, &edges, None);
+    // A hidden start above the inputs, the registers and the other
+    // sources, so that reading starts at the top: data flows down, and
+    // only the feedback into registers goes back up.
+    let mut sizes = sizes;
+    let mut edges = edges;
+    let start = sizes.len();
+    let shown = edges.len();
+    sizes.push((1.0, 1.0));
+    for (i, (kind, _)) in nodes.iter().enumerate() {
+        if matches!(kind, Kind::Input | Kind::Register(..))
+            || !edges[..shown].iter().any(|e| e.to == i)
+        {
+            edges.push(layered::Edge {
+                from: start,
+                to: i,
+                label: None,
+                merge: None,
+                slot: 0,
+            });
+        }
+    }
+    let layout = layered::layout(&sizes, &edges, Some(start));
 
     let mut c = Canvas::new();
-    for route in &layout.routes {
+    for route in &layout.routes[..shown] {
         for &(x, y) in &route.points {
             c.extend(x, y, x, y);
         }
@@ -406,11 +471,81 @@ pub fn datapath(
             }
             Kind::Op => {
                 c.extend(left, top, left + w, top + h);
-                c.raw(&format!(
-                    r#"<rect class="vfl-box" x="{left:.1}" y="{top:.1}" width="{w:.1}" height="{h:.1}" rx="{:.1}"/>"#,
-                    h / 2.0
-                ));
-                c.text(x, y + 4.0, &name, "middle", "vfl-title");
+                let (b, r) = (top + h, left + w);
+                match shape(&name) {
+                    Shape::Mux => {
+                        // Wide at the inputs, narrow at the output.
+                        c.raw(&format!(
+                            r#"<path class="vfl-box" d="M{left:.1},{top:.1}H{r:.1}L{:.1},{b:.1}H{:.1}Z"/>"#,
+                            r - 8.0,
+                            left + 8.0
+                        ));
+                    }
+                    Shape::Gate(gate, inverted) => {
+                        let mid = top + h / 2.0;
+                        let body = if inverted { b - 6.0 } else { b };
+                        let d = match gate {
+                            Gate::And => format!(
+                                "M{left:.1},{top:.1}H{r:.1}V{mid:.1}A{:.1},{:.1} 0 0 1 {left:.1},{mid:.1}Z",
+                                w / 2.0,
+                                body - mid
+                            ),
+                            Gate::Or | Gate::Xor => format!(
+                                "M{left:.1},{top:.1}Q{x:.1},{:.1} {r:.1},{top:.1}Q{r:.1},{:.1} {x:.1},{body:.1}Q{left:.1},{:.1} {left:.1},{top:.1}Z",
+                                top + 8.0,
+                                top + h * 0.55,
+                                top + h * 0.55
+                            ),
+                            Gate::Not => format!("M{left:.1},{top:.1}H{r:.1}L{x:.1},{body:.1}Z"),
+                        };
+                        c.raw(&format!(r#"<path class="vfl-box" d="{d}"/>"#));
+                        if gate == Gate::Xor {
+                            c.raw(&format!(
+                                r#"<path class="vfl-edge" d="M{left:.1},{:.1}Q{x:.1},{:.1} {r:.1},{:.1}"/>"#,
+                                top - 4.0,
+                                top + 4.0,
+                                top - 4.0
+                            ));
+                        }
+                        if inverted {
+                            c.raw(&format!(
+                                r#"<circle class="vfl-box" cx="{x:.1}" cy="{:.1}" r="3"/>"#,
+                                b - 3.0
+                            ));
+                        }
+                    }
+                    Shape::Circle(symbol, constant) => {
+                        c.raw(&format!(
+                            r#"<circle class="vfl-box" cx="{x:.1}" cy="{y:.1}" r="{:.1}"/>"#,
+                            h / 2.0
+                        ));
+                        if symbol == "⊕" {
+                            c.raw(&format!(
+                                r#"<path class="vfl-edge" d="M{x:.1},{top:.1}V{b:.1}M{left:.1},{y:.1}H{r:.1}"/>"#,
+                                left = x - h / 2.0,
+                                r = x + h / 2.0
+                            ));
+                        } else {
+                            c.text(x, y + 5.0, symbol, "middle", "vfl-title");
+                        }
+                        if let Some(constant) = constant {
+                            c.text(
+                                x + h / 2.0 + 4.0,
+                                y + 4.0,
+                                &cut(constant, LABEL),
+                                "start",
+                                "vfl-actual",
+                            );
+                        }
+                    }
+                    Shape::Box => {
+                        c.raw(&format!(
+                            r#"<rect class="vfl-box" x="{left:.1}" y="{top:.1}" width="{w:.1}" height="{h:.1}" rx="{:.1}"/>"#,
+                            h / 2.0
+                        ));
+                        c.text(x, y + 4.0, &name, "middle", "vfl-title");
+                    }
+                }
             }
         }
     }

@@ -18,10 +18,10 @@
   [docs/lints.md](docs/lints.md#semawidth-mismatch) and the
   [example](examples/config/lint/06-bus-widths).
 - **Data path and combinational logic diagrams.** `vfl doc` draws two new diagrams per
-  architecture, in the style of the others. The data path (`datapath`) runs top to bottom:
-  ports, signals and registers (with a clock mark), instances, and operators and functions
-  (`xor`, `+ 1`, `mux`, `even_parity`), wired by the data flowing between them; clocks,
-  resets, conditions and type conversions are left out. The combinational logic
+  architecture, in the style of the others. The data path (`datapath`) runs top to bottom
+  from the inputs and registers: signals, instances, multiplexers (trapezoids), `xor` (⊕),
+  adders, gates and functions, wired by the data flowing between them; clocks, resets,
+  conditions and type conversions are left out. The combinational logic
   (`combinational`) draws the logic in front of each signal as IEC gates (`&`, `≥1`,
   `=1`), boxes for operators and functions, and multiplexers for `if`, `case`,
   `when … else` and `with … select`, ending in the signal or the flip-flop of a register;

@@ -983,9 +983,11 @@ fn datapath_draws_registers_operators_and_instances() {
     let svg = vfl_doc::datapath::datapath(&d, core, 0, None).unwrap();
     for text in [
         ">counter</text>",
-        ">+ 1</text>",
-        ">xor</text>",
-        ">mux</text>",
+        // `+ 1`: an adder, its constant beside it.
+        ">+</text>",
+        ">1</text>",
+        // `xor`: a circled plus.
+        "<circle",
         ">m</text>",
         ">mult</text>",
         ">hashed</text>",
