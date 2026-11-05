@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-05
+
+A combinational logic diagram per architecture.
+
+### Added
+
+- **Combinational logic diagrams.** `vfl doc` draws the logic in front of each signal of an
+  architecture, in the style of the other diagrams: IEC gates (`&`, `≥1`, `=1`, a circle
+  for `not`), boxes for operators and functions, and multiplexers for `if`, `case`,
+  `when … else` and `with … select` with the choice of each input and the select from
+  below, ending in the signal or the flip-flop of a register. Processes are evaluated
+  statement by statement, variables replaced by their value; state machine states are left
+  to their state diagram. Key `combinational` of `[doc.diagrams]`, and
+  `vfl schema combinational`.
+
 ## [0.10.0] - 2026-11-05
 
 Bus widths and index ranges worked out through generics, `cargo binstall` support, and

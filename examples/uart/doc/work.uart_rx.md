@@ -44,6 +44,10 @@ bit in its middle.
 
 ![Data flow of uart\_rx(rtl)](work.uart_rx.rtl.dataflow.svg)
 
+### Combinational logic
+
+![Combinational logic of uart\_rx(rtl)](work.uart_rx.rtl.combinational.svg)
+
 ### Processes
 
 | Process | Sensitivity | Clock | Drives | Description |

@@ -36,6 +36,10 @@ toggle through two flip-flops and pulses when it changes.
 
 ![Data flow of pulse\_sync(rtl)](work.pulse_sync.rtl.dataflow.svg)
 
+### Combinational logic
+
+![Combinational logic of pulse\_sync(rtl)](work.pulse_sync.rtl.combinational.svg)
+
 ### Clock domains
 
 ![Clock domains of pulse\_sync(rtl)](work.pulse_sync.rtl.clocks.svg)

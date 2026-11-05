@@ -24,6 +24,8 @@ pub enum SchemaKind {
     /// The processes, assignments and instances of an architecture, wired
     /// by the signals they read and drive.
     Dataflow,
+    /// The combinational logic of an architecture as gates and multiplexers.
+    Combinational,
     /// The clock domains of an architecture and the signals crossing them.
     Clocks,
     /// Where each reset of an entity goes, down to the processes.
@@ -306,7 +308,10 @@ pub fn schema(options: &SchemaOptions) -> Result<()> {
                 ),
             }
         }
-        SchemaKind::Dataflow | SchemaKind::Clocks | SchemaKind::Resets => {
+        SchemaKind::Dataflow
+        | SchemaKind::Combinational
+        | SchemaKind::Clocks
+        | SchemaKind::Resets => {
             let Some(entity) = entity else {
                 bail!("this diagram needs an entity name");
             };
@@ -318,6 +323,11 @@ pub fn schema(options: &SchemaOptions) -> Result<()> {
                     .with_context(|| {
                         format!("`{name}` has no process or assignment, or too many blocks")
                     })?,
+                SchemaKind::Combinational => {
+                    vfl_doc::schematic::combinational(&design, entity, arch).with_context(|| {
+                        format!("`{name}` has no combinational logic beyond wires")
+                    })?
+                }
                 SchemaKind::Clocks => vfl_doc::clocks::diagram(&design, entity, arch)
                     .map(|(svg, _)| svg)
                     .with_context(|| format!("`{name}` has fewer than two clocks"))?,

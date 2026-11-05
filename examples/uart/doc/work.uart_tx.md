@@ -47,6 +47,10 @@ parity bit and a stop bit.
 
 ![Data flow of uart\_tx(rtl)](work.uart_tx.rtl.dataflow.svg)
 
+### Combinational logic
+
+![Combinational logic of uart\_tx(rtl)](work.uart_tx.rtl.combinational.svg)
+
 ### Processes
 
 | Process | Sensitivity | Clock | Drives | Description |

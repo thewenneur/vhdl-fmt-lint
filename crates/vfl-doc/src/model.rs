@@ -120,6 +120,9 @@ pub struct Architecture {
     pub aliases: Vec<Alias>,
     /// Packages its own context clause uses.
     pub uses: Vec<Use>,
+    /// The value of each signal it assigns, for the combinational logic
+    /// diagram.
+    pub cones: Vec<crate::logic::Cone>,
 }
 
 impl Architecture {
@@ -653,6 +656,9 @@ impl Ctx<'_> {
         if self.config.fsm {
             arch.fsms = fsm::detect(node, enums, self.style);
         }
+        if self.config.processes && self.config.diagrams.combinational {
+            arch.cones = crate::logic::cones(node);
+        }
         if !self.config.signals {
             arch.signals.clear();
         }
@@ -1084,7 +1090,7 @@ fn clock(process: &SyntaxNode) -> Option<(String, bool)> {
 /// The clock and edge an expression tests: `rising_edge(clk)`,
 /// `falling_edge(clk)` or `clk'event` (taken as rising, unless compared
 /// with `'0'` in the same conjunction).
-fn edge(node: &SyntaxNode) -> Option<(String, bool)> {
+pub(crate) fn edge(node: &SyntaxNode) -> Option<(String, bool)> {
     match node.kind() {
         SyntaxKind::CALL_EXPR => {
             let callee = node.children().next()?;

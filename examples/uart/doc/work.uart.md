@@ -88,6 +88,10 @@ on `rxd` are queued until read from `rx_data`.
 
 ![Data flow of uart(rtl)](work.uart.rtl.dataflow.svg)
 
+### Combinational logic
+
+![Combinational logic of uart(rtl)](work.uart.rtl.combinational.svg)
+
 ### Clock domains
 
 ![Clock domains of uart(rtl)](work.uart.rtl.clocks.svg)
