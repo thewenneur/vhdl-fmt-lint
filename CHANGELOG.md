@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **State machine diagrams have more direct edges**: chains of states line up so their
+  edges run straight, of the placements crossing least the one with the fewest corners
+  wins, and edges into a state under the same condition always merge before their label.
+
 ## [0.11.0] - 2026-11-05
 
 A combinational logic diagram per architecture.
