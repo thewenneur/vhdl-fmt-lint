@@ -4,6 +4,34 @@
 
 ### Added
 
+- **Data path diagrams.** `vfl doc` draws the data path of each architecture, in the style
+  of the other diagrams, top to bottom from the inputs and registers: signals, instances,
+  multiplexers (trapezoids), `xor` (⊕), adders, gates and functions, wired by the data
+  flowing between them; clocks, resets, conditions and type conversions are left out. Key
+  `datapath` of `[doc.diagrams]`, and `vfl schema datapath`.
+
+## [0.11.0] - 2026-11-05
+
+A combinational logic diagram per architecture.
+
+### Added
+
+- **Combinational logic diagrams.** `vfl doc` draws the logic in front of each signal of an
+  architecture, in the style of the other diagrams: IEC gates (`&`, `≥1`, `=1`, a circle
+  for `not`), boxes for operators and functions, and multiplexers for `if`, `case`,
+  `when … else` and `with … select` with the choice of each input and the select from
+  below, ending in the signal or the flip-flop of a register. Processes are evaluated
+  statement by statement, variables replaced by their value; state machine states are left
+  to their state diagram. Key `combinational` of `[doc.diagrams]`, and
+  `vfl schema combinational`.
+
+## [0.10.0] - 2026-11-05
+
+Bus widths and index ranges worked out through generics, `cargo binstall` support, and
+state machine diagrams that write `else`, wrap long conditions and cross less.
+
+### Added
+
 - **Bus widths and index ranges through generics.** `sema/width-mismatch`,
   `sema/comparison-width` and `sema/index-range` work out widths and bounds as expressions
   of generics and loop parameters, so `reg <= din & '0'` with `W`-bit vectors is reported
@@ -17,21 +45,19 @@
   widths that differ by a generic-dependent amount at the generics' default values. See
   [docs/lints.md](docs/lints.md#semawidth-mismatch) and the
   [example](examples/config/lint/06-bus-widths).
-- **Data path and combinational logic diagrams.** `vfl doc` draws two new diagrams per
-  architecture, in the style of the others. The data path (`datapath`) runs top to bottom
-  from the inputs and registers: signals, instances, multiplexers (trapezoids), `xor` (⊕),
-  adders, gates and functions, wired by the data flowing between them; clocks, resets,
-  conditions and type conversions are left out. The combinational logic
-  (`combinational`) draws the logic in front of each signal as IEC gates (`&`, `≥1`,
-  `=1`), boxes for operators and functions, and multiplexers for `if`, `case`,
-  `when … else` and `with … select`, ending in the signal or the flip-flop of a register;
-  processes are evaluated statement by statement, variables replaced by their value. Both
-  are keys of `[doc.diagrams]` and kinds of `vfl schema`.
+- **`cargo binstall --git https://github.com/thewenneur/vhdl-fmt-lint vfl-cli`** installs
+  the release binary instead of building it. See [README.md](README.md).
 
 ### Changed
 
 - `sema/width-mismatch` is computed on demand with the other code checks rather than
   during analysis, so it costs nothing when it is off.
+- **State machine diagrams** (`vfl doc`, `vfl schema fsm`, `vfl spec`): the default branch
+  of an `if` reads `else` instead of `not (all the other conditions)`; long conditions wrap
+  over several lines instead of being cut with `…` (also in Mermaid and DOT); every
+  condition and full state name is written, the diagram growing to make room; edges into
+  the same state under the same condition merge and write it once; and the layout keeps,
+  of several placements, the one whose edges cross least.
 
 ## [0.9.0] - 2026-10-16
 

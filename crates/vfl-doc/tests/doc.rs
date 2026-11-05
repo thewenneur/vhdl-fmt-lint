@@ -497,6 +497,7 @@ fn options_leave_sections_out() {
             hierarchy: false,
             block: false,
             port_map: false,
+            combinational: false,
             datapath: false,
             ..Default::default()
         },

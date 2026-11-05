@@ -6,6 +6,20 @@ the [vfl changelog](https://github.com/thewenneur/vhdl-fmt-lint/blob/main/CHANGE
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-05
+
+### Changed
+
+- **vfl: Show Diagrams** and **Generate Documentation**: a combinational logic diagram per
+  architecture (see the vfl changelog).
+
+## [0.10.0] - 2026-11-05
+
+### Changed
+
+- **vfl: Show Diagrams**: state machines write `else`, wrap long conditions and cross
+  less (see the vfl changelog).
+
 ## [0.9.0] - 2026-10-16
 
 ### Added
