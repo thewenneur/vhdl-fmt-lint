@@ -105,8 +105,6 @@ const PLAIN: usize = usize::MAX;
 /// The choices tried for a layout; the one whose drawing crosses least wins.
 #[derive(Debug, Clone, Copy)]
 struct Variant {
-    /// Write a label shared by merging edges once.
-    merge: bool,
     /// Start the order from the walk visiting successors the other way.
     flip: bool,
     /// Push long trunks to the side.
@@ -152,19 +150,16 @@ struct Hyper {
 }
 
 /// Lays out states of the given sizes (width, height): of a few variants,
-/// the one whose edges cross least, then bend least, preferring shared
-/// labels written once and then the first variant.
+/// the one whose edges cross least, then bend least, then the first one.
+/// Edges sharing a label always merge before it, whatever that costs.
 pub(crate) fn layout(sizes: &[(f64, f64)], edges: &[Edge], initial: Option<usize>) -> Layout {
     let mut best: Option<((usize, usize), Layout)> = None;
-    for merge in [true, false] {
-        for side in [true, false] {
-            for flip in [false, true] {
-                let variant = Variant { merge, flip, side };
-                let layout = layout_with(sizes, edges, initial, variant);
-                let score = (drawn_crossings(edges, &layout), bends(&layout));
-                if best.as_ref().is_none_or(|(b, _)| score < *b) {
-                    best = Some((score, layout));
-                }
+    for side in [true, false] {
+        for flip in [false, true] {
+            let layout = layout_with(sizes, edges, initial, Variant { flip, side });
+            let score = (drawn_crossings(edges, &layout), bends(&layout));
+            if best.as_ref().is_none_or(|(b, _)| score < *b) {
+                best = Some((score, layout));
             }
         }
     }
@@ -248,7 +243,7 @@ fn layout_with(
     // own, when there are several of them.
     let trunk_of: Vec<Trunk> = {
         let key = |i: usize, e: &Edge| {
-            let merge = e.merge.filter(|_| variant.merge && e.label.is_some());
+            let merge = e.merge.filter(|_| e.label.is_some());
             ((e.to, reversed[i]), merge.unwrap_or(PLAIN))
         };
         let mut count: BTreeMap<Trunk, usize> = BTreeMap::new();
