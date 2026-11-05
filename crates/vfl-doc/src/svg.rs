@@ -532,12 +532,16 @@ pub fn fsm(machine: &Fsm) -> String {
     let names = &machine.states;
     let sizes: Vec<(f64, f64)> = names.iter().map(|s| (width(s) + 24.0, HEIGHT)).collect();
     let texts: Vec<Vec<String>> = edges.values().map(|c| lines(c)).collect();
+    // Edges into the same state under the same condition share their label.
+    let mut keys: BTreeMap<(usize, &[String]), usize> = BTreeMap::new();
     let list: Vec<layered::Edge> = edges
         .keys()
         .zip(&texts)
-        .map(|(&(from, to), lines)| layered::Edge {
+        .enumerate()
+        .map(|(i, (&(from, to), lines))| layered::Edge {
             from,
             to,
+            merge: Some(*keys.entry((to, lines.as_slice())).or_insert(i)),
             label: (!lines.is_empty()).then(|| {
                 let w = lines.iter().map(|l| width(l)).fold(0.0, f64::max);
                 (w + 4.0, lines.len() as f64 * 14.0 + 4.0)
