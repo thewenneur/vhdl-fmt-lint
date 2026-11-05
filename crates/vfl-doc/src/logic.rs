@@ -31,12 +31,16 @@ pub enum Expr {
     /// A multiplexer: its select, and the value of each choice (`1` and `0`
     /// for a condition).
     Mux(Box<Expr>, Vec<(String, Expr)>),
+    /// A value past [`MAX_NODES`], no longer tracked: `if` statements in a
+    /// row each keep the previous value in both branches, which doubles.
+    TooLarge,
 }
 
 impl Expr {
     pub fn size(&self) -> usize {
         match self {
             Expr::Name(_) | Expr::Value(_) => 1,
+            Expr::TooLarge => MAX_NODES + 1,
             Expr::Op(_, args) | Expr::Call(_, args, _) => {
                 1 + args.iter().map(Expr::size).sum::<usize>()
             }
@@ -142,6 +146,11 @@ impl<'a> Env<'a> {
     }
 
     fn set(&mut self, key: String, name: String, value: Expr) {
+        let value = if value.size() > MAX_NODES {
+            Expr::TooLarge
+        } else {
+            value
+        };
         match self.slots.iter_mut().find(|s| s.0 == key) {
             Some(slot) => slot.2 = value,
             None => self.slots.push((key, name, value)),
@@ -695,6 +704,22 @@ mod tests {
             op("and", vec![name("s"), op("not", vec![name("v")])])
         );
         assert_eq!(c[2].expr, mux2(name("t"), name("a"), name("b")));
+    }
+
+    #[test]
+    fn ifs_in_a_row_stay_bounded() {
+        // Each `if` keeps the previous value in both branches of its
+        // multiplexer: without a bound this doubles per statement.
+        let ifs: String = (0..200)
+            .map(|i| format!("if s({i}) = '1' then n({i}) <= '1'; end if;\n"))
+            .collect();
+        let c = cones_of(&format!("p : process (all) is begin\n{ifs}end process;"));
+        assert_eq!(c.len(), 1);
+        assert!(
+            c[0].expr.size() <= 2 * MAX_NODES + 4,
+            "{}",
+            c[0].expr.size()
+        );
     }
 
     #[test]
