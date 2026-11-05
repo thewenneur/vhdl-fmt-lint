@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-05
+
+Bus widths and index ranges worked out through generics, `cargo binstall` support, and
+state machine diagrams that write `else`, wrap long conditions and cross less.
+
 ### Added
 
 - **Bus widths and index ranges through generics.** `sema/width-mismatch`,
@@ -18,10 +23,19 @@
   [docs/lints.md](docs/lints.md#semawidth-mismatch) and the
   [example](examples/config/lint/06-bus-widths).
 
+- **`cargo binstall --git https://github.com/thewenneur/vhdl-fmt-lint vfl-cli`** installs
+  the release binary instead of building it. See [README.md](README.md).
+
 ### Changed
 
 - `sema/width-mismatch` is computed on demand with the other code checks rather than
   during analysis, so it costs nothing when it is off.
+- **State machine diagrams** (`vfl doc`, `vfl schema fsm`, `vfl spec`): the default branch
+  of an `if` reads `else` instead of `not (all the other conditions)`; long conditions wrap
+  over several lines instead of being cut with `…` (also in Mermaid and DOT); every
+  condition and full state name is written, the diagram growing to make room; edges into
+  the same state under the same condition merge and write it once; and the layout keeps,
+  of several placements, the one whose edges cross least.
 
 ## [0.9.0] - 2026-10-16
 
