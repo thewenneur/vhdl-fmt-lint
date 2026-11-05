@@ -109,8 +109,6 @@ const PLAIN: usize = usize::MAX;
 /// The choices tried for a layout; the one whose drawing crosses least wins.
 #[derive(Debug, Clone, Copy)]
 struct Variant {
-    /// Write a label shared by merging edges once.
-    merge: bool,
     /// Start the order from the walk visiting successors the other way.
     flip: bool,
     /// Push long trunks to the side.
@@ -156,23 +154,29 @@ struct Hyper {
 }
 
 /// Lays out states of the given sizes (width, height): of a few variants,
-/// the one whose edges cross least, preferring shared labels written once
-/// and then the first variant.
+/// the one whose edges cross least, then bend least, then the first one.
+/// Edges sharing a label always merge before it, whatever that costs.
 pub(crate) fn layout(sizes: &[(f64, f64)], edges: &[Edge], initial: Option<usize>) -> Layout {
-    let mut best: Option<(usize, Layout)> = None;
-    for merge in [true, false] {
-        for side in [true, false] {
-            for flip in [false, true] {
-                let variant = Variant { merge, flip, side };
-                let layout = layout_with(sizes, edges, initial, variant);
-                let c = drawn_crossings(edges, &layout);
-                if best.as_ref().is_none_or(|(b, _)| c < *b) {
-                    best = Some((c, layout));
-                }
+    let mut best: Option<((usize, usize), Layout)> = None;
+    for side in [true, false] {
+        for flip in [false, true] {
+            let layout = layout_with(sizes, edges, initial, Variant { flip, side });
+            let score = (drawn_crossings(edges, &layout), bends(&layout));
+            if best.as_ref().is_none_or(|(b, _)| score < *b) {
+                best = Some((score, layout));
             }
         }
     }
     best.map(|(_, l)| l).unwrap_or_default()
+}
+
+/// The corners of all the edges.
+fn bends(layout: &Layout) -> usize {
+    layout
+        .routes
+        .iter()
+        .map(|r| r.points.len().saturating_sub(2))
+        .sum()
 }
 
 /// The points where an edge crosses another one, apart from edges with the
@@ -243,7 +247,7 @@ fn layout_with(
     // own, when there are several of them.
     let trunk_of: Vec<Trunk> = {
         let key = |i: usize, e: &Edge| {
-            let merge = e.merge.filter(|_| variant.merge && e.label.is_some());
+            let merge = e.merge.filter(|_| e.label.is_some());
             ((e.to, reversed[i], e.slot), merge.unwrap_or(PLAIN))
         };
         let mut count: BTreeMap<Trunk, usize> = BTreeMap::new();
@@ -422,6 +426,8 @@ fn layout_with(
         snap(&nodes, &layers, &mut x, &down, &up, &widths);
         straighten(&nodes, &layers, &mut x, &down, &up, &trunks, &widths);
     }
+    snap_blocks(&nodes, &layers, &mut x, &down, &widths);
+    straighten(&nodes, &layers, &mut x, &down, &up, &trunks, &widths);
 
     // Port positions: under or over the other end if there is room, else
     // as close as the spacing allows.
@@ -1212,6 +1218,105 @@ fn snap(
     }
 }
 
+/// Moves whole blocks of nodes linked by straight links sideways, where
+/// their layers leave room, so that more links run straight: a chain of
+/// states one below the other lines up with the next one instead of
+/// stepping sideways, which moving one node at a time cannot do.
+fn snap_blocks(
+    nodes: &[Node],
+    layers: &[Vec<usize>],
+    x: &mut [f64],
+    down: &[Vec<(usize, f64)>],
+    widths: &[f64],
+) {
+    let count = nodes.len();
+    let half = |v: usize| {
+        if nodes[v].state {
+            (widths[v] / 2.0 - CORNER).max(0.0)
+        } else {
+            0.0
+        }
+    };
+    let links: Vec<(usize, usize, f64)> = (0..count)
+        .flat_map(|a| down[a].iter().map(move |&(b, w)| (a, b, w)))
+        .collect();
+    let straight = |a: usize, b: usize, x: &[f64]| (x[a] - x[b]).abs() <= half(a) + half(b) + 0.01;
+    let mut slot = vec![(0usize, 0usize); count];
+    for (l, layer) in layers.iter().enumerate() {
+        for (i, &v) in layer.iter().enumerate() {
+            slot[v] = (l, i);
+        }
+    }
+    for _ in 0..4 * count.min(64) {
+        // The blocks: nodes joined by straight links.
+        let mut block: Vec<usize> = (0..count).collect();
+        fn root(block: &mut [usize], v: usize) -> usize {
+            let mut r = v;
+            while block[r] != r {
+                r = block[r];
+            }
+            block[v] = r;
+            r
+        }
+        for &(a, b, _) in &links {
+            if straight(a, b, x) {
+                let (ra, rb) = (root(&mut block, a), root(&mut block, b));
+                block[ra] = rb;
+            }
+        }
+        let id: Vec<usize> = (0..count).map(|v| root(&mut block, v)).collect();
+        let mut best: Option<(f64, f64, usize)> = None;
+        for &(a, b, _) in &links {
+            if id[a] == id[b] {
+                continue;
+            }
+            // Move the block of either end to make the link straight.
+            for (u, n) in [(a, b), (b, a)] {
+                let reach = half(u) + half(n);
+                let delta = clamp(x[u], x[n] - reach, x[n] + reach) - x[u];
+                let b_id = id[u];
+                let moved = |v: usize| id[v] == b_id;
+                let fits = (0..count).filter(|&v| moved(v)).all(|v| {
+                    let (l, i) = slot[v];
+                    let layer = &layers[l];
+                    let p = x[v] + delta;
+                    let left = i.checked_sub(1).map(|j| layer[j]).filter(|&w| !moved(w));
+                    let right = layer.get(i + 1).copied().filter(|&w| !moved(w));
+                    left.is_none_or(|w| p >= x[w] + gap(nodes, w, v) - 0.01)
+                        && right.is_none_or(|w| p <= x[w] - gap(nodes, v, w) + 0.01)
+                });
+                if !fits {
+                    continue;
+                }
+                let mut after = x.to_vec();
+                for v in (0..count).filter(|&v| moved(v)) {
+                    after[v] += delta;
+                }
+                let gain: f64 = links
+                    .iter()
+                    .filter(|&&(p, q, _)| moved(p) != moved(q))
+                    .map(|&(p, q, w)| {
+                        w * (f64::from(u8::from(straight(p, q, &after)))
+                            - f64::from(u8::from(straight(p, q, x))))
+                    })
+                    .sum();
+                let better = best.is_none_or(|(g, d, _)| {
+                    gain > g + 1e-9 || (gain > g - 1e-9 && delta.abs() < d.abs())
+                });
+                if gain > 1e-9 && better {
+                    best = Some((gain, delta, b_id));
+                }
+            }
+        }
+        let Some((_, delta, b_id)) = best else { break };
+        for v in 0..count {
+            if id[v] == b_id {
+                x[v] += delta;
+            }
+        }
+    }
+}
+
 /// The x of every node.
 fn place(
     nodes: &[Node],
@@ -1444,6 +1549,35 @@ mod tests {
         assert_eq!(ends(4).len(), 1);
         assert!(l.routes.iter().all(|r| r.points.len() >= 2));
         assert_eq!(l.routes.iter().filter(|r| r.label.is_some()).count(), 3);
+    }
+
+    #[test]
+    fn a_chain_of_states_runs_straight() {
+        // The uart transmitter: IDLE -> START -> DATA -> PARITY | STOP.
+        let sizes = vec![
+            (53.0, 30.0),
+            (60.0, 30.0),
+            (82.0, 30.0),
+            (96.0, 30.0),
+            (53.0, 30.0),
+        ];
+        let labelled = |from, to, w| Edge {
+            from,
+            to,
+            label: Some((w, 32.0)),
+            merge: None,
+            slot: 0,
+        };
+        let edges = vec![
+            labelled(0, 1, 84.0),
+            edge(1, 2),
+            labelled(2, 3, 265.0),
+            labelled(2, 4, 265.0),
+            edge(3, 4),
+            edge(4, 0),
+        ];
+        let l = layout(&sizes, &edges, Some(0));
+        assert_eq!(l.routes[1].points.len(), 2, "{:?}", l.routes[1].points);
     }
 
     #[test]
