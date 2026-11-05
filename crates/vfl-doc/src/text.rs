@@ -23,18 +23,9 @@ fn mermaid_text(text: &str) -> String {
     out
 }
 
-/// The longest transition label of a text diagram.
+/// The widest line of a transition label of a text diagram; longer
+/// conditions wrap.
 const MAX_LABEL: usize = 60;
-
-fn cut(text: &str) -> String {
-    if text.chars().count() <= MAX_LABEL {
-        text.to_owned()
-    } else {
-        let mut out: String = text.chars().take(MAX_LABEL - 1).collect();
-        out.push('…');
-        out
-    }
-}
 
 fn dot_text(text: &str) -> String {
     text.replace('\\', "\\\\").replace('"', "\\\"")
@@ -145,7 +136,11 @@ pub fn fsm_mermaid(machine: &Fsm) -> String {
                     "  {} --> {} : {}",
                     id(&t.from),
                     id(&t.to),
-                    mermaid_text(&cut(condition))
+                    crate::svg::wrap(condition, MAX_LABEL)
+                        .iter()
+                        .map(|l| mermaid_text(l))
+                        .collect::<Vec<_>>()
+                        .join("<br/>")
                 );
             }
             None => {
@@ -182,7 +177,13 @@ pub fn fsm_dot(machine: &Fsm) -> String {
         let label = t
             .condition
             .as_deref()
-            .map(|c| format!(" [label=\"{}\"]", dot_text(&cut(c))))
+            .map(|c| {
+                let lines: Vec<String> = crate::svg::wrap(c, MAX_LABEL)
+                    .iter()
+                    .map(|l| dot_text(l))
+                    .collect();
+                format!(" [label=\"{}\"]", lines.join("\\n"))
+            })
             .unwrap_or_default();
         let _ = writeln!(
             out,

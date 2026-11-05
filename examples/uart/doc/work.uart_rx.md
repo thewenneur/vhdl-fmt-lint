@@ -65,7 +65,7 @@ Current and next registers
 |---|---|---|
 | `IDLE` | `START` | `rxd_sync(1) = '0'` |
 | `START` | `DATA_BIT` | `rxd_sync(1) = '0'` |
-| `START` | `IDLE` | `not (rxd_sync(1) = '0')` |
+| `START` | `IDLE` | `else` |
 | `DATA_BIT` | `STOP` | `engine.bit_idx = 7` |
 | `STOP` | `IDLE` |  |
 

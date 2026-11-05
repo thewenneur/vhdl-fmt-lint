@@ -33,7 +33,7 @@ pub struct Transition {
     pub from: String,
     pub to: String,
     /// The conditions of the `if` branches around the assignment, joined
-    /// with `and`.
+    /// with `and`; an `else` branch is just `else`.
     pub condition: Option<String>,
 }
 
@@ -601,7 +601,7 @@ fn assigned_values(assign: &SyntaxNode, states: &[String]) -> Vec<(String, Optio
             .unwrap_or_default();
     };
     let mut out = Vec::new();
-    let mut previous: Vec<String> = Vec::new();
+    let mut conditional = false;
     let mut value: Option<String> = None;
     let mut expect_condition = false;
     let flush = |value: &mut Option<String>, condition: Option<String>, out: &mut Vec<_>| {
@@ -621,19 +621,14 @@ fn assigned_values(assign: &SyntaxNode, states: &[String]) -> Vec<(String, Optio
             _ => {
                 if let Some(node) = element.as_node().filter(|_| expect_condition) {
                     expect_condition = false;
-                    let condition = compact(node);
-                    flush(&mut value, Some(condition.clone()), &mut out);
-                    previous.push(condition);
+                    flush(&mut value, Some(compact(node)), &mut out);
+                    conditional = true;
                 }
             }
         }
     }
     // The final `else` value.
-    let otherwise = match previous.as_slice() {
-        [] => None,
-        [one] => Some(format!("not ({one})")),
-        many => Some(format!("not ({})", many.join(" or "))),
-    };
+    let otherwise = conditional.then(|| "else".to_owned());
     flush(&mut value, otherwise, &mut out);
     out.retain(|(v, _)| !v.is_empty());
     out
@@ -734,24 +729,19 @@ fn conditions(node: &SyntaxNode, scope: &SyntaxNode) -> Option<String> {
 
 /// The condition of the branch of `if_stmt` that holds `child`.
 fn branch_condition(if_stmt: &SyntaxNode, child: &SyntaxNode) -> Option<String> {
-    let mut conditions: Vec<String> = Vec::new();
     let mut current: Option<String> = None;
     let mut expect_condition = false;
     for element in if_stmt.children_with_tokens() {
         match element.kind() {
             SyntaxKind::IF_KW | SyntaxKind::ELSIF_KW => expect_condition = true,
             SyntaxKind::ELSE_KW => {
-                current = Some(match conditions.as_slice() {
-                    [one] => format!("not ({one})"),
-                    many => format!("not ({})", many.join(" or ")),
-                });
+                current = Some("else".to_owned());
             }
             SyntaxKind::END_KW => break,
             _ => {
                 if let Some(node) = element.as_node() {
                     if expect_condition {
                         let text = compact(node);
-                        conditions.push(text.clone());
                         current = Some(text);
                         expect_condition = false;
                     } else if node == child {

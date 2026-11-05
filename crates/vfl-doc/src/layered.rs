@@ -44,6 +44,8 @@ const STATE_GAP: f64 = 28.0;
 const WAYPOINT_GAP: f64 = 12.0;
 /// Room right of a state for its self-loop.
 pub(crate) const LOOP_ROOM: f64 = 26.0;
+/// Room on each side of a label, past its background.
+const LABEL_ROOM: f64 = 8.0;
 /// Space between an edge and its label.
 pub(crate) const LABEL_OFFSET: f64 = 6.0;
 /// Trunks this many layers long or more, joined by this many edges or
@@ -518,8 +520,9 @@ pub(crate) fn layout(sizes: &[(f64, f64)], edges: &[Edge], initial: Option<usize
 }
 
 fn waypoint(nodes: &mut Vec<Node>, layer: usize, label: Option<(f64, f64)>) -> usize {
-    // A label sits on its edge, centred.
-    let (half, height) = label.map_or((0.0, 0.0), |(w, h)| (w / 2.0 + 1.0, h));
+    // A label sits on its edge, centred, with room around it so that
+    // labels side by side read apart.
+    let (half, height) = label.map_or((0.0, 0.0), |(w, h)| (w / 2.0 + LABEL_ROOM, h));
     nodes.push(Node {
         layer,
         left: half,

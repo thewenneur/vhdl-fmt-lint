@@ -691,7 +691,7 @@ end;
         transitions(s),
         [
             "IDLE -> RUN : go = '1'",
-            "IDLE -> IDLE : not (go = '1')",
+            "IDLE -> IDLE : else",
             "RUN -> DONE",
             "DONE -> IDLE"
         ]

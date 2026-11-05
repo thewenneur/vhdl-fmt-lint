@@ -16,8 +16,8 @@ const FONT_SIZE: f64 = 12.0;
 /// The advance of one character of a 12px monospace font.
 const CHAR_WIDTH: f64 = 7.25;
 
-/// The most arrows of a state diagram that get their conditions written.
-const MAX_FSM_LABELS: usize = 24;
+/// The widest line of a transition label; longer conditions wrap.
+const FSM_LABEL_WIDTH: usize = 40;
 
 /// The longest text a diagram shows in one piece; longer texts are cut.
 const MAX_TEXT: usize = 48;
@@ -50,6 +50,57 @@ pub(crate) fn cut(text: &str, max: usize) -> String {
         out.push('…');
         out
     }
+}
+
+/// The lines of `text` at most `max` characters wide where possible: it
+/// breaks before its top-level `and`s and `or`s first, then at spaces, and
+/// is never cut.
+pub(crate) fn wrap(text: &str, max: usize) -> Vec<String> {
+    // The operands of the top-level `and`s and `or`s, operator first.
+    let mut pieces = Vec::new();
+    let (mut depth, mut start) = (0usize, 0);
+    let lower = text.to_ascii_lowercase();
+    for (i, c) in text.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ' ' if depth == 0
+                && i > start
+                && (lower[i..].starts_with(" and ") || lower[i..].starts_with(" or ")) =>
+            {
+                pieces.push(&text[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    pieces.push(&text[start..]);
+    let mut lines: Vec<String> = Vec::new();
+    // Adds `word` to the last line, or starts a new one when it does not fit
+    // or `fresh`.
+    let mut push = |word: &str, fresh: bool| match lines.last_mut() {
+        Some(line) if !fresh && line.chars().count() + 1 + word.chars().count() <= max => {
+            line.push(' ');
+            line.push_str(word);
+        }
+        _ => lines.push(word.to_owned()),
+    };
+    for piece in pieces {
+        if piece.chars().count() > max {
+            // Too long for any line: it starts one, then wraps at spaces.
+            let mut words = piece.split(' ').filter(|w| !w.is_empty());
+            if let Some(first) = words.next() {
+                push(first, true);
+            }
+            words.for_each(|w| push(w, false));
+        } else {
+            push(piece, false);
+        }
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
 }
 
 /// An SVG document under construction, tracking its extent.
@@ -467,25 +518,18 @@ pub fn fsm(machine: &Fsm) -> String {
             }
         }
     }
-    // Past a few labelled arrows the labels take more room than they help:
-    // the transition table of the page lists the conditions.
-    let labelled = edges
-        .values()
-        .filter(|c| c.iter().any(Option::is_some))
-        .count();
-    let show_labels = labelled <= MAX_FSM_LABELS;
+    // Every condition is written in full: the diagram grows to make room.
+    // The lines after the first of a condition are indented.
     let lines = |conditions: &[Option<String>]| -> Vec<String> {
-        if !show_labels {
-            return Vec::new();
+        let mut out = Vec::new();
+        for condition in conditions.iter().flatten() {
+            for (i, line) in wrap(condition, FSM_LABEL_WIDTH).into_iter().enumerate() {
+                out.push(if i == 0 { line } else { format!("  {line}") });
+            }
         }
-        let mut lines: Vec<String> = conditions.iter().flatten().map(|c| cut(c, 36)).collect();
-        if lines.len() > 3 {
-            lines.truncate(3);
-            lines.push("…".into());
-        }
-        lines
+        out
     };
-    let names: Vec<String> = machine.states.iter().map(|s| cut(s, 24)).collect();
+    let names = &machine.states;
     let sizes: Vec<(f64, f64)> = names.iter().map(|s| (width(s) + 24.0, HEIGHT)).collect();
     let texts: Vec<Vec<String>> = edges.values().map(|c| lines(c)).collect();
     let list: Vec<layered::Edge> = edges
@@ -536,10 +580,12 @@ pub fn fsm(machine: &Fsm) -> String {
             let w = lines.iter().map(|l| width(l)).fold(0.0, f64::max);
             labels.rect(x, y - h / 2.0 - 2.0, w + 4.0, h + 4.0, "vfl-label-bg");
             for (i, line) in lines.iter().enumerate() {
+                // SVG collapses leading spaces: indent by moving the text.
+                let indent = line.len() - line.trim_start().len();
                 labels.text(
-                    x + 2.0,
+                    x + 2.0 + indent as f64 * CHAR_WIDTH,
                     y - h / 2.0 + 11.0 + i as f64 * 14.0,
-                    line,
+                    line.trim_start(),
                     "start",
                     "vfl-muted",
                 );
@@ -581,4 +627,20 @@ pub fn fsm(machine: &Fsm) -> String {
     }
     c.body.push_str(&labels.body);
     c.finish(&format!("State machine {}", machine.signal), 10.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wrap;
+
+    #[test]
+    fn wrap_breaks_before_top_level_operators_and_never_cuts() {
+        assert_eq!(wrap("a = '1'", 10), ["a = '1'"]);
+        assert_eq!(
+            wrap("start = '1' and (x = 1 or y = 2) or timeout = '1'", 20),
+            ["start = '1'", "and (x = 1 or y = 2)", "or timeout = '1'"]
+        );
+        let long = "a_very_long_signal_name = another_very_long_name";
+        assert_eq!(wrap(long, 20).concat().len() + 2, long.len());
+    }
 }
