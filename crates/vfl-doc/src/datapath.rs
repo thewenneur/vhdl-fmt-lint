@@ -76,7 +76,7 @@ impl Graph<'_> {
                 let (key, name) = self.known(n)?;
                 Some(self.signal(&key, &name))
             }
-            Expr::Value(_) => None,
+            Expr::Value(_) | Expr::TooLarge => None,
             Expr::Op(op, args) => {
                 let built: Vec<Option<usize>> =
                     args.iter().map(|a| self.build(a, target)).collect();
