@@ -291,6 +291,7 @@ Draws one diagram. `ENTITY` is `name` or `library.name`.
 | `port-map` | One instance of an architecture, with the actual of each port. |
 | `fsm` | A state machine of an entity's architecture. |
 | `dataflow` | The processes, assignments and instances of an architecture, wired by the signals they read and drive. |
+| `combinational` | The combinational logic of an architecture as gates and multiplexers, one tree per signal. |
 | `clocks` | The clock domains of an architecture and the signals crossing them. |
 | `resets` | Where each reset of an entity goes, down to the processes. |
 | `dependencies` | Which units use which packages (`ENTITY` is not used). |
@@ -298,7 +299,7 @@ Draws one diagram. `ENTITY` is `name` or `library.name`.
 
 | Option | |
 |--------|---|
-| `--architecture NAME` | For `block`, `port-map`, `dataflow`, `clocks` and `resets` (default: the last architecture). |
+| `--architecture NAME` | For `block`, `port-map`, `dataflow`, `combinational`, `clocks` and `resets` (default: the last architecture). |
 | `--instance LABEL` | For `port-map` (default: the only instance). |
 | `--signal NAME` | For `fsm`, the state signal (default: the entity's only state machine). |
 | `-f, --format FORMAT` | `svg` (default), `mermaid` or `dot`. Only `hierarchy` and `fsm` have Mermaid and DOT. |

@@ -4336,6 +4336,11 @@
               "type": "boolean",
               "default": true
             },
+            "combinational": {
+              "description": "Draw the combinational logic of each architecture: for each signal driven through more than a wire, the gates in front of it, from its inputs on the left to the signal (or the flip-flop of a register) on the right. Gates use the IEC 60617 symbols (`&`, `≥1`, `=1`, a circle for `not`); `if`, `case`, `when … else` and `with … select` become multiplexers with the choice of each input and the select from below. Processes are evaluated statement by statement (variables are replaced by their value); state machine states are left to their state diagram.",
+              "type": "boolean",
+              "default": true
+            },
             "clocks": {
               "description": "For each architecture with two or more clocks, draw its clock domains (processes and instances grouped by clock, through combinational logic) and the signals crossing them, also listed in a table.",
               "type": "boolean",

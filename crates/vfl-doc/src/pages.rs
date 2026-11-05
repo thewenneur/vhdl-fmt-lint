@@ -806,6 +806,21 @@ fn architecture(
             mermaid: None,
         });
     }
+    if config.diagrams.combinational
+        && let Some(a) = entity
+            .architectures
+            .iter()
+            .position(|a| std::ptr::eq(a, arch))
+        && let Some(svg) = crate::schematic::combinational(design, index, a)
+    {
+        blocks.push(heading(3, vec![text("Combinational logic")], None));
+        blocks.push(Block::Diagram {
+            file: format!("{page}.{arch_key}.combinational"),
+            alt: format!("Combinational logic of {}({})", entity.name, arch.name),
+            svg,
+            mermaid: None,
+        });
+    }
     if config.diagrams.clocks
         && let Some(a) = entity
             .architectures

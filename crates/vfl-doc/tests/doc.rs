@@ -497,6 +497,7 @@ fn options_leave_sections_out() {
             hierarchy: false,
             block: false,
             port_map: false,
+            combinational: false,
             ..Default::default()
         },
         ..DocConfig::default()
@@ -931,6 +932,67 @@ fn dataflow_wires_processes_and_assignments() {
         "entity e is end; architecture a of e is begin end;",
     )]);
     assert!(vfl_doc::block::dataflow(&d, 0, 0, None).is_none());
+}
+
+const GCM: &str = "
+entity mult is
+    port (clk : in bit; a : in bit_vector(7 downto 0); b : out bit_vector(7 downto 0));
+end;
+architecture rtl of mult is
+begin
+    p : process (clk) is begin if rising_edge(clk) then b <= a; end if; end process;
+end;
+entity core is
+    port (
+        clk, load, en : in bit;
+        iv, text_in : in bit_vector(7 downto 0);
+        result, valid : out bit_vector(7 downto 0)
+    );
+end;
+architecture rtl of core is
+    signal counter, hash, hashed : bit_vector(7 downto 0);
+begin
+    p : process (clk) is
+        variable sum : bit_vector(7 downto 0);
+    begin
+        if rising_edge(clk) then
+            sum := hashed xor text_in;
+            if load = '1' then
+                counter <= iv;
+            elsif en = '1' then
+                counter <= counter + 1;
+                hash <= sum;
+            end if;
+        end if;
+    end process;
+    m : entity work.mult port map (clk => clk, a => hash, b => hashed);
+    result <= hashed when en = '1' else counter;
+    valid(0) <= en and not load;
+end;
+";
+
+#[test]
+fn combinational_logic_draws_gates_and_multiplexers() {
+    let d = design(&[("gcm.vhd", GCM)]);
+    let core = d.entities.iter().position(|e| e.name == "core").unwrap();
+    let svg = vfl_doc::schematic::combinational(&d, core, 0).unwrap();
+    // `en and not load`, the variable `sum` replaced by its value, and a
+    // flip-flop in front of each register.
+    for text in [
+        ">&amp;</text>",
+        ">1</text>",
+        ">=1</text>",
+        ">result</text>",
+        ">hash</text>",
+        ">D</text>",
+        "clk ↑",
+    ] {
+        assert!(svg.contains(text), "{text} missing: {svg}");
+    }
+    assert!(!svg.contains(">sum</text>"), "{svg}");
+    // `mult` only copies its input: nothing but a wire.
+    let mult = d.entities.iter().position(|e| e.name == "mult").unwrap();
+    assert!(vfl_doc::schematic::combinational(&d, mult, 0).is_none());
 }
 
 #[test]

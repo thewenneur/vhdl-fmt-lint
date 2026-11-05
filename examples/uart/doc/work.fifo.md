@@ -49,6 +49,10 @@ Writes to a full FIFO and reads from an empty one are ignored.
 
 ![Data flow of fifo(rtl)](work.fifo.rtl.dataflow.svg)
 
+### Combinational logic
+
+![Combinational logic of fifo(rtl)](work.fifo.rtl.combinational.svg)
+
 ### Processes
 
 | Process | Sensitivity | Clock | Drives | Description |

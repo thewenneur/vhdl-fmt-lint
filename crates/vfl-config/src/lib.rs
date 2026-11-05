@@ -1300,6 +1300,9 @@ pub struct DiagramConfig {
     /// The data flow of each architecture with processes or concurrent
     /// assignments: those and its instances, wired by signal.
     pub dataflow: bool,
+    /// The combinational logic of each architecture as gates and
+    /// multiplexers, one tree per signal.
+    pub combinational: bool,
     /// The clock domains of each architecture with several clocks, with
     /// the signals that cross between them.
     pub clocks: bool,
@@ -1332,6 +1335,7 @@ impl Default for DiagramConfig {
             top: true,
             port_map: true,
             dataflow: true,
+            combinational: true,
             clocks: true,
             resets: true,
             dependencies: true,
