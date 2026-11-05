@@ -4336,6 +4336,16 @@
               "type": "boolean",
               "default": true
             },
+            "datapath": {
+              "description": "Draw the data path of each architecture, top to bottom: ports as terminals, signals as boxes (registers with a clock mark), instances as blocks and operators and functions as rounded boxes (`+ 1` when the other operand is a constant). Conditions, selects and constants are left out, type conversions are wires, and a `mux` appears only where two or more signals meet. Data paths of more than 200 nodes are not drawn.",
+              "type": "boolean",
+              "default": true
+            },
+            "combinational": {
+              "description": "Draw the combinational logic of each architecture: for each signal driven through more than a wire, the gates in front of it, from its inputs on the left to the signal (or the flip-flop of a register) on the right. Gates use the IEC 60617 symbols (`&`, `≥1`, `=1`, a circle for `not`); `if`, `case`, `when … else` and `with … select` become multiplexers with the choice of each input and the select from below. Processes are evaluated statement by statement (variables are replaced by their value); state machine states are left to their state diagram.",
+              "type": "boolean",
+              "default": true
+            },
             "clocks": {
               "description": "For each architecture with two or more clocks, draw its clock domains (processes and instances grouped by clock, through combinational logic) and the signals crossing them, also listed in a table.",
               "type": "boolean",

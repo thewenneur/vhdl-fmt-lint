@@ -12,15 +12,18 @@
 pub mod block;
 pub mod clocks;
 pub mod comments;
+pub mod datapath;
 pub mod fields;
 pub mod fsm;
 pub mod graph;
 pub mod hierarchy;
 mod layered;
+pub mod logic;
 pub mod model;
 mod page;
 mod pages;
 pub mod relations;
+pub mod schematic;
 pub mod spec;
 pub mod svg;
 pub mod text;

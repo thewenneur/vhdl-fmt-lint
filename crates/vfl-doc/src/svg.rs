@@ -472,7 +472,7 @@ pub fn hierarchy(roots: &[Node], link: Option<&dyn Fn(usize) -> String>) -> Stri
 
 /// A path through the corners of an orthogonal line, with each corner
 /// rounded.
-fn rounded(points: &[(f64, f64)], radius: f64) -> String {
+pub(crate) fn rounded(points: &[(f64, f64)], radius: f64) -> String {
     let mut d = String::new();
     let Some(&(x0, y0)) = points.first() else {
         return d;
@@ -542,6 +542,7 @@ pub fn fsm(machine: &Fsm) -> String {
             from,
             to,
             merge: Some(*keys.entry((to, lines.as_slice())).or_insert(i)),
+            slot: 0,
             label: (!lines.is_empty()).then(|| {
                 let w = lines.iter().map(|l| width(l)).fold(0.0, f64::max);
                 (w + 4.0, lines.len() as f64 * 14.0 + 4.0)

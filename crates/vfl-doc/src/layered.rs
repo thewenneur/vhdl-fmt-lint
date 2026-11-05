@@ -64,6 +64,9 @@ pub(crate) struct Edge {
     pub to: usize,
     pub label: Option<(f64, f64)>,
     pub merge: Option<usize>,
+    /// Edges into the same state arrive through one port per slot: 0 for
+    /// all of them in a state diagram, one per operand in a data path.
+    pub slot: usize,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -95,8 +98,9 @@ struct Node {
     state: bool,
 }
 
-/// The edges going into a state: the state, and whether they go up.
-type Net = (usize, bool);
+/// The edges going into a state: the state, whether they go up, and their
+/// slot.
+type Net = (usize, bool, usize);
 /// The edges sharing a trunk: their net, and their `merge` key, or
 /// `usize::MAX` for the rest of the net.
 type Trunk = (Net, usize);
@@ -122,8 +126,8 @@ enum Side {
 /// What a port of a state is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum End {
-    /// Every edge arriving on that side.
-    Arrive,
+    /// Every edge of a slot arriving on that side.
+    Arrive(usize),
     /// The edges fanning out on that side.
     Fan,
     /// The edge leaving through the given neighbour.
@@ -240,7 +244,7 @@ fn layout_with(
     let trunk_of: Vec<Trunk> = {
         let key = |i: usize, e: &Edge| {
             let merge = e.merge.filter(|_| variant.merge && e.label.is_some());
-            ((e.to, reversed[i]), merge.unwrap_or(PLAIN))
+            ((e.to, reversed[i], e.slot), merge.unwrap_or(PLAIN))
         };
         let mut count: BTreeMap<Trunk, usize> = BTreeMap::new();
         for (i, e) in edges.iter().enumerate().filter(|(_, e)| e.from != e.to) {
@@ -269,7 +273,7 @@ fn layout_with(
         if e.from == e.to || e.from >= n || e.to >= n {
             continue;
         }
-        let net = (e.to, reversed[i]);
+        let net = (e.to, reversed[i], e.slot);
         let (top, bottom) = if reversed[i] {
             (e.to, e.from)
         } else {
@@ -365,7 +369,7 @@ fn layout_with(
     let end = |v: usize, a: usize, b: usize| -> End {
         let net = links[&(a, b)].1;
         if net.0 == v {
-            End::Arrive
+            End::Arrive(net.2)
         } else if matches!(group[&(a, b)], Group::Out(..)) {
             End::Fan
         } else {
@@ -1318,6 +1322,7 @@ mod tests {
             to,
             label: None,
             merge: None,
+            slot: 0,
         }
     }
 
@@ -1378,6 +1383,7 @@ mod tests {
                     to: i / 2,
                     label: Some((40.0, 14.0)),
                     merge: None,
+                    slot: 0,
                 });
             }
         }
@@ -1407,6 +1413,7 @@ mod tests {
                 to: 4,
                 label: Some((30.0, 14.0)),
                 merge: None,
+                slot: 0,
             });
         }
         let l = layout(&sizes, &edges, Some(0));
@@ -1450,6 +1457,7 @@ mod tests {
                 to: 4,
                 label: Some((30.0, 14.0)),
                 merge: Some(3),
+                slot: 0,
             });
         }
         let l = layout(&sizes, &edges, Some(0));

@@ -806,6 +806,39 @@ fn architecture(
             mermaid: None,
         });
     }
+    let arch_index = entity
+        .architectures
+        .iter()
+        .position(|a| std::ptr::eq(a, arch));
+    if config.diagrams.datapath
+        && let Some(a) = arch_index
+        && let Some(svg) = crate::datapath::datapath(
+            design,
+            index,
+            a,
+            Some(&|i: usize| format!("{}.{}", entity_page(design, i), extension(config))),
+        )
+    {
+        blocks.push(heading(3, vec![text("Data path")], None));
+        blocks.push(Block::Diagram {
+            file: format!("{page}.{arch_key}.datapath"),
+            alt: format!("Data path of {}({})", entity.name, arch.name),
+            svg,
+            mermaid: None,
+        });
+    }
+    if config.diagrams.combinational
+        && let Some(a) = arch_index
+        && let Some(svg) = crate::schematic::combinational(design, index, a)
+    {
+        blocks.push(heading(3, vec![text("Combinational logic")], None));
+        blocks.push(Block::Diagram {
+            file: format!("{page}.{arch_key}.combinational"),
+            alt: format!("Combinational logic of {}({})", entity.name, arch.name),
+            svg,
+            mermaid: None,
+        });
+    }
     if config.diagrams.clocks
         && let Some(a) = entity
             .architectures

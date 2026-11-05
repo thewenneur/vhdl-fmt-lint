@@ -28,6 +28,14 @@ Sends a byte through the UART looped back on itself.
 
 ![Data flow of tb\_uart(sim)](work.tb_uart.sim.dataflow.svg)
 
+### Data path
+
+![Data path of tb\_uart(sim)](work.tb_uart.sim.datapath.svg)
+
+### Combinational logic
+
+![Combinational logic of tb\_uart(sim)](work.tb_uart.sim.combinational.svg)
+
 ### Processes
 
 | Process | Clock | Drives | Description |
