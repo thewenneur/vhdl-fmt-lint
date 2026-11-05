@@ -12,6 +12,7 @@
 pub mod block;
 pub mod clocks;
 pub mod comments;
+pub mod datapath;
 pub mod fields;
 pub mod fsm;
 pub mod graph;

@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Data path diagrams.** `vfl doc` draws the data path of each architecture, in the style
+  of the other diagrams, top to bottom from the inputs and registers: signals, instances,
+  multiplexers (trapezoids), `xor` (⊕), adders, gates and functions, wired by the data
+  flowing between them; clocks, resets, conditions and type conversions are left out. Key
+  `datapath` of `[doc.diagrams]`, and `vfl schema datapath`.
+
+### Changed
+
+- **Faster `vfl doc`.** Entity pages are built on all cores, and the layered layout of the
+  diagrams skips layouts that would come out the same. On neorv32, the doc takes 0.35 s
+  instead of 0.77 s with data paths; the diagrams are unchanged.
+
 ## [0.11.0] - 2026-11-05
 
 A combinational logic diagram per architecture.
@@ -37,7 +51,6 @@ state machine diagrams that write `else`, wrap long conditions and cross less.
   widths that differ by a generic-dependent amount at the generics' default values. See
   [docs/lints.md](docs/lints.md#semawidth-mismatch) and the
   [example](examples/config/lint/06-bus-widths).
-
 - **`cargo binstall --git https://github.com/thewenneur/vhdl-fmt-lint vfl-cli`** installs
   the release binary instead of building it. See [README.md](README.md).
 

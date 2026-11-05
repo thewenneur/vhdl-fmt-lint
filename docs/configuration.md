@@ -723,7 +723,7 @@ is the literal the reset branch assigns, else the declaration's default.
 `vfl schema <kind> [entity]` draws one of these diagrams alone, as SVG (the default), or for
 `hierarchy` and `fsm` as Mermaid (`-f mermaid`) or Graphviz DOT (`-f dot`). The kinds are
 `symbol`, `hierarchy`, `block`, `port-map` (with `--instance label`), `fsm`, `dataflow`,
-`combinational`, `clocks`, `resets`, `dependencies` (no entity) and `wave` (the argument is a WaveJSON file).
+`datapath`, `combinational`, `clocks`, `resets`, `dependencies` (no entity) and `wave` (the argument is a WaveJSON file).
 
 A doc comment can hold a timing diagram as a fenced block in the
 [WaveDrom](https://wavedrom.com/tutorial.html) WaveJSON syntax, drawn by vfl itself:
@@ -749,6 +749,7 @@ characters are `0 1 l h L H u d` (levels), `p n P N` (clocks), `x` (unknown), `z
 | `top` | boolean | `true` | Draw the top level on the index: the block diagram (or, without instances, the symbol) of each entity at the root of the hierarchy, or for a testbench of the entities it instantiates. |
 | `port_map` | boolean | `true` | Draw each instance of an architecture as the block it instantiates, with the actual connected to each port (`open` and defaulted inputs muted) and its generic map. |
 | `dataflow` | boolean | `true` | Draw each architecture with processes or concurrent assignments as its processes, assignments and instances, wired by the signals they read and drive, with each process's clock and reset. |
+| `datapath` | boolean | `true` | Draw the data path of each architecture, top to bottom: inputs and registers start at the top, data flows down, and only feedback into registers goes back up. Ports are terminals, signals boxes (registers with a clock mark), instances blocks, multiplexers trapezoids, `xor` a circled plus, `+`, `-` and `*` circles (with a constant operand beside them), `and`, `or` and `not` gates, and other operators and functions rounded boxes. Conditions, selects and constants are left out, type conversions are wires, and a `mux` appears only where two or more signals meet. Data paths of more than 200 nodes are not drawn. |
 | `combinational` | boolean | `true` | Draw the combinational logic of each architecture: for each signal driven through more than a wire, the gates in front of it, from its inputs on the left to the signal (or the flip-flop of a register) on the right. Gates use the IEC 60617 symbols (`&`, `≥1`, `=1`, a circle for `not`); `if`, `case`, `when … else` and `with … select` become multiplexers with the choice of each input and the select from below. Processes are evaluated statement by statement (variables are replaced by their value); state machine states are left to their state diagram. |
 | `clocks` | boolean | `true` | For each architecture with two or more clocks, draw its clock domains (processes and instances grouped by clock, through combinational logic) and the signals crossing them, also listed in a table. |
 | `resets` | boolean | `true` | Draw a reset tree on the index for each top-level entity: where each reset port goes, through assignments and port maps, down to the processes, with their kind (synchronous or asynchronous, active high or low). |
@@ -1095,6 +1096,7 @@ block = true
 top = true
 port_map = true
 dataflow = true
+datapath = true
 combinational = true
 clocks = true
 resets = true

@@ -64,6 +64,9 @@ pub(crate) struct Edge {
     pub to: usize,
     pub label: Option<(f64, f64)>,
     pub merge: Option<usize>,
+    /// Edges into the same state arrive through one port per slot: 0 for
+    /// all of them in a state diagram, one per operand in a data path.
+    pub slot: usize,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -95,8 +98,9 @@ struct Node {
     state: bool,
 }
 
-/// The edges going into a state: the state, and whether they go up.
-type Net = (usize, bool);
+/// The edges going into a state: the state, whether they go up, and their
+/// slot.
+type Net = (usize, bool, usize);
 /// The edges sharing a trunk: their net, and their `merge` key, or
 /// `usize::MAX` for the rest of the net.
 type Trunk = (Net, usize);
@@ -120,8 +124,8 @@ enum Side {
 /// What a port of a state is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum End {
-    /// Every edge arriving on that side.
-    Arrive,
+    /// Every edge of a slot arriving on that side.
+    Arrive(usize),
     /// The edges fanning out on that side.
     Fan,
     /// The edge leaving through the given neighbour.
@@ -154,9 +158,15 @@ struct Hyper {
 /// Edges sharing a label always merge before it, whatever that costs.
 pub(crate) fn layout(sizes: &[(f64, f64)], edges: &[Edge], initial: Option<usize>) -> Layout {
     let mut best: Option<((usize, usize), Layout)> = None;
+    // Without a trunk to move aside both sides lay out the same: skip one.
+    let mut sided = false;
     for side in [true, false] {
+        if !side && !sided {
+            break;
+        }
         for flip in [false, true] {
-            let layout = layout_with(sizes, edges, initial, Variant { flip, side });
+            let (layout, moved) = layout_with(sizes, edges, initial, Variant { flip, side });
+            sided |= moved;
             let score = (drawn_crossings(edges, &layout), bends(&layout));
             if best.as_ref().is_none_or(|(b, _)| score < *b) {
                 best = Some((score, layout));
@@ -211,10 +221,10 @@ fn layout_with(
     edges: &[Edge],
     initial: Option<usize>,
     variant: Variant,
-) -> Layout {
+) -> (Layout, bool) {
     let n = sizes.len();
     if n == 0 {
-        return Layout::default();
+        return (Layout::default(), false);
     }
     let initial = initial.filter(|&i| i < n);
     let reversed = loop_edges(n, edges, initial);
@@ -244,7 +254,7 @@ fn layout_with(
     let trunk_of: Vec<Trunk> = {
         let key = |i: usize, e: &Edge| {
             let merge = e.merge.filter(|_| e.label.is_some());
-            ((e.to, reversed[i]), merge.unwrap_or(PLAIN))
+            ((e.to, reversed[i], e.slot), merge.unwrap_or(PLAIN))
         };
         let mut count: BTreeMap<Trunk, usize> = BTreeMap::new();
         for (i, e) in edges.iter().enumerate().filter(|(_, e)| e.from != e.to) {
@@ -273,7 +283,7 @@ fn layout_with(
         if e.from == e.to || e.from >= n || e.to >= n {
             continue;
         }
-        let net = (e.to, reversed[i]);
+        let net = (e.to, reversed[i], e.slot);
         let (top, bottom) = if reversed[i] {
             (e.to, e.from)
         } else {
@@ -369,7 +379,7 @@ fn layout_with(
     let end = |v: usize, a: usize, b: usize| -> End {
         let net = links[&(a, b)].1;
         if net.0 == v {
-            End::Arrive
+            End::Arrive(net.2)
         } else if matches!(group[&(a, b)], Group::Out(..)) {
             End::Fan
         } else {
@@ -413,9 +423,7 @@ fn layout_with(
         up[b].push((a, w));
     }
     let mut layers = order(&nodes, &down, &up, initial, variant.flip);
-    if variant.side {
-        to_the_side(&mut layers, &trunks, &trunk_of, edges);
-    }
+    let moved = variant.side && to_the_side(&mut layers, &trunks, &trunk_of, edges);
     let mut x = place(&nodes, &layers, &down, &up);
     straighten(&nodes, &layers, &mut x, &down, &up, &trunks, &widths);
     for _ in 0..3 {
@@ -633,11 +641,14 @@ fn layout_with(
             }
         })
         .collect();
-    Layout {
-        states: (0..n).map(|v| (x[v], y(v))).collect(),
-        widths,
-        routes,
-    }
+    (
+        Layout {
+            states: (0..n).map(|v| (x[v], y(v))).collect(),
+            widths,
+            routes,
+        },
+        moved,
+    )
 }
 
 fn waypoint(nodes: &mut Vec<Node>, layer: usize, label: Option<(f64, f64)>) -> usize {
@@ -935,7 +946,7 @@ fn to_the_side(
     trunks: &BTreeMap<(Trunk, usize), usize>,
     trunk_of: &[Trunk],
     edges: &[Edge],
-) {
+) -> bool {
     let mut joining: BTreeMap<Trunk, usize> = BTreeMap::new();
     for (i, e) in edges.iter().enumerate() {
         if e.from != e.to {
@@ -953,6 +964,7 @@ fn to_the_side(
         .collect();
     // Shorter trunks go inside the longer ones.
     runs.sort_by_key(|run| run.len());
+    let any = !runs.is_empty();
     for run in runs {
         let lean = run
             .iter()
@@ -973,6 +985,7 @@ fn to_the_side(
             }
         }
     }
+    any
 }
 
 /// Swaps neighbours of a layer while that removes crossings.
@@ -1032,8 +1045,19 @@ fn crossings(layers: &[Vec<usize>], down: &[Vec<(usize, f64)>], pos: &[usize]) -
 
 /// Counts the pairs out of order, sorting `v` (merge sort).
 fn inversions(v: &mut [usize]) -> usize {
-    if v.len() < 2 {
-        return 0;
+    if v.len() <= 16 {
+        // Insertion sort: no allocation, and quicker on the short lists most
+        // layers have.
+        let mut count = 0;
+        for i in 1..v.len() {
+            let mut j = i;
+            while j > 0 && v[j - 1] > v[j] {
+                v.swap(j - 1, j);
+                count += 1;
+                j -= 1;
+            }
+        }
+        return count;
     }
     let mid = v.len() / 2;
     let mut count = inversions(&mut v[..mid]) + inversions(&mut v[mid..]);
@@ -1423,6 +1447,7 @@ mod tests {
             to,
             label: None,
             merge: None,
+            slot: 0,
         }
     }
 
@@ -1483,6 +1508,7 @@ mod tests {
                     to: i / 2,
                     label: Some((40.0, 14.0)),
                     merge: None,
+                    slot: 0,
                 });
             }
         }
@@ -1512,6 +1538,7 @@ mod tests {
                 to: 4,
                 label: Some((30.0, 14.0)),
                 merge: None,
+                slot: 0,
             });
         }
         let l = layout(&sizes, &edges, Some(0));
@@ -1559,6 +1586,7 @@ mod tests {
             to,
             label: Some((w, 32.0)),
             merge: None,
+            slot: 0,
         };
         let edges = vec![
             labelled(0, 1, 84.0),
@@ -1583,6 +1611,7 @@ mod tests {
                 to: 4,
                 label: Some((30.0, 14.0)),
                 merge: Some(3),
+                slot: 0,
             });
         }
         let l = layout(&sizes, &edges, Some(0));

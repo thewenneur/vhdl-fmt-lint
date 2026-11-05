@@ -164,7 +164,7 @@ vfl lint [--fix] ...   # lint, resolving names across the whole project
 vfl rules              # list lint rules and their levels
 vfl doc [-o dir]       # write HTML (or --format markdown|asciidoc) documentation with diagrams
 vfl spec [-o dir]      # write the design specification, with its requirements
-vfl schema block top   # draw one diagram: block, fsm, dataflow, combinational, ...
+vfl schema block top   # draw one diagram: block, fsm, dataflow, datapath, combinational, ...
 vfl new tb counter     # write counter_tb.vhd, a testbench for entity counter
 vfl new instance counter     # print an instantiation (also: component, component-instance)
 vfl lsp                # language server over stdio

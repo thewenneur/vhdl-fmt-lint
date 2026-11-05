@@ -120,8 +120,8 @@ pub struct Architecture {
     pub aliases: Vec<Alias>,
     /// Packages its own context clause uses.
     pub uses: Vec<Use>,
-    /// The value of each signal it assigns, for the combinational logic
-    /// diagram.
+    /// The value of each signal it assigns, for the combinational and data
+    /// path diagrams.
     pub cones: Vec<crate::logic::Cone>,
 }
 
@@ -656,7 +656,9 @@ impl Ctx<'_> {
         if self.config.fsm {
             arch.fsms = fsm::detect(node, enums, self.style);
         }
-        if self.config.processes && self.config.diagrams.combinational {
+        if self.config.processes
+            && (self.config.diagrams.combinational || self.config.diagrams.datapath)
+        {
             arch.cones = crate::logic::cones(node);
         }
         if !self.config.signals {
@@ -1278,7 +1280,7 @@ fn strip_parens(node: &SyntaxNode) -> SyntaxNode {
 }
 
 /// The target of a signal assignment: the node before `<=`.
-fn assignment_target(stmt: &SyntaxNode) -> Option<SyntaxNode> {
+pub(crate) fn assignment_target(stmt: &SyntaxNode) -> Option<SyntaxNode> {
     let mut target = None;
     for element in stmt.children_with_tokens() {
         match element.kind() {

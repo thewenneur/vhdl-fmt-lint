@@ -498,6 +498,7 @@ fn options_leave_sections_out() {
             block: false,
             port_map: false,
             combinational: false,
+            datapath: false,
             ..Default::default()
         },
         ..DocConfig::default()
@@ -510,7 +511,12 @@ fn options_leave_sections_out() {
     assert!(!counter.contains("### Processes"));
     assert!(!counter.contains("State machine"));
     assert!(!counter.contains(".svg"));
-    assert!(!files.iter().any(|f| f.path.ends_with(".svg")));
+    let svgs: Vec<&str> = files
+        .iter()
+        .map(|f| f.path.as_str())
+        .filter(|p| p.ends_with(".svg"))
+        .collect();
+    assert!(svgs.is_empty(), "{svgs:?}");
 }
 
 #[test]
@@ -970,6 +976,35 @@ begin
     valid(0) <= en and not load;
 end;
 ";
+
+#[test]
+fn datapath_draws_registers_operators_and_instances() {
+    let d = design(&[("gcm.vhd", GCM)]);
+    let core = d.entities.iter().position(|e| e.name == "core").unwrap();
+    let svg = vfl_doc::datapath::datapath(&d, core, 0, None).unwrap();
+    for text in [
+        ">counter</text>",
+        // `+ 1`: an adder, its constant beside it.
+        ">+</text>",
+        ">1</text>",
+        // `xor`: a circled plus.
+        "<circle",
+        ">m</text>",
+        ">mult</text>",
+        ">hashed</text>",
+    ] {
+        assert!(svg.contains(text), "{text} missing: {svg}");
+    }
+    // Clocks are not data, and conditions are left out.
+    assert!(!svg.contains(">clk</text>"), "{svg}");
+    assert!(!svg.contains(">= "), "{svg}");
+    // Nothing flows in an empty architecture.
+    let d = design(&[(
+        "c.vhd",
+        "entity e is end; architecture a of e is begin end;",
+    )]);
+    assert!(vfl_doc::datapath::datapath(&d, 0, 0, None).is_none());
+}
 
 #[test]
 fn combinational_logic_draws_gates_and_multiplexers() {

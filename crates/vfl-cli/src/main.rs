@@ -217,7 +217,7 @@ enum Command {
         /// For `fsm`, the state signal (default: the entity's only state machine).
         #[arg(long)]
         signal: Option<String>,
-        /// For `block`, `port-map`, `dataflow`, `combinational`, `clocks` and `resets`, the architecture (default: the last one).
+        /// For `block`, `port-map`, `dataflow`, `datapath`, `combinational`, `clocks` and `resets`, the architecture (default: the last one).
         #[arg(long)]
         architecture: Option<String>,
         /// For `port-map`, the instance label (default: the only instance).

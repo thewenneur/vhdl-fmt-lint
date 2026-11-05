@@ -24,6 +24,9 @@ pub enum SchemaKind {
     /// The processes, assignments and instances of an architecture, wired
     /// by the signals they read and drive.
     Dataflow,
+    /// The data path of an architecture: registers, signals, operators and
+    /// instances, wired by the data flowing between them.
+    Datapath,
     /// The combinational logic of an architecture as gates and multiplexers.
     Combinational,
     /// The clock domains of an architecture and the signals crossing them.
@@ -309,6 +312,7 @@ pub fn schema(options: &SchemaOptions) -> Result<()> {
             }
         }
         SchemaKind::Dataflow
+        | SchemaKind::Datapath
         | SchemaKind::Combinational
         | SchemaKind::Clocks
         | SchemaKind::Resets => {
@@ -323,6 +327,8 @@ pub fn schema(options: &SchemaOptions) -> Result<()> {
                     .with_context(|| {
                         format!("`{name}` has no process or assignment, or too many blocks")
                     })?,
+                SchemaKind::Datapath => vfl_doc::datapath::datapath(&design, entity, arch, None)
+                    .with_context(|| format!("no data flows in `{name}`, or it is too large"))?,
                 SchemaKind::Combinational => {
                     vfl_doc::schematic::combinational(&design, entity, arch).with_context(|| {
                         format!("`{name}` has no combinational logic beyond wires")
