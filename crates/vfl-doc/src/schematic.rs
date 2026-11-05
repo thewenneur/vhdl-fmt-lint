@@ -59,6 +59,7 @@ fn tree(e: &Expr, known: &HashSet<String>) -> Tree {
     match e {
         Expr::Name(n) => leaf(n, is_known(n)),
         Expr::Value(v) => leaf(v, false),
+        Expr::TooLarge => leaf("…", false),
         Expr::Op(op, args) => {
             let inputs = args.iter().map(|a| tree(a, known)).collect();
             let shape = match op.as_str() {
@@ -102,7 +103,7 @@ fn tree(e: &Expr, known: &HashSet<String>) -> Tree {
 fn mentions(e: &Expr, known: &HashSet<String>) -> bool {
     match e {
         Expr::Name(n) => base(n).is_some_and(|(k, _)| known.contains(&k)),
-        Expr::Value(_) => false,
+        Expr::Value(_) | Expr::TooLarge => false,
         Expr::Op(_, args) => args.iter().any(|a| mentions(a, known)),
         Expr::Call(n, args, _) => {
             base(n).is_some_and(|(k, _)| known.contains(&k))
@@ -115,7 +116,7 @@ fn mentions(e: &Expr, known: &HashSet<String>) -> bool {
 /// Whether `e` is more than a wire: it has a gate, operator or function.
 fn has_logic(e: &Expr, known: &HashSet<String>) -> bool {
     match e {
-        Expr::Name(_) | Expr::Value(_) => false,
+        Expr::Name(_) | Expr::Value(_) | Expr::TooLarge => false,
         Expr::Call(name, args, _) => {
             let signal = base(name).is_some_and(|(k, _)| known.contains(&k));
             if signal {
