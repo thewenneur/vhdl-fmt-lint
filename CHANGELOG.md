@@ -10,6 +10,12 @@
   flowing between them; clocks, resets, conditions and type conversions are left out. Key
   `datapath` of `[doc.diagrams]`, and `vfl schema datapath`.
 
+### Changed
+
+- **Faster `vfl doc`.** Entity pages are built on all cores, and the layered layout of the
+  diagrams skips layouts that would come out the same. On neorv32, the doc takes 0.35 s
+  instead of 0.77 s with data paths; the diagrams are unchanged.
+
 ## [0.11.0] - 2026-11-05
 
 A combinational logic diagram per architecture.

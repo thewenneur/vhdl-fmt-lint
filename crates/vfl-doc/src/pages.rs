@@ -233,13 +233,45 @@ pub fn pages(design: &Design, roots: &[Node], config: &DocConfig) -> Vec<Page> {
         }
     }
     let packages = crate::fields::Scope::packages(design);
-    for (i, users) in users.iter().enumerate() {
-        pages.push(entity(design, i, users, &packages, config));
-    }
+    pages.extend(parallel(users.len(), |i| {
+        entity(design, i, &users[i], &packages, config)
+    }));
     for package in &design.packages {
         pages.push(package_page(design, package, &packages, config));
     }
     pages
+}
+
+/// `f(0)`, …, `f(count - 1)` in order, computed on all cores: entity pages
+/// with big diagrams take most of `vfl doc`.
+fn parallel<T: Send>(count: usize, f: impl Fn(usize) -> T + Sync) -> Vec<T> {
+    let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
+    if threads < 2 || count < 2 {
+        return (0..count).map(f).collect();
+    }
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let mut done: Vec<(usize, T)> = std::thread::scope(|s| {
+        let workers: Vec<_> = (0..threads.min(count))
+            .map(|_| {
+                s.spawn(|| {
+                    let mut out = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        if i >= count {
+                            break out;
+                        }
+                        out.push((i, f(i)));
+                    }
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|w| w.join().unwrap_or_else(|e| std::panic::resume_unwind(e)))
+            .collect()
+    });
+    done.sort_unstable_by_key(|&(i, _)| i);
+    done.into_iter().map(|(_, t)| t).collect()
 }
 
 /// The most units listed in the side bar of every HTML page. Past it, the

@@ -158,9 +158,15 @@ struct Hyper {
 /// Edges sharing a label always merge before it, whatever that costs.
 pub(crate) fn layout(sizes: &[(f64, f64)], edges: &[Edge], initial: Option<usize>) -> Layout {
     let mut best: Option<((usize, usize), Layout)> = None;
+    // Without a trunk to move aside both sides lay out the same: skip one.
+    let mut sided = false;
     for side in [true, false] {
+        if !side && !sided {
+            break;
+        }
         for flip in [false, true] {
-            let layout = layout_with(sizes, edges, initial, Variant { flip, side });
+            let (layout, moved) = layout_with(sizes, edges, initial, Variant { flip, side });
+            sided |= moved;
             let score = (drawn_crossings(edges, &layout), bends(&layout));
             if best.as_ref().is_none_or(|(b, _)| score < *b) {
                 best = Some((score, layout));
@@ -215,10 +221,10 @@ fn layout_with(
     edges: &[Edge],
     initial: Option<usize>,
     variant: Variant,
-) -> Layout {
+) -> (Layout, bool) {
     let n = sizes.len();
     if n == 0 {
-        return Layout::default();
+        return (Layout::default(), false);
     }
     let initial = initial.filter(|&i| i < n);
     let reversed = loop_edges(n, edges, initial);
@@ -417,9 +423,7 @@ fn layout_with(
         up[b].push((a, w));
     }
     let mut layers = order(&nodes, &down, &up, initial, variant.flip);
-    if variant.side {
-        to_the_side(&mut layers, &trunks, &trunk_of, edges);
-    }
+    let moved = variant.side && to_the_side(&mut layers, &trunks, &trunk_of, edges);
     let mut x = place(&nodes, &layers, &down, &up);
     straighten(&nodes, &layers, &mut x, &down, &up, &trunks, &widths);
     for _ in 0..3 {
@@ -637,11 +641,14 @@ fn layout_with(
             }
         })
         .collect();
-    Layout {
-        states: (0..n).map(|v| (x[v], y(v))).collect(),
-        widths,
-        routes,
-    }
+    (
+        Layout {
+            states: (0..n).map(|v| (x[v], y(v))).collect(),
+            widths,
+            routes,
+        },
+        moved,
+    )
 }
 
 fn waypoint(nodes: &mut Vec<Node>, layer: usize, label: Option<(f64, f64)>) -> usize {
@@ -939,7 +946,7 @@ fn to_the_side(
     trunks: &BTreeMap<(Trunk, usize), usize>,
     trunk_of: &[Trunk],
     edges: &[Edge],
-) {
+) -> bool {
     let mut joining: BTreeMap<Trunk, usize> = BTreeMap::new();
     for (i, e) in edges.iter().enumerate() {
         if e.from != e.to {
@@ -957,6 +964,7 @@ fn to_the_side(
         .collect();
     // Shorter trunks go inside the longer ones.
     runs.sort_by_key(|run| run.len());
+    let any = !runs.is_empty();
     for run in runs {
         let lean = run
             .iter()
@@ -977,6 +985,7 @@ fn to_the_side(
             }
         }
     }
+    any
 }
 
 /// Swaps neighbours of a layer while that removes crossings.
@@ -1036,8 +1045,19 @@ fn crossings(layers: &[Vec<usize>], down: &[Vec<(usize, f64)>], pos: &[usize]) -
 
 /// Counts the pairs out of order, sorting `v` (merge sort).
 fn inversions(v: &mut [usize]) -> usize {
-    if v.len() < 2 {
-        return 0;
+    if v.len() <= 16 {
+        // Insertion sort: no allocation, and quicker on the short lists most
+        // layers have.
+        let mut count = 0;
+        for i in 1..v.len() {
+            let mut j = i;
+            while j > 0 && v[j - 1] > v[j] {
+                v.swap(j - 1, j);
+                count += 1;
+                j -= 1;
+            }
+        }
+        return count;
     }
     let mid = v.len() / 2;
     let mut count = inversions(&mut v[..mid]) + inversions(&mut v[mid..]);
