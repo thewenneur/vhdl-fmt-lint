@@ -44,6 +44,8 @@ const STATE_GAP: f64 = 28.0;
 const WAYPOINT_GAP: f64 = 12.0;
 /// Room right of a state for its self-loop.
 pub(crate) const LOOP_ROOM: f64 = 26.0;
+/// Room on each side of a label, past its background.
+const LABEL_ROOM: f64 = 8.0;
 /// Space between an edge and its label.
 pub(crate) const LABEL_OFFSET: f64 = 6.0;
 /// Trunks this many layers long or more, joined by this many edges or
@@ -53,12 +55,15 @@ const MIN_SIDE_EDGES: usize = 4;
 const ORDER_SWEEPS: usize = 24;
 const PLACE_SWEEPS: usize = 40;
 
-/// An edge between two states; `label` is the size of its label.
+/// An edge between two states; `label` is the size of its label. Edges
+/// into the same state with the same `merge` key (the same condition)
+/// share one trunk and write their label once, on it, before the state.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Edge {
     pub from: usize,
     pub to: usize,
     pub label: Option<(f64, f64)>,
+    pub merge: Option<usize>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -92,6 +97,21 @@ struct Node {
 
 /// The edges going into a state: the state, and whether they go up.
 type Net = (usize, bool);
+/// The edges sharing a trunk: their net, and their `merge` key, or
+/// `usize::MAX` for the rest of the net.
+type Trunk = (Net, usize);
+const PLAIN: usize = usize::MAX;
+
+/// The choices tried for a layout; the one whose drawing crosses least wins.
+#[derive(Debug, Clone, Copy)]
+struct Variant {
+    /// Write a label shared by merging edges once.
+    merge: bool,
+    /// Start the order from the walk visiting successors the other way.
+    flip: bool,
+    /// Push long trunks to the side.
+    side: bool,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Side {
@@ -131,8 +151,63 @@ struct Hyper {
     hi: f64,
 }
 
-/// Lays out states of the given sizes (width, height).
+/// Lays out states of the given sizes (width, height): of a few variants,
+/// the one whose edges cross least, preferring shared labels written once
+/// and then the first variant.
 pub(crate) fn layout(sizes: &[(f64, f64)], edges: &[Edge], initial: Option<usize>) -> Layout {
+    let mut best: Option<(usize, Layout)> = None;
+    for merge in [true, false] {
+        for side in [true, false] {
+            for flip in [false, true] {
+                let variant = Variant { merge, flip, side };
+                let layout = layout_with(sizes, edges, initial, variant);
+                let c = drawn_crossings(edges, &layout);
+                if best.as_ref().is_none_or(|(b, _)| c < *b) {
+                    best = Some((c, layout));
+                }
+            }
+        }
+    }
+    best.map(|(_, l)| l).unwrap_or_default()
+}
+
+/// The points where an edge crosses another one, apart from edges with the
+/// same source or target, which merge.
+pub(crate) fn drawn_crossings(edges: &[Edge], layout: &Layout) -> usize {
+    const EPS: f64 = 0.5;
+    let mut horizontal = Vec::new();
+    let mut vertical = Vec::new();
+    for (i, route) in layout.routes.iter().enumerate() {
+        for w in route.points.windows(2) {
+            let ((x0, y0), (x1, y1)) = (w[0], w[1]);
+            if (y0 - y1).abs() < 0.05 {
+                horizontal.push((i, x0.min(x1), x0.max(x1), y0));
+            } else if (x0 - x1).abs() < 0.05 {
+                vertical.push((i, y0.min(y1), y0.max(y1), x0));
+            }
+        }
+    }
+    let mut points = std::collections::BTreeSet::new();
+    for &(i, x0, x1, y) in &horizontal {
+        for &(j, y0, y1, x) in &vertical {
+            let (a, b) = (edges[i], edges[j]);
+            if i == j || a.from == b.from || a.to == b.to {
+                continue;
+            }
+            if x > x0 + EPS && x < x1 - EPS && y > y0 + EPS && y < y1 - EPS {
+                points.insert(((x * 2.0).round() as i64, (y * 2.0).round() as i64));
+            }
+        }
+    }
+    points.len()
+}
+
+fn layout_with(
+    sizes: &[(f64, f64)],
+    edges: &[Edge],
+    initial: Option<usize>,
+    variant: Variant,
+) -> Layout {
     let n = sizes.len();
     if n == 0 {
         return Layout::default();
@@ -160,9 +235,35 @@ pub(crate) fn layout(sizes: &[(f64, f64)], edges: &[Edge], initial: Option<usize
     }
     let mut chains: Vec<Vec<usize>> = vec![Vec::new(); edges.len()];
     let mut label_node: Vec<Option<usize>> = vec![None; edges.len()];
-    // The waypoints of the edges into a state, by layer: all of them share
-    // one, so that they merge into one trunk.
-    let mut trunks: BTreeMap<(Net, usize), usize> = BTreeMap::new();
+    // The trunk of each edge: edges of one net sharing a label have their
+    // own, when there are several of them.
+    let trunk_of: Vec<Trunk> = {
+        let key = |i: usize, e: &Edge| {
+            let merge = e.merge.filter(|_| variant.merge && e.label.is_some());
+            ((e.to, reversed[i]), merge.unwrap_or(PLAIN))
+        };
+        let mut count: BTreeMap<Trunk, usize> = BTreeMap::new();
+        for (i, e) in edges.iter().enumerate().filter(|(_, e)| e.from != e.to) {
+            *count.entry(key(i, e)).or_default() += 1;
+        }
+        edges
+            .iter()
+            .enumerate()
+            .map(|(i, e)| {
+                let k = key(i, e);
+                if count.get(&k).is_some_and(|&c| c > 1) {
+                    k
+                } else {
+                    (k.0, PLAIN)
+                }
+            })
+            .collect()
+    };
+    // The waypoints of the edges of a trunk, by layer: all of them share
+    // one, so that they merge.
+    let mut trunks: BTreeMap<(Trunk, usize), usize> = BTreeMap::new();
+    // The node carrying the label of each shared trunk.
+    let mut shared_labels: BTreeMap<Trunk, usize> = BTreeMap::new();
     let mut links: BTreeMap<(usize, usize), (f64, Net)> = BTreeMap::new();
     for (i, e) in edges.iter().enumerate() {
         if e.from == e.to || e.from >= n || e.to >= n {
@@ -175,22 +276,36 @@ pub(crate) fn layout(sizes: &[(f64, f64)], edges: &[Edge], initial: Option<usize
             (e.from, e.to)
         };
         let (rt, rb) = (nodes[top].layer, nodes[bottom].layer);
+        let trunk = trunk_of[i];
+        let shared = trunk.1 != PLAIN;
         // The label goes next to the edge where it leaves its source,
-        // before it joins the others.
-        let label_layer = if reversed[i] { rb - 1 } else { rt + 1 };
+        // before it joins the others; a shared one just before the target,
+        // once all the edges sharing it have joined.
+        let label_layer = match (shared, reversed[i]) {
+            (false, true) | (true, false) => rb - 1,
+            (false, false) | (true, true) => rt + 1,
+        };
         let mut chain = vec![top];
         for layer in rt + 1..rb {
             let id = match e.label {
+                Some(size) if layer == label_layer && shared => {
+                    *shared_labels.entry(trunk).or_insert_with(|| {
+                        let id = waypoint(&mut nodes, layer, Some(size));
+                        label_node[i] = Some(id);
+                        trunks.insert((trunk, layer), id);
+                        id
+                    })
+                }
                 Some(size) if layer == label_layer => {
                     let id = waypoint(&mut nodes, layer, Some(size));
                     label_node[i] = Some(id);
                     id
                 }
-                _ => match trunks.get(&(net, layer)) {
+                _ => match trunks.get(&(trunk, layer)) {
                     Some(&id) => id,
                     None => {
                         let id = waypoint(&mut nodes, layer, None);
-                        trunks.insert((net, layer), id);
+                        trunks.insert((trunk, layer), id);
                         id
                     }
                 },
@@ -293,8 +408,10 @@ pub(crate) fn layout(sizes: &[(f64, f64)], edges: &[Edge], initial: Option<usize
         down[a].push((b, w));
         up[b].push((a, w));
     }
-    let mut layers = order(&nodes, &down, &up, initial);
-    to_the_side(&mut layers, &trunks, edges, &reversed);
+    let mut layers = order(&nodes, &down, &up, initial, variant.flip);
+    if variant.side {
+        to_the_side(&mut layers, &trunks, &trunk_of, edges);
+    }
     let mut x = place(&nodes, &layers, &down, &up);
     straighten(&nodes, &layers, &mut x, &down, &up, &trunks, &widths);
     for _ in 0..3 {
@@ -518,8 +635,9 @@ pub(crate) fn layout(sizes: &[(f64, f64)], edges: &[Edge], initial: Option<usize
 }
 
 fn waypoint(nodes: &mut Vec<Node>, layer: usize, label: Option<(f64, f64)>) -> usize {
-    // A label sits on its edge, centred.
-    let (half, height) = label.map_or((0.0, 0.0), |(w, h)| (w / 2.0 + 1.0, h));
+    // A label sits on its edge, centred, with room around it so that
+    // labels side by side read apart.
+    let (half, height) = label.map_or((0.0, 0.0), |(w, h)| (w / 2.0 + LABEL_ROOM, h));
     nodes.push(Node {
         layer,
         left: half,
@@ -712,6 +830,7 @@ fn order(
     down: &[Vec<(usize, f64)>],
     up: &[Vec<(usize, f64)>],
     initial: Option<usize>,
+    flip: bool,
 ) -> Vec<Vec<usize>> {
     let count = nodes.len();
     let depth = nodes.iter().map(|v| v.layer).max().unwrap_or(0) + 1;
@@ -732,10 +851,15 @@ fn order(
             }
             key[v] = next;
             next += 1;
-            for &(w, _) in down[v].iter().rev() {
+            let mut push = |w: usize| {
                 if key[w] == usize::MAX {
                     stack.push(w);
                 }
+            };
+            if flip {
+                down[v].iter().for_each(|&(w, _)| push(w));
+            } else {
+                down[v].iter().rev().for_each(|&(w, _)| push(w));
             }
         }
     }
@@ -802,17 +926,17 @@ fn order(
 /// branches.
 fn to_the_side(
     layers: &mut [Vec<usize>],
-    trunks: &BTreeMap<(Net, usize), usize>,
+    trunks: &BTreeMap<(Trunk, usize), usize>,
+    trunk_of: &[Trunk],
     edges: &[Edge],
-    reversed: &[bool],
 ) {
-    let mut joining: BTreeMap<Net, usize> = BTreeMap::new();
+    let mut joining: BTreeMap<Trunk, usize> = BTreeMap::new();
     for (i, e) in edges.iter().enumerate() {
         if e.from != e.to {
-            *joining.entry((e.to, reversed[i])).or_default() += 1;
+            *joining.entry(trunk_of[i]).or_default() += 1;
         }
     }
-    let mut runs: BTreeMap<Net, Vec<(usize, usize)>> = BTreeMap::new();
+    let mut runs: BTreeMap<Trunk, Vec<(usize, usize)>> = BTreeMap::new();
     for (&(net, layer), &v) in trunks {
         runs.entry(net).or_default().push((layer, v));
     }
@@ -950,10 +1074,10 @@ fn straighten(
     x: &mut [f64],
     down: &[Vec<(usize, f64)>],
     up: &[Vec<(usize, f64)>],
-    trunks: &BTreeMap<(Net, usize), usize>,
+    trunks: &BTreeMap<(Trunk, usize), usize>,
     widths: &[f64],
 ) {
-    let mut runs: BTreeMap<Net, Vec<usize>> = BTreeMap::new();
+    let mut runs: BTreeMap<Trunk, Vec<usize>> = BTreeMap::new();
     for (&(net, _), &v) in trunks {
         runs.entry(net).or_default().push(v);
     }
@@ -1193,6 +1317,7 @@ mod tests {
             from,
             to,
             label: None,
+            merge: None,
         }
     }
 
@@ -1252,6 +1377,7 @@ mod tests {
                     from: i,
                     to: i / 2,
                     label: Some((40.0, 14.0)),
+                    merge: None,
                 });
             }
         }
@@ -1280,6 +1406,7 @@ mod tests {
                 from: v,
                 to: 4,
                 label: Some((30.0, 14.0)),
+                merge: None,
             });
         }
         let l = layout(&sizes, &edges, Some(0));
@@ -1310,5 +1437,28 @@ mod tests {
         assert_eq!(ends(4).len(), 1);
         assert!(l.routes.iter().all(|r| r.points.len() >= 2));
         assert_eq!(l.routes.iter().filter(|r| r.label.is_some()).count(), 3);
+    }
+
+    #[test]
+    fn merging_edges_with_one_condition_write_it_once() {
+        // IDLE -> A -> B -> C, and every state on to ERR under one condition.
+        let sizes = vec![(60.0, 30.0); 5];
+        let mut edges = vec![edge(0, 1), edge(1, 2), edge(2, 3)];
+        for v in 1..4 {
+            edges.push(Edge {
+                from: v,
+                to: 4,
+                label: Some((30.0, 14.0)),
+                merge: Some(3),
+            });
+        }
+        let l = layout(&sizes, &edges, Some(0));
+        assert_eq!(l.routes.iter().filter(|r| r.label.is_some()).count(), 1);
+        // The label sits right above ERR, on the merged trunk.
+        let (lx, ly) = l.routes.iter().find_map(|r| r.label).unwrap();
+        let (ex, ey) = l.states[4];
+        assert!(ly < ey && ey - ly < 60.0, "label at {ly}, ERR at {ey}");
+        assert!((lx + 16.0 - ex).abs() < 40.0, "label at {lx}, ERR at {ex}");
+        assert!(drawn_crossings(&edges, &l) == 0);
     }
 }

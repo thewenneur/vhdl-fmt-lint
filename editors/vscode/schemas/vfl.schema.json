@@ -4362,7 +4362,7 @@
               "default": true
             },
             "fsm": {
-              "description": "Draw a state diagram per state machine. Past ten labelled transitions, the conditions are left to the transition table.",
+              "description": "Draw a state diagram per state machine. Every condition is written, wrapped over several lines when long; the diagram grows to make room.",
               "type": "boolean",
               "default": true
             },

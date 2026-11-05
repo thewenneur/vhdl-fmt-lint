@@ -69,7 +69,7 @@ Transmitter state
 | `START` | `DATA_BIT` |  |
 | `DATA_BIT` | `STOP` | `bit_idx = 7 and PARITY = PARITY_NONE` |
 | `DATA_BIT` | `PARITY_BIT` | `bit_idx = 7 and PARITY = PARITY_EVEN` |
-| `DATA_BIT` | `PARITY_BIT` | `bit_idx = 7 and not (PARITY = PARITY_NONE or PARITY = PARITY_EVEN)` |
+| `DATA_BIT` | `PARITY_BIT` | `bit_idx = 7 and else` |
 | `PARITY_BIT` | `STOP` |  |
 | `STOP` | `IDLE` |  |
 
