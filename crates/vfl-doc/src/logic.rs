@@ -447,7 +447,7 @@ fn waveforms(node: &SyntaxNode, target: &str, env: &Env) -> Expr {
             } else {
                 Expr::Name(target.to_owned())
             };
-            for pair in parts.chunks_exact(2).rev() {
+            for pair in parts.as_chunks::<2>().0.iter().rev() {
                 acc = Expr::Mux(
                     Box::new(expr(&pair[1], env)),
                     vec![
@@ -466,7 +466,7 @@ fn waveforms(node: &SyntaxNode, target: &str, env: &Env) -> Expr {
 fn selected(node: &SyntaxNode, select: Expr, env: &Env) -> Expr {
     let parts: Vec<SyntaxNode> = node.children().collect();
     let mut inputs: Vec<(String, Expr)> = Vec::new();
-    for pair in parts.chunks_exact(2) {
+    for pair in parts.as_chunks::<2>().0 {
         let value = waveforms(&pair[0], "", env);
         let choices = compact(&pair[1]);
         match inputs.iter_mut().find(|i| i.1 == value) {
