@@ -6,6 +6,13 @@ the [vfl changelog](https://github.com/thewenneur/vhdl-fmt-lint/blob/main/CHANGE
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-16
+
+### Added
+
+- `lint_delay_ms` under `[lsp]` in `vfl.toml` (in the schema too): problems wait for
+  typing to pause that long (see the vfl changelog).
+
 ## [0.11.1] - 2026-11-16
 
 ### Changed

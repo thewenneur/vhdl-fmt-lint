@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-16
+
+A configurable pause before lint problems show while typing.
+
+### Added
+
+- **`lint_delay_ms` under `[lsp]`.** How long typing must pause, in milliseconds, before
+  the problems of an edit are shown. The language server holds the diagnostics of an edit
+  until then (hover, completion and the other requests still answer at once); unset, it
+  shows them as soon as the edit is analyzed, as before. Notepad++ uses it instead of its
+  fixed 400 ms lint delay, which stays the default.
+
 ## [0.11.1] - 2026-11-16
 
 A Notepad++ fix and tidier state machine diagrams.
