@@ -1585,6 +1585,28 @@ fn show_problems(sci: Hwnd, view: usize, id: usize, problems: &[Problem]) {
         }
     }
 
+    keep_view(sci, || show_messages(sci, view, id, problems));
+}
+
+/// Runs `f`, which changes annotations, keeping the same text at the top
+/// of the view. Annotations are display lines: without this, the text
+/// jumps under the mouse when they change (the view is clamped while they
+/// are cleared), and a double-click lands on another word.
+fn keep_view(sci: Hwnd, f: impl FnOnce()) {
+    let first = send(sci, SCI_GETFIRSTVISIBLELINE, 0, 0).max(0) as usize;
+    let top = send(sci, SCI_DOCLINEFROMVISIBLE, first, 0).max(0) as usize;
+    let visible = |line: usize| send(sci, SCI_VISIBLEFROMDOCLINE, line, 0).max(0) as usize;
+    // Wrapped or annotation rows of the top line already scrolled past.
+    let offset = first.saturating_sub(visible(top));
+    f();
+    let wanted = visible(top) + offset;
+    if send(sci, SCI_GETFIRSTVISIBLELINE, 0, 0).max(0) as usize != wanted {
+        send(sci, SCI_SETFIRSTVISIBLELINE, wanted, 0);
+    }
+}
+
+/// Shows the messages of `problems` under their lines, when asked to.
+fn show_messages(sci: Hwnd, view: usize, id: usize, problems: &[Problem]) {
     let inline = with(|s| s.settings.get().inline_messages);
     let was_annotated = with(|s| s.annotated.borrow().contains(&id));
     if was_annotated || inline {

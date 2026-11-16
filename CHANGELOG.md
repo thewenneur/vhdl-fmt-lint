@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Notepad++: double-click and copy with inline messages.** When a lint refreshed the
+  messages shown under the lines, the view jumped by a line, so a double-click in progress
+  landed on another word and Ctrl+C copied the wrong text or nothing. The view now keeps
+  the same text at the top.
+
 ## [0.11.0] - 2026-11-05
 
 A combinational logic diagram per architecture.
