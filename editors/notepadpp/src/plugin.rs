@@ -149,7 +149,8 @@ const ASSIST: usize = item("Code assistance");
 const HIGHLIGHT: usize = item("Highlight uses");
 const NAME_COLORS: usize = item("Color names by meaning");
 
-/// How long typing must pause before the buffer is linted again.
+/// How long typing must pause before the buffer is linted again, unless
+/// `lint_delay_ms` under `[lsp]` in `vfl.toml` says otherwise.
 const LINT_DELAY_MS: u32 = 400;
 const DWELL_MS: isize = 500;
 /// How often, at most, the projects are checked for changes on disk.
@@ -303,6 +304,8 @@ pub(crate) struct State {
     styles: Cell<[Option<isize>; 2]>,
     funcs: Cell<*mut FuncItem>,
     timer: Cell<usize>,
+    /// The `lint_delay_ms` of the buffer last linted.
+    lint_delay: Cell<u32>,
     pub(crate) tip: Cell<Tip>,
     /// The caret position the parameter hints were shown for.
     tip_caret: Cell<usize>,
@@ -341,6 +344,7 @@ thread_local! {
         styles: Cell::new([None, None]),
         funcs: Cell::new(ptr::null_mut()),
         timer: Cell::new(0),
+        lint_delay: Cell::new(LINT_DELAY_MS),
         tip: Cell::new(Tip::None),
         tip_caret: Cell::new(0),
         details: RefCell::new(None),
@@ -1218,6 +1222,7 @@ struct Linted {
     names: Vec<(usize, usize, usize)>,
     config_errors: Vec<String>,
     notices: Vec<String>,
+    delay: u32,
 }
 
 /// Lints a buffer, on the worker's thread.
@@ -1263,11 +1268,13 @@ fn lint(engine: &mut Engine, path: Option<&Path>, buffer: &BufferText, colors: b
         names,
         config_errors: output.config_errors,
         notices: output.notices,
+        delay: engine.lint_delay_ms(path).unwrap_or(LINT_DELAY_MS),
     }
 }
 
 /// Shows the problems found in `here`'s buffer, if it did not change since.
 fn show_lint(here: Here, trigger: Trigger, linted: Linted) {
+    with(|s| s.lint_delay.set(linted.delay));
     if !here.is_current() {
         // Typing schedules the next lint; other triggers ask again.
         if trigger != Trigger::Auto && current_buffer() == here.id {
@@ -1282,6 +1289,7 @@ fn show_lint(here: Here, trigger: Trigger, linted: Linted) {
         names,
         config_errors,
         notices,
+        ..
     } = linted;
     quietly(sci, || show_problems(sci, view, id, &problems));
     show_name_colors(sci, id, here.edits, names);
@@ -1338,8 +1346,9 @@ fn show_lint(here: Here, trigger: Trigger, linted: Linted) {
 
 fn schedule_lint() {
     cancel_timer();
+    let delay = with(|s| s.lint_delay.get());
     // SAFETY: a thread timer with a plain callback.
-    let id = unsafe { SetTimer(ptr::null_mut(), 0, LINT_DELAY_MS, Some(on_timer)) };
+    let id = unsafe { SetTimer(ptr::null_mut(), 0, delay, Some(on_timer)) };
     with(|s| s.timer.set(id));
 }
 

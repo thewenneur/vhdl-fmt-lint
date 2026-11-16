@@ -651,6 +651,11 @@ impl Engine {
         self.stamps.clear();
     }
 
+    /// `lint_delay_ms` under `[lsp]` for this file, if set.
+    pub fn lint_delay_ms(&mut self, path: Option<&Path>) -> Option<u32> {
+        self.config(path).lsp.lint_delay_ms
+    }
+
     fn config(&mut self, path: Option<&Path>) -> &Config {
         let dir = path
             .filter(|p| p.is_absolute())
