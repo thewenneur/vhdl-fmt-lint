@@ -6,6 +6,13 @@ the [vfl changelog](https://github.com/thewenneur/vhdl-fmt-lint/blob/main/CHANGE
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-16
+
+### Changed
+
+- **vfl: Show Diagrams** and **Generate Documentation**: more direct state machine
+  diagrams (see the vfl changelog).
+
 ## [0.11.0] - 2026-11-05
 
 ### Changed

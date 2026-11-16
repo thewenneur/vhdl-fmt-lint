@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-16
+
+A Notepad++ fix and tidier state machine diagrams.
+
+### Changed
+
+- **State machine diagrams.** Edges that share a condition always merge before its label,
+  written once; chains of states linked by straight edges move sideways together, for more
+  direct edges.
+
 ### Fixed
 
 - **Notepad++: double-click and copy with inline messages.** When a lint refreshed the
