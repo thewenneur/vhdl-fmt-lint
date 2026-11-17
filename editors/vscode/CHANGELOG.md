@@ -6,6 +6,13 @@ the [vfl changelog](https://github.com/thewenneur/vhdl-fmt-lint/blob/main/CHANGE
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-17
+
+### Added
+
+- The schema for `vfl.toml` lists the 77 new lint rules and their options (see the vfl
+  changelog).
+
 ## [0.12.0] - 2026-11-16
 
 ### Added
