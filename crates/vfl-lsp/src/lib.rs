@@ -388,6 +388,10 @@ struct Server<'a> {
     /// Whether the analyzer is analyzing. The world has no analysis
     /// meanwhile: requests that need one wait for it.
     analyzing: bool,
+    /// Until when the problems wait for typing to pause (`lint_delay_ms`).
+    quiet_until: Option<std::time::Instant>,
+    /// Whether problems wait to be shown at `quiet_until`.
+    late: bool,
     /// The open FPGA vendor files, linted apart from the project.
     vendor: vendor::Documents,
 }
@@ -442,6 +446,8 @@ impl<'a> Server<'a> {
             reload: false,
             analyzer: None,
             analyzing: false,
+            quiet_until: None,
+            late: false,
             vendor: vendor::Documents::default(),
         }
     }
@@ -479,7 +485,18 @@ impl<'a> Server<'a> {
             // Meanwhile edits are read and documents formatted, but not
             // past a request that waits: what follows it comes after it.
             if self.queue.is_empty() || waits {
-                let Ok(message) = self.inbox.recv() else {
+                let message = match self.late_left() {
+                    Some(left) if left.is_zero() => {
+                        self.publish()?;
+                        continue;
+                    }
+                    Some(left) => match self.inbox.recv_timeout(left) {
+                        Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                        received => received.map_err(drop),
+                    },
+                    None => self.inbox.recv().map_err(drop),
+                };
+                let Ok(message) = message else {
                     return Ok(());
                 };
                 self.accept(message);
@@ -500,6 +517,13 @@ impl<'a> Server<'a> {
                 Message::Response(_) => {}
             }
         }
+    }
+
+    /// How long the problems held back for typing still wait, if they do
+    /// and no analysis will publish them anyway.
+    fn late_left(&self) -> Option<std::time::Duration> {
+        let until = self.quiet_until.filter(|_| self.late && !self.analyzing)?;
+        Some(until.saturating_duration_since(std::time::Instant::now()))
     }
 
     /// Whether the next message is a request that waits for the analysis
@@ -781,6 +805,11 @@ impl<'a> Server<'a> {
                     params::<lsp_types::DidChangeTextDocumentParams>(notification.params)
                     && let Ok(path) = p.text_document.uri.to_file_path()
                 {
+                    let delay = world.config(&path).lsp.lint_delay_ms.unwrap_or(0);
+                    if delay > 0 {
+                        let delay = std::time::Duration::from_millis(delay.into());
+                        self.quiet_until = Some(std::time::Instant::now() + delay);
+                    }
                     did_change(world, path, p.content_changes);
                 }
             }
@@ -826,6 +855,14 @@ impl<'a> Server<'a> {
     /// Sends the diagnostics of every file whose diagnostics changed, and
     /// clears those of files that no longer have any.
     fn publish(&mut self) -> Result<()> {
+        // Typing has not paused for `lint_delay_ms` yet: the main loop
+        // publishes once it has.
+        self.late = self
+            .quiet_until
+            .is_some_and(|until| std::time::Instant::now() < until);
+        if self.late {
+            return Ok(());
+        }
         for params in self.published.update(&self.world) {
             self.notify::<n::PublishDiagnostics>(params)?;
         }
@@ -1123,6 +1160,41 @@ mod tests {
         let messages = step(&mut server, &client, vec![watched(&[(&config, 2)])]);
         assert_eq!(published(&messages, &config).map(|d| d.len()), Some(1));
         assert_eq!(warnings(&messages), 1, "shown again");
+    }
+
+    /// With `lint_delay_ms`, the problems of an edit wait for typing to
+    /// pause that long; a request is still answered at once.
+    #[test]
+    fn problems_wait_for_typing_to_pause() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = world::tests::real_dir(dir.path());
+        std::fs::write(root.join("vfl.toml"), "[lsp]\nlint_delay_ms = 300\n").unwrap();
+        let vhd = root.join("a.vhd");
+        std::fs::write(&vhd, "entity a is\nend entity;\n").unwrap();
+        let (server, client) = Connection::memory();
+        let (_, inbox) = mpsc::channel();
+        let mut server = Server::new(&server, inbox, World::new(&root));
+        let uri = Url::from_file_path(&vhd).unwrap();
+        let edit = Message::Notification(Notification::new(
+            "textDocument/didChange".into(),
+            json!({"textDocument": {"uri": uri, "version": 2},
+                "contentChanges": [{"text": "entity a is\nend entity\n"}]}),
+        ));
+        let hover = Message::Request(Request::new(
+            1.into(),
+            "textDocument/hover".into(),
+            json!({"textDocument": {"uri": uri}, "position": {"line": 0, "character": 7}}),
+        ));
+        let messages = step(&mut server, &client, vec![edit, hover]);
+        assert_eq!(published(&messages, &vhd), None, "typing has not paused");
+        assert!(
+            messages
+                .iter()
+                .any(|m| matches!(m, Message::Response(r) if r.id == 1.into()))
+        );
+        std::thread::sleep(std::time::Duration::from_millis(350));
+        let messages = step(&mut server, &client, Vec::new());
+        assert_eq!(published(&messages, &vhd).map(|d| d.len()), Some(1));
     }
 
     /// Vendor files are linted as they are opened and edited, apart from

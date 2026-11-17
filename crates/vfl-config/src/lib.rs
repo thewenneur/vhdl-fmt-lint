@@ -1037,6 +1037,10 @@ impl Default for GenerateConfig {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LspConfig {
+    /// How long typing must pause, in milliseconds, before the problems of
+    /// an edit are shown. Unset, each editor keeps its own default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lint_delay_ms: Option<u32>,
     pub inlay_hints: InlayHintsConfig,
 }
 
@@ -1774,6 +1778,7 @@ mod tests {
 
     /// Sets the keys that are left out of the serialized config when unset.
     fn set_unset_keys(config: &mut Config) {
+        config.lsp.lint_delay_ms = Some(400);
         config.format.declaration_case = DeclarationCase {
             entity: Some(Case::Lower),
             architecture: Some(Case::Lower),

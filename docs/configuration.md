@@ -960,6 +960,10 @@ expanded.
 Features of the language server (`vfl lsp`) that are a matter of taste. A project can set
 them for everyone in `vfl.toml`; an editor can override them for its user (see below).
 
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `lint_delay_ms` | integer | unset | How long typing must pause, in milliseconds, before the problems of an edit are shown (and, in Notepad++, before the file is linted again). Problems then stop flickering while you type. Unset, the language server shows them as soon as the edit is analyzed and Notepad++ waits 400 ms. Hover, completion and the other requests are never delayed. |
+
 ## `[lsp.inlay_hints]`
 
 Inlay hints are names and types the editor shows inline, in another color, without

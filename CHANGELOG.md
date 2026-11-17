@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-16
+
+A configurable pause before lint problems show while typing.
+
+### Added
+
+- **`lint_delay_ms` under `[lsp]`.** How long typing must pause, in milliseconds, before
+  the problems of an edit are shown. The language server holds the diagnostics of an edit
+  until then (hover, completion and the other requests still answer at once); unset, it
+  shows them as soon as the edit is analyzed, as before. Notepad++ uses it instead of its
+  fixed 400 ms lint delay, which stays the default.
+
+## [0.11.1] - 2026-11-16
+
+A Notepad++ fix and tidier state machine diagrams.
+
+### Changed
+
+- **State machine diagrams.** Edges that share a condition always merge before its label,
+  written once; chains of states linked by straight edges move sideways together, for more
+  direct edges.
+
+### Fixed
+
+- **Notepad++: double-click and copy with inline messages.** When a lint refreshed the
+  messages shown under the lines, the view jumped by a line, so a double-click in progress
+  landed on another word and Ctrl+C copied the wrong text or nothing. The view now keeps
+  the same text at the top.
+
 ## [0.11.0] - 2026-11-05
 
 A combinational logic diagram per architecture.

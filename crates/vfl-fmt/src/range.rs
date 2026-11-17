@@ -848,8 +848,8 @@ impl<'a, L: Lang> View<'a, L> {
         let last = chosen.next_back().unwrap_or(first);
         let (l0, l1) = (laid.line_of[first], laid.line_of[last]);
         let mut chunks: Vec<(usize, usize)> = Vec::new();
-        for li in l0..=l1 {
-            if laid.lines[li].verbatim {
+        for (li, line) in laid.lines.iter().enumerate().take(l1 + 1).skip(l0) {
+            if line.verbatim {
                 continue;
             }
             match chunks.last_mut() {
@@ -889,8 +889,8 @@ impl<'a, L: Lang> View<'a, L> {
                 }
             }
             // Lists are laid out whole.
-            for e in lines[l0].start..lines[l1].end {
-                if let Some(p) = self.partner[e] {
+            for &partner in &self.partner[lines[l0].start..lines[l1].end] {
+                if let Some(p) = partner {
                     l0 = l0.min(laid.line_of[p]);
                     l1 = l1.max(laid.line_of[p]);
                 }

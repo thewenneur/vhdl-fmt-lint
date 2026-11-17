@@ -19,7 +19,8 @@ project, linting, hovering or completing never freezes Notepad++. Results appear
 are ready, and are dropped if the file changed in the meantime.
 
 - **Lint as you type**: problems are underlined and their messages shown under the line,
-  a moment after you stop typing, and when a VHDL file is opened, switched to or saved.
+  400 ms after you stop typing (`lint_delay_ms` under `[lsp]` in `vfl.toml` changes it),
+  and when a VHDL file is opened, switched to or saved.
   Unsaved edits in the file count; other files are read from disk, and files changed
   outside Notepad++ are picked up when you come back to it. Unused names are greyed out.
 - **Names colored by meaning**: signals, ports, constants (and generics and enumeration
