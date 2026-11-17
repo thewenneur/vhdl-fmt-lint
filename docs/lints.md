@@ -108,24 +108,24 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`sema/synthesis-loop`](#semasynthesis-loop) | off | warn | |
 | [`sema/synthesis-initial-value`](#semasynthesis-initial-value) | off | info | |
 | [`sema/synthesis-real-port`](#semasynthesis-real-port) | off | warn | |
-| [`sema/integer-overflow`](#semainteger-overflow) | off | error |  |
-| [`sema/dont-care-compare`](#semadont-care-compare) | off | error | unsafe |
-| [`sema/latency-mismatch`](#semalatency-mismatch) | off | warn |  |
-| [`sema/handshake`](#semahandshake) | off | warn |  |
-| [`sema/power-of-two-wrap`](#semapower-of-two-wrap) | off | warn |  |
-| [`sema/init-reset-mismatch`](#semainit-reset-mismatch) | off | warn |  |
-| [`sema/broken-sequence`](#semabroken-sequence) | off | warn |  |
-| [`sema/branch-clone`](#semabranch-clone) | off | warn |  |
-| [`sema/signed-resize`](#semasigned-resize) | off | warn |  |
-| [`sema/signed-logical-shift`](#semasigned-logical-shift) | off | error | unsafe |
-| [`sema/conversion-overflow`](#semaconversion-overflow) | off | error |  |
-| [`sema/unused-bits`](#semaunused-bits) | off | warn |  |
-| [`sema/process-restarts`](#semaprocess-restarts) | off | warn |  |
-| [`sema/unbounded-wait`](#semaunbounded-wait) | off | info |  |
-| [`sema/redundant-conversion`](#semaredundant-conversion) | off | warn | safe, unsafe |
+| [`sema/integer-overflow`](#semainteger-overflow) | warn | error |  |
+| [`sema/dont-care-compare`](#semadont-care-compare) | warn | error | unsafe |
+| [`sema/latency-mismatch`](#semalatency-mismatch) | info | warn |  |
+| [`sema/handshake`](#semahandshake) | warn | warn |  |
+| [`sema/power-of-two-wrap`](#semapower-of-two-wrap) | info | warn |  |
+| [`sema/init-reset-mismatch`](#semainit-reset-mismatch) | warn | warn |  |
+| [`sema/broken-sequence`](#semabroken-sequence) | warn | warn |  |
+| [`sema/branch-clone`](#semabranch-clone) | warn | warn |  |
+| [`sema/signed-resize`](#semasigned-resize) | warn | warn |  |
+| [`sema/signed-logical-shift`](#semasigned-logical-shift) | warn | error | unsafe |
+| [`sema/conversion-overflow`](#semaconversion-overflow) | warn | error |  |
+| [`sema/unused-bits`](#semaunused-bits) | info | warn |  |
+| [`sema/process-restarts`](#semaprocess-restarts) | warn | warn |  |
+| [`sema/unbounded-wait`](#semaunbounded-wait) | info | info |  |
+| [`sema/redundant-conversion`](#semaredundant-conversion) | info | warn | safe, unsafe |
 | [`sema/logic-depth`](#semalogic-depth) | off | off |  |
 | [`sema/swapped-association`](#semaswapped-association) | off | info |  |
-| [`sema/expensive-operator`](#semaexpensive-operator) | off | warn |  |
+| [`sema/expensive-operator`](#semaexpensive-operator) | info | warn |  |
 | [`verilog/blocking-in-clocked`](#verilogblocking-in-clocked) | warn | warn | unsafe |
 | [`verilog/nonblocking-in-combinational`](#verilognonblocking-in-combinational) | warn | warn | unsafe |
 | [`verilog/multiple-drivers`](#verilogmultiple-drivers) | warn | error | |
@@ -152,7 +152,7 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`style/port-order`](#styleport-order) | off | info | |
 | [`style/process-all`](#styleprocess-all) | off | info | unsafe |
 | [`style/shared-variable`](#styleshared-variable) | off | warn | |
-| [`doc/stale-reference`](#docstale-reference) | off | warn |  |
+| [`doc/stale-reference`](#docstale-reference) | info | warn |  |
 | [`vendor/syntax`](#vendorsyntax) | error | error | |
 | [`vendor/unknown-command`](#vendorunknown-command) | warn | warn | |
 | [`vendor/unknown-option`](#vendorunknown-option) | warn | error | |
@@ -162,7 +162,7 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`vendor/duplicate-assignment`](#vendorduplicate-assignment) | warn | warn | |
 | [`vendor/pin-conflict`](#vendorpin-conflict) | error | error | |
 | [`vendor/unknown-port`](#vendorunknown-port) | info | warn | |
-| [`vendor/inference`](#vendorinference) | off | warn |  |
+| [`vendor/inference`](#vendorinference) | warn | warn |  |
 | [`naming/<kind>`](#naming) | off | off | |
 
 ## `syntax`
@@ -991,7 +991,7 @@ cnt <= cnt + 1;   -- at 9: range error in simulation; 10..15 in hardware
 
 Any test of the counter around the assignment counts as a guard (`if cnt = 9 then cnt <= 0;
 else cnt <= cnt + 1; end if;`), and so does a `mod`. Plain `integer` is not checked.
-off in `recommended`, `error` in `strict`.
+`warn` in `recommended`, `error` in `strict`.
 
 ### `sema/dont-care-compare`
 
@@ -1007,7 +1007,7 @@ if opcode = "1--0" then   -- never true in simulation
 
 The fix (unsafe: it needs `numeric_std`) rewrites the comparison as
 `std_match(opcode, "1--0")` (`not std_match(...)` for `/=`). Strings of type `string` are
-not checked. off in `recommended`, `error` in `strict`.
+not checked. `warn` in `recommended`, `error` in `strict`.
 
 ### `sema/latency-mismatch`
 
@@ -1025,7 +1025,7 @@ m_valid <= v_d1;   m_data <= d_d2;   -- valid: 2 registers, data: 3
 The count follows the architecture's assignments from the input ports, registers (clock
 edges) adding one each, combinational logic none, and takes the longest path. Outputs that
 depend on themselves (counters, state), on an instance or on anything undriven have no fixed
-latency and are not compared. Computed on demand. off in `recommended`, `warn` in
+latency and are not compared. Computed on demand. `info` in `recommended`, `warn` in
 `strict`.
 
 ### `sema/handshake`
@@ -1040,7 +1040,7 @@ m_tvalid <= fifo_not_empty and m_tready;   -- valid waits for ready
 ```
 
 Signals are followed through concurrent assignments and combinational processes; a register
-on the way ends the search. Computed on demand. off in `recommended`, `warn` in `strict`.
+on the way ends the search. Computed on demand. `warn` in every preset.
 
 ### `sema/power-of-two-wrap`
 
@@ -1057,7 +1057,7 @@ wr_ptr <= wr_ptr + 1;   -- DEPTH = 12: the pointer reaches 15
 
 Add `assert DEPTH = 2 ** clog2(DEPTH) report "DEPTH must be a power of two" severity
 failure;`, or wrap explicitly. When `G` has a default that is not a power of two, the message
-says how far the pointer goes. Values of `G` given by instances are not looked at. off
+says how far the pointer goes. Values of `G` given by instances are not looked at. `info`
 in `recommended`, `warn` in `strict`.
 
 ### `sema/init-reset-mismatch`
@@ -1075,7 +1075,7 @@ if rst = '1' then state <= WAIT_CFG;   -- after configuration IDLE, after a rese
 ```
 
 Values are compared as values where it is simple: `x"00"`, `"0000"` and `(others => '0')`
-are the same. Testbenches are skipped. Computed on demand. off in `recommended`, `warn` in `strict`.
+are the same. Testbenches are skipped. Computed on demand. `warn` in every preset.
 
 ### `sema/broken-sequence`
 
@@ -1091,7 +1091,7 @@ q(3) <= d(3);
 ```
 
 At least three elements must agree, so short runs and deliberate permutations are left
-alone. off in `recommended`, `warn` in `strict`.
+alone. `warn` in every preset.
 
 ### `sema/branch-clone`
 
@@ -1108,7 +1108,7 @@ elsif sel = "00" then y <= c;   -- never runs
 ```
 
 Conditions and statements are compared as written, case and spacing aside. Alternatives
-that are `others` or only `null;` are not compared. off in `recommended`, `warn` in `strict`.
+that are `others` or only `null;` are not compared. `warn` in every preset.
 
 ### `sema/signed-resize`
 
@@ -1121,7 +1121,7 @@ y <= resize(x, 4);   -- x : signed(7 downto 0): sign bit + 3 low bits
 ```
 
 Slice (`x(3 downto 0)`) to truncate, or saturate explicitly. Reported when both widths are
-static. off in `recommended`, `warn` in `strict`.
+static. `warn` in every preset.
 
 ### `sema/signed-logical-shift`
 
@@ -1133,7 +1133,7 @@ y <= x srl 2;   -- x : signed: use shift_right(x, 2)
 ```
 
 The fix rewrites it as `shift_right(x, n)` (unsafe: it changes the result for negative
-values, which is the point). off in `recommended`, `error` in `strict`.
+values, which is the point). `warn` in `recommended`, `error` in `strict`.
 
 ### `sema/conversion-overflow`
 
@@ -1147,7 +1147,7 @@ n <= to_integer(addr);       -- addr : unsigned(39 downto 0)
 v <= to_unsigned(300, 8);    -- 300 does not fit in 8 bits
 ```
 
-off in `recommended`, `error` in `strict`.
+`warn` in `recommended`, `error` in `strict`.
 
 ### `sema/unused-bits`
 
@@ -1163,7 +1163,7 @@ result <= sum(15 downto 0);   -- bit 16 of `sum` is never read: the carry is los
 ```
 
 Indexes and slices count when they are static; any other index counts as every bit. Ports
-are left to [`sema/unused-port`](#semaunused-port). Computed on demand. off in
+are left to [`sema/unused-port`](#semaunused-port). Computed on demand. `info` in
 `recommended`, `warn` in `strict`. Testbenches are skipped.
 
 ### `sema/process-restarts`
@@ -1180,7 +1180,7 @@ end process;   -- plays the reset and the frame again, forever
 ```
 
 A clock generator (assignments to one signal, ending with a `wait for`) restarts on purpose
-and is not reported. off in `recommended`, `warn` in `strict`.
+and is not reported. `warn` in every preset.
 
 ### `sema/unbounded-wait`
 
@@ -1193,8 +1193,8 @@ wait until done = '1';                 -- hangs if done never rises
 wait until done = '1' for 1 ms;        -- then: assert done = '1' report "no done";
 ```
 
-Clock edges (`wait until rising_edge(clk)`) and waits in procedures are not reported. off
-in `recommended`, `info` in `strict`.
+Clock edges (`wait until rising_edge(clk)`) and waits in procedures are not reported. `info`
+in every preset.
 
 ### `sema/redundant-conversion`
 
@@ -1208,7 +1208,7 @@ y <= to_unsigned(to_integer(x), 8);       -- resize(x, 8), without the 31-bit li
 ```
 
 The first fix removes the conversion (safe); the second uses `resize` (unsafe: it lifts the
-limit). off in `recommended`, `warn` in `strict`.
+limit). `info` in `recommended`, `warn` in `strict`.
 
 ### `sema/logic-depth`
 
@@ -1275,7 +1275,7 @@ r <= a mod 10;   -- constant, but not a power of two
 ```
 
 Declarations, generate schemes, subprograms and regions between `translate_off` and
-`translate_on` are not checked. off in `recommended`, `warn` in `strict`.
+`translate_on` are not checked. `info` in `recommended`, `warn` in `strict`.
 
 ## `project`
 
@@ -1601,7 +1601,7 @@ defines. The tags are those of `[doc.spec]`.
 -- @verifies UART-9        (no "-- @req UART-9" anywhere)
 ```
 
-off in `recommended`, `warn` in `strict`.
+`info` in `recommended`, `warn` in `strict`.
 
 ## `vendor`
 
@@ -1751,7 +1751,7 @@ from the project's vendor files: `set_global_assignment -name FAMILY` or `DEVICE
 |--------|------|---------|
 | `family` | string | from the vendor files |
 
-off in `recommended`, `warn` in `strict`. Testbenches are skipped. Computed on demand.
+`warn` in every preset. Testbenches are skipped. Computed on demand.
 
 ## `naming`
 

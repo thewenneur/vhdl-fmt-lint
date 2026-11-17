@@ -4,9 +4,8 @@
 
 ### Added
 
-- **22 new rules for bugs other linters miss.** All are off in `recommended`, so the
-  language server does no extra work by default; `strict` turns on all but two (both
-  need settings).
+- **22 new rules for bugs other linters miss.** 18 are on in `recommended`; `strict`
+  turns on all but `sema/logic-depth` and `project/layering`, which need settings.
   - `vendor/inference`: a reset memory, an asynchronous read of a memory too large for
     LUTs, a multiplication wider than one DSP block, and a reset shift register on AMD
     parts. The family comes from the `family` option or from the project's vendor files
