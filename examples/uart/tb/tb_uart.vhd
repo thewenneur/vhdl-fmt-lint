@@ -46,7 +46,7 @@ begin
         tx_write <= '1'  ;
         wait until rising_edge(clk);
         tx_write <= '0'  ;
-        wait until rx_empty = '0';
+        wait until rx_empty = '0' for 1 ms;
         assert rx_data = x"5A" report "wrong byte received" severity failure;
         wait;
     end process stimulus;

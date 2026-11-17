@@ -33,7 +33,10 @@ use crate::rtl::cases::declaration_node;
 use crate::rtl::static_int;
 use crate::syntax::is_designator;
 
+mod hazards;
 mod widths;
+
+pub use hazards::{Device, HazardChecks, Timing, glob, glob_matches};
 
 /// Which checks to run, with their options.
 #[derive(Debug, Clone, Copy, Default)]
@@ -162,19 +165,7 @@ impl Analysis {
             .children()
             .filter(|n| n.kind() == SyntaxKind::DESIGN_UNIT)
             .collect();
-        let values = Values {
-            analysis: self,
-            generics: checks.range_generics,
-            cache: RefCell::default(),
-            bounds: RefCell::default(),
-            integer_bounds: RefCell::default(),
-            roots: RefCell::default(),
-            used_generic: Cell::new(false),
-            linears: RefCell::default(),
-            lin_bounds: RefCell::default(),
-            widths: RefCell::default(),
-            defaults: RefCell::default(),
-        };
+        let values = Values::new(self, checks.range_generics);
         values.roots.borrow_mut().insert(file, root.clone());
         let mut out = Vec::new();
         // A file in several libraries has its units once per library: the
@@ -238,6 +229,22 @@ struct Values<'a> {
 }
 
 impl<'a> Values<'a> {
+    fn new(analysis: &'a Analysis, generics: bool) -> Self {
+        Values {
+            analysis,
+            generics,
+            cache: RefCell::default(),
+            bounds: RefCell::default(),
+            integer_bounds: RefCell::default(),
+            roots: RefCell::default(),
+            used_generic: Cell::new(false),
+            linears: RefCell::default(),
+            lin_bounds: RefCell::default(),
+            widths: RefCell::default(),
+            defaults: RefCell::default(),
+        }
+    }
+
     fn root(&self, file: FileId) -> Option<SyntaxNode> {
         if let Some(root) = self.roots.borrow().get(&file) {
             return Some(root.clone());
@@ -1724,11 +1731,19 @@ fn in_protected_type(decls: &[Decl], decl: &Decl) -> bool {
 /// The regions of a unit between `translate_off` and `translate_on`
 /// comments (`-- synthesis translate_off`, `-- pragma translate_off`,
 /// `-- RTL_SYNTHESIS OFF`), which synthesis tools skip.
+fn contains_ignore_case(text: &str, word: &str) -> bool {
+    text.as_bytes()
+        .windows(word.len())
+        .any(|w| w.eq_ignore_ascii_case(word.as_bytes()))
+}
+
 fn simulation_only(node: &SyntaxNode) -> Vec<TextRange> {
     let mut out = Vec::new();
     let mut start = None;
     vfl_syntax::green_walk::for_each_token(node, |kind, range, text| {
-        if !matches!(kind, SyntaxKind::LINE_COMMENT | SyntaxKind::BLOCK_COMMENT) {
+        if !matches!(kind, SyntaxKind::LINE_COMMENT | SyntaxKind::BLOCK_COMMENT)
+            || !(contains_ignore_case(text, "translate") || contains_ignore_case(text, "synthesis"))
+        {
             return;
         }
         let text = text.to_ascii_lowercase().replace([' ', '\t'], "_");

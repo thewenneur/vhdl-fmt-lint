@@ -12,6 +12,7 @@
 //! findings carry a [`Fix`]; [`apply_fixes`] applies them. [`report`]
 //! prints the result for people, tools and CI.
 
+pub mod hazards;
 pub mod naming;
 pub mod report;
 pub mod rules;
@@ -32,6 +33,7 @@ use vfl_sema::{Analysis, FileId};
 use vfl_syntax::green_walk::ChildTokens;
 use vfl_syntax::{GreenNode, SyntaxError, TextRange};
 
+pub use hazards::Target;
 pub use rules::{NAMING_KINDS, RULES, Rule};
 pub use suppress::{Suppressions, matches as rule_matches};
 pub use vfl_sema::{Edit, Fix};
@@ -95,6 +97,10 @@ pub struct FileSettings<'a> {
     /// file, as [`library_conflict`] gives it: reported as
     /// `project/library-conflict`.
     pub library_conflict: Option<&'a str>,
+    /// What the project's vendor files say about the target device and
+    /// its clocks ([`Target::load`]), for `vendor/inference` and
+    /// `sema/logic-depth`.
+    pub target: Option<&'a Target>,
 }
 
 /// The rule reporting files the library sources of a project disagree
@@ -139,6 +145,7 @@ struct CachedFile {
     verilog: Option<(GreenNode, u64)>,
     config: Config,
     library_conflict: Option<String>,
+    target: Option<Target>,
     sema: Vec<vfl_sema::Diagnostic>,
     diagnostics: Vec<Diagnostic>,
     errors: Vec<String>,
@@ -152,8 +159,20 @@ pub fn lint_cached(
     files: &[FileSettings],
     cache: &mut LintCache,
 ) -> LintResult {
+    // `project/constant-port` looks at every instance of the project:
+    // once per run, and only when a file has it on. Its findings count as
+    // semantic diagnostics, so that a file's cached findings are reused
+    // only while they are the same.
+    let constant_ports = if files
+        .iter()
+        .any(|s| rules::level(&s.config.lint, vfl_sema::codes::CONSTANT_PORT) != Level::Off)
+    {
+        analysis.constant_ports()
+    } else {
+        Vec::new()
+    };
     let mut sema: FxHashMap<FileId, Vec<&vfl_sema::Diagnostic>> = FxHashMap::default();
-    for d in analysis.diagnostics() {
+    for d in analysis.diagnostics().iter().chain(&constant_ports) {
         sema.entry(d.file).or_default().push(d);
     }
     // What the Verilog files declare, reused for unchanged trees. A VHDL
@@ -219,6 +238,7 @@ pub fn lint_cached(
                     }
                     && cached.config == *settings.config
                     && cached.library_conflict.as_deref() == settings.library_conflict
+                    && cached.target.as_ref() == settings.target
                     && cached.sema.len() == file_sema.len()
                     && cached.sema.iter().zip(file_sema).all(|(a, b)| a == *b)
                     && !analysis.file_reanalyzed(settings.file)
@@ -268,6 +288,7 @@ pub fn lint_cached(
                 verilog: verilog_key(settings),
                 config: settings.config.clone(),
                 library_conflict: settings.library_conflict.map(str::to_owned),
+                target: settings.target.cloned(),
                 sema: file_sema.iter().map(|d| (*d).clone()).collect(),
                 diagnostics: diagnostics.clone(),
                 errors: errors.clone(),
@@ -377,6 +398,11 @@ fn lint_file(
         settings.file,
         &code_checks(lint_config, &enabled, &mut errors),
     );
+    // And the hazard checks.
+    let hazards = analysis.hazard_checks(
+        settings.file,
+        &hazards::checks(lint_config, &enabled, settings.target, &mut errors),
+    );
     // Computed on demand too.
     let extra = if vfl_sema::extra_codes::ALL.iter().any(|id| enabled(id)) {
         analysis.extra_checks(settings.file, &enabled, settings.config.standard())
@@ -395,6 +421,7 @@ fn lint_file(
         .chain(&branches.diagnostics)
         .chain(&drivers)
         .chain(&code)
+        .chain(&hazards)
         .chain(&extra)
     {
         let code = d.code;
@@ -495,6 +522,26 @@ fn lint_file(
                 });
             }
             naming::check(decls, &file.text, &root, &conventions, &mut findings);
+            if enabled(hazards::LAYERING) {
+                hazards::layering(
+                    analysis,
+                    settings.file,
+                    &root,
+                    settings.root,
+                    lint_config,
+                    &mut errors,
+                    &mut findings,
+                );
+            }
+            if enabled(hazards::STALE_REFERENCE) {
+                hazards::stale_references(
+                    analysis,
+                    settings.file,
+                    &root,
+                    settings.config,
+                    &mut findings,
+                );
+            }
             Suppressions::new(&root, &file.text, &file.line_index)
         }
     };

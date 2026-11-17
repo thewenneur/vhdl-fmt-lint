@@ -42,6 +42,9 @@ pub struct World {
     /// The files over `max-file-size`, by path, as they are analyzed.
     outlines: FxHashMap<PathBuf, Outline>,
     lint_cache: vfl_lint::LintCache,
+    /// The target device and clocks the project's vendor files give, read
+    /// on the first refresh a rule needs them.
+    target: Option<Arc<vfl_lint::Target>>,
     /// The library lists the libraries were last inferred from.
     sources: Option<LibrarySources>,
     /// The path and summary of each file (VHDL, then Verilog) when
@@ -109,6 +112,7 @@ impl World {
             configs: FxHashMap::default(),
             outlines: FxHashMap::default(),
             lint_cache: vfl_lint::LintCache::default(),
+            target: None,
             sources: None,
             inferred_from: Vec::new(),
             dirty: true,
@@ -151,6 +155,7 @@ impl World {
             configs: FxHashMap::default(),
             outlines: FxHashMap::default(),
             lint_cache: vfl_lint::LintCache::default(),
+            target: None,
             sources: None,
             inferred_from: Vec::new(),
             dirty: true,
@@ -456,6 +461,15 @@ impl World {
             .iter()
             .map(|p| &self.configs[&config_dir(p)])
             .collect();
+        if self.target.is_none()
+            && self.root.kind != RootKind::Fallback
+            && configs.iter().any(|c| vfl_lint::Target::wanted(c))
+        {
+            self.target = Some(Arc::new(vfl_lint::Target::load(
+                &self.root.dir,
+                &self.project.config,
+            )));
+        }
         // Verilog files follow the VHDL ones in the analysis, linted only
         // with `[verilog]` `mode = "full"`. Files over the size limit are
         // not linted.
@@ -505,6 +519,7 @@ impl World {
             too_large,
             root: self.root.dir.clone(),
             cache: std::mem::take(&mut self.lint_cache),
+            target: self.target.clone(),
         })
     }
 
@@ -653,6 +668,7 @@ pub struct Refresh {
     too_large: Vec<vfl_lint::Diagnostic>,
     root: PathBuf,
     cache: vfl_lint::LintCache,
+    target: Option<Arc<vfl_lint::Target>>,
 }
 
 /// What linting a file needs.
@@ -682,6 +698,7 @@ impl Refresh {
             too_large,
             root,
             mut cache,
+            target,
         } = self;
         let analysis = previous.into_update_with_foreign(inputs, foreign);
         let settings: Vec<FileSettings> = files
@@ -693,6 +710,7 @@ impl Refresh {
                 verilog: f.verilog.as_ref(),
                 root: Some(&root),
                 library_conflict: f.library_conflict.as_deref(),
+                target: target.as_deref(),
             })
             .collect();
         let result = vfl_lint::lint_cached(&analysis, &settings, &mut cache);
