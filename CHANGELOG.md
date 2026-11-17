@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Notepad++: double-click under a hover tip.** Once the mouse was over the hover tip, Scintilla
+  no longer saw it move, so the tip stayed on the text and took the clicks meant for it: a
+  double-click there selected nothing and Ctrl+C copied the current line. The tip now closes
+  as soon as the mouse moves.
+
 ### Added
 
 - **22 new rules for bugs other linters miss.** 18 are on in `recommended`; `strict`
