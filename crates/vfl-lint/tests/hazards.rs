@@ -241,6 +241,89 @@ fn integer_overflow() {
     );
 }
 
+/// The counters `sema/integer-overflow` reports in `text`.
+fn overflowing(text: &str) -> Vec<String> {
+    findings(text, "sema/integer-overflow")
+        .iter()
+        .map(|f| f.split('`').nth(1).unwrap().to_string())
+        .collect()
+}
+
+#[test]
+fn integer_overflow_stopped_by_a_test_elsewhere() {
+    let text = rtl(
+        CLK,
+        "  type state_t is (idle, run, done);
+  signal state, next_state, s2 : state_t;
+  signal fsm1, fsm2, rel, cond, late, idle_test : integer range 0 to 9;
+  signal led : std_logic;",
+        "  -- One process: the state changes when the counter reaches 9.
+  process (clk) begin
+    if rising_edge(clk) then
+      case s2 is
+        when run =>
+          fsm1 <= fsm1 + 1;
+          if fsm1 = 9 then s2 <= done; end if;
+        when others => s2 <= run;
+      end case;
+    end if;
+  end process;
+  -- Two processes: the next state is worked out elsewhere.
+  process (clk) begin
+    if rising_edge(clk) then
+      state <= next_state;
+      if state = run then fsm2 <= fsm2 + 1; end if;
+      -- Reloaded after the count, in the same process.
+      rel <= rel + 1;
+      if rel = 9 then rel <= 0; end if;
+      -- Tested too late: 12 is past 9.
+      late <= late + 1;
+      if late = 12 then late <= 0; end if;
+      -- Tested in time, but nothing stops the count.
+      idle_test <= idle_test + 1;
+      if idle_test = 5 then led <= '1'; end if;
+    end if;
+  end process;
+  process (all) begin
+    next_state <= state;
+    if fsm2 = 9 then next_state <= done; end if;
+  end process;
+  -- A conditional assignment stops it too.
+  process (clk) begin
+    if rising_edge(clk) then
+      if s2 = idle then cond <= cond + 1; end if;
+    end if;
+  end process;
+  s2 <= done when cond = 9 else s2;",
+    );
+    assert_eq!(overflowing(&text), ["late", "idle_test"]);
+}
+
+#[test]
+fn integer_overflow_bounded_by_a_loop() {
+    let text = rtl(
+        "    v : in std_logic_vector(7 downto 0);\n    y, z : out natural",
+        "",
+        "  process (v)
+    variable ones : integer range 0 to 8;
+    variable short : integer range 0 to 7;
+  begin
+    ones := 0;
+    short := 0;
+    for i in v'range loop
+      if v(i) = '1' then
+        ones := ones + 1;
+        short := short + 1;
+      end if;
+    end loop;
+    y <= ones;
+    z <= short;
+  end process;",
+    );
+    // 8 bits fit `0 to 8`, not `0 to 7`.
+    assert_eq!(overflowing(&text), ["short"]);
+}
+
 // ---- N2 sema/dont-care-compare -------------------------------------------------
 
 #[test]

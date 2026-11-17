@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **`sema/integer-overflow` looks further than the statements around the count.** A test
+  elsewhere that stops the count in time is now enough: it can reload the counter, change
+  the state of the `case` around the count, or set the next state of a two-process state
+  machine. A test that comes too late, or that stops nothing, is still reported. A
+  variable counted in `for` loops of static length is not reported when the loops cannot
+  take it past its bound.
+
 ## [0.13.1] - 2026-11-17
 
 Security fixes in dependencies.
