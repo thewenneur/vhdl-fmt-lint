@@ -902,6 +902,10 @@ pub(crate) fn generate_config() {
 
 /// The caret may have moved: show the uses of its name once it rests.
 pub(crate) fn caret_moved(sci: Hwnd) {
+    // Off: leave the editor alone (its toggle clears the last highlights).
+    if !with(|s| s.settings.get().highlight) {
+        return;
+    }
     let now = (current_buffer(), caret(sci));
     if with(|s| s.tools.highlighted.get()) != Some(now) {
         schedule_highlight();

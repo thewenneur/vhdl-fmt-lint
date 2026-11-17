@@ -55,8 +55,8 @@ are ready, and are dropped if the file changed in the meantime.
   architectures that instantiate an entity and what it instantiates. **Expand selection**
   grows the selection to the enclosing name, expression, statement or declaration.
 - **Find references** lists every use of a name across the project; choosing one opens it.
-  **Highlight uses** marks the uses of the name at the caret in the file, reads and writes in
-  two colors.
+  **Highlight uses** (off by default, in the settings) marks the uses of the name at the
+  caret in the file, reads and writes in two colors.
 - **Rename symbol** renames a name everywhere it is used, in every file of the project, as
   one undo step per file. Renaming in files other than the current one asks first. A
   package and its body, a subprogram and its body, and an entity and the components named
@@ -135,7 +135,7 @@ commands when the plugin is upgraded.
 | Lint automatically | Lints VHDL and Verilog files as described above (on by default). |
 | Show messages under lines | Shows each message under its line (on by default); with it off, hover or use Next problem. |
 | Code assistance | Types on hover, parameter hints and completion after a dot (on by default). The three commands above work either way. |
-| Highlight uses | Highlights the uses of the name at the caret (on by default). |
+| Highlight uses | Highlights the uses of the name at the caret (off by default: filling the highlights could break double-click selection, so copying a word failed). |
 | Color names by meaning | Colors signals, ports, constants, variables, types and subprograms (on by default). Input ports are blue, output ports red, and `inout`/`buffer` ports pink. |
 | Lint preset without vfl.toml... | Lists the lint presets (`none`, `recommended`, `strict`) for files no `vfl.toml` applies to; `recommended` by default. A `vfl.toml` replaces it, so that a project is linted the same for everyone. |
 | Format style without vfl.toml... | Lists the format styles (`default`, `leading-comma`, `compact`, `classic`) for files no `vfl.toml` applies to; `default` by default. A `vfl.toml` replaces it too. |
