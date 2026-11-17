@@ -781,7 +781,7 @@ pub const RULES: &[Rule] = &[
     ),
     rule(
         extra_codes::INFINITE_LOOP,
-        "A loop is empty, or has no `exit`, `return` or `wait` and never ends.",
+        "A loop without `while` or `for` is empty, or has no `exit`, `return` or `wait` and never ends.",
         Warn,
         Error,
         false,

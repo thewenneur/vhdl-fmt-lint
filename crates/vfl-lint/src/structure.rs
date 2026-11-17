@@ -346,9 +346,12 @@ fn libraries(ctx: &StyleContext, unit: &SyntaxNode, out: &mut Vec<Finding>) {
     else {
         return;
     };
-    // The prefixes of selected names in the unit: `ieee` of `ieee.x.y`.
+    // The prefixes of selected names in the file: `ieee` of `ieee.x.y`.
+    // The whole file, since an entity's clauses also serve its
+    // architectures.
     let used = |name: &str| {
-        unit.descendants()
+        ctx.root
+            .descendants()
             .filter(|n| n.kind() == SyntaxKind::SELECTED_NAME)
             .filter(|n| {
                 !n.parent()
@@ -360,7 +363,8 @@ fn libraries(ctx: &StyleContext, unit: &SyntaxNode, out: &mut Vec<Finding>) {
                     .find(|t| !t.kind().is_trivia())
                     .is_some_and(|t| t.text().eq_ignore_ascii_case(name))
             })
-            || unit
+            || ctx
+                .root
                 .descendants()
                 .filter(|n| n.kind() == SyntaxKind::CONTEXT_REFERENCE)
                 .any(|n| {

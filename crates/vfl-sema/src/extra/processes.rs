@@ -179,11 +179,12 @@ fn infinite_loop(u: &Unit, node: &SyntaxNode, out: &mut Vec<Diagnostic>) {
         .skip_while(|e| e.kind() != SyntaxKind::LOOP_KW)
         .filter_map(|e| e.into_node())
         .collect();
-    if body.is_empty() {
-        u.push(out, codes::INFINITE_LOOP, keyword, "empty loop".into());
+    // `while` conditions may call impure functions; `for` loops end.
+    if node.has_child(|k| matches!(k, SyntaxKind::WHILE_SCHEME | SyntaxKind::FOR_SCHEME)) {
         return;
     }
-    if node.has_child(|k| matches!(k, SyntaxKind::WHILE_SCHEME | SyntaxKind::FOR_SCHEME)) {
+    if body.is_empty() {
+        u.push(out, codes::INFINITE_LOOP, keyword, "empty loop".into());
         return;
     }
     let label = node
@@ -281,6 +282,17 @@ fn static_condition(u: &Unit, node: &SyntaxNode, out: &mut Vec<Diagnostic>) {
                 .any(|d| matches!(d.kind(), SyntaxKind::NAME | SyntaxKind::SELECTED_NAME))
         };
         if !named(&l) && !named(&r) {
+            continue;
+        }
+        // Constants of this unit only: testing those of a package (or
+        // generics) is how configuration switches work.
+        let foreign = [&l, &r].into_iter().any(|side| {
+            std::iter::once((*side).clone())
+                .chain(side.descendants())
+                .filter(|n| n.kind() == SyntaxKind::NAME)
+                .any(|n| u.named(&n).is_some_and(|(id, _)| id.unit != u.unit))
+        });
+        if foreign {
             continue;
         }
         let (Some(a), Some(b)) = (constant_int(u, &l), constant_int(u, &r)) else {

@@ -1093,7 +1093,7 @@ Calls of functions declared `impure` are reported too.
 
 ### `sema/infinite-loop`
 
-A loop is empty, or has no `exit`, `return` or `wait` and never ends.
+A loop without `while` or `for` is empty, or has no `exit`, `return` or `wait` and never ends.
 
 A loop that calls a procedure is not reported, since the procedure may wait or the loop may be left by an exception.
 

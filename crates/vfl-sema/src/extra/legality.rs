@@ -72,14 +72,21 @@ pub(super) fn check(u: &Unit, out: &mut Vec<Diagnostic>) {
 // ---- E1: read-only targets ---------------------------------------------------
 
 fn read_only_targets(u: &Unit, out: &mut Vec<Diagnostic>) {
-    for r in u.refs {
-        if !r.access.writes() {
-            continue;
-        }
-        let Some(id) = super::single_decl(r) else {
+    // Assignment targets only: the resolver also marks names inside a
+    // target's index and the actuals of unresolved calls as writes.
+    let assignments = vfl_syntax::green_walk::descendants_where(&u.node, |k| {
+        matches!(
+            k,
+            SyntaxKind::SIGNAL_ASSIGN_STMT
+                | SyntaxKind::VARIABLE_ASSIGN_STMT
+                | SyntaxKind::SELECTED_ASSIGN_STMT
+        )
+    });
+    for statement in assignments {
+        let Some((target, _)) = crate::rtl::assignment_target(&statement) else {
             continue;
         };
-        let Some(decl) = u.decl(id) else {
+        let Some((_, decl)) = u.target_object(&target) else {
             continue;
         };
         let what = match decl.kind {
@@ -94,7 +101,7 @@ fn read_only_targets(u: &Unit, out: &mut Vec<Diagnostic>) {
         u.push(
             out,
             codes::READ_ONLY_TARGET,
-            r.range,
+            trimmed(&target),
             format!("`{}` is {what} and cannot be assigned", decl.spelling),
         );
     }
@@ -332,7 +339,9 @@ fn pure_function(u: &Unit, body: &SyntaxNode, out: &mut Vec<Diagnostic>) {
         false
     };
     let mut reported = FxHashSet::default();
-    for r in u.refs_in(body.text_range()) {
+    // Not the parameter list: defaults are evaluated by the caller.
+    let after_spec = TextRange::new(spec.text_range().end(), body.text_range().end());
+    for r in u.refs_in(after_spec) {
         let Some(id) = super::single_decl(r) else {
             continue;
         };
@@ -686,34 +695,64 @@ fn missing_bodies(u: &Unit, out: &mut Vec<Diagnostic>) {
     }) {
         return;
     }
-    let body = u.analysis.units().iter().enumerate().find(|(_, b)| {
-        b.kind == DeclKind::PackageBody
-            && b.primary.as_deref() == Some(info.name.as_str())
-            && b.library == info.library
-    });
-    let defined: FxHashMap<(String, &'static str), usize> = match body {
-        Some((index, _)) => {
-            let decls = u.analysis.unit_decls(index as u32);
-            let body_id = DeclId {
-                unit: index as u32,
-                index: 0,
+    // Projects may hold several bodies of one package (alternatives
+    // chosen at compile time): a definition in any of them counts.
+    let bodies: Vec<usize> = u
+        .analysis
+        .units()
+        .iter()
+        .enumerate()
+        .filter(|(_, b)| {
+            b.kind == DeclKind::PackageBody
+                && b.primary.as_deref() == Some(info.name.as_str())
+                && b.library == info.library
+        })
+        .map(|(index, _)| index)
+        .collect();
+    let body = bodies.first();
+    let mut defined: FxHashMap<(String, &'static str), usize> = FxHashMap::default();
+    for &index in &bodies {
+        let body_id = DeclId {
+            unit: index as u32,
+            index: 0,
+        };
+        for d in u
+            .analysis
+            .unit_decls(index as u32)
+            .iter()
+            .skip(1)
+            .filter(|d| d.parent == Some(body_id))
+        {
+            let kind = match d.kind {
+                DeclKind::Function | DeclKind::Procedure => "subprogram",
+                DeclKind::Constant => "constant",
+                DeclKind::ProtectedBody => "protected type",
+                _ => continue,
             };
-            let mut map = FxHashMap::default();
-            for d in decls.iter().skip(1).filter(|d| d.parent == Some(body_id)) {
-                let kind = match d.kind {
-                    DeclKind::Function | DeclKind::Procedure => "subprogram",
-                    DeclKind::Constant => "constant",
-                    DeclKind::ProtectedBody => "protected type",
-                    _ => continue,
-                };
-                *map.entry((d.name.clone(), kind)).or_default() += 1;
-            }
-            map
+            *defined.entry((d.name.clone(), kind)).or_default() += 1;
         }
-        None => FxHashMap::default(),
-    };
+    }
+    // Subprograms given by a `foreign` attribute have no VHDL body.
+    let foreign: FxHashSet<String> = u
+        .node
+        .descendants()
+        .filter(|n| n.kind() == SyntaxKind::ATTRIBUTE_SPEC)
+        .filter(|n| {
+            n.text()
+                .to_string()
+                .to_ascii_lowercase()
+                .contains("foreign")
+        })
+        .filter_map(|n| {
+            n.descendants_with_tokens()
+                .filter_map(|e| e.into_token())
+                .filter(|t| t.kind() == SyntaxKind::IDENT)
+                .nth(1)
+                .map(|t| vfl_syntax::identifier_key(t.text()))
+        })
+        .collect();
     for (decl, kind) in needs {
-        if defined.contains_key(&(decl.name.clone(), kind)) {
+        if defined.contains_key(&(decl.name.clone(), kind)) || foreign.contains(&decl.name) {
             continue;
         }
         let message = match (kind, body.is_some()) {
@@ -1115,8 +1154,16 @@ fn conflicting_uses(u: &Unit, out: &mut Vec<Diagnostic>) {
     {
         let key = t.text().to_ascii_lowercase();
         let local = u.target(t.text_range()).is_some_and(|id| id.unit == u.unit);
+        // Declared names, selected names, and formals and choices
+        // (`scope => x`), which name a parameter or an element.
         let declaring = t.parent().is_some_and(|p| {
-            matches!(p.kind(), SyntaxKind::IDENT_LIST) || p.kind() == SyntaxKind::SELECTED_NAME
+            matches!(p.kind(), SyntaxKind::IDENT_LIST | SyntaxKind::SELECTED_NAME)
+                || p.kind() == SyntaxKind::NAME
+                    && std::iter::successors(p.next_sibling_or_token(), |e| {
+                        e.next_sibling_or_token()
+                    })
+                    .find(|e| !e.kind().is_trivia())
+                    .is_some_and(|e| e.kind() == SyntaxKind::ARROW)
         });
         if let Some(&(a, b)) = conflicts.get(&key)
             && !local

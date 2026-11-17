@@ -313,8 +313,11 @@ fn clock_as_data(u: &Unit, clocks: &FxHashSet<DeclId>, out: &mut Vec<Diagnostic>
             SyntaxKind::CALL_EXPR | SyntaxKind::ATTRIBUTE_NAME => is_clock_edge(n),
             // `clk'event and clk = '1'`.
             SyntaxKind::BINARY_EXPR => n.children().any(|c| is_clock_edge(&c)),
+            // Behavioral code (a process that waits): models and
+            // testbenches.
+            SyntaxKind::PROCESS_STMT => n.descendants().any(|d| d.kind() == SyntaxKind::WAIT_STMT),
             // A copy (`clk_out <= clk;`), a clock generator, a delay.
-            SyntaxKind::SIGNAL_ASSIGN_STMT => {
+            SyntaxKind::SIGNAL_ASSIGN_STMT | SyntaxKind::VARIABLE_ASSIGN_STMT => {
                 n.descendants_with_tokens()
                     .any(|e| e.kind() == SyntaxKind::AFTER_KW)
                     || n.children()

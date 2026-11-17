@@ -52,8 +52,6 @@ fn is_hiding_kind(kind: DeclKind) -> bool {
             | DeclKind::Constant
             | DeclKind::Port { .. }
             | DeclKind::Generic { .. }
-            | DeclKind::Parameter { .. }
-            | DeclKind::LoopParameter
             | DeclKind::GenerateParameter
             | DeclKind::Alias
             | DeclKind::File
@@ -92,7 +90,13 @@ fn hidden(u: &Unit, out: &mut Vec<Diagnostic>) {
         index: 0,
     };
     for d in u.decls.iter().skip(1) {
-        if !is_hiding_kind(d.kind) {
+        // Loop and subprogram parameters are local by nature, and a
+        // component repeats its entity's ports.
+        if !is_hiding_kind(d.kind)
+            || d.parent
+                .and_then(|p| u.decl(p))
+                .is_some_and(|p| p.kind == DeclKind::Component)
+        {
             continue;
         }
         // The regions around the one that declares `d`.
@@ -231,13 +235,39 @@ fn ambiguous_calls(u: &Unit, out: &mut Vec<Diagnostic>) {
             }
             Some(sig)
         };
-        let mut seen: FxHashMap<Vec<Option<DeclId>>, (DeclId, u32)> = FxHashMap::default();
+        // The package a subprogram is declared in (a body counts as its
+        // package); local declarations hide, they are not ambiguous.
+        let package = |id: DeclId| -> Option<(&str, &str)> {
+            let info = u.analysis.units().get(id.unit as usize)?;
+            match info.kind {
+                DeclKind::Package => Some((info.library.as_str(), info.name.as_str())),
+                DeclKind::PackageBody => Some((info.library.as_str(), info.primary.as_deref()?)),
+                _ => None,
+            }
+        };
+        // Inside a package or its body, its own declarations are
+        // directly visible and hide the others.
+        let here = u.analysis.units().get(u.unit as usize).map(|info| {
+            let name = match info.kind {
+                DeclKind::PackageBody => info.primary.as_deref().unwrap_or(""),
+                _ => info.name.as_str(),
+            };
+            (info.library.as_str(), name)
+        });
+        if decls
+            .iter()
+            .any(|(id, _)| package(*id).is_none() || package(*id) == here)
+        {
+            continue;
+        }
+        let mut seen: FxHashMap<Vec<Option<DeclId>>, DeclId> = FxHashMap::default();
         for (id, d) in &decls {
             let Some(sig) = signature(d) else { continue };
-            if let Some(&(other, unit)) = seen.get(&sig)
-                && unit != id.unit
+            if let Some(&other) = seen.get(&sig)
+                && package(other) != package(*id)
             {
-                let name = |id: DeclId| u.analysis.units()[id.unit as usize].name.clone();
+                let name =
+                    |id: DeclId| package(id).map_or_else(String::new, |(_, n)| n.to_string());
                 u.push(
                     out,
                     codes::AMBIGUOUS_CALL,
@@ -251,7 +281,7 @@ fn ambiguous_calls(u: &Unit, out: &mut Vec<Diagnostic>) {
                 );
                 break;
             }
-            seen.insert(sig, (*id, id.unit));
+            seen.insert(sig, *id);
         }
     }
 }
