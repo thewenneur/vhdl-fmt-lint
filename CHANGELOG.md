@@ -31,6 +31,13 @@
     or folders), and `doc/stale-reference` (a header that names another file or unit;
     `@verifies` of a requirement nothing defines).
 
+### Changed
+
+- **Notepad++: Highlight uses is off by default.** Highlighting the uses of the name at the
+  caret could still break double-click selection, so Ctrl+C copied nothing. Turn it back on
+  with **Plugins > vfl > Highlight uses**. The setting is saved under a new name
+  (`highlight_uses_at_caret`), so it is off for everyone after the update.
+
 ## [0.12.0] - 2026-11-16
 
 A configurable pause before lint problems show while typing.

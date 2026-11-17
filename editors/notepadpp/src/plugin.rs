@@ -240,7 +240,8 @@ impl Default for Settings {
             auto_lint: true,
             inline_messages: true,
             assist: true,
-            highlight: true,
+            // Off: filling the uses broke double-click selection in Notepad++.
+            highlight: false,
             name_colors: true,
             lint_preset: Preset::Recommended,
             format_style: Style::Default,
@@ -2154,7 +2155,9 @@ fn load_settings() {
                 "lint_automatically" => settings.auto_lint = value,
                 "messages_under_lines" => settings.inline_messages = value,
                 "code_assistance" => settings.assist = value,
-                "highlight_uses" => settings.highlight = value,
+                // Renamed from `highlight_uses`, which every saved file has
+                // on: the new default (off) applies to everyone.
+                "highlight_uses_at_caret" => settings.highlight = value,
                 "color_names" => settings.name_colors = value,
                 _ => {}
             }
@@ -2171,7 +2174,7 @@ fn save_settings() {
     let text = format!(
         "format_on_save={}\nformat_on_save_max_kb={}\nformat_on_type={}\n\
          lint_automatically={}\nmessages_under_lines={}\n\
-         code_assistance={}\nhighlight_uses={}\ncolor_names={}\nlint_preset={}\n\
+         code_assistance={}\nhighlight_uses_at_caret={}\ncolor_names={}\nlint_preset={}\n\
          format_style={}\n",
         s.format_on_save as u8,
         s.format_on_save_max_kb,
