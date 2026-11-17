@@ -19,6 +19,8 @@ unsafe extern "system" {
         func: Option<unsafe extern "system" fn(Hwnd, u32, usize, u32)>,
     ) -> usize;
     pub fn KillTimer(hwnd: Hwnd, id: usize) -> i32;
+    /// `point` is a `POINT`: x, y in screen pixels.
+    pub fn GetCursorPos(point: *mut [i32; 2]) -> i32;
     fn DialogBoxIndirectParamW(
         instance: Hwnd,
         template: *const c_void,

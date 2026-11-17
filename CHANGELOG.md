@@ -45,6 +45,13 @@
   with **Plugins > vfl > Highlight uses**. The setting is saved under a new name
   (`highlight_uses_at_caret`), so it is off for everyone after the update.
 
+### Fixed
+
+- **Notepad++: double-click under a hover tip.** Once the mouse was over the hover tip, Scintilla
+  no longer saw it move, so the tip stayed on the text and took the clicks meant for it: a
+  double-click there selected nothing and Ctrl+C copied the current line. The tip now closes
+  as soon as the mouse moves.
+
 ## [0.12.0] - 2026-11-16
 
 A configurable pause before lint problems show while typing.

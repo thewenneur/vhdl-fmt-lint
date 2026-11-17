@@ -310,6 +310,8 @@ pub(crate) struct State {
     pub(crate) tip: Cell<Tip>,
     /// The caret position the parameter hints were shown for.
     tip_caret: Cell<usize>,
+    /// The mouse when the hover tip was shown, and the timer watching it.
+    tip_watch: Cell<Option<([i32; 2], usize)>>,
     /// The details of the completions in the list on screen, by label,
     /// while it is ours.
     details: RefCell<Option<HashMap<String, String>>>,
@@ -348,6 +350,7 @@ thread_local! {
         lint_delay: Cell::new(LINT_DELAY_MS),
         tip: Cell::new(Tip::None),
         tip_caret: Cell::new(0),
+        tip_watch: Cell::new(None),
         details: RefCell::new(None),
         status: RefCell::new(None),
         shown_errors: RefCell::default(),
@@ -695,6 +698,7 @@ fn on_notification(n: &ScNotification) {
         NPPN_SHUTDOWN if from_npp => {
             cancel_timer();
             tools::cancel_highlight();
+            stop_tip_watch();
         }
         SCN_MODIFIED if n.modification_type & (SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT) != 0 => {
             with(|s| s.edits.set(s.edits.get() + 1));
@@ -1746,7 +1750,9 @@ fn show_info_at(sci: Hwnd, position: usize, trigger: Trigger) {
             .map(|p| p.text.clone())
             .collect()
     });
-    show_tip(sci, position, &parts);
+    if show_tip(sci, position, &parts) && trigger == Trigger::Auto {
+        watch_tip_mouse();
+    }
     if !(with(|s| s.settings.get().assist) && is_vhdl(id)) {
         if parts.is_empty() && trigger == Trigger::Command {
             message_box(npp(), "Nothing to show here.", MB_ICONINFORMATION);
@@ -1773,11 +1779,64 @@ fn show_info_at(sci: Hwnd, position: usize, trigger: Trigger) {
             }
             let mut parts = parts;
             parts.extend(hover);
-            if !show_tip(here.sci, position, &parts) && trigger == Trigger::Command {
+            let shown = show_tip(here.sci, position, &parts);
+            if shown && trigger == Trigger::Auto {
+                watch_tip_mouse();
+            }
+            if !shown && trigger == Trigger::Command {
                 message_box(npp(), "Nothing to show here.", MB_ICONINFORMATION);
             }
         },
     );
+}
+
+/// How often the mouse is checked while a hover tip shows.
+const TIP_WATCH_MS: u32 = 100;
+
+/// Closes the hover tip once the mouse moves. Scintilla only sees the mouse
+/// over its own window: once the mouse is over the tip, the dwell never
+/// ends and the tip stays on the text, taking the clicks meant for it (a
+/// double-click there selected nothing).
+fn watch_tip_mouse() {
+    stop_tip_watch();
+    let mut point = [0; 2];
+    // SAFETY: fills `point`.
+    if unsafe { GetCursorPos(&mut point) } == 0 {
+        return;
+    }
+    // SAFETY: a thread timer with a plain callback.
+    let id = unsafe { SetTimer(ptr::null_mut(), 0, TIP_WATCH_MS, Some(on_tip_watch)) };
+    with(|s| s.tip_watch.set(Some((point, id))));
+}
+
+fn stop_tip_watch() {
+    if let Some((_, id)) = with(|s| s.tip_watch.take()) {
+        // SAFETY: `id` is a thread timer this plugin created.
+        unsafe { KillTimer(ptr::null_mut(), id) };
+    }
+}
+
+unsafe extern "system" fn on_tip_watch(_hwnd: Hwnd, _msg: u32, _id: usize, _time: u32) {
+    guard(|| {
+        let Some((start, _)) = with(|s| s.tip_watch.get()) else {
+            return;
+        };
+        if with(|s| s.tip.get()) != Tip::Info {
+            stop_tip_watch();
+            return;
+        }
+        let mut point = [0; 2];
+        // SAFETY: fills `point`.
+        if unsafe { GetCursorPos(&mut point) } != 0 && point != start {
+            stop_tip_watch();
+            with(|s| {
+                s.tip.set(Tip::None);
+                // Or the type found later shows the tip again.
+                s.dwell.set(None);
+            });
+            send(current_scintilla().0, SCI_CALLTIPCANCEL, 0, 0);
+        }
+    });
 }
 
 /// Shows `parts` in a call tip at `position`. Whether there were any.
