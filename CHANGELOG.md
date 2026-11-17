@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-11-17
+
+Fewer false alarms from `sema/integer-overflow`.
+
 ### Changed
 
 - **`sema/integer-overflow` looks further than the statements around the count.** A test
