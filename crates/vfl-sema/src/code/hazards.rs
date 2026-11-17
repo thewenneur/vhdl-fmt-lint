@@ -17,6 +17,7 @@
 //! Computed on demand, for the files the rules are on for, so that they
 //! cost nothing otherwise; each design unit is walked once.
 
+mod counter;
 mod depth;
 mod design;
 mod expr;

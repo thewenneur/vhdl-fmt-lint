@@ -991,8 +991,24 @@ cnt <= cnt + 1;   -- at 9: range error in simulation; 10..15 in hardware
 ```
 
 Any test of the counter around the assignment counts as a guard (`if cnt = 9 then cnt <= 0;
-else cnt <= cnt + 1; end if;`), and so does a `mod`. Plain `integer` is not checked.
-`warn` in `recommended`, `error` in `strict`.
+else cnt <= cnt + 1; end if;`), and so does a `mod`. A test further away counts too, when it
+stops the count in time. "In time" means it compares the counter with a value it reaches
+before its bound, or with a value that is not static. The test's branches must also stop
+the count, in one of these ways:
+
+- reloading the counter (`cnt <= cnt + 1; if cnt = 9 then cnt <= 0; end if;`);
+- changing what the increment runs under: the state of the `case` around it, or an enable
+  of the `if` around it;
+- assigning the signal that this state or enable is copied from, as in a two-process state
+  machine (`if cnt = 9 then next_state <= done;` in the combinational process, or
+  `next_state <= done when cnt = 9 else ...`).
+
+For a signal, the test can be in any process of the architecture; for a variable, only in
+its own process. A variable counted inside `for` loops of static length, set to a static
+value just before them, is not reported when the loops cannot take it past its bound
+(`ones := 0; for i in v'range loop if v(i) = '1' then ones := ones + 1; ...` on
+`0 to 8` for 8 bits). Plain `integer` is not checked. `warn` in `recommended`, `error` in
+`strict`.
 
 ### `sema/dont-care-compare`
 

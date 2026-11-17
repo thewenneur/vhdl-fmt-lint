@@ -501,7 +501,7 @@ impl Hazards<'_, '_, '_> {
             return;
         }
         if self.h.integer_overflow && self.num_of(decl) == Some(Num::Integer) {
-            self.integer_overflow(node, id, &decl.spelling, up, step);
+            self.integer_overflow(node, &process, id, &decl.spelling, up, step);
         }
         if self.h.power_of_two_wrap && up && self.num_of(decl) == Some(Num::Unsigned) {
             self.power_of_two_wrap(node, id, &decl.spelling);
@@ -535,7 +535,15 @@ impl Hazards<'_, '_, '_> {
             })
     }
 
-    fn integer_overflow(&mut self, node: &SyntaxNode, id: DeclId, name: &str, up: bool, step: i64) {
+    fn integer_overflow(
+        &mut self,
+        node: &SyntaxNode,
+        process: &SyntaxNode,
+        id: DeclId,
+        name: &str,
+        up: bool,
+        step: i64,
+    ) {
         let Some((lo, hi)) = self.c.values.integer_bounds(id) else {
             return;
         };
@@ -545,6 +553,18 @@ impl Hazards<'_, '_, '_> {
         };
         // `integer` itself: its bound is not a design choice.
         if bound.unsigned_abs() >= i32::MAX as u64 {
+            return;
+        }
+        let counter = super::counter::Counter {
+            node,
+            process,
+            id,
+            lo,
+            hi,
+            up,
+            step,
+        };
+        if self.cannot_overflow(&counter) {
             return;
         }
         let range = |lo: Option<i64>, hi: Option<i64>| match (lo, hi) {
