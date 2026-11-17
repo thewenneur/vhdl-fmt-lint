@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-17
+
+77 new lint rules, and two Notepad++ fixes for double-click selection.
+
 ### Added
 
 - **55 rules that other VHDL tools have** (compilers, Sigasi, GHDL, vhdl_ls, RTL linters),
