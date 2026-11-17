@@ -818,6 +818,34 @@
                 }
               ]
             },
+            "project/encrypted-file": {
+              "description": "A file contains encrypted (IEEE 1735) code, which is not checked.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
             "sema/duplicate-declaration": {
               "description": "Two declarations of a region have the same name.",
               "anyOf": [
@@ -2535,6 +2563,1126 @@
                 }
               ]
             },
+            "sema/ambiguous-call": {
+              "description": "A call names subprograms of two packages with the same parameter and result types.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/assignment-kind": {
+              "description": "A signal is assigned with `:=` or a variable with `<=`.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/association": {
+              "description": "A positional association follows a named one, or a map has more positional associations than the unit has ports or generics.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/attribute-specification": {
+              "description": "An attribute specification names an item of another class, or is not where the item is declared.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/circular-dependency": {
+              "description": "Packages depend on each other in a cycle.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/clock-as-data": {
+              "description": "A clock's value is used in logic instead of clocking registers.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/component-mismatch": {
+              "description": "A component declaration does not match the entity it binds to: ports, generics, modes or types differ.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/configuration": {
+              "description": "A configuration names an entity, architecture, instance or component that does not match the design.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/conflicting-use": {
+              "description": "Two use clauses make the same name visible from two packages, so neither is.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/constraint": {
+              "description": "A subtype indication has too many or too few index ranges, or a constraint of the wrong kind.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/declared-before": {
+              "description": "An architecture or package body comes before its entity or package in the same file.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/default-association": {
+              "description": "An input port is left to its default value in an instantiation.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/gated-clock": {
+              "description": "A clock is made by logic (a gated or derived clock).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/hidden-declaration": {
+              "description": "A declaration hides an object of the same name declared around it.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/impure-function": {
+              "description": "A pure function uses a signal, variable or file declared outside it, or calls an impure function.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/infinite-loop": {
+              "description": "A loop without `while` or `for` is empty, or has no `exit`, `return` or `wait` and never ends.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/internal-tristate": {
+              "description": "An internal signal is assigned `'Z'`.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/metavalue-assignment": {
+              "description": "RTL code assigns a metavalue: `'X'`, `'U'`, `'W'` or `'-'`.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/misplaced-statement": {
+              "description": "A `return` is outside a subprogram, or an `exit` or `next` outside a loop.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/missing-body": {
+              "description": "A package declares a subprogram, a deferred constant or a protected type that no package body completes.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/missing-wait": {
+              "description": "A process has neither a sensitivity list nor a `wait`, so simulation loops forever at time 0.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/mixed-clock-edges": {
+              "description": "A clock is used on its rising edge in some processes and its falling edge in others.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/mode-view": {
+              "description": "A VHDL-2019 mode view leaves out record elements or gives one mode `linkage`.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/multi-bit-synchronizer": {
+              "description": "A vector registered on one clock is copied into another clock domain bit by bit.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/others-position": {
+              "description": "`others` is not the last choice, or is combined with other choices.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/port-bounds": {
+              "description": "An integer port is associated with an object whose range is wider than the port's.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/postponed-delta": {
+              "description": "A postponed process assigns a signal without a delay.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/read-only-target": {
+              "description": "An input port, a constant, a generic, an `in` parameter or a loop or generate parameter is assigned.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/reset-source": {
+              "description": "An asynchronous reset comes from logic, or from a register of another clock domain without a synchronizer.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/return-value": {
+              "description": "A function returns without a value or has no `return`, or a procedure returns a value.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/sensitivity-list-form": {
+              "description": "A sensitivity list is empty or names a signal twice.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/standard-feature": {
+              "description": "Code needs a later VHDL standard than the one configured: an output port is read before VHDL-2008.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/state-type": {
+              "description": "A state register is a vector of named constants instead of an enumeration.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/static-condition": {
+              "description": "A condition or assertion compares constants, so its value is known before simulation.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/superfluous-reset": {
+              "description": "A signal is reset but never assigned on the clock edge.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unconstrained-integer": {
+              "description": "A signal or port of RTL code is an integer without a range, which synthesis makes 32 bits wide.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unneeded-others": {
+              "description": "A `case` has `when others` though its choices cover every value.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unregistered-output": {
+              "description": "An output port is driven by combinational logic rather than a register.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unsafe-fsm": {
+              "description": "A state machine has no safe encoding attribute.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/wait-in-sensitized-process": {
+              "description": "A process with a sensitivity list contains a `wait`.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
             "verilog/blocking-in-clocked": {
               "description": "A clocked `always` block assigns a signal with a blocking assignment (`=`).",
               "anyOf": [
@@ -3297,6 +4445,458 @@
                       "type": "boolean",
                       "default": false,
                       "description": "Report shared variables of protected types too."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/association-order": {
+              "description": "Named associations are not in the order of the declarations.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/deprecated-package": {
+              "description": "A use clause names a deprecated or non-IEEE package of the `ieee` library, or one of a later standard.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/literal-form": {
+              "description": "An integer literal has a negative exponent, or a range is in parentheses.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/missing-label": {
+              "description": "A statement of a kind the `statements` option lists has no label.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "statements": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "loop",
+                          "if",
+                          "case"
+                        ]
+                      },
+                      "default": [
+                        "loop"
+                      ],
+                      "description": "The statements that need a label."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/multiple-declarations": {
+              "description": "A declaration declares several objects.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/nested-comment": {
+              "description": "A block comment contains `/*`.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/nesting-depth": {
+              "description": "Statements are nested deeper than `max` (5).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "max": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "default": 5,
+                      "description": "The deepest nesting allowed."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/operator-precedence": {
+              "description": "An operator's precedence differs from what the expression suggests: `not a = b`, `a sll n + 1`.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/prohibited": {
+              "description": "The code uses a keyword, operator, attribute or pragma the `prohibited` options list.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "keywords": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "default": [],
+                      "description": "Keywords the project prohibits."
+                    },
+                    "operators": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "default": [],
+                      "description": "Operators the project prohibits."
+                    },
+                    "attributes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "default": [],
+                      "description": "Attributes the project prohibits, without `'`."
+                    },
+                    "pragmas": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "default": [],
+                      "description": "Pragmas the project prohibits."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/range-direction": {
+              "description": "A vector's range goes in the other direction than the project's (`downto` by default).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "direction": {
+                      "enum": [
+                        "to",
+                        "downto"
+                      ],
+                      "default": "downto",
+                      "description": "The direction of vector ranges in the project."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/reserved-word": {
+              "description": "A name is a reserved word of a later VHDL standard, or an entity or port name is a SystemVerilog keyword.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/secondary-unit-file": {
+              "description": "An architecture or package body is away from its primary unit, in a file whose name does not name it.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/unknown-pragma": {
+              "description": "A `-- synthesis` or `-- pragma` comment has a directive tools do not know.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "style/unneeded-library": {
+              "description": "A library clause names `work` or `std`, or a library nothing uses.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
                     }
                   },
                   "additionalProperties": false

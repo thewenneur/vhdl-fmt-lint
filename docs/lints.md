@@ -67,6 +67,7 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`project/library-conflict`](#projectlibrary-conflict) | info | warn | |
 | [`project/constant-port`](#projectconstant-port) | off | info |  |
 | [`project/layering`](#projectlayering) | off | off |  |
+| [`project/encrypted-file`](#projectencrypted-file) | info | info |  |
 | [`sema/duplicate-declaration`](#semaduplicate-declaration) | error | error | |
 | [`sema/duplicate-unit`](#semaduplicate-unit) | warn | warn | |
 | [`sema/unassociated-port`](#semaunassociated-port) | error | error | |
@@ -1277,6 +1278,230 @@ r <= a mod 10;   -- constant, but not a power of two
 Declarations, generate schemes, subprograms and regions between `translate_off` and
 `translate_on` are not checked. `info` in `recommended`, `warn` in `strict`.
 
+### `sema/ambiguous-call`
+
+A call names subprograms of two packages with the same parameter and result types.
+
+Two `use p.all` clauses make homographs from two packages visible; the call is ambiguous and compilers reject it. Select one (`p1.f(x)`).
+
+### `sema/assignment-kind`
+
+A signal is assigned with `:=` or a variable with `<=`.
+
+Fix (safe): replaces the operator with the right one.
+
+### `sema/association`
+
+A positional association follows a named one, or a map has more positional associations than the unit has ports or generics.
+
+### `sema/attribute-specification`
+
+An attribute specification names an item of another class, or is not where the item is declared.
+
+### `sema/circular-dependency`
+
+Packages depend on each other in a cycle.
+
+Each package of the cycle cannot be analyzed before the others.
+
+### `sema/clock-as-data`
+
+A clock's value is used in logic instead of clocking registers.
+
+A clock is a signal used in a clock edge (`rising_edge(clk)`, `clk'event and clk = '1'`). Sensitivity lists, `wait` statements, procedure calls, copies (`clk_out <= clk;`) and delayed assignments (testbench clock generators) are not reported. Testbenches (entities without ports) are not checked.
+
+### `sema/component-mismatch`
+
+A component declaration does not match the entity it binds to: ports, generics, modes or types differ.
+
+The entity is the default binding of the component: the entity of the same name in the libraries the file sees. Ports and generics are compared by name, mode and base type; an entity generic or input port without a default that the component leaves out is reported too.
+
+### `sema/configuration`
+
+A configuration names an entity, architecture, instance or component that does not match the design.
+
+### `sema/conflicting-use`
+
+Two use clauses make the same name visible from two packages, so neither is.
+
+The name is reported where it is used; selecting it (`p1.k`) or using one package only resolves it.
+
+### `sema/constraint`
+
+A subtype indication has too many or too few index ranges, or a constraint of the wrong kind.
+
+For example `std_logic_vector range 0 to 7` or a two-dimensional array with one index range.
+
+### `sema/declared-before`
+
+An architecture or package body comes before its entity or package in the same file.
+
+Compilers that read the file in order reject it.
+
+### `sema/default-association`
+
+An input port is left to its default value in an instantiation. `info` in `strict`.
+
+An input with a default value that is not associated, or associated with `open`, silently takes the default.
+
+### `sema/gated-clock`
+
+A clock is made by logic (a gated or derived clock).
+
+The clock of a clock edge is the output of logic (`clk_g <= clk and en;`) rather than a port or a plain copy. Use a clock enable or the vendor's clock buffer instead.
+
+### `sema/hidden-declaration`
+
+A declaration hides an object of the same name declared around it.
+
+For example a variable of a process with the name of a signal or port of its architecture. Reads and writes of the outer object are then impossible by its simple name.
+
+### `sema/impure-function`
+
+A pure function uses a signal, variable or file declared outside it, or calls an impure function.
+
+Calls of functions declared `impure` are reported too.
+
+### `sema/infinite-loop`
+
+A loop without `while` or `for` is empty, or has no `exit`, `return` or `wait` and never ends.
+
+A loop that calls a procedure is not reported, since the procedure may wait or the loop may be left by an exception.
+
+### `sema/internal-tristate`
+
+An internal signal is assigned `'Z'`.
+
+Ports are not reported: tri-state outputs drive pins.
+
+### `sema/metavalue-assignment`
+
+RTL code assigns a metavalue: `'X'`, `'U'`, `'W'` or `'-'`. `info` in `strict`.
+
+`'Z'` is [`sema/internal-tristate`](#semainternal-tristate)'s. Testbenches are not checked.
+
+### `sema/misplaced-statement`
+
+A `return` is outside a subprogram, or an `exit` or `next` outside a loop.
+
+### `sema/missing-body`
+
+A package declares a subprogram, a deferred constant or a protected type that no package body completes.
+
+Only packages of the project are checked; a package of a library outside the project (`ieee`, vendor libraries) is assumed complete.
+
+### `sema/missing-wait`
+
+A process has neither a sensitivity list nor a `wait`, so simulation loops forever at time 0.
+
+A process that calls a procedure is not reported, since the procedure may wait.
+
+### `sema/mixed-clock-edges`
+
+A clock is used on its rising edge in some processes and its falling edge in others.
+
+Mixing edges halves the time available between the two sets of registers, and many FPGA flows handle it poorly.
+
+### `sema/mode-view`
+
+A VHDL-2019 mode view leaves out record elements or gives one mode `linkage`.
+
+### `sema/multi-bit-synchronizer`
+
+A vector registered on one clock is copied into another clock domain bit by bit.
+
+Signals whose name contains `gray` are not reported.
+
+### `sema/others-position`
+
+`others` is not the last choice, or is combined with other choices.
+
+### `sema/port-bounds`
+
+An integer port is associated with an object whose range is wider than the port's.
+
+Values flow from the actual into an input port, and from an output port into the actual.
+
+### `sema/postponed-delta`
+
+A postponed process assigns a signal without a delay.
+
+An assignment `after` a non-zero delay is allowed.
+
+### `sema/read-only-target`
+
+An input port, a constant, a generic, an `in` parameter or a loop or generate parameter is assigned.
+
+Compilers reject these assignments; vfl reports them as you type.
+
+### `sema/reset-source`
+
+An asynchronous reset comes from logic, or from a register of another clock domain without a synchronizer.
+
+An asynchronous reset (tested before the clock edge) that is assigned from logic can glitch; one registered on another clock needs a reset synchronizer in the destination domain.
+
+### `sema/return-value`
+
+A function returns without a value or has no `return`, or a procedure returns a value.
+
+### `sema/sensitivity-list-form`
+
+A sensitivity list is empty or names a signal twice.
+
+Fix (safe): removes the repeated name.
+
+### `sema/standard-feature`
+
+Code needs a later VHDL standard than the one configured: an output port is read before VHDL-2008.
+
+Syntax of later standards (`process (all)`, `?=`, external names) is already a `syntax/error` with the standard configured; this rule reports what only analysis shows.
+
+### `sema/state-type`
+
+A state register is a vector of named constants instead of an enumeration. `info` in `strict`.
+
+The selector of a `case` in a clocked process is a register of an array type, and two choices at least are named constants.
+
+### `sema/static-condition`
+
+A condition or assertion compares constants, so its value is known before simulation.
+
+Only comparisons of integer constants with one named constant at least; comparisons of literals only are [`sema/constant-condition`](#semaconstant-condition)'s.
+
+### `sema/superfluous-reset`
+
+A signal is reset but never assigned on the clock edge.
+
+Signals assigned elsewhere too are left to [`sema/multiple-drivers`](#semamultiple-drivers).
+
+### `sema/unconstrained-integer`
+
+A signal or port of RTL code is an integer without a range, which synthesis makes 32 bits wide.
+
+Generics, constants, loop parameters and testbenches are not checked.
+
+### `sema/unneeded-others`
+
+A `case` has `when others` though its choices cover every value.
+
+Only enumeration selectors. Many guidelines want `when others` in every `case`, so the rule is off in both presets.
+
+### `sema/unregistered-output`
+
+An output port is driven by combinational logic rather than a register. `info` in `strict`.
+
+Testbenches are not checked.
+
+### `sema/unsafe-fsm`
+
+A state machine has no safe encoding attribute. `info` in `strict`.
+
+The state register is of an enumeration type of the project with more than two values, and no safe-state or encoding attribute (`fsm_safe_state`, `safe_state`, `syn_encoding`, `fsm_encoding`, `enum_encoding`) is in the file.
+
+### `sema/wait-in-sensitized-process`
+
+A process with a sensitivity list contains a `wait`.
+
 ## `project`
 
 ### `project/library-conflict`
@@ -1326,6 +1551,12 @@ of other languages.
 Entries without `/` are globs on library names and `library.package` (`std.textio`,
 `uvvm_*`); entries with `/` are globs on the path of the instantiated unit's file. Paths are
 relative to the project root. Off until configured.
+
+### `project/encrypted-file`
+
+A file contains encrypted (IEEE 1735) code, which is not checked.
+
+Reported once per file, on the first `protect` directive or comment.
 
 ## `verilog`
 
@@ -1603,6 +1834,97 @@ defines. The tags are those of `[doc.spec]`.
 
 `info` in `recommended`, `warn` in `strict`.
 
+### `style/association-order`
+
+Named associations are not in the order of the declarations. `info` in `strict`.
+
+### `style/deprecated-package`
+
+A use clause names a deprecated or non-IEEE package of the `ieee` library, or one of a later standard.
+
+`std_logic_textio` (deprecated by VHDL-2008), `std_logic_misc`, and the VHDL-2008 packages (`numeric_std_unsigned`, `fixed_pkg`, `float_pkg`, …) before VHDL-2008. `std_logic_arith` and its siblings are [`style/no-std-logic-arith`](#styleno-std-logic-arith)'s.
+
+### `style/literal-form`
+
+An integer literal has a negative exponent, or a range is in parentheses.
+
+`1e-3` is not an integer literal; `(0 to 7)` where a range is expected is an aggregate in some tools.
+
+### `style/missing-label`
+
+A statement of a kind the `statements` option lists has no label. `info` in `strict`.
+
+| Option | Type | Default |
+|--------|------|---------|
+| `statements` | list of `"loop"`, `"if"`, `"case"` | `["loop"]` |
+
+### `style/multiple-declarations`
+
+A declaration declares several objects. `info` in `strict`.
+
+For example `signal a, b : bit;`.
+
+### `style/nested-comment`
+
+A block comment contains `/*`.
+
+### `style/nesting-depth`
+
+Statements are nested deeper than `max` (5). `warn` in `strict`.
+
+| Option | Type | Default |
+|--------|------|---------|
+| `max` | integer | `5` |
+
+### `style/operator-precedence`
+
+An operator's precedence differs from what the expression suggests: `not a = b`, `a sll n + 1`.
+
+`not a = b` is `(not a) = b`; `a sll n + 1` is `a sll (n + 1)`.
+
+### `style/prohibited`
+
+The code uses a keyword, operator, attribute or pragma the `prohibited` options list.
+
+Nothing is prohibited until the options list it, so the rule is off in both presets.
+
+| Option | Type | Default |
+|--------|------|---------|
+| `keywords` | list of strings | `[]` |
+| `operators` | list of strings | `[]` |
+| `attributes` | list of strings (without `'`) | `[]` |
+| `pragmas` | list of strings | `[]` |
+
+### `style/range-direction`
+
+A vector's range goes in the other direction than the project's (`downto` by default). `info` in `strict`.
+
+| Option | Type | Default |
+|--------|------|---------|
+| `direction` | `"to"` or `"downto"` | `"downto"` |
+
+### `style/reserved-word`
+
+A name is a reserved word of a later VHDL standard, or an entity or port name is a SystemVerilog keyword.
+
+### `style/secondary-unit-file`
+
+An architecture or package body is away from its primary unit, in a file whose name does not name it. `info` in `strict`.
+
+`alu_rtl.vhd` names the entity `alu` and is not reported.
+
+### `style/unknown-pragma`
+
+A `-- synthesis` or `-- pragma` comment has a directive tools do not know.
+
+Comments starting with `pragma`, `synthesis`, `synopsys`, `rtl_synthesis`, `exemplar` or `cadence` are checked; a word that looks like a directive (with `_`, or ending in `on` or `off`) and is not one of the Synopsys, Cadence and vendor directives is reported, with the nearest known one.
+
+### `style/unneeded-library`
+
+A library clause names `work` or `std`, or a library nothing uses.
+
+Fix (safe): removes the name, or the whole clause.
+
 ## `vendor`
 
 These rules check the files FPGA tools read besides the HDL: Quartus settings (`.qsf`) and
@@ -1836,10 +2158,64 @@ shared ones:
 | [`sema/width-mismatch`](#semawidth-mismatch) | An assignment, or a port connection, whose sides differ in width, widths being computed from parameters. Not reported when the value uses arithmetic, a shift, a macro or `$signed`/`$unsigned`, when a 1-bit value is extended, when a constant fits, when the target is an `integer` loop index, or for a shift register (`q <= {q, d}`). |
 | [`sema/missing-reset`](#semamissing-reset), [`sema/mixed-reset`](#semamixed-reset), [`sema/reset-polarity`](#semareset-polarity) | Clocked blocks with a reset: asynchronous in the event list, synchronous as the first `if` assigning constants. |
 | [`sema/fsm-unreachable-state`](#semafsm-unreachable-state), [`sema/fsm-stuck-state`](#semafsm-stuck-state) | A `case` on a variable of an enumeration, or on one whose labels are parameters (`localparam IDLE = 0`). |
+| [`sema/ambiguous-call`](#semaambiguous-call) | error | error |  |
+| [`sema/assignment-kind`](#semaassignment-kind) | error | error | safe |
+| [`sema/association`](#semaassociation) | error | error |  |
+| [`sema/attribute-specification`](#semaattribute-specification) | error | error |  |
+| [`sema/circular-dependency`](#semacircular-dependency) | error | error |  |
+| [`sema/clock-as-data`](#semaclock-as-data) | warn | warn |  |
+| [`sema/component-mismatch`](#semacomponent-mismatch) | error | error |  |
+| [`sema/configuration`](#semaconfiguration) | error | error |  |
+| [`sema/conflicting-use`](#semaconflicting-use) | error | error |  |
+| [`sema/constraint`](#semaconstraint) | error | error |  |
+| [`sema/declared-before`](#semadeclared-before) | error | error |  |
+| [`sema/default-association`](#semadefault-association) | off | info |  |
+| [`sema/gated-clock`](#semagated-clock) | warn | warn |  |
+| [`sema/hidden-declaration`](#semahidden-declaration) | info | warn |  |
+| [`sema/impure-function`](#semaimpure-function) | error | error |  |
+| [`sema/infinite-loop`](#semainfinite-loop) | warn | error |  |
+| [`sema/internal-tristate`](#semainternal-tristate) | warn | warn |  |
+| [`sema/metavalue-assignment`](#semametavalue-assignment) | off | info |  |
+| [`sema/misplaced-statement`](#semamisplaced-statement) | error | error |  |
+| [`sema/missing-body`](#semamissing-body) | error | error |  |
+| [`sema/missing-wait`](#semamissing-wait) | error | error |  |
+| [`sema/mixed-clock-edges`](#semamixed-clock-edges) | warn | warn |  |
+| [`sema/mode-view`](#semamode-view) | error | error |  |
+| [`sema/multi-bit-synchronizer`](#semamulti-bit-synchronizer) | warn | warn |  |
+| [`sema/others-position`](#semaothers-position) | error | error |  |
+| [`sema/port-bounds`](#semaport-bounds) | warn | warn |  |
+| [`sema/postponed-delta`](#semapostponed-delta) | error | error |  |
+| [`sema/read-only-target`](#semaread-only-target) | error | error |  |
+| [`sema/reset-source`](#semareset-source) | warn | error |  |
+| [`sema/return-value`](#semareturn-value) | error | error |  |
+| [`sema/sensitivity-list-form`](#semasensitivity-list-form) | warn | warn | safe |
+| [`sema/standard-feature`](#semastandard-feature) | error | error |  |
+| [`sema/state-type`](#semastate-type) | off | info |  |
+| [`sema/static-condition`](#semastatic-condition) | info | warn |  |
+| [`sema/superfluous-reset`](#semasuperfluous-reset) | info | warn |  |
+| [`sema/unconstrained-integer`](#semaunconstrained-integer) | info | warn |  |
+| [`sema/unneeded-others`](#semaunneeded-others) | off | off |  |
+| [`sema/unregistered-output`](#semaunregistered-output) | off | info |  |
+| [`sema/unsafe-fsm`](#semaunsafe-fsm) | off | info |  |
+| [`sema/wait-in-sensitized-process`](#semawait-in-sensitized-process) | error | error |  |
 | [`style/line-length`](#styleline-length), [`style/trailing-whitespace`](#styletrailing-whitespace), [`style/tabs`](#styletabs) | As in VHDL. |
 | [`style/process-label`](#styleprocess-label) | An `always`, `always_comb`, `always_ff` or `always_latch` block whose `begin` has no label. |
 | [`style/positional-association`](#stylepositional-association) | Ports or parameter values connected by position. Gates and primitives are positional by definition and not reported. |
 | [`style/file-name`](#stylefile-name) | Compared with the modules, interfaces, programs and packages of the file. |
+| [`style/association-order`](#styleassociation-order) | off | info |  |
+| [`style/deprecated-package`](#styledeprecated-package) | warn | warn |  |
+| [`style/literal-form`](#styleliteral-form) | warn | error |  |
+| [`style/missing-label`](#stylemissing-label) | off | info |  |
+| [`style/multiple-declarations`](#stylemultiple-declarations) | off | info |  |
+| [`style/nested-comment`](#stylenested-comment) | warn | warn |  |
+| [`style/nesting-depth`](#stylenesting-depth) | off | warn |  |
+| [`style/operator-precedence`](#styleoperator-precedence) | info | warn |  |
+| [`style/prohibited`](#styleprohibited) | off | off |  |
+| [`style/range-direction`](#stylerange-direction) | off | info |  |
+| [`style/reserved-word`](#stylereserved-word) | info | warn |  |
+| [`style/secondary-unit-file`](#stylesecondary-unit-file) | off | info |  |
+| [`style/unknown-pragma`](#styleunknown-pragma) | warn | warn |  |
+| [`style/unneeded-library`](#styleunneeded-library) | warn | warn | safe |
 | [`naming/*`](#naming) | Modules (`naming/module`), packages, parameters (`naming/parameter`), `localparam`s (`naming/constant`), ports, nets and variables of a module (`naming/signal`) or of a block or function (`naming/variable`), types, functions, tasks (`naming/task`), instances, labels of blocks (`naming/process`) and of generate blocks (`naming/generate`). |
 
 The other `sema/*` and `style/*` rules are VHDL only.

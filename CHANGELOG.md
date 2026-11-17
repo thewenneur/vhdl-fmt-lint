@@ -4,6 +4,13 @@
 
 ### Added
 
+- **55 rules that other VHDL tools have** (compilers, Sigasi, GHDL, vhdl_ls, RTL linters),
+  listed in [docs/lints.md](docs/lints.md): legality checks a compiler would make as you
+  type (`sema/read-only-target`, `sema/assignment-kind`, `sema/component-mismatch`,
+  `sema/missing-wait`, `sema/missing-body`, `sema/circular-dependency`, ...), clock and
+  reset checks (`sema/clock-as-data`, `sema/gated-clock`, `sema/reset-source`,
+  `sema/multi-bit-synchronizer`, ...) and style checks (`style/nesting-depth`,
+  `style/unneeded-library`, `style/operator-precedence`, `style/prohibited`, ...).
 - **22 new rules for bugs other linters miss.** 18 are on in `recommended`; `strict`
   turns on all but `sema/logic-depth` and `project/layering`, which need settings.
   - `vendor/inference`: a reset memory, an asynchronous read of a memory too large for

@@ -40,6 +40,7 @@ mod code;
 mod decl;
 mod diagnostic;
 mod drivers;
+mod extra;
 mod foreign;
 pub mod resets;
 mod resolver;
@@ -57,5 +58,6 @@ pub use decl::{
 };
 pub use diagnostic::{Diagnostic, Edit, Fix, codes};
 pub use drivers::{DriverChecks, ResolvedDrivers};
+pub use extra::extra_codes;
 pub use foreign::{ForeignInput, ForeignModule, ForeignObject, foreign_key};
 pub use stdlib::{VENDOR, VENDOR_LIBRARIES};

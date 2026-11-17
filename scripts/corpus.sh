@@ -120,7 +120,8 @@ for config in "" "--config $alt_config" "--config $leading_config"; do
 done
 
 # Linting. Each project is analyzed as a whole, with zero configuration.
-# The known semantic errors are real: OSVVM's demos call a removed `print`,
+# The known semantic errors are real: OSVVM's demos call a removed `print`
+# and a deprecated package body names another package (missing-body),
 # UVVM's testbenches name DUTs that are not in the repository and one of its
 # templates names what each VVC provides, and VUnit's OSVVM submodule is
 # not checked out.
@@ -129,7 +130,7 @@ lint_errors() {
   (cd "$1" && "$vfl" lint --output-format concise 2>/dev/null || true) |
     grep -c ': error\[sema/' || true
 }
-for expected in "OSVVM 9" "UVVM 5" "vunit 37" "neorv32 0"; do
+for expected in "OSVVM 10" "UVVM 5" "vunit 37" "neorv32 0"; do
   read -r name known <<<"$expected"
   found=$(lint_errors "$cache/$name")
   if [ "$found" -gt "$known" ]; then
