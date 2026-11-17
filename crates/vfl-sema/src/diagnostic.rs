@@ -100,4 +100,25 @@ pub mod codes {
     pub const SYNTHESIS_INITIAL_VALUE: &str = "sema/synthesis-initial-value";
     pub const SYNTHESIS_REAL_PORT: &str = "sema/synthesis-real-port";
     pub const IDENTIFIER_CASE: &str = "style/identifier-case";
+    // Hazard checks (`code/hazards.rs`).
+    pub const INTEGER_OVERFLOW: &str = "sema/integer-overflow";
+    pub const DONT_CARE_COMPARE: &str = "sema/dont-care-compare";
+    pub const LATENCY_MISMATCH: &str = "sema/latency-mismatch";
+    pub const HANDSHAKE: &str = "sema/handshake";
+    pub const POWER_OF_TWO_WRAP: &str = "sema/power-of-two-wrap";
+    pub const INIT_RESET_MISMATCH: &str = "sema/init-reset-mismatch";
+    pub const BROKEN_SEQUENCE: &str = "sema/broken-sequence";
+    pub const BRANCH_CLONE: &str = "sema/branch-clone";
+    pub const SIGNED_RESIZE: &str = "sema/signed-resize";
+    pub const SIGNED_LOGICAL_SHIFT: &str = "sema/signed-logical-shift";
+    pub const CONVERSION_OVERFLOW: &str = "sema/conversion-overflow";
+    pub const UNUSED_BITS: &str = "sema/unused-bits";
+    pub const PROCESS_RESTARTS: &str = "sema/process-restarts";
+    pub const UNBOUNDED_WAIT: &str = "sema/unbounded-wait";
+    pub const CONSTANT_PORT: &str = "project/constant-port";
+    pub const REDUNDANT_CONVERSION: &str = "sema/redundant-conversion";
+    pub const INFERENCE: &str = "vendor/inference";
+    pub const LOGIC_DEPTH: &str = "sema/logic-depth";
+    pub const SWAPPED_ASSOCIATION: &str = "sema/swapped-association";
+    pub const EXPENSIVE_OPERATOR: &str = "sema/expensive-operator";
 }

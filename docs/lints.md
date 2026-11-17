@@ -12,6 +12,7 @@ table of `vfl.toml`; see [configuration.md](configuration.md#lint).
 - [`project/*`](#project): the library sources of the project
 - [`verilog/*`](#verilog): checks of Verilog and SystemVerilog only
 - [`style/*`](#style): checks on the text and syntax of one file
+- [`doc/*`](#doc): comments that no longer match the code
 - [`vendor/*`](#vendor): checks of FPGA vendor files (Quartus `.qsf`/`.qip`, `.sdc`, Vivado `.xdc`, `.tcl`)
 - [`naming/*`](#naming): naming conventions
 - [Verilog and SystemVerilog](#verilog-and-systemverilog): which rules apply to them, and how
@@ -26,8 +27,8 @@ The preset gives every rule its starting level:
 
 - `none`: only `syntax/error`.
 - `recommended` (the default): the rules that point at likely bugs.
-- `strict`: every rule except `naming/*`, `style/magic-number` and `style/file-header`, which
-  are off until configured.
+- `strict`: every rule except `naming/*`, `style/magic-number`, `style/file-header`,
+  `sema/logic-depth` and `project/layering`, which are off until configured.
 
 ```toml
 [lint]
@@ -64,6 +65,8 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`sema/unresolved-unit`](#semaunresolved-unit) | error | error | |
 | [`sema/unknown-library`](#semaunknown-library) | info | info | |
 | [`project/library-conflict`](#projectlibrary-conflict) | info | warn | |
+| [`project/constant-port`](#projectconstant-port) | off | info |  |
+| [`project/layering`](#projectlayering) | off | off |  |
 | [`sema/duplicate-declaration`](#semaduplicate-declaration) | error | error | |
 | [`sema/duplicate-unit`](#semaduplicate-unit) | warn | warn | |
 | [`sema/unassociated-port`](#semaunassociated-port) | error | error | |
@@ -105,6 +108,24 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`sema/synthesis-loop`](#semasynthesis-loop) | off | warn | |
 | [`sema/synthesis-initial-value`](#semasynthesis-initial-value) | off | info | |
 | [`sema/synthesis-real-port`](#semasynthesis-real-port) | off | warn | |
+| [`sema/integer-overflow`](#semainteger-overflow) | off | error |  |
+| [`sema/dont-care-compare`](#semadont-care-compare) | off | error | unsafe |
+| [`sema/latency-mismatch`](#semalatency-mismatch) | off | warn |  |
+| [`sema/handshake`](#semahandshake) | off | warn |  |
+| [`sema/power-of-two-wrap`](#semapower-of-two-wrap) | off | warn |  |
+| [`sema/init-reset-mismatch`](#semainit-reset-mismatch) | off | warn |  |
+| [`sema/broken-sequence`](#semabroken-sequence) | off | warn |  |
+| [`sema/branch-clone`](#semabranch-clone) | off | warn |  |
+| [`sema/signed-resize`](#semasigned-resize) | off | warn |  |
+| [`sema/signed-logical-shift`](#semasigned-logical-shift) | off | error | unsafe |
+| [`sema/conversion-overflow`](#semaconversion-overflow) | off | error |  |
+| [`sema/unused-bits`](#semaunused-bits) | off | warn |  |
+| [`sema/process-restarts`](#semaprocess-restarts) | off | warn |  |
+| [`sema/unbounded-wait`](#semaunbounded-wait) | off | info |  |
+| [`sema/redundant-conversion`](#semaredundant-conversion) | off | warn | safe, unsafe |
+| [`sema/logic-depth`](#semalogic-depth) | off | off |  |
+| [`sema/swapped-association`](#semaswapped-association) | off | info |  |
+| [`sema/expensive-operator`](#semaexpensive-operator) | off | warn |  |
 | [`verilog/blocking-in-clocked`](#verilogblocking-in-clocked) | warn | warn | unsafe |
 | [`verilog/nonblocking-in-combinational`](#verilognonblocking-in-combinational) | warn | warn | unsafe |
 | [`verilog/multiple-drivers`](#verilogmultiple-drivers) | warn | error | |
@@ -131,6 +152,7 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`style/port-order`](#styleport-order) | off | info | |
 | [`style/process-all`](#styleprocess-all) | off | info | unsafe |
 | [`style/shared-variable`](#styleshared-variable) | off | warn | |
+| [`doc/stale-reference`](#docstale-reference) | off | warn |  |
 | [`vendor/syntax`](#vendorsyntax) | error | error | |
 | [`vendor/unknown-command`](#vendorunknown-command) | warn | warn | |
 | [`vendor/unknown-option`](#vendorunknown-option) | warn | error | |
@@ -140,6 +162,7 @@ comments with `//`: `// vfl-ignore rule-id`.
 | [`vendor/duplicate-assignment`](#vendorduplicate-assignment) | warn | warn | |
 | [`vendor/pin-conflict`](#vendorpin-conflict) | error | error | |
 | [`vendor/unknown-port`](#vendorunknown-port) | info | warn | |
+| [`vendor/inference`](#vendorinference) | off | warn |  |
 | [`naming/<kind>`](#naming) | off | off | |
 
 ## `syntax`
@@ -952,6 +975,308 @@ A port of an entity has the type `real`, or an array of `real` (`real_vector`). 
 does not support floating-point ports. Generics of type `real` are fine. `off` in
 `recommended`, `warn` in `strict`.
 
+### `sema/integer-overflow`
+
+An object of a ranged integer subtype (`integer range 0 to 9`, a subtype, `natural` counting
+down) is counted with `x <= x + k` or `x := x - k` in a process, and no `if`, `elsif`, `case`
+or loop around the assignment tests its value. Past the bound, the simulation stops with a
+range error, while the hardware (4 bits for `0 to 9`) wraps or counts on to 15: the classic
+"works in synthesis, fails in simulation" (or the reverse).
+
+```vhdl
+signal cnt : integer range 0 to 9;
+...
+cnt <= cnt + 1;   -- at 9: range error in simulation; 10..15 in hardware
+```
+
+Any test of the counter around the assignment counts as a guard (`if cnt = 9 then cnt <= 0;
+else cnt <= cnt + 1; end if;`), and so does a `mod`. Plain `integer` is not checked.
+off in `recommended`, `error` in `strict`.
+
+### `sema/dont-care-compare`
+
+A literal holding `'-'` is compared with `=` or `/=`, or is a choice of an ordinary `case`
+or selected assignment. `'-'` is an ordinary value there: `op = "1--0"` is true only when
+`op` holds `'-'` in those places, so in simulation it is always false (and synthesis tools
+differ). Only `std_match`, the VHDL-2008 matching operators (`?=`) and `case?`/`select?`
+read `'-'` as "any value".
+
+```vhdl
+if opcode = "1--0" then   -- never true in simulation
+```
+
+The fix (unsafe: it needs `numeric_std`) rewrites the comparison as
+`std_match(opcode, "1--0")` (`not std_match(...)` for `/=`). Strings of type `string` are
+not checked. off in `recommended`, `error` in `strict`.
+
+### `sema/latency-mismatch`
+
+Two outputs of an entity that belong together, a valid (`*valid`, `*tvalid`, `*vld`) and
+the data outputs with the same prefix (`m_tdata`, `m_tlast` for `m_tvalid`; `dout` or
+`*data*` for a plain `valid`), are not delayed by the same number of registers from the
+inputs. It is the usual slip after adding a pipeline stage to one of them.
+
+```vhdl
+v_d1 <= s_valid;   d_d1 <= s_data;
+                   d_d2 <= d_d1;
+m_valid <= v_d1;   m_data <= d_d2;   -- valid: 2 registers, data: 3
+```
+
+The count follows the architecture's assignments from the input ports, registers (clock
+edges) adding one each, combinational logic none, and takes the longest path. Outputs that
+depend on themselves (counters, state), on an instance or on anything undriven have no fixed
+latency and are not compared. Computed on demand. off in `recommended`, `warn` in
+`strict`.
+
+### `sema/handshake`
+
+An output named like a valid (`m_tvalid`, `valid`, `out_vld`) depends, through
+combinational logic only, on an input named like a ready (`m_tready`, `ready`, `rdy`). AXI
+and most valid/ready protocols forbid it: a source that waits for ready before raising valid
+deadlocks with a sink that waits for valid before raising ready.
+
+```vhdl
+m_tvalid <= fifo_not_empty and m_tready;   -- valid waits for ready
+```
+
+Signals are followed through concurrent assignments and combinational processes; a register
+on the way ends the search. Computed on demand. off in `recommended`, `warn` in `strict`.
+
+### `sema/power-of-two-wrap`
+
+An `unsigned` whose width is `clog2(G)` (any function whose name contains `log2`) is
+incremented with no test of its value, so it wraps at `2 ** clog2(G)`, which is `G` only
+when `G` is a power of two, and no `assert` of the entity or architecture reads `G`. With a
+FIFO of 12 entries, the pointer runs to 15, past the memory.
+
+```vhdl
+signal wr_ptr : unsigned(clog2(DEPTH) - 1 downto 0);
+...
+wr_ptr <= wr_ptr + 1;   -- DEPTH = 12: the pointer reaches 15
+```
+
+Add `assert DEPTH = 2 ** clog2(DEPTH) report "DEPTH must be a power of two" severity
+failure;`, or wrap explicitly. When `G` has a default that is not a power of two, the message
+says how far the pointer goes. Values of `G` given by instances are not looked at. off
+in `recommended`, `warn` in `strict`.
+
+### `sema/init-reset-mismatch`
+
+A signal of the architecture has an initial value (`:=`) and a clocked process resets it
+to another static value. On an FPGA the initial value is the state after configuration, the
+reset value the state after a reset: the design starts in a state the reset never puts it in,
+and the simulation before the first reset shows the former. Often a state renamed in one of
+the two places.
+
+```vhdl
+signal state : state_t := IDLE;
+...
+if rst = '1' then state <= WAIT_CFG;   -- after configuration IDLE, after a reset WAIT_CFG
+```
+
+Values are compared as values where it is simple: `x"00"`, `"0000"` and `(others => '0')`
+are the same. Testbenches are skipped. Computed on demand. off in `recommended`, `warn` in `strict`.
+
+### `sema/broken-sequence`
+
+In a run of neighboring assignments `t(i) <= s(j)`, or of named associations `fi => s(j)`
+or `f(i) => s(j)` of one map, every element but one keeps the same offset between the two
+indexes: the odd one is reported, with the index it would have.
+
+```vhdl
+q(0) <= d(0);
+q(1) <= d(1);
+q(2) <= d(1);   -- d(2) expected
+q(3) <= d(3);
+```
+
+At least three elements must agree, so short runs and deliberate permutations are left
+alone. off in `recommended`, `warn` in `strict`.
+
+### `sema/branch-clone`
+
+Three copy-paste slips in branches: an `elsif` whose condition repeats an earlier one of
+the same `if` (its branch never runs); an `if` with `else` whose branches all do the same;
+and two neighboring alternatives of a `case` with the same statements, which can share one
+`when a | b =>` (or one of which was copied and not changed). A `case` written as a table,
+with more than 3 alternatives of one line each, repeats on purpose and is left alone.
+
+```vhdl
+if sel = "00" then y <= a;
+elsif sel = "01" then y <= b;
+elsif sel = "00" then y <= c;   -- never runs
+```
+
+Conditions and statements are compared as written, case and spacing aside. Alternatives
+that are `others` or only `null;` are not compared. off in `recommended`, `warn` in `strict`.
+
+### `sema/signed-resize`
+
+`numeric_std.resize` of a `signed` value to fewer bits keeps the sign bit and the low bits
+below it: neither a truncation (which keeps the low bits) nor a saturation. `resize(x, 4)` of
+`"01011000"` (88) is `"0000"`.
+
+```vhdl
+y <= resize(x, 4);   -- x : signed(7 downto 0): sign bit + 3 low bits
+```
+
+Slice (`x(3 downto 0)`) to truncate, or saturate explicitly. Reported when both widths are
+static. off in `recommended`, `warn` in `strict`.
+
+### `sema/signed-logical-shift`
+
+`srl` on a `signed` value shifts zeros in at the top, so negative values turn into large
+positive ones; `shift_right` (and `sra` in VHDL-2008) keep the sign.
+
+```vhdl
+y <= x srl 2;   -- x : signed: use shift_right(x, 2)
+```
+
+The fix rewrites it as `shift_right(x, n)` (unsafe: it changes the result for negative
+values, which is the point). off in `recommended`, `error` in `strict`.
+
+### `sema/conversion-overflow`
+
+A conversion that cannot hold its value: `to_integer` of an `unsigned` wider than 31 bits
+(32 for `signed`), whose larger values stop the simulation and are cut in synthesis; and
+`to_unsigned(v, n)` or `to_signed(v, n)` of a static value outside the `n` bits, which warns
+in simulation and keeps the low bits in synthesis.
+
+```vhdl
+n <= to_integer(addr);       -- addr : unsigned(39 downto 0)
+v <= to_unsigned(300, 8);    -- 300 does not fit in 8 bits
+```
+
+off in `recommended`, `error` in `strict`.
+
+### `sema/unused-bits`
+
+A vector signal of the architecture (`std_logic_vector`, `unsigned`, `signed`, up to 4096
+bits) has bits that no name reads, while others are read; or bits no assignment drives,
+while others are. A dropped carry, a forgotten field of a register, bits read while still
+`'U'`.
+
+```vhdl
+signal sum : unsigned(16 downto 0);
+sum <= resize(a, 17) + b;
+result <= sum(15 downto 0);   -- bit 16 of `sum` is never read: the carry is lost
+```
+
+Indexes and slices count when they are static; any other index counts as every bit. Ports
+are left to [`sema/unused-port`](#semaunused-port). Computed on demand. off in
+`recommended`, `warn` in `strict`. Testbenches are skipped.
+
+### `sema/process-restarts`
+
+A process without a sensitivity list that waits for time (`wait for`) and whose last
+statement is not `wait;`, a call to `std.env.stop` or `finish`, a failing assertion or an
+endless `loop`: after its last statement it starts again and replays its stimuli.
+
+```vhdl
+stim : process begin
+  rst <= '1'; wait for 100 ns; rst <= '0';
+  send_frame(x"55");
+end process;   -- plays the reset and the frame again, forever
+```
+
+A clock generator (assignments to one signal, ending with a `wait for`) restarts on purpose
+and is not reported. off in `recommended`, `warn` in `strict`.
+
+### `sema/unbounded-wait`
+
+In a testbench (an architecture of an entity without ports), a `wait until` or `wait on`
+has no `for` clause: if the design never answers, the simulation hangs (and CI times out)
+with no message saying what was awaited.
+
+```vhdl
+wait until done = '1';                 -- hangs if done never rises
+wait until done = '1' for 1 ms;        -- then: assert done = '1' report "no done";
+```
+
+Clock edges (`wait until rising_edge(clk)`) and waits in procedures are not reported. off
+in `recommended`, `info` in `strict`.
+
+### `sema/redundant-conversion`
+
+A type conversion to the type mark its operand is declared with (`unsigned(cnt)` where
+`cnt` is `unsigned`; `std_ulogic(clk)` on a `std_logic` is left alone, VHDL-93 needs it), or a round trip through `integer` (`to_unsigned(to_integer(x), n)` where `x`
+is `unsigned`), which adds nothing but the 31-bit limit of `integer`.
+
+```vhdl
+z <= unsigned(cnt);                       -- cnt is already unsigned
+y <= to_unsigned(to_integer(x), 8);       -- resize(x, 8), without the 31-bit limit
+```
+
+The first fix removes the conversion (safe); the second uses `resize` (unsafe: it lifts the
+limit). off in `recommended`, `warn` in `strict`.
+
+### `sema/logic-depth`
+
+An estimate of the levels of logic between registers, against what the clock allows: the
+period (times the cycles of a multicycle path) divided by the delay of one level of logic
+on the target family. It is a warning at edit time, long before place and route; the timing
+report has the last word.
+
+```text
+about 9 levels of logic before register `q` (through `s2`, `s1`): `clk` at 400 MHz allows
+about 5 (2.5 ns / 0.5 ns a level on AMD 7 series)
+```
+
+The clock of each clocked process is the signal of its edge. Its period comes from the
+`clocks` option, or from a `create_clock -period` of the project's `.xdc`/`.sdc` files on a
+port (`[get_ports clk]`) or with `-name` of that name. A register whose clock has no known
+period is not checked. `set_multicycle_path N -setup` and `set_false_path`/`set_clock_groups`
+apply to the registers and clocks their `get_cells`/`get_clocks`/... patterns name (`q_reg*`
+matches `q`).
+
+The cost model counts levels of 6-input LUTs: logic operators pack six inputs a level, an
+`=` of `w` bits needs `1 + log6(w / 3)`, adders and `<` ride the carry chain (one level plus
+one per 16 bits), a multiplier costs six, a divider one per bit, a multiplexer by a dynamic
+index `log4` of its inputs, and each pair of conditions an assignment is under one level.
+Combinational signals are followed back to registers and inputs. The delay of a level comes
+from the family (the `family` option, or the project's vendor files, as for
+[`vendor/inference`](#vendorinference)), 0.6 ns without one, or the `level-delay` option.
+
+```toml
+[lint.rules]
+"sema/logic-depth" = { level = "warn", family = "artix7", clocks = { clk = 100, fast_clk = "4 ns" } }
+```
+
+| Option | Type | Default |
+|--------|------|---------|
+| `family` | string | from the vendor files |
+| `clocks` | table of numbers (MHz) or strings | from `create_clock` |
+| `level-delay` | number (ns) | the family's |
+
+Off in every preset: turn it on to use it. Computed on demand.
+
+### `sema/swapped-association`
+
+In one association list, `fa => xb` and `fb => xa`: each actual's name fits the other
+formal (its words are all there) and not its own. A silent wiring slip.
+
+```vhdl
+port map (din_a => s_din_b, din_b => s_din_a)
+```
+
+Crossed connections are sometimes intended (`tx => rx_line`), hence a note, off in
+`recommended`, `info` in `strict`.
+
+### `sema/expensive-operator`
+
+In an architecture of an entity with ports, a statement divides (`/`, `mod`, `rem`) by a
+value that is not a constant power of two, or raises to a power (`**`) that is not constant
+(`2 ** n` is a shift and is fine). Synthesis builds a large combinational divider that has to
+settle in one clock cycle, which rarely meets timing.
+
+```vhdl
+q <= a / b;      -- a divider in one cycle
+r <= a mod 10;   -- constant, but not a power of two
+```
+
+Declarations, generate schemes, subprograms and regions between `translate_off` and
+`translate_on` are not checked. off in `recommended`, `warn` in `strict`.
+
 ## `project`
 
 ### `project/library-conflict`
@@ -970,6 +1295,37 @@ rtl/pkg.vhd:1:1: info[project/library-conflict] The library sources disagree abo
 file: old.tcl puts it in `stale`; build.tcl and the code put it in `good`. vfl uses `good`:
 it leaves 0 unresolved library references around the file, the other choices at least 3.
 ```
+
+### `project/constant-port`
+
+Across the whole project, every instance of an entity associates an input port with the
+same constant (by name, with a literal or an aggregate), at least twice: the logic that
+handles the port's other values is dead, and the interface is wider than it needs to be.
+
+```vhdl
+u0 : entity work.filt port map (bypass => '0', ...);
+u1 : entity work.filt port map (bypass => '0', ...);   -- `bypass` is '0' everywhere
+```
+
+Reported at the port's declaration. Positional associations and ports left to their default
+are not counted. The rule reads every instance of the project, once per lint run, and only
+when it is on: off in `recommended`, `info` in `strict`.
+
+### `project/layering`
+
+Dependency rules between directories: the files under a path pattern must not use some
+libraries or packages (`library` and `use` clauses), nor instantiate units of some libraries
+or from some paths. It keeps test and simulation code out of RTL, like the import boundaries
+of other languages.
+
+```toml
+[lint.rules]
+"project/layering" = { level = "error", deny = { "rtl/**" = ["uvvm_*", "osvvm", "std.textio", "tb/**"] } }
+```
+
+Entries without `/` are globs on library names and `library.package` (`std.textio`,
+`uvvm_*`); entries with `/` are globs on the path of the instantiated unit's file. Paths are
+relative to the project root. Off until configured.
 
 ## `verilog`
 
@@ -1228,6 +1584,25 @@ with the `protected` option.
 |--------|------|---------|
 | `protected` | boolean | `false` |
 
+## `doc`
+
+Comments checked against the code they describe.
+
+### `doc/stale-reference`
+
+Comments that no longer match the code: a header line before the first unit that names a
+file (`-- File: uart_rx.vhd`) other than this one, or a unit (`-- Entity: uart_rx`) the file
+does not declare, usually a copy left unchanged or a rename; and a
+[`@verifies`](spec.md) comment naming a requirement no `@req` comment of the project
+defines. The tags are those of `[doc.spec]`.
+
+```vhdl
+-- File: uart_rx.vhd       (in uart_tx.vhd)
+-- @verifies UART-9        (no "-- @req UART-9" anywhere)
+```
+
+off in `recommended`, `warn` in `strict`.
+
 ## `vendor`
 
 These rules check the files FPGA tools read besides the HDL: Quartus settings (`.qsf`) and
@@ -1343,6 +1718,40 @@ patterns (`data[*]`, `-regexp`, `-filter`) are not checked. The rule needs the p
 analysis: the language server and `vfl lint` have it. It is a note in the `recommended`
 preset because board files often place every pin of the board whatever the design uses
 (the tool ignores those assignments with a warning).
+
+### `vendor/inference`
+
+HDL that keeps the target FPGA from inferring its dedicated blocks, which today shows up
+minutes later in the synthesis report:
+
+- a memory (an array of vectors, 16 words and 1024 bits or more) assigned in the reset branch of a clocked
+  process: block RAM contents cannot be reset, so it becomes flip-flops (checked for any
+  family);
+- a memory written on a clock edge and read without one (`q <= mem(addr)` outside the
+  clocked process), larger than what the family builds from LUTs: block RAM reads on a clock
+  edge;
+- a multiplication of two non-constant operands wider than one DSP block of the family
+  (25 x 18 on AMD 7 series, 27 x 18 on UltraScale, 27 x 27 on Intel Cyclone V and newer,
+  18 x 18 on Lattice, Microchip and Gowin; an `unsigned` operand needs one more bit);
+- on AMD, a shift register of more than 4 stages (`sr <= sr(14 downto 0) & d`) with a
+  reset: SRLs have no reset. Shorter ones are synchronizers, which belong in flip-flops.
+
+```vhdl
+if rst = '1' then
+  mem <= (others => (others => '0'));   -- 1024 x 16 bits in flip-flops, not a block RAM
+```
+
+The family comes from the `family` option (a family or a part: `artix7`,
+`xc7a35tcpg236-1`, `Cyclone V`, `5CSEMA5F31C6`, `LFE5U-85F`, `MPF300T`, `GW1NR-9`), or else
+from the project's vendor files: `set_global_assignment -name FAMILY` or `DEVICE` in a
+`.qsf`, `-part` or `set_property PART` in a Vivado `.tcl`, the part of an `.xpr`, a Lattice
+`.ldf` or a Gowin project. Without one, only memory resets are checked.
+
+| Option | Type | Default |
+|--------|------|---------|
+| `family` | string | from the vendor files |
+
+off in `recommended`, `warn` in `strict`. Testbenches are skipped. Computed on demand.
 
 ## `naming`
 

@@ -64,6 +64,7 @@ fn settings<'a>(
             verilog,
             root: None,
             library_conflict: None,
+            target: None,
         })
         .collect()
 }

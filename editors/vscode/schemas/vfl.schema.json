@@ -752,6 +752,72 @@
                 }
               ]
             },
+            "project/constant-port": {
+              "description": "Every instance of an entity ties an input port to the same constant.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "project/layering": {
+              "description": "A file uses a library, package or unit its directory must not (configured with `deny`).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "deny": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "description": "For each path pattern (relative to the project root), the libraries, packages (`std.textio`, `uvvm_*`) and path patterns of instantiated units (`tb/**`) its files must not use."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
             "sema/duplicate-declaration": {
               "description": "Two declarations of a region have the same name.",
               "anyOf": [
@@ -1947,6 +2013,528 @@
                 }
               ]
             },
+            "sema/integer-overflow": {
+              "description": "A ranged integer is counted up or down with no test of its value, so it can pass its bound.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/dont-care-compare": {
+              "description": "`=`, `/=` or an ordinary `case` compares a literal with `'-'`, which only matches `'-'` itself.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/latency-mismatch": {
+              "description": "A data output and its valid output go through different numbers of registers.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/handshake": {
+              "description": "A valid output depends on a ready input through combinational logic.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/power-of-two-wrap": {
+              "description": "A `clog2`-wide pointer wraps at a power of two that its depth generic may not be.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/init-reset-mismatch": {
+              "description": "A register's initial value differs from its reset value.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/broken-sequence": {
+              "description": "One assignment or association breaks the index pattern of its neighbors.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/branch-clone": {
+              "description": "An `if` repeats a condition or does the same in every branch, or `case` alternatives repeat each other.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/signed-resize": {
+              "description": "`resize` makes a signed value narrower, keeping the sign bit rather than truncating.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/signed-logical-shift": {
+              "description": "`srl` shifts a signed value, losing its sign.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/conversion-overflow": {
+              "description": "`to_integer` of more than 31 bits, or `to_unsigned`/`to_signed` of a value that does not fit.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unused-bits": {
+              "description": "Some bits of a vector signal are never read, or never assigned.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/process-restarts": {
+              "description": "A testbench process does not end with `wait;`, so it starts over.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/unbounded-wait": {
+              "description": "A testbench `wait until` or `wait on` has no timeout.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/redundant-conversion": {
+              "description": "A conversion to the type a value already has, or through `integer` back to its own type.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/logic-depth": {
+              "description": "A register has more levels of logic before it than its clock period allows (an estimate).",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "family": {
+                      "type": "string",
+                      "description": "The target family or part (`artix7`, `xc7a35tcpg236-1`, `Cyclone V`, `LFE5U-85F`, `GW1NR-9`). Without it, the family the project's vendor files name."
+                    },
+                    "clocks": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": [
+                          "number",
+                          "string"
+                        ]
+                      },
+                      "description": "Clock frequencies by clock signal name: a number in MHz (`clk = 100`) or a string with its unit (`\"8 ns\"`, `\"125 MHz\"`). Added to the clocks of the project's `create_clock` constraints."
+                    },
+                    "level-delay": {
+                      "type": "number",
+                      "description": "The delay of one level of logic with its routing, in ns. Defaults to the family's."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/swapped-association": {
+              "description": "Two named associations look swapped: each actual's name fits the other formal.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sema/expensive-operator": {
+              "description": "`/`, `mod`, `rem` or `**` in RTL by a value that is not a constant power of two.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
             "verilog/blocking-in-clocked": {
               "description": "A clocked `always` block assigns a signal with a blocking assignment (`=`).",
               "anyOf": [
@@ -2715,6 +3303,34 @@
                 }
               ]
             },
+            "doc/stale-reference": {
+              "description": "A header names another file or unit, or `@verifies` names a requirement nothing defines.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
             "vendor/syntax": {
               "description": "A vendor file (`.qsf`, `.qip`, `.sdc`, `.xdc`, `.tcl`) has an unbalanced brace, quote or bracket.",
               "anyOf": [
@@ -2966,6 +3582,38 @@
                         "error"
                       ],
                       "description": "The level of the rule."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "vendor/inference": {
+              "description": "A memory reset, read without a clock, multiplication or shift register the target device cannot build from its RAM, DSP or SRL blocks.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "off",
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "off",
+                        "info",
+                        "warn",
+                        "error"
+                      ],
+                      "description": "The level of the rule."
+                    },
+                    "family": {
+                      "type": "string",
+                      "description": "The target family or part (`artix7`, `xc7a35tcpg236-1`, `Cyclone V`, `LFE5U-85F`, `GW1NR-9`). Without it, the family the project's vendor files name."
                     }
                   },
                   "additionalProperties": false
