@@ -25,6 +25,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use vfl_syntax::TextRange;
 
 pub use check::check;
+pub use suggest::near;
 
 /// The kind of a vendor file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

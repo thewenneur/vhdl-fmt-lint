@@ -16,6 +16,7 @@ pub mod hazards;
 pub mod naming;
 pub mod report;
 pub mod rules;
+mod structure;
 mod style;
 mod suppress;
 pub mod vendor;
@@ -343,7 +344,7 @@ fn lint_file(
     };
     let enabled_cache: FxHashMap<&'static str, bool> = RULES
         .iter()
-        .map(|r| (r.id, rules::level(lint_config, r.id) != Level::Off))
+        .map(|r| (r.id, rules::rule_level(lint_config, r) != Level::Off))
         .collect();
     let enabled = |id: &str| enabled_cache.get(id).copied().unwrap_or(false);
 
@@ -402,6 +403,12 @@ fn lint_file(
         settings.file,
         &hazards::checks(lint_config, &enabled, settings.target, &mut errors),
     );
+    // Computed on demand too.
+    let extra = if vfl_sema::extra_codes::ALL.iter().any(|id| enabled(id)) {
+        analysis.extra_checks(settings.file, &enabled, settings.config.standard())
+    } else {
+        Vec::new()
+    };
     // A latch that a missing branch assignment explains is reported as the
     // latter only.
     let explained = |d: &vfl_sema::Diagnostic| {
@@ -415,6 +422,7 @@ fn lint_file(
         .chain(&drivers)
         .chain(&code)
         .chain(&hazards)
+        .chain(&extra)
     {
         let code = d.code;
         let mut finding = Finding::new(code, d.range, d.message.clone());
@@ -478,6 +486,28 @@ fn lint_file(
                 enabled,
                 &mut findings,
             );
+            let structure_options = structure_options(lint_config, &enabled, &mut errors);
+            structure::check(
+                &style::StyleContext {
+                    text: &file.text,
+                    root: &root,
+                    file_stem: None,
+                    extension: None,
+                    max_line_length,
+                    indent: settings.config.format.indent as usize,
+                    standard: settings.config.standard(),
+                    magic_allow: &[],
+                    header: None,
+                    clocks: None,
+                    resets: None,
+                },
+                &structure_options,
+                enabled,
+                &mut findings,
+            );
+            if enabled(structure::SECONDARY_UNIT_FILE) {
+                secondary_unit_files(analysis, settings.file, &mut findings);
+            }
             for finding in &mut findings {
                 if finding.rule == "style/positional-association" {
                     finding.fix = name_formals(analysis, settings.file, &root, finding.range);
@@ -546,6 +576,114 @@ fn lint_file(
         });
     }
     (out, errors)
+}
+
+/// The options of the structure rules that are on.
+fn structure_options(
+    config: &vfl_config::LintConfig,
+    enabled: &impl Fn(&str) -> bool,
+    errors: &mut Vec<String>,
+) -> structure::Options {
+    let list = |id: &str, key: &str, default: &[&str], errors: &mut Vec<String>| -> Vec<String> {
+        if !enabled(id) {
+            return Vec::new();
+        }
+        match rules::options(config, id).and_then(|o| o.get(key)) {
+            None => default.iter().map(|s| s.to_string()).collect(),
+            Some(toml::Value::Array(values)) => values
+                .iter()
+                .filter_map(|v| match v.as_str() {
+                    Some(s) => Some(s.to_ascii_lowercase()),
+                    None => {
+                        errors.push(format!("`{key}` of `{id}` must be a list of strings"));
+                        None
+                    }
+                })
+                .collect(),
+            Some(_) => {
+                errors.push(format!("`{key}` of `{id}` must be a list of strings"));
+                Vec::new()
+            }
+        }
+    };
+    let max_depth =
+        match rules::options(config, structure::NESTING_DEPTH).and_then(|o| o.get("max")) {
+            None => 5,
+            Some(v) => match v.as_integer() {
+                Some(n) if n >= 1 => n as usize,
+                _ => {
+                    errors.push(format!(
+                        "`max` of `{}` must be a positive integer",
+                        structure::NESTING_DEPTH
+                    ));
+                    5
+                }
+            },
+        };
+    let ascending = match rules::string_option(config, structure::RANGE_DIRECTION, "direction") {
+        Ok(None) | Ok(Some("downto")) => false,
+        Ok(Some("to")) => true,
+        Ok(Some(_)) | Err(_) => {
+            errors.push(format!(
+                "`direction` of `{}` must be \"to\" or \"downto\"",
+                structure::RANGE_DIRECTION
+            ));
+            false
+        }
+    };
+    structure::Options {
+        max_depth,
+        ascending,
+        keywords: list(structure::PROHIBITED, "keywords", &[], errors),
+        operators: list(structure::PROHIBITED, "operators", &[], errors),
+        attributes: list(structure::PROHIBITED, "attributes", &[], errors),
+        pragmas: list(structure::PROHIBITED, "pragmas", &[], errors),
+        labels: list(structure::MISSING_LABEL, "statements", &["loop"], errors),
+    }
+}
+
+/// `style/secondary-unit-file`: an architecture or package body in
+/// another file than its entity or package, in a file whose name does
+/// not name it.
+fn secondary_unit_files(analysis: &Analysis, file: FileId, out: &mut Vec<Finding>) {
+    use vfl_sema::DeclKind;
+    let path = &analysis.files()[file as usize].path;
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    for unit in analysis.file_units(file) {
+        let info = &analysis.units()[unit as usize];
+        let primary_kind = match info.kind {
+            DeclKind::Architecture => DeclKind::Entity,
+            DeclKind::PackageBody => DeclKind::Package,
+            _ => continue,
+        };
+        let Some(primary) = info.primary.as_deref() else {
+            continue;
+        };
+        let same_file = analysis.units().iter().any(|u| {
+            u.kind == primary_kind
+                && u.name == primary
+                && u.library == info.library
+                && u.file == file
+        });
+        let exists = analysis
+            .units()
+            .iter()
+            .any(|u| u.kind == primary_kind && u.name == primary && u.library == info.library);
+        if !same_file && exists && !stem.contains(primary) {
+            out.push(Finding::new(
+                structure::SECONDARY_UNIT_FILE,
+                info.name_range,
+                format!(
+                    "`{}` is not in the file of its {} `{primary}`, and this file's name does not say whose it is",
+                    info.name,
+                    if primary_kind == DeclKind::Entity { "entity" } else { "package" }
+                ),
+            ));
+        }
+    }
 }
 
 /// The options of the style rules that are on.

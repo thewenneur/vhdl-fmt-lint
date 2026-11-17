@@ -1,7 +1,7 @@
 //! The rule registry: every rule's id, summary and default levels.
 
 use vfl_config::{Level, LintConfig, Preset, RuleSetting};
-use vfl_sema::{ResolvedDrivers, codes};
+use vfl_sema::{ResolvedDrivers, codes, extra_codes};
 
 /// A lint rule.
 #[derive(Debug, Clone, Copy)]
@@ -758,6 +758,391 @@ pub const RULES: &[Rule] = &[
         Warn,
         false,
     ),
+    rule(
+        extra_codes::READ_ONLY_TARGET,
+        "An input port, a constant, a generic, an `in` parameter or a loop or generate parameter is assigned.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::ASSIGNMENT_KIND,
+        "A signal is assigned with `:=` or a variable with `<=`.",
+        Error,
+        Error,
+        true,
+    ),
+    rule(
+        extra_codes::MISPLACED_STATEMENT,
+        "A `return` is outside a subprogram, or an `exit` or `next` outside a loop.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::RETURN_VALUE,
+        "A function returns without a value or has no `return`, or a procedure returns a value.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::COMPONENT_MISMATCH,
+        "A component declaration does not match the entity it binds to: ports, generics, modes or types differ.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::MISSING_WAIT,
+        "A process has neither a sensitivity list nor a `wait`, so simulation loops forever at time 0.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::WAIT_IN_SENSITIZED_PROCESS,
+        "A process with a sensitivity list contains a `wait`.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::HIDDEN_DECLARATION,
+        "A declaration hides an object of the same name declared around it.",
+        Info,
+        Warn,
+        false,
+    ),
+    rule(
+        extra_codes::CLOCK_AS_DATA,
+        "A clock's value is used in logic instead of clocking registers.",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        extra_codes::UNCONSTRAINED_INTEGER,
+        "A signal or port of RTL code is an integer without a range, which synthesis makes 32 bits wide.",
+        Info,
+        Warn,
+        false,
+    ),
+    rule(
+        extra_codes::MIXED_CLOCK_EDGES,
+        "A clock is used on its rising edge in some processes and its falling edge in others.",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        extra_codes::GATED_CLOCK,
+        "A clock is made by logic (a gated or derived clock).",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        extra_codes::RESET_SOURCE,
+        "An asynchronous reset comes from logic, or from a register of another clock domain without a synchronizer.",
+        Warn,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::IMPURE_FUNCTION,
+        "A pure function uses a signal, variable or file declared outside it, or calls an impure function.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::CIRCULAR_DEPENDENCY,
+        "Packages depend on each other in a cycle.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::MISSING_BODY,
+        "A package declares a subprogram, a deferred constant or a protected type that no package body completes.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::ASSOCIATION,
+        "A positional association follows a named one, or a map has more positional associations than the unit has ports or generics.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::AMBIGUOUS_CALL,
+        "A call names subprograms of two packages with the same parameter and result types.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::CONFIGURATION,
+        "A configuration names an entity, architecture, instance or component that does not match the design.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::ATTRIBUTE_SPECIFICATION,
+        "An attribute specification names an item of another class, or is not where the item is declared.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::CONSTRAINT,
+        "A subtype indication has too many or too few index ranges, or a constraint of the wrong kind.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::CONFLICTING_USE,
+        "Two use clauses make the same name visible from two packages, so neither is.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::DECLARED_BEFORE,
+        "An architecture or package body comes before its entity or package in the same file.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::STANDARD_FEATURE,
+        "Code needs a later VHDL standard than the one configured: an output port is read before VHDL-2008.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::SENSITIVITY_LIST_FORM,
+        "A sensitivity list is empty or names a signal twice.",
+        Warn,
+        Warn,
+        true,
+    ),
+    rule(
+        extra_codes::INFINITE_LOOP,
+        "A loop without `while` or `for` is empty, or has no `exit`, `return` or `wait` and never ends.",
+        Warn,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::STATIC_CONDITION,
+        "A condition or assertion compares constants, so its value is known before simulation.",
+        Info,
+        Warn,
+        false,
+    ),
+    rule(
+        extra_codes::POSTPONED_DELTA,
+        "A postponed process assigns a signal without a delay.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::PORT_BOUNDS,
+        "An integer port is associated with an object whose range is wider than the port's.",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        extra_codes::DEFAULT_ASSOCIATION,
+        "An input port is left to its default value in an instantiation.",
+        Off,
+        Info,
+        false,
+    ),
+    rule(
+        extra_codes::STATE_TYPE,
+        "A state register is a vector of named constants instead of an enumeration.",
+        Off,
+        Info,
+        false,
+    ),
+    rule(
+        extra_codes::UNNEEDED_OTHERS,
+        "A `case` has `when others` though its choices cover every value.",
+        Off,
+        Off,
+        false,
+    ),
+    rule(
+        extra_codes::MODE_VIEW,
+        "A VHDL-2019 mode view leaves out record elements or gives one mode `linkage`.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        extra_codes::SUPERFLUOUS_RESET,
+        "A signal is reset but never assigned on the clock edge.",
+        Info,
+        Warn,
+        false,
+    ),
+    rule(
+        extra_codes::MULTI_BIT_SYNCHRONIZER,
+        "A vector registered on one clock is copied into another clock domain bit by bit.",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        extra_codes::UNREGISTERED_OUTPUT,
+        "An output port is driven by combinational logic rather than a register.",
+        Off,
+        Info,
+        false,
+    ),
+    rule(
+        extra_codes::INTERNAL_TRISTATE,
+        "An internal signal is assigned `'Z'`.",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        extra_codes::METAVALUE_ASSIGNMENT,
+        "RTL code assigns a metavalue: `'X'`, `'U'`, `'W'` or `'-'`.",
+        Off,
+        Info,
+        false,
+    ),
+    rule(
+        extra_codes::UNSAFE_FSM,
+        "A state machine has no safe encoding attribute.",
+        Off,
+        Info,
+        false,
+    ),
+    rule(
+        extra_codes::ASSOCIATION_ORDER,
+        "Named associations are not in the order of the declarations.",
+        Off,
+        Info,
+        false,
+    ),
+    rule(
+        crate::structure::NESTING_DEPTH,
+        "Statements are nested deeper than `max` (5).",
+        Off,
+        Warn,
+        false,
+    ),
+    rule(
+        crate::structure::MULTIPLE_DECLARATIONS,
+        "A declaration declares several objects.",
+        Off,
+        Info,
+        false,
+    ),
+    rule(
+        crate::structure::OTHERS_POSITION,
+        "`others` is not the last choice, or is combined with other choices.",
+        Error,
+        Error,
+        false,
+    ),
+    rule(
+        crate::structure::UNNEEDED_LIBRARY,
+        "A library clause names `work` or `std`, or a library nothing uses.",
+        Warn,
+        Warn,
+        true,
+    ),
+    rule(
+        crate::structure::DEPRECATED_PACKAGE,
+        "A use clause names a deprecated or non-IEEE package of the `ieee` library, or one of a later standard.",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        crate::structure::RESERVED_WORD,
+        "A name is a reserved word of a later VHDL standard, or an entity or port name is a SystemVerilog keyword.",
+        Info,
+        Warn,
+        false,
+    ),
+    rule(
+        crate::structure::OPERATOR_PRECEDENCE,
+        "An operator's precedence differs from what the expression suggests: `not a = b`, `a sll n + 1`.",
+        Info,
+        Warn,
+        false,
+    ),
+    rule(
+        crate::structure::NESTED_COMMENT,
+        "A block comment contains `/*`.",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        crate::structure::LITERAL_FORM,
+        "An integer literal has a negative exponent, or a range is in parentheses.",
+        Warn,
+        Error,
+        false,
+    ),
+    rule(
+        crate::structure::RANGE_DIRECTION,
+        "A vector's range goes in the other direction than the project's (`downto` by default).",
+        Off,
+        Info,
+        false,
+    ),
+    rule(
+        crate::structure::PROHIBITED,
+        "The code uses a keyword, operator, attribute or pragma the `prohibited` options list.",
+        Off,
+        Off,
+        false,
+    ),
+    rule(
+        crate::structure::UNKNOWN_PRAGMA,
+        "A `-- synthesis` or `-- pragma` comment has a directive tools do not know.",
+        Warn,
+        Warn,
+        false,
+    ),
+    rule(
+        crate::structure::MISSING_LABEL,
+        "A statement of a kind the `statements` option lists has no label.",
+        Off,
+        Info,
+        false,
+    ),
+    rule(
+        crate::structure::ENCRYPTED_FILE,
+        "A file contains encrypted (IEEE 1735) code, which is not checked.",
+        Info,
+        Info,
+        false,
+    ),
+    rule(
+        crate::structure::SECONDARY_UNIT_FILE,
+        "An architecture or package body is away from its primary unit, in a file whose name does not name it.",
+        Off,
+        Info,
+        false,
+    ),
 ];
 
 /// The kinds of declaration `naming/<kind>` rules apply to. They are off
@@ -804,6 +1189,20 @@ pub fn exists(id: &str) -> bool {
 
 /// The configured level of rule `id`.
 pub fn level(config: &LintConfig, id: &str) -> Level {
+    level_with(config, id, || preset_level(config.preset, id))
+}
+
+/// The level of a rule of [`RULES`], without looking it up by id.
+pub(crate) fn rule_level(config: &LintConfig, rule: &Rule) -> Level {
+    level_with(config, rule.id, || match config.preset {
+        Preset::None if rule.id == "syntax/error" || rule.id == vfl_vendor::rules::SYNTAX => Error,
+        Preset::None => Off,
+        Preset::Recommended => rule.recommended,
+        Preset::Strict => rule.strict,
+    })
+}
+
+fn level_with(config: &LintConfig, id: &str, preset: impl Fn() -> Level) -> Level {
     if let Some(setting) = config.rules.get(id) {
         match setting {
             RuleSetting::Level(level) => return *level,
@@ -812,12 +1211,12 @@ pub fn level(config: &LintConfig, id: &str) -> Level {
             } => return *level,
             // Options without a level turn a rule on.
             RuleSetting::Detailed { level: None, .. } => {
-                let default = preset_level(config.preset, id);
+                let default = preset();
                 return if default == Off { Warn } else { default };
             }
         }
     }
-    preset_level(config.preset, id)
+    preset()
 }
 
 fn preset_level(preset: Preset, id: &str) -> Level {
