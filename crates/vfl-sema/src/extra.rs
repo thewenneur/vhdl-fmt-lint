@@ -144,9 +144,6 @@ impl Analysis {
             let Some(node) = design_units.get(info.index) else {
                 continue;
             };
-            if node.descendants().any(|n| n.kind() == SyntaxKind::ERROR) {
-                continue;
-            }
             let ctx = Unit {
                 analysis: self,
                 file,
@@ -158,7 +155,11 @@ impl Analysis {
                 enabled,
                 standard,
                 by_range: std::cell::OnceCell::new(),
+                nodes: std::cell::OnceCell::new(),
             };
+            if !ctx.nodes(SyntaxKind::ERROR).is_empty() {
+                continue;
+            }
             ctx.run(&mut out);
         }
         if enabled(extra_codes::DECLARED_BEFORE) || enabled(extra_codes::CIRCULAR_DEPENDENCY) {
@@ -182,7 +183,33 @@ pub(crate) struct Unit<'a> {
     pub enabled: Enabled<'a>,
     pub standard: vfl_syntax::Standard,
     by_range: std::cell::OnceCell<FxHashMap<TextRange, DeclId>>,
+    nodes: std::cell::OnceCell<FxHashMap<SyntaxKind, Vec<SyntaxNode>>>,
 }
+
+/// The kinds of node the checks look at, collected in one walk.
+const COLLECTED: &[SyntaxKind] = &[
+    SyntaxKind::ERROR,
+    SyntaxKind::PROCESS_STMT,
+    SyntaxKind::SIGNAL_ASSIGN_STMT,
+    SyntaxKind::VARIABLE_ASSIGN_STMT,
+    SyntaxKind::SELECTED_ASSIGN_STMT,
+    SyntaxKind::CASE_STMT,
+    SyntaxKind::LOOP_STMT,
+    SyntaxKind::IF_STMT,
+    SyntaxKind::ASSERT_STMT,
+    SyntaxKind::WHILE_SCHEME,
+    SyntaxKind::PORT_MAP_ASPECT,
+    SyntaxKind::GENERIC_MAP_ASPECT,
+    SyntaxKind::SUBPROGRAM_BODY,
+    SyntaxKind::RETURN_STMT,
+    SyntaxKind::EXIT_STMT,
+    SyntaxKind::NEXT_STMT,
+    SyntaxKind::WAIT_STMT,
+    SyntaxKind::PROCEDURE_CALL_STMT,
+    SyntaxKind::ATTRIBUTE_SPEC,
+    SyntaxKind::MODE_VIEW_DECL,
+    SyntaxKind::SUBTYPE_INDICATION,
+];
 
 impl<'a> Unit<'a> {
     fn run(&self, out: &mut Vec<Diagnostic>) {
@@ -190,6 +217,38 @@ impl<'a> Unit<'a> {
         processes::check(self, out);
         clocks::check(self, out);
         structure::check(self, out);
+    }
+
+    /// The nodes of a kind of [`COLLECTED`] in the unit, in source order.
+    /// Subtype indications only when constrained (`t(..)`, `t range ..`).
+    pub fn nodes(&self, kind: SyntaxKind) -> &[SyntaxNode] {
+        let map = self.nodes.get_or_init(|| {
+            use vfl_syntax::green_walk::descendants_where_green;
+            let found = descendants_where_green(&self.node, |g| match g.kind() {
+                SyntaxKind::SUBTYPE_INDICATION => g.nodes().any(|c| {
+                    matches!(
+                        c.kind(),
+                        SyntaxKind::CALL_EXPR | SyntaxKind::RANGE_CONSTRAINT
+                    )
+                }),
+                k => COLLECTED.contains(&k),
+            });
+            let mut map: FxHashMap<SyntaxKind, Vec<SyntaxNode>> = FxHashMap::default();
+            for n in found {
+                map.entry(n.kind()).or_default().push(n);
+            }
+            map
+        });
+        debug_assert!(COLLECTED.contains(&kind));
+        map.get(&kind).map_or(&[], Vec::as_slice)
+    }
+
+    /// The nodes of a kind inside `range` (`range` itself included).
+    pub fn nodes_in(&self, kind: SyntaxKind, range: TextRange) -> &[SyntaxNode] {
+        let nodes = self.nodes(kind);
+        let from = nodes.partition_point(|n| n.text_range().start() < range.start());
+        let to = nodes.partition_point(|n| n.text_range().start() < range.end());
+        &nodes[from..to.max(from)]
     }
 
     pub fn on(&self, code: &str) -> bool {

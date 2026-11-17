@@ -323,7 +323,7 @@ fn lint_file(
     };
     let enabled_cache: FxHashMap<&'static str, bool> = RULES
         .iter()
-        .map(|r| (r.id, rules::level(lint_config, r.id) != Level::Off))
+        .map(|r| (r.id, rules::rule_level(lint_config, r) != Level::Off))
         .collect();
     let enabled = |id: &str| enabled_cache.get(id).copied().unwrap_or(false);
 

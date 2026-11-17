@@ -21,44 +21,50 @@ pub(super) fn check(u: &Unit, out: &mut Vec<Diagnostic>) {
     if !(missing || sensitized || list || postponed || infinite || condition || bounds) {
         return;
     }
-    for node in u.node.descendants() {
-        match node.kind() {
-            SyntaxKind::PROCESS_STMT => {
-                if missing || sensitized {
-                    waits(u, &node, missing, sensitized, out);
-                }
-                if list {
-                    sensitivity_form(u, &node, out);
-                }
-                if postponed && node.has_child(|k| k == SyntaxKind::POSTPONED_KW) {
-                    postponed_delta(u, &node, out);
-                }
+    use SyntaxKind::*;
+    if missing || sensitized || list || postponed {
+        for node in u.nodes(PROCESS_STMT) {
+            if missing || sensitized {
+                waits(u, node, missing, sensitized, out);
             }
-            SyntaxKind::LOOP_STMT if infinite => infinite_loop(u, &node, out),
-            SyntaxKind::IF_STMT | SyntaxKind::ASSERT_STMT | SyntaxKind::WHILE_SCHEME
-                if condition =>
-            {
-                static_condition(u, &node, out)
+            if list {
+                sensitivity_form(u, node, out);
             }
-            SyntaxKind::PORT_MAP_ASPECT if bounds => port_bounds(u, &node, out),
-            _ => {}
+            if postponed && node.has_child(|k| k == POSTPONED_KW) {
+                postponed_delta(u, node, out);
+            }
+        }
+    }
+    if infinite {
+        for node in u.nodes(LOOP_STMT) {
+            infinite_loop(u, node, out);
+        }
+    }
+    if condition {
+        for kind in [IF_STMT, ASSERT_STMT, WHILE_SCHEME] {
+            for node in u.nodes(kind) {
+                static_condition(u, node, out);
+            }
+        }
+    }
+    if bounds {
+        for node in u.nodes(PORT_MAP_ASPECT) {
+            port_bounds(u, node, out);
         }
     }
 }
 
 /// The statements of a process, and the `wait`s among them (not in the
 /// subprograms it declares).
-fn waits_of(process: &SyntaxNode) -> (Vec<SyntaxNode>, bool) {
+fn waits_of(u: &Unit, process: &SyntaxNode) -> (Vec<SyntaxNode>, bool) {
     let mut waits = Vec::new();
     let mut calls = false;
     for statement in statements(process) {
-        for n in statement.descendants() {
-            match n.kind() {
-                SyntaxKind::WAIT_STMT => waits.push(n),
-                SyntaxKind::PROCEDURE_CALL_STMT => calls = true,
-                _ => {}
-            }
-        }
+        let range = statement.text_range();
+        waits.extend(u.nodes_in(SyntaxKind::WAIT_STMT, range).iter().cloned());
+        calls |= !u
+            .nodes_in(SyntaxKind::PROCEDURE_CALL_STMT, range)
+            .is_empty();
     }
     (waits, calls)
 }
@@ -71,7 +77,7 @@ fn waits(
     out: &mut Vec<Diagnostic>,
 ) {
     let has_list = process.has_child(|k| k == SyntaxKind::SENSITIVITY_LIST);
-    let (waits, calls) = waits_of(process);
+    let (waits, calls) = waits_of(u, process);
     let keyword =
         token(process, SyntaxKind::PROCESS_KW).map_or_else(|| trimmed(process), |t| t.text_range());
     if has_list && sensitized {
@@ -192,9 +198,14 @@ fn infinite_loop(u: &Unit, node: &SyntaxNode, out: &mut Vec<Diagnostic>) {
         .find(|n| n.kind() == SyntaxKind::LABEL)
         .and_then(|l| l.first_token())
         .map(|t| t.text().to_ascii_lowercase());
-    let leaves = body
-        .iter()
-        .flat_map(|b| b.descendants())
+    let range = |kind| {
+        body.iter()
+            .flat_map(move |b| u.nodes_in(kind, b.text_range()).iter())
+    };
+    let leaves = range(SyntaxKind::WAIT_STMT)
+        .chain(range(SyntaxKind::RETURN_STMT))
+        .chain(range(SyntaxKind::PROCEDURE_CALL_STMT))
+        .chain(range(SyntaxKind::EXIT_STMT))
         .any(|n| match n.kind() {
             SyntaxKind::WAIT_STMT | SyntaxKind::RETURN_STMT | SyntaxKind::PROCEDURE_CALL_STMT => {
                 true
@@ -417,6 +428,16 @@ fn port_bounds(u: &Unit, map: &SyntaxNode, out: &mut Vec<Diagnostic>) {
             continue;
         };
         if !actual_decl.kind.is_signal() {
+            continue;
+        }
+        // Integer ports only, before reading any declaration's text.
+        let integer = formal
+            .subtype
+            .and_then(|s| u.analysis.base_type(s))
+            .and_then(|b| u.decl(b))
+            .and_then(|b| b.type_def.as_deref())
+            .is_some_and(|d| matches!(d, crate::decl::TypeDef::Integer));
+        if !integer {
             continue;
         }
         let (Some(f), Some(a)) = (int_bounds(u, formal), int_bounds(u, actual_decl)) else {

@@ -5,11 +5,10 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use vfl_syntax::green_walk::ChildTokens;
 use vfl_syntax::{SyntaxKind, SyntaxNode, TextRange};
 
-use super::{Enabled, Unit, extra_codes as codes, single_decl, token, trimmed};
-use crate::resolver::mark_token;
+use super::{Enabled, Unit, extra_codes as codes, token, trimmed};
 
 use crate::analysis::Analysis;
-use crate::decl::{Decl, DeclId, DeclKind, FileId, Mode, UnitId};
+use crate::decl::{Decl, DeclId, DeclKind, FileId, Mode, Target};
 use crate::diagnostic::{Diagnostic, Edit, Fix};
 
 pub(super) fn check(u: &Unit, out: &mut Vec<Diagnostic>) {
@@ -28,30 +27,58 @@ pub(super) fn check(u: &Unit, out: &mut Vec<Diagnostic>) {
     let constraint = u.on(codes::CONSTRAINT);
     let view = u.on(codes::MODE_VIEW);
     if kind || misplaced || returns || impure || association || attributes || constraint || view {
-        for node in u.node.descendants() {
-            match node.kind() {
-                SyntaxKind::VARIABLE_ASSIGN_STMT | SyntaxKind::SIGNAL_ASSIGN_STMT if kind => {
-                    assignment_kind(u, &node, out)
+        use SyntaxKind::*;
+        if kind {
+            for node in u
+                .nodes(VARIABLE_ASSIGN_STMT)
+                .iter()
+                .chain(u.nodes(SIGNAL_ASSIGN_STMT))
+            {
+                assignment_kind(u, node, out);
+            }
+        }
+        if misplaced || returns {
+            for node in u.nodes(RETURN_STMT) {
+                return_statement(u, node, misplaced, returns, out);
+            }
+        }
+        if misplaced {
+            for node in u.nodes(EXIT_STMT).iter().chain(u.nodes(NEXT_STMT)) {
+                loop_control(u, node, out);
+            }
+        }
+        for node in u.nodes(SUBPROGRAM_BODY) {
+            if returns {
+                function_returns(u, node, out);
+            }
+            if impure {
+                pure_function(u, node, out);
+            }
+        }
+        if association {
+            for node in u
+                .nodes(PORT_MAP_ASPECT)
+                .iter()
+                .chain(u.nodes(GENERIC_MAP_ASPECT))
+            {
+                if let Some(list) = node.children().find(|n| n.kind() == ASSOCIATION_LIST) {
+                    associations(u, &list, out);
                 }
-                SyntaxKind::RETURN_STMT if misplaced || returns => {
-                    return_statement(u, &node, misplaced, returns, out)
-                }
-                SyntaxKind::EXIT_STMT | SyntaxKind::NEXT_STMT if misplaced => {
-                    loop_control(u, &node, out)
-                }
-                SyntaxKind::SUBPROGRAM_BODY => {
-                    if returns {
-                        function_returns(u, &node, out);
-                    }
-                    if impure {
-                        pure_function(u, &node, out);
-                    }
-                }
-                SyntaxKind::ASSOCIATION_LIST if association => associations(u, &node, out),
-                SyntaxKind::ATTRIBUTE_SPEC if attributes => attribute_spec(u, &node, out),
-                SyntaxKind::SUBTYPE_INDICATION if constraint => constraints(u, &node, out),
-                SyntaxKind::MODE_VIEW_DECL if view => mode_view(u, &node, out),
-                _ => {}
+            }
+        }
+        if attributes {
+            for node in u.nodes(ATTRIBUTE_SPEC) {
+                attribute_spec(u, node, out);
+            }
+        }
+        if constraint {
+            for node in u.nodes(SUBTYPE_INDICATION) {
+                constraints(u, node, out);
+            }
+        }
+        if view {
+            for node in u.nodes(MODE_VIEW_DECL) {
+                mode_view(u, node, out);
             }
         }
     }
@@ -74,16 +101,13 @@ pub(super) fn check(u: &Unit, out: &mut Vec<Diagnostic>) {
 fn read_only_targets(u: &Unit, out: &mut Vec<Diagnostic>) {
     // Assignment targets only: the resolver also marks names inside a
     // target's index and the actuals of unresolved calls as writes.
-    let assignments = vfl_syntax::green_walk::descendants_where(&u.node, |k| {
-        matches!(
-            k,
-            SyntaxKind::SIGNAL_ASSIGN_STMT
-                | SyntaxKind::VARIABLE_ASSIGN_STMT
-                | SyntaxKind::SELECTED_ASSIGN_STMT
-        )
-    });
+    let assignments = u
+        .nodes(SyntaxKind::SIGNAL_ASSIGN_STMT)
+        .iter()
+        .chain(u.nodes(SyntaxKind::VARIABLE_ASSIGN_STMT))
+        .chain(u.nodes(SyntaxKind::SELECTED_ASSIGN_STMT));
     for statement in assignments {
-        let Some((target, _)) = crate::rtl::assignment_target(&statement) else {
+        let Some((target, _)) = crate::rtl::assignment_target(statement) else {
             continue;
         };
         let Some((_, decl)) = u.target_object(&target) else {
@@ -285,10 +309,10 @@ fn function_returns(u: &Unit, body: &SyntaxNode, out: &mut Vec<Diagnostic>) {
     if !is_function(body) {
         return;
     }
-    let has_return = body
-        .descendants()
-        .filter(|n| n.kind() == SyntaxKind::RETURN_STMT)
-        .any(|n| enclosing_body(&n).as_ref() == Some(body));
+    let has_return = u
+        .nodes_in(SyntaxKind::RETURN_STMT, body.text_range())
+        .iter()
+        .any(|n| enclosing_body(n).as_ref() == Some(body));
     if !has_return {
         let range = body
             .children()
@@ -1065,129 +1089,50 @@ fn mode_view(u: &Unit, node: &SyntaxNode, out: &mut Vec<Diagnostic>) {
 
 fn conflicting_uses(u: &Unit, out: &mut Vec<Diagnostic>) {
     // Two `use p.all` clauses make two non-overloadable declarations of
-    // the same name visible: neither is, and a use of the name fails.
-    let mut packages: Vec<(TextRange, DeclId)> = Vec::new();
-    // An architecture or a package body also sees its primary unit's uses.
-    let info = &u.analysis.units()[u.unit as usize];
-    let primary = info.primary.as_ref().and_then(|name| {
-        let id = u.analysis.units().iter().position(|p| {
-            p.name == *name
-                && p.library == info.library
-                && matches!(p.kind, DeclKind::Entity | DeclKind::Package)
-        })?;
-        let p = &u.analysis.units()[id];
-        let node = u.analysis.files()[p.file as usize]
-            .syntax()
-            .children()
-            .filter(|n| n.kind() == SyntaxKind::DESIGN_UNIT)
-            .nth(p.index)?;
-        Some((node, u.analysis.unit_references(id as UnitId)))
-    });
-    let scopes = std::iter::once((u.node.clone(), u.refs)).chain(primary);
-    for (node, refs) in scopes {
-        for clause in node
-            .descendants()
-            .filter(|n| n.kind() == SyntaxKind::USE_CLAUSE)
-        {
-            for item in clause
-                .children()
-                .filter(|n| n.kind() == SyntaxKind::SELECTED_NAME)
-            {
-                if !item.has_child(|k| k == SyntaxKind::ALL_KW) {
-                    continue;
-                }
-                let Some(range) = item
-                    .children()
-                    .next()
-                    .and_then(|prefix| mark_token(&prefix))
-                    .map(|t| t.text_range())
-                else {
-                    continue;
-                };
-                let Some(id) = refs.iter().find(|r| r.range == range).and_then(single_decl) else {
-                    continue;
-                };
-                if let Some(decl) = u.decl(id)
-                    && matches!(decl.kind, DeclKind::Package | DeclKind::PackageInstance)
-                    && !packages.iter().any(|(_, p)| *p == id)
-                {
-                    packages.push((trimmed(&item), id));
-                }
-            }
-        }
-    }
-    if packages.len() < 2 {
-        return;
-    }
-    let mut owner: FxHashMap<&str, (usize, DeclKind)> = FxHashMap::default();
-    let mut conflicts: FxHashMap<String, (usize, usize)> = FxHashMap::default();
-    for (i, (_, package)) in packages.iter().enumerate() {
-        let Some(members) = u.decl(*package).and_then(|p| p.members.as_ref()) else {
+    // the same name visible: neither is, and the resolver gives both.
+    let mut reported = FxHashSet::default();
+    for r in u.refs {
+        if r.targets.len() < 2 || r.access == crate::decl::Access::Other {
             continue;
-        };
-        for id in members.iter() {
-            let Some(decl) = u.decl(id) else { continue };
-            if decl.kind.is_overloadable() {
+        }
+        let mut owners: Vec<(u32, &Decl)> = Vec::new();
+        for t in &r.targets {
+            let Target::Decl(id) = t else { continue };
+            let Some(decl) = u.decl(*id) else { continue };
+            // Use-visible: declared in a package, not in this unit.
+            let in_package =
+                u.analysis.units().get(id.unit as usize).is_some_and(|i| {
+                    matches!(i.kind, DeclKind::Package | DeclKind::PackageInstance)
+                });
+            if decl.kind.is_overloadable() || id.unit == u.unit || !in_package {
                 continue;
             }
-            match owner.get(decl.name.as_str()) {
-                Some(&(j, _)) if j != i => {
-                    conflicts.entry(decl.name.clone()).or_insert((j, i));
-                }
-                Some(_) => {}
-                None => {
-                    owner.insert(decl.name.as_str(), (i, decl.kind));
-                }
+            if !owners.iter().any(|(unit, _)| *unit == id.unit) {
+                owners.push((id.unit, decl));
             }
         }
-    }
-    if conflicts.is_empty() {
-        return;
-    }
-    // Report the names the unit uses and cannot resolve because of it.
-    let mut reported = FxHashSet::default();
-    for t in u
-        .node
-        .descendants_with_tokens()
-        .filter_map(|e| e.into_token())
-        .filter(|t| t.kind() == SyntaxKind::IDENT)
-    {
-        let key = t.text().to_ascii_lowercase();
-        let local = u.target(t.text_range()).is_some_and(|id| id.unit == u.unit);
-        // Declared names, selected names, and formals and choices
-        // (`scope => x`), which name a parameter or an element.
-        let declaring = t.parent().is_some_and(|p| {
-            matches!(p.kind(), SyntaxKind::IDENT_LIST | SyntaxKind::SELECTED_NAME)
-                || p.kind() == SyntaxKind::NAME
-                    && std::iter::successors(p.next_sibling_or_token(), |e| {
-                        e.next_sibling_or_token()
-                    })
-                    .find(|e| !e.kind().is_trivia())
-                    .is_some_and(|e| e.kind() == SyntaxKind::ARROW)
-        });
-        if let Some(&(a, b)) = conflicts.get(&key)
-            && !local
-            && !declaring
-            && reported.insert(key.clone())
-        {
-            let name = |i: usize| {
-                u.decl(packages[i].1)
-                    .map_or_else(String::new, |d| d.spelling.clone())
-            };
-            u.push(
-                out,
-                codes::CONFLICTING_USE,
-                t.text_range(),
-                format!(
-                    "`{}` is not visible: both `{}` and `{}` declare it; select it (`{}.{}`)",
-                    t.text(),
-                    name(a),
-                    name(b),
-                    name(a),
-                    t.text()
-                ),
-            );
+        let [(a, decl), (b, _), ..] = owners.as_slice() else {
+            continue;
+        };
+        if !reported.insert(decl.name.clone()) {
+            continue;
         }
+        let name = |unit: u32| u.analysis.units()[unit as usize].name.clone();
+        let text = u
+            .text
+            .get(usize::from(r.range.start())..usize::from(r.range.end()))
+            .unwrap_or(&decl.spelling);
+        u.push(
+            out,
+            codes::CONFLICTING_USE,
+            r.range,
+            format!(
+                "`{text}` is not visible: both `{}` and `{}` declare it; select it (`{}.{text}`)",
+                name(*a),
+                name(*b),
+                name(*a),
+            ),
+        );
     }
 }
 

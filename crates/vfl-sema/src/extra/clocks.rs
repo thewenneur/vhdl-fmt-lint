@@ -5,7 +5,7 @@
 //! encoding.
 
 use rustc_hash::{FxHashMap, FxHashSet};
-use vfl_syntax::green_walk::ChildTokens;
+use vfl_syntax::green_walk::{ChildTokens, GreenAt, descendants_where_green};
 use vfl_syntax::{SyntaxKind, SyntaxNode, TextRange};
 
 use super::{Unit, extra_codes as codes, statements, trimmed};
@@ -58,13 +58,11 @@ pub(super) fn check(u: &Unit, out: &mut Vec<Diagnostic>) {
     let mut edges = Vec::new();
     let mut clocked = Vec::new();
     let mut processes = Vec::new();
-    for process in u
-        .node
-        .descendants()
-        .filter(|n| n.kind() == SyntaxKind::PROCESS_STMT)
-    {
+    for process in u.nodes(SyntaxKind::PROCESS_STMT).iter().cloned() {
         let mut mine = Vec::new();
-        for n in process.descendants() {
+        // Most calls are indexed names: rule them out on the green tree.
+        let candidates = descendants_where_green(&process, |g| edge_candidate(u.text, g));
+        for n in candidates {
             if is_clock_edge(&n)
                 && let Some(edge) = edge_of(u, &n)
             {
@@ -86,7 +84,13 @@ pub(super) fn check(u: &Unit, out: &mut Vec<Diagnostic>) {
     if u.on(codes::MIXED_CLOCK_EDGES) {
         mixed_edges(u, &edges, out);
     }
-    let concurrent = concurrent_assignments(u);
+    let concurrent = if (u.on(codes::GATED_CLOCK) || u.on(codes::RESET_SOURCE)) && !testbench
+        || u.on(codes::UNREGISTERED_OUTPUT) && !testbench
+    {
+        concurrent_assignments(u)
+    } else {
+        FxHashMap::default()
+    };
     if u.on(codes::GATED_CLOCK) && !testbench {
         gated_clocks(u, &clocks, &concurrent, out);
     }
@@ -111,6 +115,28 @@ pub(super) fn check(u: &Unit, out: &mut Vec<Diagnostic>) {
     }
     if (u.on(codes::UNSAFE_FSM) || u.on(codes::STATE_TYPE)) && !testbench {
         state_machines(u, &clocked, out);
+    }
+}
+
+/// Whether a node may be a clock edge: `rising_edge(..)`,
+/// `falling_edge(..)` or an `'event` attribute.
+fn edge_candidate(text: &str, g: GreenAt<'_, vfl_syntax::Vhdl>) -> bool {
+    let slice = |r: TextRange| {
+        text.get(usize::from(r.start())..usize::from(r.end()))
+            .unwrap_or("")
+    };
+    let ends_with = |s: &str, end: &str| {
+        s.len() >= end.len()
+            && s.is_char_boundary(s.len() - end.len())
+            && s[s.len() - end.len()..].eq_ignore_ascii_case(end)
+    };
+    match g.kind() {
+        SyntaxKind::CALL_EXPR => g.nodes().next().is_some_and(|name| {
+            let name = slice(name.range()).trim_end();
+            ends_with(name, "rising_edge") || ends_with(name, "falling_edge")
+        }),
+        SyntaxKind::ATTRIBUTE_NAME => ends_with(slice(g.range()).trim_end(), "event"),
+        _ => false,
     }
 }
 
@@ -255,10 +281,8 @@ fn clocked_process(u: &Unit, process: &SyntaxNode, clock: DeclId) -> Option<Cloc
         clock_part = body.clone();
     }
     for part in clock_part.iter().chain(&c.reset_part) {
-        for n in std::iter::once(part.clone()).chain(part.descendants()) {
-            if matches!(n.kind(), SyntaxKind::SIGNAL_ASSIGN_STMT)
-                && let Some(id) = written(u, &n)
-            {
+        for n in u.nodes_in(SyntaxKind::SIGNAL_ASSIGN_STMT, part.text_range()) {
+            if let Some(id) = written(u, n) {
                 c.registers.insert(id);
             }
         }
@@ -315,7 +339,9 @@ fn clock_as_data(u: &Unit, clocks: &FxHashSet<DeclId>, out: &mut Vec<Diagnostic>
             SyntaxKind::BINARY_EXPR => n.children().any(|c| is_clock_edge(&c)),
             // Behavioral code (a process that waits): models and
             // testbenches.
-            SyntaxKind::PROCESS_STMT => n.descendants().any(|d| d.kind() == SyntaxKind::WAIT_STMT),
+            SyntaxKind::PROCESS_STMT => {
+                !u.nodes_in(SyntaxKind::WAIT_STMT, n.text_range()).is_empty()
+            }
             // A copy (`clk_out <= clk;`), a clock generator, a delay.
             SyntaxKind::SIGNAL_ASSIGN_STMT | SyntaxKind::VARIABLE_ASSIGN_STMT => {
                 n.descendants_with_tokens()
@@ -384,13 +410,11 @@ fn mixed_edges(u: &Unit, edges: &[Edge], out: &mut Vec<Diagnostic>) {
 /// drive.
 fn concurrent_assignments(u: &Unit) -> FxHashMap<DeclId, SyntaxNode> {
     let mut map = FxHashMap::default();
-    for n in u.node.descendants() {
-        if !matches!(
-            n.kind(),
-            SyntaxKind::SIGNAL_ASSIGN_STMT | SyntaxKind::SELECTED_ASSIGN_STMT
-        ) {
-            continue;
-        }
+    let assignments = u
+        .nodes(SyntaxKind::SIGNAL_ASSIGN_STMT)
+        .iter()
+        .chain(u.nodes(SyntaxKind::SELECTED_ASSIGN_STMT));
+    for n in assignments {
         if n.ancestors().any(|a| {
             matches!(
                 a.kind(),
@@ -399,8 +423,8 @@ fn concurrent_assignments(u: &Unit) -> FxHashMap<DeclId, SyntaxNode> {
         }) {
             continue;
         }
-        if let Some(id) = written(u, &n) {
-            map.entry(id).or_insert(n);
+        if let Some(id) = written(u, n) {
+            map.entry(id).or_insert_with(|| n.clone());
         }
     }
     map
@@ -508,14 +532,12 @@ fn reset_sources(
     }
 }
 
-fn written_in(u: &Unit, part: &[SyntaxNode]) -> Vec<(DeclId, TextRange)> {
+fn written_in<'u>(u: &'u Unit, part: &[SyntaxNode]) -> Vec<(DeclId, &'u SyntaxNode)> {
     let mut out = Vec::new();
     for p in part {
-        for n in std::iter::once(p.clone()).chain(p.descendants()) {
-            if n.kind() == SyntaxKind::SIGNAL_ASSIGN_STMT
-                && let Some(id) = written(u, &n)
-            {
-                out.push((id, trimmed(&n)));
+        for n in u.nodes_in(SyntaxKind::SIGNAL_ASSIGN_STMT, p.text_range()) {
+            if let Some(id) = written(u, n) {
+                out.push((id, n));
             }
         }
     }
@@ -523,6 +545,16 @@ fn written_in(u: &Unit, part: &[SyntaxNode]) -> Vec<(DeclId, TextRange)> {
 }
 
 fn superfluous_resets(u: &Unit, clocked: &[Clocked], out: &mut Vec<Diagnostic>) {
+    if clocked.iter().all(|c| c.reset_part.is_empty()) {
+        return;
+    }
+    // Where each signal is written, from one pass over the references.
+    let mut writes: FxHashMap<DeclId, Vec<TextRange>> = FxHashMap::default();
+    for r in u.refs.iter().filter(|r| r.access.writes()) {
+        if let Some(id) = super::single_decl(r) {
+            writes.entry(id).or_default().push(r.range);
+        }
+    }
     for c in clocked {
         if c.reset_part.is_empty() {
             continue;
@@ -532,16 +564,16 @@ fn superfluous_resets(u: &Unit, clocked: &[Clocked], out: &mut Vec<Diagnostic>) 
             .map(|(id, _)| id)
             .collect();
         let mut seen = FxHashSet::default();
-        for (id, range) in written_in(u, &c.reset_part) {
+        for (id, statement) in written_in(u, &c.reset_part) {
             if clocked_writes.contains(&id) || !seen.insert(id) {
                 continue;
             }
             // Written elsewhere (another process, a concurrent statement):
             // a multiple-driver problem, not this one.
-            let elsewhere = u.refs.iter().any(|r| {
-                r.access.writes()
-                    && super::single_decl(r) == Some(id)
-                    && !c.node.text_range().contains_range(r.range)
+            let elsewhere = writes.get(&id).is_some_and(|ranges| {
+                ranges
+                    .iter()
+                    .any(|r| !c.node.text_range().contains_range(*r))
             });
             if elsewhere {
                 continue;
@@ -550,7 +582,7 @@ fn superfluous_resets(u: &Unit, clocked: &[Clocked], out: &mut Vec<Diagnostic>) 
             u.push(
                 out,
                 codes::SUPERFLUOUS_RESET,
-                range,
+                trimmed(statement),
                 format!("`{name}` is reset but never assigned on the clock edge: it is a constant, and needs no register or reset"),
             );
         }
@@ -565,10 +597,7 @@ fn multi_bit(
 ) {
     for c in clocked {
         for part in &c.clock_part {
-            for n in std::iter::once(part.clone()).chain(part.descendants()) {
-                if n.kind() != SyntaxKind::SIGNAL_ASSIGN_STMT {
-                    continue;
-                }
+            for n in u.nodes_in(SyntaxKind::SIGNAL_ASSIGN_STMT, part.text_range()) {
                 // A plain copy `x <= y;` of a register of another domain.
                 let Some(waveform) = n.children().find(|w| w.kind() == SyntaxKind::WAVEFORM) else {
                     continue;
@@ -600,7 +629,7 @@ fn multi_bit(
                 u.push(
                     out,
                     codes::MULTI_BIT_SYNCHRONIZER,
-                    trimmed(&n),
+                    trimmed(n),
                     format!(
                         "the bits of `{}` cross from `{}` to `{}` through one register each: they can arrive in different cycles; use a handshake, a FIFO or a Gray code",
                         decl.spelling,
@@ -641,12 +670,9 @@ fn unregistered_outputs(
         if clocked_nodes.contains(&p.text_range()) {
             continue;
         }
-        for n in p
-            .descendants()
-            .filter(|n| n.kind() == SyntaxKind::SIGNAL_ASSIGN_STMT)
-        {
-            if let Some(id) = written(u, &n) {
-                drivers.push((id, n));
+        for n in u.nodes_in(SyntaxKind::SIGNAL_ASSIGN_STMT, p.text_range()) {
+            if let Some(id) = written(u, n) {
+                drivers.push((id, n.clone()));
             }
         }
     }
@@ -728,28 +754,48 @@ fn metavalue(value: &SyntaxNode) -> Option<char> {
 }
 
 fn assigned_values(u: &Unit, out: &mut Vec<Diagnostic>) {
-    for n in u.node.descendants() {
-        if !matches!(
-            n.kind(),
-            SyntaxKind::SIGNAL_ASSIGN_STMT | SyntaxKind::SELECTED_ASSIGN_STMT
-        ) {
+    // Whether each process waits for a time: simulation code.
+    let mut timed: FxHashMap<TextRange, bool> = FxHashMap::default();
+    let assignments = u
+        .nodes(SyntaxKind::SIGNAL_ASSIGN_STMT)
+        .iter()
+        .chain(u.nodes(SyntaxKind::SELECTED_ASSIGN_STMT));
+    for n in assignments {
+        // Most assignments have no literal starting with a metavalue:
+        // rule them out on the text.
+        let range = n.text_range();
+        let text = u
+            .text
+            .get(usize::from(range.start())..usize::from(range.end()))
+            .unwrap_or("");
+        let literal = text.as_bytes().windows(2).any(|w| {
+            matches!(w[0], b'\'' | b'"')
+                && matches!(
+                    w[1],
+                    b'Z' | b'z' | b'X' | b'x' | b'U' | b'u' | b'W' | b'w' | b'-'
+                )
+        });
+        if !literal {
             continue;
         }
         // Simulation code: delays and waits.
-        if n.descendants_with_tokens()
-            .any(|e| e.kind() == SyntaxKind::AFTER_KW)
-            || n.ancestors()
+        let mut delayed = false;
+        vfl_syntax::green_walk::for_each_token(n, |k, _, _| delayed |= k == SyntaxKind::AFTER_KW);
+        let mut waits = || {
+            n.ancestors()
                 .find(|a| a.kind() == SyntaxKind::PROCESS_STMT)
                 .is_some_and(|p| {
-                    p.descendants().any(|d| {
-                        d.kind() == SyntaxKind::WAIT_STMT
-                            && d.has_child(|k| k == SyntaxKind::FOR_KW)
+                    *timed.entry(p.text_range()).or_insert_with(|| {
+                        u.nodes_in(SyntaxKind::WAIT_STMT, p.text_range())
+                            .iter()
+                            .any(|d| d.has_child(|k| k == SyntaxKind::FOR_KW))
                     })
                 })
-        {
+        };
+        if delayed || waits() {
             continue;
         }
-        let Some((target, _)) = crate::rtl::assignment_target(&n) else {
+        let Some((target, _)) = crate::rtl::assignment_target(n) else {
             continue;
         };
         let Some((_, decl)) = u.target_object(&target) else {
@@ -791,11 +837,7 @@ fn assigned_values(u: &Unit, out: &mut Vec<Diagnostic>) {
 fn state_machines(u: &Unit, clocked: &[Clocked], out: &mut Vec<Diagnostic>) {
     let mut reported = FxHashSet::default();
     for c in clocked {
-        for case in c
-            .node
-            .descendants()
-            .filter(|n| n.kind() == SyntaxKind::CASE_STMT)
-        {
+        for case in u.nodes_in(SyntaxKind::CASE_STMT, c.node.text_range()) {
             let Some(selector) = case.children().next() else {
                 continue;
             };

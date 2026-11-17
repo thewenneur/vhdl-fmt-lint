@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- **55 rules that other VHDL tools have** (compilers, Sigasi, GHDL, vhdl_ls, RTL linters),
+  listed in [docs/lints.md](docs/lints.md): legality checks a compiler would make as you
+  type (`sema/read-only-target`, `sema/assignment-kind`, `sema/component-mismatch`,
+  `sema/missing-wait`, `sema/missing-body`, `sema/circular-dependency`, ...), clock and
+  reset checks (`sema/clock-as-data`, `sema/gated-clock`, `sema/reset-source`,
+  `sema/multi-bit-synchronizer`, ...) and style checks (`style/nesting-depth`,
+  `style/unneeded-library`, `style/operator-precedence`, `style/prohibited`, ...).
+
 ## [0.12.0] - 2026-11-16
 
 A configurable pause before lint problems show while typing.

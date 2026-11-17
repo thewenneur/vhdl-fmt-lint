@@ -6,7 +6,7 @@
 //! unknown pragmas, missing labels, encrypted blocks.
 
 use vfl_sema::{Edit, Fix};
-use vfl_syntax::green_walk::{ChildTokens, descendants_where};
+use vfl_syntax::green_walk::{ChildTokens, GreenAt, descendants_where_green};
 use vfl_syntax::{Standard, SyntaxKind, SyntaxNode, TextRange, TextSize};
 
 use crate::Finding;
@@ -80,20 +80,152 @@ pub fn check(
     let direction = enabled(RANGE_DIRECTION);
     let prohibited = enabled(PROHIBITED) && !options.attributes.is_empty();
     let labels = enabled(MISSING_LABEL);
-    let wanted = |kind| {
+    let wanted = |g: GreenAt<'_, vfl_syntax::Vhdl>| {
         use SyntaxKind::*;
+        let kind = g.kind();
         (depth && matches!(kind, PROCESS_STMT | SUBPROGRAM_BODY))
             || (multiple && matches!(kind, SIGNAL_DECL | VARIABLE_DECL | CONSTANT_DECL))
-            || (others && matches!(kind, CASE_STMT | AGGREGATE | SELECTED_WAVEFORMS))
+            || (others && kind == CASE_STMT && others_misplaced(g, CASE_ALTERNATIVE))
+            || (others && kind == AGGREGATE && others_misplaced(g, ELEMENT_ASSOCIATION))
+            || (others && kind == SELECTED_WAVEFORMS)
             || (library && kind == DESIGN_UNIT)
             || (deprecated && kind == USE_CLAUSE)
-            || (precedence && kind == BINARY_EXPR)
+            || (precedence && kind == BINARY_EXPR && precedence_candidate(g))
             || (literal && matches!(kind, FOR_SCHEME | FOR_GENERATE_STMT))
             || (direction && kind == SUBTYPE_INDICATION)
             || (prohibited && kind == ATTRIBUTE_NAME)
             || (labels && matches!(kind, LOOP_STMT | IF_STMT | CASE_STMT))
     };
-    for node in descendants_where(ctx.root, wanted) {
+    // Token rules: one pass over the tokens.
+    let reserved = enabled(RESERVED_WORD);
+    let nested = enabled(NESTED_COMMENT);
+    let pragmas = enabled(UNKNOWN_PRAGMA);
+    let encrypted = enabled(ENCRYPTED_FILE);
+    let prohibited_tokens = enabled(PROHIBITED)
+        && !(options.keywords.is_empty()
+            && options.operators.is_empty()
+            && options.pragmas.is_empty());
+    let tokens_on = reserved || nested || pragmas || encrypted || prohibited_tokens || literal;
+    let mut token_out = Vec::new();
+    let mut encrypted_seen = false;
+    let mut on_token = |kind: SyntaxKind, range: TextRange, text: &str, declaring: bool| match kind
+    {
+        SyntaxKind::BLOCK_COMMENT if nested => {
+            let inner = &text[2.min(text.len())..];
+            if let Some(at) = inner.find("/*") {
+                let start = range.start() + TextSize::from(2 + at as u32);
+                token_out.push(Finding::new(
+                        NESTED_COMMENT,
+                        TextRange::at(start, 2.into()),
+                        "`/*` inside a block comment: block comments do not nest, so the first `*/` ends both",
+                    ));
+            }
+        }
+        SyntaxKind::LINE_COMMENT | SyntaxKind::BLOCK_COMMENT => {
+            if encrypted && !encrypted_seen && contains_ignore_case(text, "protect begin_protected")
+            {
+                encrypted_seen = true;
+                token_out.push(Finding::new(
+                    ENCRYPTED_FILE,
+                    range,
+                    "encrypted (IEEE 1735) code: its contents are not checked",
+                ));
+            }
+            if (pragmas || prohibited_tokens) && kind == SyntaxKind::LINE_COMMENT {
+                pragma(
+                    text,
+                    range,
+                    pragmas,
+                    &options.pragmas,
+                    prohibited_tokens,
+                    out,
+                );
+            }
+        }
+        SyntaxKind::TOOL_DIRECTIVE if encrypted && !encrypted_seen => {
+            if contains_ignore_case(text, "protect") {
+                encrypted_seen = true;
+                token_out.push(Finding::new(
+                    ENCRYPTED_FILE,
+                    range,
+                    "encrypted (IEEE 1735) code: its contents are not checked",
+                ));
+            }
+        }
+        SyntaxKind::DECIMAL_LITERAL if literal => {
+            if !text.contains('.')
+                && let Some((_, exponent)) = text.split_once(['e', 'E'])
+                && exponent.starts_with('-')
+            {
+                token_out.push(Finding::new(
+                        LITERAL_FORM,
+                        range,
+                        "an integer literal cannot have a negative exponent; write a real literal (`1.0e-3`)",
+                    ));
+            }
+        }
+        // Reserved words are checked where names are declared (below).
+        SyntaxKind::IDENT if reserved && declaring => {
+            if is_reserved_candidate(text)
+                && let Some(token) = ctx.root.covering_element(range).into_token()
+            {
+                reserved_word(ctx, &token, &mut token_out);
+            }
+        }
+        _ if prohibited_tokens && !kind.is_trivia() => {
+            let lower = text.to_ascii_lowercase();
+            let keyword = options.keywords.contains(&lower)
+                && text.chars().all(|c| c.is_ascii_alphabetic() || c == '_')
+                && kind != SyntaxKind::IDENT;
+            let operator = options.operators.contains(&lower) && kind != SyntaxKind::IDENT;
+            if keyword || operator {
+                token_out.push(Finding::new(
+                    PROHIBITED,
+                    range,
+                    format!(
+                        "the {} `{}` is prohibited in this project",
+                        if keyword { "keyword" } else { "operator" },
+                        text
+                    ),
+                ));
+            }
+        }
+        _ => {}
+    };
+    // One walk: the nodes the rules look at, the library prefixes, and
+    // every token (each is a direct child of exactly one node).
+    let all: &str = ctx.text;
+    let slice = |r: TextRange| -> &str {
+        all.get(usize::from(r.start())..usize::from(r.end()))
+            .unwrap_or("")
+    };
+    let mut prefixes: rustc_hash::FxHashSet<&str> = rustc_hash::FxHashSet::default();
+    let found = descendants_where_green(ctx.root, |g| {
+        if library {
+            record_prefix(g, slice(g.range()), &mut prefixes);
+        }
+        if tokens_on {
+            let declaring = matches!(g.kind(), SyntaxKind::IDENT_LIST | SyntaxKind::ENTITY_DECL);
+            for (kind, range) in g.tokens() {
+                // Only the tokens a rule reads.
+                if prohibited_tokens
+                    || matches!(
+                        kind,
+                        SyntaxKind::LINE_COMMENT
+                            | SyntaxKind::BLOCK_COMMENT
+                            | SyntaxKind::TOOL_DIRECTIVE
+                            | SyntaxKind::DECIMAL_LITERAL
+                    )
+                    || kind == SyntaxKind::IDENT && declaring
+                {
+                    on_token(kind, range, slice(range), declaring);
+                }
+            }
+        }
+        wanted(g)
+    });
+    out.append(&mut token_out);
+    for node in found {
         match node.kind() {
             SyntaxKind::PROCESS_STMT | SyntaxKind::SUBPROGRAM_BODY => {
                 nesting(&node, options.max_depth.max(1), out)
@@ -102,7 +234,7 @@ pub fn check(
                 multiple_declaration(&node, out)
             }
             SyntaxKind::CASE_STMT => {
-                if others {
+                if others && others_misplaced_node(&node) {
                     others_position(&node, out);
                 }
                 if labels {
@@ -110,7 +242,7 @@ pub fn check(
                 }
             }
             SyntaxKind::AGGREGATE | SyntaxKind::SELECTED_WAVEFORMS => others_position(&node, out),
-            SyntaxKind::DESIGN_UNIT => libraries(ctx, &node, out),
+            SyntaxKind::DESIGN_UNIT => libraries(ctx, &node, &prefixes, out),
             SyntaxKind::USE_CLAUSE => deprecated_package(ctx, &node, out),
             SyntaxKind::BINARY_EXPR => operator_precedence(&node, out),
             SyntaxKind::FOR_SCHEME | SyntaxKind::FOR_GENERATE_STMT => {
@@ -122,104 +254,6 @@ pub fn check(
                 missing_label(&node, &options.labels, out)
             }
             _ => {}
-        }
-    }
-    // Token rules: one pass over the tokens.
-    let reserved = enabled(RESERVED_WORD);
-    let nested = enabled(NESTED_COMMENT);
-    let pragmas = enabled(UNKNOWN_PRAGMA);
-    let encrypted = enabled(ENCRYPTED_FILE);
-    let prohibited_tokens = enabled(PROHIBITED)
-        && !(options.keywords.is_empty()
-            && options.operators.is_empty()
-            && options.pragmas.is_empty());
-    if reserved || nested || pragmas || encrypted || prohibited_tokens || literal {
-        let mut encrypted_seen = false;
-        for token in ctx
-            .root
-            .descendants_with_tokens()
-            .filter_map(|e| e.into_token())
-        {
-            let kind = token.kind();
-            match kind {
-                SyntaxKind::BLOCK_COMMENT if nested => {
-                    let text = token.text();
-                    let inner = &text[2.min(text.len())..];
-                    if let Some(at) = inner.find("/*") {
-                        let start = token.text_range().start() + TextSize::from(2 + at as u32);
-                        out.push(Finding::new(
-                            NESTED_COMMENT,
-                            TextRange::at(start, 2.into()),
-                            "`/*` inside a block comment: block comments do not nest, so the first `*/` ends both",
-                        ));
-                    }
-                }
-                SyntaxKind::LINE_COMMENT | SyntaxKind::BLOCK_COMMENT => {
-                    if encrypted
-                        && !encrypted_seen
-                        && token
-                            .text()
-                            .to_ascii_lowercase()
-                            .contains("protect begin_protected")
-                    {
-                        encrypted_seen = true;
-                        out.push(Finding::new(
-                            ENCRYPTED_FILE,
-                            token.text_range(),
-                            "encrypted (IEEE 1735) code: its contents are not checked",
-                        ));
-                    }
-                    if (pragmas || prohibited_tokens) && kind == SyntaxKind::LINE_COMMENT {
-                        pragma(&token, pragmas, &options.pragmas, prohibited_tokens, out);
-                    }
-                }
-                SyntaxKind::TOOL_DIRECTIVE if encrypted && !encrypted_seen => {
-                    if token.text().to_ascii_lowercase().contains("protect") {
-                        encrypted_seen = true;
-                        out.push(Finding::new(
-                            ENCRYPTED_FILE,
-                            token.text_range(),
-                            "encrypted (IEEE 1735) code: its contents are not checked",
-                        ));
-                    }
-                }
-                SyntaxKind::DECIMAL_LITERAL if literal => {
-                    let text = token.text();
-                    if !text.contains('.')
-                        && let Some((_, exponent)) = text.split_once(['e', 'E'])
-                        && exponent.starts_with('-')
-                    {
-                        out.push(Finding::new(
-                            LITERAL_FORM,
-                            token.text_range(),
-                            "an integer literal cannot have a negative exponent; write a real literal (`1.0e-3`)",
-                        ));
-                    }
-                }
-                SyntaxKind::IDENT if reserved => reserved_word(ctx, &token, out),
-                _ if prohibited_tokens && !kind.is_trivia() => {
-                    let text = token.text().to_ascii_lowercase();
-                    let keyword = options.keywords.contains(&text)
-                        && token
-                            .text()
-                            .chars()
-                            .all(|c| c.is_ascii_alphabetic() || c == '_')
-                        && kind != SyntaxKind::IDENT;
-                    let operator = options.operators.contains(&text) && kind != SyntaxKind::IDENT;
-                    if keyword || operator {
-                        out.push(Finding::new(
-                            PROHIBITED,
-                            token.text_range(),
-                            format!(
-                                "the {} `{}` is prohibited in this project",
-                                if keyword { "keyword" } else { "operator" },
-                                token.text()
-                            ),
-                        ));
-                    }
-                }
-                _ => {}
-            }
         }
     }
 }
@@ -296,6 +330,72 @@ fn multiple_declaration(node: &SyntaxNode, out: &mut Vec<Finding>) {
 
 // ---- `others` out of place ---------------------------------------------------------
 
+/// Whether `text` contains `word` (ASCII, lowercase, containing
+/// `protect`), in any case.
+fn contains_ignore_case(text: &str, word: &str) -> bool {
+    // A fast reject: `protect` is in both words searched, and written in
+    // lowercase, capitalized or uppercase.
+    if !text.contains("rotect") && !text.contains("ROTECT") {
+        return false;
+    }
+    text.as_bytes()
+        .windows(word.len())
+        .any(|w| w.eq_ignore_ascii_case(word.as_bytes()))
+}
+
+/// Whether a `case` or an aggregate has an `others` choice that is not
+/// alone in the last item, read on the green tree.
+fn others_misplaced(g: GreenAt<'_, vfl_syntax::Vhdl>, item: SyntaxKind) -> bool {
+    let items: Vec<_> = g.nodes().filter(|n| n.kind() == item).collect();
+    items.iter().enumerate().any(|(i, it)| {
+        it.nodes()
+            .filter(|c| c.kind() == SyntaxKind::CHOICES)
+            .any(|choices| {
+                let others = choices.tokens().any(|(k, _)| k == SyntaxKind::OTHERS_KW);
+                let count = choices.nodes().count()
+                    + choices.tokens().filter(|(k, _)| !k.is_trivia()).count();
+                others && (count != 1 || i + 1 != items.len())
+            })
+    })
+}
+
+/// [`others_misplaced`] for a `case` also checked for labels.
+fn others_misplaced_node(node: &SyntaxNode) -> bool {
+    let items: Vec<_> = node
+        .children()
+        .filter(|n| n.kind() == SyntaxKind::CASE_ALTERNATIVE)
+        .collect();
+    items.iter().enumerate().any(|(i, it)| {
+        it.children()
+            .filter(|c| c.kind() == SyntaxKind::CHOICES)
+            .any(|choices| {
+                choices
+                    .child_token(|k| k == SyntaxKind::OTHERS_KW)
+                    .is_some()
+                    && (choices
+                        .children_with_tokens()
+                        .filter(|e| !e.kind().is_trivia())
+                        .count()
+                        != 1
+                        || i + 1 != items.len())
+            })
+    })
+}
+
+/// Whether a binary expression may be one `operator_precedence` reports:
+/// a relation whose left operand is a `not`, or a shift.
+fn precedence_candidate(g: GreenAt<'_, vfl_syntax::Vhdl>) -> bool {
+    use SyntaxKind::*;
+    let Some((op, _)) = g.tokens().find(|(k, _)| !k.is_trivia()) else {
+        return false;
+    };
+    match op {
+        SLL_KW | SRL_KW | SLA_KW | SRA_KW | ROL_KW | ROR_KW => true,
+        EQ | NEQ | LT | LTE | GT | GTE => g.nodes().next().is_some_and(|l| l.kind() == UNARY_EXPR),
+        _ => false,
+    }
+}
+
 fn others_position(node: &SyntaxNode, out: &mut Vec<Finding>) {
     let (kind, what) = match node.kind() {
         SyntaxKind::CASE_STMT => (SyntaxKind::CASE_ALTERNATIVE, "case alternative"),
@@ -339,41 +439,52 @@ fn others_position(node: &SyntaxNode, out: &mut Vec<Finding>) {
 
 // ---- E29: library clauses ------------------------------------------------------------
 
-fn libraries(ctx: &StyleContext, unit: &SyntaxNode, out: &mut Vec<Finding>) {
+/// Records the first word of a selected name or a context reference:
+/// `ieee` of `ieee.x.y`.
+fn record_prefix<'t>(
+    g: GreenAt<'_, vfl_syntax::Vhdl>,
+    text: &'t str,
+    prefixes: &mut rustc_hash::FxHashSet<&'t str>,
+) {
+    fn leading(t: &str) -> &str {
+        t.trim_start()
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .next()
+            .unwrap_or("")
+    }
+    match g.kind() {
+        SyntaxKind::SELECTED_NAME => {
+            prefixes.insert(leading(text));
+        }
+        SyntaxKind::CONTEXT_REFERENCE => {
+            let t = text.trim_start();
+            for item in t.get(7..).unwrap_or("").split(',') {
+                prefixes.insert(leading(item));
+            }
+        }
+        _ => {}
+    }
+}
+
+fn libraries(
+    ctx: &StyleContext,
+    unit: &SyntaxNode,
+    prefixes: &rustc_hash::FxHashSet<&str>,
+    out: &mut Vec<Finding>,
+) {
     let Some(context) = unit
         .children()
         .find(|n| n.kind() == SyntaxKind::CONTEXT_CLAUSE)
     else {
         return;
     };
+    if !context.has_child(|k| k == SyntaxKind::LIBRARY_CLAUSE) {
+        return;
+    }
     // The prefixes of selected names in the file: `ieee` of `ieee.x.y`.
     // The whole file, since an entity's clauses also serve its
     // architectures.
-    let used = |name: &str| {
-        ctx.root
-            .descendants()
-            .filter(|n| n.kind() == SyntaxKind::SELECTED_NAME)
-            .filter(|n| {
-                !n.parent()
-                    .is_some_and(|p| p.kind() == SyntaxKind::SELECTED_NAME)
-            })
-            .any(|n| {
-                n.descendants_with_tokens()
-                    .filter_map(|e| e.into_token())
-                    .find(|t| !t.kind().is_trivia())
-                    .is_some_and(|t| t.text().eq_ignore_ascii_case(name))
-            })
-            || ctx
-                .root
-                .descendants()
-                .filter(|n| n.kind() == SyntaxKind::CONTEXT_REFERENCE)
-                .any(|n| {
-                    n.text()
-                        .to_string()
-                        .to_ascii_lowercase()
-                        .contains(&format!("{name}."))
-                })
-    };
+    let used = |name: &str| prefixes.iter().any(|p| p.eq_ignore_ascii_case(name));
     for clause in context
         .children()
         .filter(|n| n.kind() == SyntaxKind::LIBRARY_CLAUSE)
@@ -547,6 +658,27 @@ const VERILOG_WORDS: &[&str] = &[
     "unsigned",
     "wire",
 ];
+
+/// Whether an identifier is in one of the word lists, before building a
+/// token for it.
+fn is_reserved_candidate(text: &str) -> bool {
+    static WORDS: std::sync::OnceLock<rustc_hash::FxHashSet<&'static str>> =
+        std::sync::OnceLock::new();
+    let words = WORDS.get_or_init(|| {
+        [VHDL_2008_WORDS, VHDL_2019_WORDS, VERILOG_WORDS]
+            .iter()
+            .flat_map(|w| w.iter().copied())
+            .collect()
+    });
+    // Lowercased on the stack: identifiers are short, the words shorter.
+    let mut buffer = [0u8; 24];
+    let Some(lower) = buffer.get_mut(..text.len()) else {
+        return false;
+    };
+    lower.copy_from_slice(text.as_bytes());
+    lower.make_ascii_lowercase();
+    std::str::from_utf8(lower).is_ok_and(|w| words.contains(w))
+}
 
 fn reserved_word(ctx: &StyleContext, token: &vfl_syntax::SyntaxToken, out: &mut Vec<Finding>) {
     let key = token.text().to_ascii_lowercase();
@@ -796,23 +928,25 @@ const KNOWN_PRAGMAS: &[&str] = &[
 ];
 
 fn pragma(
-    token: &vfl_syntax::SyntaxToken,
+    text: &str,
+    token_range: TextRange,
     unknown: bool,
     prohibited: &[String],
     check_prohibited: bool,
     out: &mut Vec<Finding>,
 ) {
-    let text = token.text();
     let body = text.trim_start_matches('-').trim_start();
     let mut words = body.split_whitespace();
     let Some(prefix) = words.next() else { return };
-    let prefix_key = prefix.to_ascii_lowercase();
-    if !PRAGMA_PREFIXES.contains(&prefix_key.as_str()) {
+    if !PRAGMA_PREFIXES
+        .iter()
+        .any(|p| p.eq_ignore_ascii_case(prefix))
+    {
         return;
     }
     let Some(word) = words.next() else { return };
     let key = word.to_ascii_lowercase();
-    let start = token.text_range().start()
+    let start = token_range.start()
         + TextSize::from((text.len() - body.len()) as u32 + body.find(word).unwrap_or(0) as u32);
     let range = TextRange::at(start, (word.len() as u32).into());
     if check_prohibited && prohibited.contains(&key) {

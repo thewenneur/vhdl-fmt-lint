@@ -26,18 +26,21 @@ pub(super) fn check(u: &Unit, out: &mut Vec<Diagnostic>) {
     if !(order || defaults || others) {
         return;
     }
-    for node in u.node.descendants() {
-        match node.kind() {
-            SyntaxKind::PORT_MAP_ASPECT | SyntaxKind::GENERIC_MAP_ASPECT => {
-                if order {
-                    association_order(u, &node, out);
-                }
-                if defaults && node.kind() == SyntaxKind::PORT_MAP_ASPECT {
-                    default_associations(u, &node, out);
-                }
-            }
-            SyntaxKind::CASE_STMT if others => unneeded_others(u, &node, out),
-            _ => {}
+    for node in u
+        .nodes(SyntaxKind::PORT_MAP_ASPECT)
+        .iter()
+        .chain(u.nodes(SyntaxKind::GENERIC_MAP_ASPECT))
+    {
+        if order {
+            association_order(u, node, out);
+        }
+        if defaults && node.kind() == SyntaxKind::PORT_MAP_ASPECT {
+            default_associations(u, node, out);
+        }
+    }
+    if others {
+        for node in u.nodes(SyntaxKind::CASE_STMT) {
+            unneeded_others(u, node, out);
         }
     }
 }

@@ -1035,6 +1035,20 @@ pub fn exists(id: &str) -> bool {
 
 /// The configured level of rule `id`.
 pub fn level(config: &LintConfig, id: &str) -> Level {
+    level_with(config, id, || preset_level(config.preset, id))
+}
+
+/// The level of a rule of [`RULES`], without looking it up by id.
+pub(crate) fn rule_level(config: &LintConfig, rule: &Rule) -> Level {
+    level_with(config, rule.id, || match config.preset {
+        Preset::None if rule.id == "syntax/error" || rule.id == vfl_vendor::rules::SYNTAX => Error,
+        Preset::None => Off,
+        Preset::Recommended => rule.recommended,
+        Preset::Strict => rule.strict,
+    })
+}
+
+fn level_with(config: &LintConfig, id: &str, preset: impl Fn() -> Level) -> Level {
     if let Some(setting) = config.rules.get(id) {
         match setting {
             RuleSetting::Level(level) => return *level,
@@ -1043,12 +1057,12 @@ pub fn level(config: &LintConfig, id: &str) -> Level {
             } => return *level,
             // Options without a level turn a rule on.
             RuleSetting::Detailed { level: None, .. } => {
-                let default = preset_level(config.preset, id);
+                let default = preset();
                 return if default == Off { Warn } else { default };
             }
         }
     }
-    preset_level(config.preset, id)
+    preset()
 }
 
 fn preset_level(preset: Preset, id: &str) -> Level {
