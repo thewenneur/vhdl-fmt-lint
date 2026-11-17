@@ -6,6 +6,12 @@ the [vfl changelog](https://github.com/thewenneur/vhdl-fmt-lint/blob/main/CHANGE
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-11-17
+
+### Fixed
+
+- minimatch 11 instead of 10 (GHSA-g3hv-75wg-m249).
+
 ## [0.13.0] - 2026-11-17
 
 ### Added

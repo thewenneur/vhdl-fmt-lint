@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-11-17
+
+Security fixes in dependencies.
+
+### Fixed
+
+- The VS Code extension uses minimatch 11 (GHSA-g3hv-75wg-m249, denial of service through
+  glob patterns), and `rustix` is 1.1.6 (RUSTSEC-2026-0486).
+
 ## [0.13.0] - 2026-11-17
 
 77 new lint rules, and two Notepad++ fixes for double-click selection.
