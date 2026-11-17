@@ -59,6 +59,7 @@ fuzz_target!(|data: &[u8]| {
             verilog,
             root: None,
             library_conflict: None,
+            target: None,
         })
         .collect();
     let result = lint(&analysis, &settings);

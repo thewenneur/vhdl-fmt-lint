@@ -179,6 +179,13 @@ pub fn run(options: Options) -> Result<bool> {
                 .map(|c| (c.path.as_path(), c.message()))
                 .collect();
             let conflict = |path: &std::path::Path| conflicts.get(path).map(String::as_str);
+            // The target device and clocks, from the project's vendor
+            // files: only read when a rule needs them.
+            let target = file_configs
+                .iter()
+                .chain(&verilog_configs)
+                .any(|(_, config)| vfl_lint::Target::wanted(config))
+                .then(|| vfl_lint::Target::load(&project.root.dir, &project.config));
             let settings: Vec<FileSettings> = file_configs
                 .iter()
                 .filter_map(|(i, config)| {
@@ -190,6 +197,7 @@ pub fn run(options: Options) -> Result<bool> {
                         verilog: None,
                         root: Some(&project.root.dir),
                         library_conflict: conflict(&file.path),
+                        target: target.as_ref(),
                     })
                 })
                 .chain(verilog_configs.iter().filter_map(|(i, config)| {
@@ -201,6 +209,7 @@ pub fn run(options: Options) -> Result<bool> {
                         verilog: Some(&file.parse),
                         root: Some(&project.root.dir),
                         library_conflict: conflict(&file.path),
+                        target: target.as_ref(),
                     })
                 }))
                 .collect();

@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Added
+
+- **22 new rules for bugs other linters miss.** 18 are on in `recommended`; `strict`
+  turns on all but `sema/logic-depth` and `project/layering`, which need settings.
+  - `vendor/inference`: a reset memory, an asynchronous read of a memory too large for
+    LUTs, a multiplication wider than one DSP block, and a reset shift register on AMD
+    parts. The family comes from the `family` option or from the project's vendor files
+    (`.qsf`, Vivado `.tcl`/`.xpr`, Lattice `.ldf`, Gowin project).
+  - `sema/integer-overflow`, `sema/power-of-two-wrap`: counters that pass their range,
+    and `clog2`-wide pointers on a depth that may not be a power of two.
+  - `sema/dont-care-compare` (fix), `sema/signed-logical-shift` (fix),
+    `sema/signed-resize`, `sema/conversion-overflow`, `sema/redundant-conversion` (fix):
+    `numeric_std` and `'-'` traps.
+  - `sema/latency-mismatch`, `sema/handshake`: a valid and its data delayed by different
+    numbers of registers; a valid that depends on ready through logic.
+  - `sema/init-reset-mismatch`, `sema/unused-bits`, `sema/broken-sequence`,
+    `sema/branch-clone`, `sema/swapped-association`: copy-paste slips and dead bits.
+  - `sema/process-restarts`, `sema/unbounded-wait`: testbench processes that loop
+    forever, and waits with no timeout.
+  - `sema/expensive-operator`: `/`, `mod`, `rem` and `**` on non-constant operands in
+    RTL.
+  - `sema/logic-depth` (opt-in): an estimate of the levels of logic between registers
+    against the clock period. The period comes from `create_clock -period` in the
+    project's `.xdc`/`.sdc` files, or from the `clocks` option. A clock with no period is
+    not checked. `set_multicycle_path` and `set_false_path` are taken into account.
+  - `project/constant-port`, `project/layering` (opt-in, `deny` globs between libraries
+    or folders), and `doc/stale-reference` (a header that names another file or unit;
+    `@verifies` of a requirement nothing defines).
+
 ### Changed
 
 - **Notepad++: Highlight uses is off by default.** Highlighting the uses of the name at the
