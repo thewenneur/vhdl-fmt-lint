@@ -890,6 +890,8 @@ pub fn testbench(entity: &Entity, config: &Config) -> Result<String, GenerateErr
         }
         out.push('\n');
     }
+    // One assignment per data input, for the stimulus process to start from.
+    let mut stimuli = String::new();
     for p in &entity.ports {
         if p.mode == Mode::View && p.subtype.is_empty() {
             let _ = writeln!(
@@ -926,6 +928,12 @@ pub fn testbench(entity: &Entity, config: &Config) -> Result<String, GenerateErr
         } else {
             None
         };
+        let is_clock_or_reset =
+            clocks.iter().any(|c| c.name == p.name) || resets.iter().any(|r| r.name == p.name);
+        if p.mode == Mode::In && !is_clock_or_reset {
+            let value = initial.clone().unwrap_or_else(|| placeholder(&subtype));
+            let _ = writeln!(stimuli, "    {} <= {value};", p.name);
+        }
         match initial {
             Some(v) => {
                 let _ = writeln!(out, "  signal {} : {subtype} := {v};{todo}", p.name);
@@ -1016,6 +1024,7 @@ pub fn testbench(entity: &Entity, config: &Config) -> Result<String, GenerateErr
         out.push('\n');
     }
     out.push_str("    -- TODO: drive the inputs and check the outputs.\n");
+    out.push_str(&stimuli);
     wait_cycles(&mut out, 100);
     out.push('\n');
     let _ = writeln!(out, "    report \"{name}: done\";");

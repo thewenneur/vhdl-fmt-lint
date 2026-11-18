@@ -323,7 +323,7 @@ Generates code from an entity of the project. `ENTITY` is `name` or `library.nam
 
 | Kind | Generates |
 |------|-----------|
-| `tb` | A testbench: a component declaration and a signal for every port, the design under test (each port commented with its direction), a clock for every clock input, and a stimulus process that holds the resets for `reset_cycles` clock cycles. Written to `<entity>_tb.vhd` next to the entity. |
+| `tb` | A testbench: a component declaration and a signal for every port, the design under test (each port commented with its direction), a clock for every clock input, and a stimulus process that holds the resets for `reset_cycles` clock cycles, then assigns every other input. Written to `<entity>_tb.vhd` next to the entity. |
 | `instance` | An entity instantiation (`u_e : entity work.e port map (...)`), printed. |
 | `component` | A component declaration, printed. |
 | `component-instance` | A component instantiation (`u_e : e port map (...)`), printed. |

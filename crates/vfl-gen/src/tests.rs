@@ -203,6 +203,7 @@ begin
     rst_n <= '1';
 
     -- TODO: drive the inputs and check the outputs.
+    en <= '1';
     for i in 1 to 100 loop
       wait until rising_edge(clk);
     end loop;
