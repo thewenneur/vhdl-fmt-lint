@@ -6,6 +6,12 @@ the [vfl changelog](https://github.com/thewenneur/vhdl-fmt-lint/blob/main/CHANGE
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-18
+
+### Added
+
+- The schema for `vfl.toml` has `[generate] testbench_dut`.
+
 ## [0.13.1] - 2026-11-17
 
 ### Fixed

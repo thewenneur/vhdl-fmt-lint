@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-18
+
+A generated testbench that is closer to what you would write by hand.
+
+### Added
+
+- **`[generate] testbench_dut`** (`"component"` by default, or `"entity"`) chooses how the
+  generated testbench instantiates the DUT.
+
+### Changed
+
+- **The generated testbench (`vfl new tb`, editor "Generate testbench") declares the DUT
+  as a component** next to its signals and instantiates it through it. A DUT from a library
+  other than `work` gets a `for dut : e use entity lib.e;` configuration.
+- **Each port map association is commented with the port's direction** (`-- in`,
+  `-- out`, `-- inout`, ...).
+- **The stimulus process assigns every data input** its initial value after the reset, so
+  you start from the list of the DUT inputs.
+
 ## [0.13.2] - 2026-11-17
 
 Fewer false alarms from `sema/integer-overflow`.
