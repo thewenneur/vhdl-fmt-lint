@@ -142,7 +142,7 @@ async function run() {
   await vscode.commands.executeCommand("vfl.generateTestbench", "e2e_top");
   const tb = vscode.window.activeTextEditor?.document;
   assert.equal(tb && path.basename(tb.uri.fsPath), "e2e_top_tb.vhd");
-  assert.match(tb.getText(), /dut : entity work\.e2e_top/);
+  assert.match(tb.getText(), /dut : e2e_top/);
 
   // Documentation: written where `[doc]` says, the index returned.
   const index = await vscode.commands.executeCommand("vfl.generateDocs");

@@ -28,7 +28,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use regex::Regex;
-use vfl_config::{Config, GenerateConfig};
+use vfl_config::{Config, GenerateConfig, TestbenchDut};
 use vfl_syntax::{Standard, SyntaxKind, SyntaxNode, SyntaxToken, TextRange};
 
 /// A port mode.
@@ -743,12 +743,7 @@ fn clauses(entity: &Entity) -> String {
             .map(|p| {
                 let mode = match (&p.mode, &p.view) {
                     (Mode::View, Some(view)) => return format!("    {} : {view}", p.name),
-                    (Mode::In, _) => "in",
-                    (Mode::Out, _) => "out",
-                    (Mode::Inout, _) => "inout",
-                    (Mode::Buffer, _) => "buffer",
-                    (Mode::Linkage, _) => "linkage",
-                    (Mode::View, None) => "in",
+                    _ => mode_name(p),
                 };
                 match &p.default {
                     Some(d) => format!("    {} : {mode} {} := {d}", p.name, p.subtype),
@@ -759,6 +754,18 @@ fn clauses(entity: &Entity) -> String {
         let _ = write!(out, "\n  port (\n{}\n  );", lines.join(";\n"));
     }
     out
+}
+
+/// The mode keyword of `port`; a view without a name counts as `in`.
+fn mode_name(port: &Port) -> &str {
+    match (&port.mode, &port.view) {
+        (Mode::View, Some(view)) => view,
+        (Mode::In | Mode::View, _) => "in",
+        (Mode::Out, _) => "out",
+        (Mode::Inout, _) => "inout",
+        (Mode::Buffer, _) => "buffer",
+        (Mode::Linkage, _) => "linkage",
+    }
 }
 
 /// A component declaration matching the entity.
@@ -864,6 +871,25 @@ pub fn testbench(entity: &Entity, config: &Config) -> Result<String, GenerateErr
             generate.clock_period
         );
     }
+    let as_component = generate.testbench_dut == TestbenchDut::Component;
+    if as_component {
+        let _ = writeln!(
+            out,
+            "  component {} is{}\n  end component {};",
+            entity.name,
+            clauses(entity),
+            entity.name
+        );
+        // Default binding only finds entities of `work`.
+        if library != "work" {
+            let _ = writeln!(
+                out,
+                "  for {} : {} use entity {library}.{};",
+                generate.testbench_instance, entity.name, entity.name
+            );
+        }
+        out.push('\n');
+    }
     for p in &entity.ports {
         if p.mode == Mode::View && p.subtype.is_empty() {
             let _ = writeln!(
@@ -915,10 +941,14 @@ pub fn testbench(entity: &Entity, config: &Config) -> Result<String, GenerateErr
     out.push_str("begin\n");
 
     // The design under test.
-    let mut dut = format!(
-        "  {} : entity {library}.{}",
-        generate.testbench_instance, entity.name
-    );
+    let mut dut = if as_component {
+        format!("  {} : {}", generate.testbench_instance, entity.name)
+    } else {
+        format!(
+            "  {} : entity {library}.{}",
+            generate.testbench_instance, entity.name
+        )
+    };
     let generic_map: Vec<String> = entity
         .generics
         .iter()
@@ -932,13 +962,24 @@ pub fn testbench(entity: &Entity, config: &Config) -> Result<String, GenerateErr
             generic_map.join(",\n")
         );
     }
-    let port_map: Vec<String> = entity
-        .ports
-        .iter()
-        .map(|p| format!("      {} => {}", p.name, p.name))
-        .collect();
-    if !port_map.is_empty() {
-        let _ = write!(dut, "\n    port map (\n{}\n    )", port_map.join(",\n"));
+    if !entity.ports.is_empty() {
+        // Each association says the direction of the port, seen from the DUT.
+        let last = entity.ports.len() - 1;
+        let port_map: String = entity
+            .ports
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let comma = if i == last { "" } else { "," };
+                format!(
+                    "      {} => {}{comma} -- {}\n",
+                    p.name,
+                    p.name,
+                    mode_name(p)
+                )
+            })
+            .collect();
+        let _ = write!(dut, "\n    port map (\n{port_map}    )");
     }
     out.push_str(&dut);
     out.push_str(";\n");

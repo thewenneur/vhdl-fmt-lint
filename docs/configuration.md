@@ -892,6 +892,7 @@ text is laid out by the formatter, so `[format]` applies to it too.
 | `testbench_name` | string | `"{entity}_tb"` | Name of a testbench entity, and of its file (with the extension of the entity's file). |
 | `testbench_architecture` | string | `"sim"` | Name of a testbench architecture. |
 | `testbench_instance` | string | `"dut"` | Label of the design under test in a testbench. |
+| `testbench_dut` | `"component"` \| `"entity"` | `"component"` | How a testbench instantiates the design under test: a component declaration and instantiation, or an entity instantiation (`entity work.e`). |
 | `clock_period` | string | `"10 ns"` | Period of the clocks a testbench drives, a VHDL time expression. |
 | `reset_cycles` | integer | `5` | Clock cycles a testbench holds the resets active before releasing them. |
 | `clock_pattern` | string | see below | Regular expression for the input ports driven as clocks, when no architecture of the entity shows it with `rising_edge(clk)`, `falling_edge(clk)` or `clk'event`. |
@@ -1126,6 +1127,7 @@ instance_label = "u_{entity}"
 testbench_name = "{entity}_tb"
 testbench_architecture = "sim"
 testbench_instance = "dut"
+testbench_dut = "component"
 clock_period = "10 ns"
 reset_cycles = 5
 # clock_pattern, reset_pattern, active_low_pattern: see above
