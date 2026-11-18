@@ -1003,6 +1003,8 @@ pub struct GenerateConfig {
     pub testbench_architecture: String,
     /// The label of the design under test in a testbench.
     pub testbench_instance: String,
+    /// How a testbench instantiates the design under test.
+    pub testbench_dut: TestbenchDut,
     /// The period of the generated clocks, a VHDL time expression.
     pub clock_period: String,
     /// Clock cycles the reset is held active at the start of a testbench.
@@ -1024,6 +1026,7 @@ impl Default for GenerateConfig {
             testbench_name: "{entity}_tb".into(),
             testbench_architecture: "sim".into(),
             testbench_instance: "dut".into(),
+            testbench_dut: TestbenchDut::Component,
             clock_period: "10 ns".into(),
             reset_cycles: 5,
             clock_pattern: r"(?i)^(.*_)?(clk|clock)\d*(_i|_in|_p)?$".into(),
@@ -1031,6 +1034,16 @@ impl Default for GenerateConfig {
             active_low_pattern: r"(?i)([^i]n|_b|_ni|_n_i)$".into(),
         }
     }
+}
+
+/// How a testbench instantiates the design under test.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TestbenchDut {
+    /// A component declaration and a component instantiation.
+    Component,
+    /// An entity instantiation, `entity work.e`.
+    Entity,
 }
 
 /// `[lsp]`: features of the language server that are a matter of taste.

@@ -1506,7 +1506,7 @@ end architecture;
         let testbench = engine
             .generate(Some(&top), TOP, Kind::Testbench, "work.top")
             .unwrap();
-        assert!(testbench.text.contains("dut : entity work.top;"));
+        assert!(testbench.text.contains("dut : top;"));
         assert_eq!(testbench.path, Some(top.with_file_name("top_tb.vhd")));
         assert!(
             engine

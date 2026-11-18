@@ -160,6 +160,19 @@ architecture sim of counter_tb is
 
   constant CLK_PERIOD : time := 10 ns;
 
+  component counter is
+    generic (
+      WIDTH : natural := 8;
+      STEP  : positive
+    );
+    port (
+      clk   : in  std_logic;
+      rst_n : in  std_logic;
+      en    : in  std_logic := '1';
+      q     : out unsigned(WIDTH - 1 downto 0)
+    );
+  end component counter;
+
   signal clk   : std_logic := '0';
   signal rst_n : std_logic := '0';
   signal en    : std_logic := '1';
@@ -167,16 +180,16 @@ architecture sim of counter_tb is
 
   signal done : boolean := false;
 begin
-  dut : entity work.counter
+  dut : counter
     generic map (
       WIDTH => WIDTH,
       STEP  => STEP
     )
     port map (
-      clk   => clk,
-      rst_n => rst_n,
-      en    => en,
-      q     => q
+      clk   => clk,   -- in
+      rst_n => rst_n, -- in
+      en    => en,    -- in
+      q     => q      -- out
     );
 
   clk <= not clk after CLK_PERIOD / 2 when not done else '0';
@@ -190,6 +203,7 @@ begin
     rst_n <= '1';
 
     -- TODO: drive the inputs and check the outputs.
+    en <= '1';
     for i in 1 to 100 loop
       wait until rising_edge(clk);
     end loop;
@@ -204,6 +218,25 @@ end architecture sim;
     );
     // The testbench is valid VHDL.
     assert!(parse(&out, Standard::Vhdl2008).errors().is_empty());
+}
+
+#[test]
+fn testbench_dut_as_entity_or_from_another_library() {
+    let mut e = entity(COUNTER);
+    let mut config = legacy();
+    config.generate.testbench_dut = vfl_config::TestbenchDut::Entity;
+    let out = testbench(&e, &config).unwrap();
+    assert!(!out.contains("component"), "{out}");
+    assert!(out.contains("dut : entity work.counter"), "{out}");
+    assert!(out.contains("q     => q      -- out"), "{out}");
+
+    e.library = "lib_a".into();
+    let out = testbench(&e, &legacy()).unwrap();
+    assert!(
+        out.contains("for dut : counter use entity lib_a.counter;"),
+        "{out}"
+    );
+    assert!(parse(&out, Standard::Vhdl2008).errors().is_empty(), "{out}");
 }
 
 fn insta_like(actual: &str, expected: &str) {

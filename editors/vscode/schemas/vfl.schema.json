@@ -6907,6 +6907,15 @@
           "type": "string",
           "default": "dut"
         },
+        "testbench_dut": {
+          "description": "How a testbench instantiates the design under test: a component declaration and instantiation, or an entity instantiation (`entity work.e`).",
+          "type": "string",
+          "enum": [
+            "component",
+            "entity"
+          ],
+          "default": "component"
+        },
         "clock_period": {
           "description": "Period of the clocks a testbench drives, a VHDL time expression.",
           "type": "string",

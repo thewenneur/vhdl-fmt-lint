@@ -38,7 +38,8 @@ fn testbench_and_templates() {
     assert!(out.status.success(), "{out:?}");
     let tb = std::fs::read_to_string(dir.path().join("rtl/tb_alu.vhd")).unwrap();
     assert!(tb.contains("ENTITY tb_alu IS"), "{tb}");
-    assert!(tb.contains("dut : ENTITY work.alu"), "{tb}");
+    assert!(tb.contains("COMPONENT alu IS"), "{tb}");
+    assert!(tb.contains("dut : alu"), "{tb}");
     assert!(
         tb.contains("SIGNAL rst          : std_logic := '1'  ;"),
         "{tb}"
