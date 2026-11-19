@@ -6,6 +6,13 @@ the [vfl changelog](https://github.com/thewenneur/vhdl-fmt-lint/blob/main/CHANGE
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-11-19
+
+### Changed
+
+- The schema for `vfl.toml` has the new defaults of `[generate] reset_pattern` and
+  `active_low_pattern`.
+
 ## [0.14.0] - 2026-11-18
 
 ### Added

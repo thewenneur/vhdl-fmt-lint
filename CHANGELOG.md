@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-11-19
+
+### Changed
+
+- **The generated testbench drives the resets from a `reset_gen` process** of its own; the
+  stimulus process waits for them to be released.
+- **The generated testbench ends with `std.env.stop`** instead of `std.env.finish`, so the
+  simulator stops without quitting.
+
+### Fixed
+
+- **Resets named with an `n` prefix** (`nreset`, `n_rst`, `nrst`) are found and taken as
+  active low, by the default `[generate] reset_pattern` and `active_low_pattern`.
+
 ## [0.14.0] - 2026-11-18
 
 A generated testbench that is closer to what you would write by hand.
