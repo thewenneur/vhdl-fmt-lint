@@ -194,13 +194,19 @@ begin
 
   clk <= not clk after CLK_PERIOD / 2 when not done else '0';
 
-  stimulus : process
+  reset_gen : process
   begin
     rst_n <= '0';
     for i in 1 to 5 loop
       wait until rising_edge(clk);
     end loop;
     rst_n <= '1';
+    wait;
+  end process reset_gen;
+
+  stimulus : process
+  begin
+    wait until rst_n = '1';
 
     -- TODO: drive the inputs and check the outputs.
     en <= '1';
@@ -237,6 +243,31 @@ fn testbench_dut_as_entity_or_from_another_library() {
         "{out}"
     );
     assert!(parse(&out, Standard::Vhdl2008).errors().is_empty(), "{out}");
+}
+
+#[test]
+fn reset_level_from_prefix_or_suffix() {
+    let e = entity(
+        "entity e is port (clk, nreset, n_rst, nrst2, rst, rst_n, areset, rst_in : in bit); end;",
+    );
+    let levels: Vec<(String, bool)> = e
+        .resets(&GenerateConfig::default())
+        .unwrap()
+        .into_iter()
+        .map(|r| (r.name, r.active_low))
+        .collect();
+    let expected = [
+        ("nreset", true),
+        ("n_rst", true),
+        ("nrst2", true),
+        ("rst", false),
+        ("rst_n", true),
+        ("areset", false),
+        ("rst_in", false),
+    ];
+    assert_eq!(levels, expected.map(|(n, l)| (n.to_owned(), l)).to_vec());
+    let out = testbench(&e, &legacy()).unwrap();
+    assert!(out.contains("wait until nreset = '1' and"), "{out}");
 }
 
 fn insta_like(actual: &str, expected: &str) {

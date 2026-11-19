@@ -906,8 +906,8 @@ The default patterns take `clk`, `sys_clk`, `clk100` and `clk_i` as clocks (not 
 ```toml
 [generate]
 clock_pattern = '(?i)^(.*_)?(clk|clock)\d*(_i|_in|_p)?$'
-reset_pattern = '(?i)^(.*_)?(a|s)?(rst|reset)\d*(n|_n|_b|_i|_in|_ni|_n_i)?$'
-active_low_pattern = '(?i)([^i]n|_b|_ni|_n_i)$'
+reset_pattern = '(?i)^(.*_)?n?(a|s)?(rst|reset)\d*(n|_n|_b|_i|_in|_ni|_n_i)?$'
+active_low_pattern = '(?i)([^i]n|_b|_ni|_n_i)$|^(.*_)?n_?(a|s)?(rst|reset)'
 ```
 
 A testbench has an entity without ports, a constant for each generic (with a `TODO` where
