@@ -394,6 +394,18 @@ impl Engine {
         editor::expand_selection(world, &file_path, range)
     }
 
+    /// Edits giving the declarations the selection `range` touches a
+    /// fixture value.
+    pub fn fixtures(
+        &mut self,
+        path: Option<&Path>,
+        text: &str,
+        range: Range<usize>,
+    ) -> Vec<(Range<usize>, String)> {
+        let (world, file_path) = self.sync(path, text);
+        editor::fixtures(world, &file_path, range)
+    }
+
     /// Every place in the project that names what is named at `offset`.
     pub fn references(&mut self, path: Option<&Path>, text: &str, offset: usize) -> Vec<Location> {
         let (world, file_path) = self.sync(path, text);

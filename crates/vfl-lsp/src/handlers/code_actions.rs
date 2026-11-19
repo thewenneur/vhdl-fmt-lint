@@ -1,7 +1,7 @@
 //! Code actions: quick fixes and their resolution.
 
 use lsp_types::{CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, Url};
-use vfl_syntax::TextSize;
+use vfl_syntax::{TextRange, TextSize};
 
 use super::diagnostic::lsp_diagnostic;
 use super::file_of;
@@ -84,10 +84,60 @@ pub(super) fn code_actions(
     if world.is_vhdl(file) && wants(&CodeActionKind::new(crate::generate::TESTBENCH_KIND)) {
         out.extend(crate::generate::code_actions(world, file, start, end));
     }
+    let fixture = CodeActionKind::new(crate::generate::FIXTURE_KIND);
+    if world.is_vhdl(file) && wants(&fixture) {
+        // On a selection; the values are worked out when the action is
+        // chosen.
+        let range = TextRange::new(start, end.max(start));
+        let title = match world.analysis.fixture_targets(file, range) {
+            0 => None,
+            1 => Some("Generate fixture value".to_owned()),
+            n => Some(format!("Generate fixture values for {n} declarations")),
+        };
+        if let Some(title) = title {
+            out.push(CodeActionOrCommand::CodeAction(CodeAction {
+                title,
+                kind: Some(fixture),
+                data: serde_json::to_value(FixtureData {
+                    fixture: [range.start().into(), range.end().into()],
+                    uri: uri.clone(),
+                })
+                .ok(),
+                ..Default::default()
+            }));
+        }
+    }
     if wants(&CodeActionKind::new(crate::settings::GENERATE_CONFIG_KIND)) {
         out.extend(crate::settings::code_actions(world));
     }
     Some(out)
+}
+
+/// What a "Generate fixture values" action needs: the selection.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(super) struct FixtureData {
+    fixture: [u32; 2],
+    uri: Url,
+}
+
+/// The edits of a "Generate fixture values" action.
+pub(super) fn resolve_fixture(
+    world: &mut World,
+    mut action: CodeAction,
+    data: FixtureData,
+) -> Result<CodeAction, String> {
+    world.refresh();
+    let file = file_of(world, &data.uri).ok_or("the file is not analyzed")?;
+    let [start, end] = data.fixture.map(TextSize::from);
+    let edits = world
+        .analysis
+        .fixture_edits(file, TextRange::new(start, end.max(start)));
+    if edits.is_empty() {
+        return Err("no constant, signal or variable of a known type and size here".into());
+    }
+    let edits = edits.into_iter().map(|e| (file, e.range, e.text));
+    action.edit = Some(workspace_edit(world, edits));
+    Ok(action)
 }
 
 /// What a rename quick fix needs to work out its edits.

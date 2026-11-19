@@ -555,6 +555,12 @@
         "enablement": "editorLangId =~ /^(vhdl|verilog|systemverilog)$/"
       },
       {
+        "command": "vfl.generateFixtures",
+        "title": "Generate Fixture Values for Selected Declarations",
+        "category": "vfl",
+        "enablement": "editorLangId == vhdl"
+      },
+      {
         "command": "vfl.toggleFormatOnType",
         "title": "Toggle Format on Type",
         "category": "vfl"
@@ -649,6 +655,10 @@
           "when": "editorLangId =~ /^(vhdl|verilog|systemverilog)$/"
         },
         {
+          "command": "vfl.generateFixtures",
+          "when": "editorLangId == vhdl"
+        },
+        {
           "command": "vfl.insertInstance",
           "when": "editorLangId == vhdl"
         },
@@ -704,6 +714,11 @@
           "command": "vfl.showDiagrams",
           "when": "editorLangId == vhdl",
           "group": "1_modification@12"
+        },
+        {
+          "command": "vfl.generateFixtures",
+          "when": "editorLangId == vhdl",
+          "group": "1_modification@13"
         }
       ],
       "editor/title": [

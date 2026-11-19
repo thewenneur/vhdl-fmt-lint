@@ -384,6 +384,10 @@ client. It offers:
   names declared in the file;
 - code actions that insert an instantiation or a component declaration, or generate a
   testbench, from an entity;
+- a `refactor.rewrite.fixture` code action on a selection that gives the constant, signal
+  and variable declarations it touches a fixture value of their type and size (vector
+  widths through generics at their default values, integer ranges, enumerations, records
+  and arrays), worked out when it is chosen;
 - the design hierarchy, with the custom `vfl/hierarchy` request
   ([editors.md](editors.md#design-hierarchy));
 - settings from the editor for projects without a config file: `vfl.toml` keys under

@@ -373,6 +373,26 @@ pub fn expand_selection(
         .map(Into::into)
 }
 
+/// Fixture values for the constant, signal and variable declarations the
+/// selection `range` touches (or the one around the caret): edits giving
+/// each an initial value of its type and size.
+pub fn fixtures(
+    world: &mut World,
+    path: &Path,
+    range: Range<usize>,
+) -> Vec<(Range<usize>, String)> {
+    let Some((file, start)) = locate(world, path, range.start) else {
+        return Vec::new();
+    };
+    let end = TextSize::from(range.end.min(world.doc(file).text.len()) as u32);
+    world
+        .analysis
+        .fixture_edits(file, vfl_syntax::TextRange::new(start, end.max(start)))
+        .into_iter()
+        .map(|e| (e.range.into(), e.text))
+        .collect()
+}
+
 /// How a highlighted name is used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Use {

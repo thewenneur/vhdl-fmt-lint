@@ -346,6 +346,34 @@ pub(crate) fn expand_selection() {
     );
 }
 
+/// Gives the constant, signal and variable declarations the selection
+/// touches (or the one at the caret) a fixture value of their type.
+pub(crate) fn generate_fixtures() {
+    let here = here();
+    let selection = |message| {
+        here.buffer
+            .offset(send(here.sci, message, 0, 0).max(0) as usize)
+    };
+    let (start, end) = (
+        selection(SCI_GETSELECTIONSTART),
+        selection(SCI_GETSELECTIONEND),
+    );
+    here.ask(
+        Key::Command,
+        move |engine, path, buffer, _| engine.fixtures(path, &buffer.text, start..end),
+        |here, edits| {
+            if edits.is_empty() {
+                tell("No constant, signal or variable of a known size at the caret.");
+            } else if !here.is_current() {
+                changed();
+            } else {
+                apply_edits(here.sci, &here.buffer, &edits);
+                lint_current(Trigger::Refresh);
+            }
+        },
+    );
+}
+
 pub(crate) fn go_back() {
     let Some((path, position)) = with(|s| s.tools.back.borrow_mut().pop()) else {
         tell("Nowhere to go back to.");

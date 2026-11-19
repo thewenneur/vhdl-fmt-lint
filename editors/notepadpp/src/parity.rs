@@ -70,11 +70,16 @@ pub const FEATURES: &[(&str, &[&str])] = &[
             "Fix problem at caret",
             "Generate testbench",
             "Generate project config (vfl.toml)",
+            "Generate fixture values",
         ],
     ),
     ("quickfix", &["Fix problem at caret"]),
     ("source.fixAll.vfl", &["Fix all problems"]),
     (vfl_lsp::generate::TESTBENCH_KIND, &["Generate testbench"]),
+    (
+        vfl_lsp::generate::FIXTURE_KIND,
+        &["Generate fixture values"],
+    ),
     (
         vfl_lsp::settings::GENERATE_CONFIG_KIND,
         &["Generate project config (vfl.toml)"],

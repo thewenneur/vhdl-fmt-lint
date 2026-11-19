@@ -209,6 +209,7 @@ for vfl and can be rebound the same way:
 | Format selection | `editor.action.formatSelection` | Ctrl+K Ctrl+F |
 | Quick fix | `editor.action.quickFix` | Ctrl+. |
 | Generate testbench (on an entity) | `editor.action.refactor` | Ctrl+Shift+R |
+| Generate fixture values (on selected constants, signals, variables) | `vfl.generateFixtures`, or `editor.action.refactor` | Ctrl+Shift+R |
 | Next / previous problem | `editor.action.marker.nextInFiles`, `editor.action.marker.prevInFiles` | F8, Shift+F8 |
 | Problems of the project | `workbench.actions.view.problems` | Ctrl+Shift+M |
 | Go to definition | `editor.action.revealDefinition` | F12 |
