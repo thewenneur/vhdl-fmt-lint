@@ -6,6 +6,14 @@ the [vfl changelog](https://github.com/thewenneur/vhdl-fmt-lint/blob/main/CHANGE
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-19
+
+### Added
+
+- **vfl: Generate fixture values** command (palette, editor context menu and Refactor menu):
+  initial values of the right type and size for the selected constants, signals and
+  variables.
+
 ## [0.14.1] - 2026-11-19
 
 ### Changed

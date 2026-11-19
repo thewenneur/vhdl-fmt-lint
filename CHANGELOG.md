@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-19
+
 ### Added
 
 - **Generate fixture values**: on the selected constant, signal and variable declarations (or
@@ -11,6 +13,13 @@
   The values look random but depend only on the name. A refactoring code action
   (`refactor.rewrite.fixture`), `vfl.generateFixtures` in VS Code, and
   **Plugins > vfl > Generate fixture values** in Notepad++.
+
+### Changed
+
+- **Port tables in `vfl doc` and `vfl spec` have a Size column instead of Type**, and no
+  Timing column. A port's size is its bits (1 for `std_logic`, the vector width, the sum of a
+  record's fields, 32 for `integer`); widths set by generics show their expression with the
+  value the generic defaults give.
 
 ## [0.14.1] - 2026-11-19
 
