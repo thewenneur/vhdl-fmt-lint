@@ -216,7 +216,7 @@ begin
 
     report \"counter_tb: done\";
     done <= true;
-    std.env.finish;
+    std.env.stop;
     wait;
   end process stimulus;
 end architecture sim;

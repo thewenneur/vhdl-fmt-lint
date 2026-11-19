@@ -913,8 +913,8 @@ active_low_pattern = '(?i)([^i]n|_b|_ni|_n_i)$|^(.*_)?n_?(a|s)?(rst|reset)'
 A testbench has an entity without ports, a constant for each generic (with a `TODO` where
 the generic has no default), a signal for each port, the design under test, a clock for each
 clock input, and a stimulus process that holds the resets, waits, and ends the simulation
-(`std.env.finish` from VHDL-2008; with VHDL-93 the clocks stop and the simulation runs out
-of events).
+(`std.env.stop` from VHDL-2008, which stops the simulator without quitting it; with VHDL-93
+the clocks stop and the simulation runs out of events).
 
 ## `[verilog]`
 
