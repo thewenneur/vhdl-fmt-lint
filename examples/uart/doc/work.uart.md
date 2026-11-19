@@ -25,20 +25,20 @@ on `rxd` are queued until read from `rx_data`.
 
 ## Ports
 
-| Name | Direction | Type | Description |
+| Name | Direction | Size | Description |
 |---|---|---|---|
-| `clk` | in | `std_logic` | Clock |
-| `rst_n` | in | `std_logic` | Asynchronous reset, active low |
-| `tx_data` | in | `std_logic_vector(7 downto 0)` | Byte to queue for sending |
-| `tx_write` | in | `std_logic` | Queue `tx_data` |
-| `tx_full` | out | `std_logic` | The transmit FIFO is full |
-| `rx_data` | out | `std_logic_vector(7 downto 0)` | Oldest received byte |
-| `rx_read` | in | `std_logic` | Take `rx_data` |
-| `rx_empty` | out | `std_logic` | No received byte |
-| `host_clk` | in | `std_logic` | Clock of `rx_error` |
-| `rx_error` | out | `std_logic` | A frame had a bad stop bit, on `host_clk` |
-| `txd` | out | `std_logic` | Serial output |
-| `rxd` | in | `std_logic` | Serial input |
+| `clk` | in | 1 | Clock |
+| `rst_n` | in | 1 | Asynchronous reset, active low |
+| `tx_data` | in | 8 | Byte to queue for sending |
+| `tx_write` | in | 1 | Queue `tx_data` |
+| `tx_full` | out | 1 | The transmit FIFO is full |
+| `rx_data` | out | 8 | Oldest received byte |
+| `rx_read` | in | 1 | Take `rx_data` |
+| `rx_empty` | out | 1 | No received byte |
+| `host_clk` | in | 1 | Clock of `rx_error` |
+| `rx_error` | out | 1 | A frame had a bad stop bit, on `host_clk` |
+| `txd` | out | 1 | Serial output |
+| `rxd` | in | 1 | Serial input |
 
 <a id="users"></a>
 

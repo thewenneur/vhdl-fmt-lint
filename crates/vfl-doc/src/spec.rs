@@ -716,6 +716,8 @@ struct Ctx<'a> {
     items: &'a [SpecItem],
     config: &'a DocConfig,
     format: DocFormat,
+    /// Package declarations, for port sizes.
+    packages: crate::fields::Scope<'a>,
     /// Requirement ID -> the `verifies` comments naming it.
     verified: HashMap<&'a str, Vec<&'a SpecItem>>,
 }
@@ -738,6 +740,7 @@ impl<'a> Ctx<'a> {
             items,
             config,
             format,
+            packages: crate::fields::Scope::packages(design),
             verified,
         }
     }
@@ -1228,22 +1231,14 @@ impl<'a> Ctx<'a> {
                         } else {
                             p.mode.as_str()
                         })],
-                        type_cell(&p.ty),
-                        timing_cell(&timing(self.design, index, &key, 0)),
+                        crate::fields::port_size(&self.packages, &e.generics, &p.ty, e.verilog),
                         vec![text(p.description.clone())],
                         self.item_cell(&specs),
                     ]
                 })
                 .collect();
             blocks.push(Block::Table {
-                head: vec![
-                    "Name",
-                    "Direction",
-                    "Type",
-                    "Timing",
-                    "Description",
-                    "Specification",
-                ],
+                head: vec!["Name", "Direction", "Size", "Description", "Specification"],
                 rows,
             });
         }
@@ -1862,46 +1857,6 @@ fn timing(design: &Design, index: usize, key: &str, depth: usize) -> Timing {
         Timing::Combinational
     } else {
         Timing::Unknown
-    }
-}
-
-fn timing_cell(timing: &Timing) -> Cell {
-    match timing {
-        Timing::Clock(false) => vec![text("clock")],
-        Timing::Clock(true) => vec![text("clock (falling edge)")],
-        Timing::Reset(kind, None) => vec![text(format!("reset ({kind})"))],
-        Timing::Reset(kind, Some(clock)) => vec![
-            text(format!("reset ({kind}, on ")),
-            code(clock.clone()),
-            text(")"),
-        ],
-        Timing::On {
-            registered,
-            sampled,
-        } => {
-            let mut cell = Vec::new();
-            for (what, list) in [("registered on ", registered), ("sampled on ", sampled)] {
-                if list.is_empty() {
-                    continue;
-                }
-                if !cell.is_empty() {
-                    cell.push(text("; "));
-                }
-                cell.push(text(what));
-                for (i, (clock, falling)) in list.iter().enumerate() {
-                    if i > 0 {
-                        cell.push(text(", "));
-                    }
-                    if *falling {
-                        cell.push(text("falling "));
-                    }
-                    cell.push(code(clock.clone()));
-                }
-            }
-            cell
-        }
-        Timing::Combinational => vec![text("combinational")],
-        Timing::Unknown => Vec::new(),
     }
 }
 

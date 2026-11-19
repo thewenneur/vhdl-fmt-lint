@@ -26,14 +26,14 @@ bit in its middle.
 
 ### 2.2 Ports
 
-| Name | Direction | Type | Timing | Description |
-|---|---|---|---|---|
-| `clk` | in | `std_logic` | clock | Clock |
-| `rst_n` | in | `std_logic` | reset (asynchronous, active low) | Asynchronous reset, active low |
-| `rxd` | in | `std_logic` | sampled on `clk` | Serial input |
-| `data` | out | `std_logic_vector(7 downto 0)` | combinational | Received byte |
-| `valid` | out | `std_logic` | combinational | `data` holds a new byte, for one cycle |
-| `error` | out | `std_logic` | combinational | The stop bit was low |
+| Name | Direction | Size | Description |
+|---|---|---|---|
+| `clk` | in | 1 | Clock |
+| `rst_n` | in | 1 | Asynchronous reset, active low |
+| `rxd` | in | 1 | Serial input |
+| `data` | out | 8 | Received byte |
+| `valid` | out | 1 | `data` holds a new byte, for one cycle |
+| `error` | out | 1 | The stop bit was low |
 
 <a id="clocks-and-resets"></a>
 

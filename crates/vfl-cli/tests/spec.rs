@@ -100,20 +100,13 @@ fn writes_a_specification_per_entity() {
         "{page}"
     );
     assert!(
-        page.contains("| `count` | out | `natural` | combinational |  | `CNT-2` |"),
+        page.contains("| `count` | out | 32 |  | `CNT-2` |"),
         "{page}"
     );
     assert!(page.contains("Process `tick`"), "{page}");
     assert!(page.contains("Synchronous reset, active high."), "{page}");
     // Read off the code.
-    assert!(
-        page.contains("| `en` | in | `std_logic` | sampled on `clk` | Count enable |"),
-        "{page}"
-    );
-    assert!(
-        page.contains("| `rst` | in | `std_logic` | reset (synchronous, active high, on `clk`) |"),
-        "{page}"
-    );
+    assert!(page.contains("| `en` | in | 1 | Count enable |"), "{page}");
     assert!(page.contains("| `value` | `natural` | `clk` | `rst` (synchronous, active high) | `tick` | The count |"), "{page}");
     assert!(page.contains("| `CNT-1` | Counts up by one in each cycle `en` is high. | entity | `src/counter.vhd:5` | `tb.check` `tb/tb.vhd:6` |"), "{page}");
     // No page for the testbench; the index lists every requirement.

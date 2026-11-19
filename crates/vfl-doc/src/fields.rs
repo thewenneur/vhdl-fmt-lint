@@ -11,7 +11,8 @@ use std::collections::HashMap;
 
 use vfl_syntax::identifier_key;
 
-use crate::model::{Alias, Design, Object, TypeInfo};
+use crate::model::{Alias, Design, Interface, Object, TypeInfo};
+use crate::page::{Inline, code, text};
 use crate::svg::{Canvas, cut, width};
 
 /// Names a size can depend on: constants (with generic defaults) and
@@ -207,6 +208,94 @@ impl<'a> Scope<'a> {
                 Some((i, i))
             }
         }
+    }
+}
+
+/// The Size cell of a port: its bits as a number when the subtype fixes
+/// them, else the width expression over the generics, followed by the
+/// value their defaults give when known. A subtype with no width (an
+/// interface, a record of unknown fields) is shown as written.
+pub fn port_size(packages: &Scope, generics: &[Interface], ty: &str, verilog: bool) -> Vec<Inline> {
+    if verilog {
+        return verilog_size(packages, ty);
+    }
+    if let Some(bits) = packages.bits(ty) {
+        return vec![text(bits.to_string())];
+    }
+    let mut scope = Scope {
+        parent: Some(packages),
+        constants: HashMap::new(),
+        types: HashMap::new(),
+    };
+    for g in generics {
+        if let Some(v) = &g.default {
+            scope.constants.insert(identifier_key(&g.name), v.clone());
+        }
+    }
+    let mut cell = vec![code(
+        vector_width(ty).unwrap_or_else(|| ty.trim().to_owned()),
+    )];
+    if let Some(bits) = scope.bits(ty) {
+        cell.push(text(format!(" (default {bits})")));
+    }
+    cell
+}
+
+/// `N - 1 + 1` for `std_logic_vector(N - 1 downto 0)`, simplified to `N`.
+fn vector_width(ty: &str) -> Option<String> {
+    let open = ty.find('(')?;
+    let inner = ty.trim_end().strip_suffix(')')?.get(open + 1..)?;
+    let (high, low) = match split_word(inner, " downto ") {
+        Some((h, l)) => (h, l),
+        None => {
+            let (l, h) = split_word(inner, " to ")?;
+            (h, l)
+        }
+    };
+    Some(width_of(high.trim(), low.trim()))
+}
+
+fn width_of(high: &str, low: &str) -> String {
+    if low == "0" {
+        match high.strip_suffix('1').map(str::trim_end) {
+            Some(rest) if rest.ends_with('-') => rest[..rest.len() - 1].trim_end().to_owned(),
+            _ => format!("{high} + 1"),
+        }
+    } else {
+        format!("{high} - {low} + 1")
+    }
+}
+
+/// Verilog: the product of the `[msb:lsb]` dimensions, 1 for a scalar net.
+fn verilog_size(packages: &Scope, ty: &str) -> Vec<Inline> {
+    let ty = ty.trim();
+    let base = ty.split('[').next().unwrap_or("").trim();
+    let element = match base.rsplit(' ').next().unwrap_or("") {
+        _ if base.contains('.') => return vec![code(ty.to_owned())],
+        "byte" => 8,
+        "shortint" => 16,
+        "int" | "integer" => 32,
+        "longint" => 64,
+        _ => 1,
+    };
+    let mut bits = Some(element);
+    let mut exprs = Vec::new();
+    for dim in ty.split('[').skip(1) {
+        let Some((range, _)) = dim.split_once(']') else {
+            return vec![code(ty.to_owned())];
+        };
+        let Some((a, b)) = range.split_once(':') else {
+            return vec![code(ty.to_owned())];
+        };
+        let (a, b) = (a.trim(), b.trim());
+        bits =
+            bits.and_then(|n| Some(n * (packages.integer(a)?.abs_diff(packages.integer(b)?) + 1)));
+        exprs.push(width_of(a, b));
+    }
+    match bits {
+        Some(n) => vec![text(n.to_string())],
+        None if exprs.len() == 1 && element == 1 => vec![code(exprs.remove(0))],
+        None => vec![code(ty.to_owned())],
     }
 }
 
@@ -573,5 +662,56 @@ fn range_text(msb: u64, lsb: u64) -> String {
         format!("{msb}")
     } else {
         format!("{msb}:{lsb}")
+    }
+}
+
+#[cfg(test)]
+mod size_tests {
+    use super::*;
+
+    #[test]
+    fn vector_widths_are_simplified() {
+        assert_eq!(
+            vector_width("std_logic_vector(WIDTH - 1 downto 0)").as_deref(),
+            Some("WIDTH")
+        );
+        assert_eq!(vector_width("unsigned(N-1 downto 0)").as_deref(), Some("N"));
+        assert_eq!(
+            vector_width("std_logic_vector(0 to N)").as_deref(),
+            Some("N + 1")
+        );
+        assert_eq!(
+            vector_width("signed(H downto L)").as_deref(),
+            Some("H - L + 1")
+        );
+        assert_eq!(width_of("W-1", "0"), "W");
+    }
+
+    #[test]
+    fn port_sizes() {
+        let empty = Scope {
+            parent: None,
+            constants: HashMap::new(),
+            types: HashMap::new(),
+        };
+        let generic = Interface {
+            name: "WIDTH".into(),
+            mode: String::new(),
+            ty: "natural".into(),
+            default: Some("8".into()),
+            description: String::new(),
+        };
+        let size = |ty: &str, verilog| {
+            port_size(&empty, std::slice::from_ref(&generic), ty, verilog)
+                .iter()
+                .map(|i| format!("{i:?}"))
+                .collect::<String>()
+        };
+        assert!(size("std_logic", false).contains("\"1\""));
+        assert!(size("std_logic_vector(7 downto 0)", false).contains("\"8\""));
+        assert!(size("std_logic_vector(WIDTH - 1 downto 0)", false).contains("(default 8)"));
+        assert!(size("", true).contains("\"1\""));
+        assert!(size("logic [3:0][7:0]", true).contains("\"32\""));
+        assert!(size("logic [W-1:0]", true).contains("\"W\""));
     }
 }

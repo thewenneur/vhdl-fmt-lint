@@ -33,20 +33,20 @@ of clock cycles per bit.
 
 ### 2.2 Ports
 
-| Name | Direction | Type | Timing | Description | Specification |
-|---|---|---|---|---|---|
-| `clk` | in | `std_logic` | clock | Clock |  |
-| `rst_n` | in | `std_logic` | reset (asynchronous, active low) | Asynchronous reset, active low |  |
-| `tx_data` | in | `std_logic_vector(7 downto 0)` | sampled on `clk` | Byte to queue for sending |  |
-| `tx_write` | in | `std_logic` | sampled on `clk` | Queue `tx_data` |  |
-| `tx_full` | out | `std_logic` | combinational | The transmit FIFO is full |  |
-| `rx_data` | out | `std_logic_vector(7 downto 0)` | combinational | Oldest received byte |  |
-| `rx_read` | in | `std_logic` | sampled on `clk` | Take `rx_data` |  |
-| `rx_empty` | out | `std_logic` | combinational | No received byte |  |
-| `host_clk` | in | `std_logic` | clock | Clock of `rx_error` |  |
-| `rx_error` | out | `std_logic` | combinational | A frame had a bad stop bit, on `host_clk` | `UART-3` |
-| `txd` | out | `std_logic` | registered on `clk` | Serial output |  |
-| `rxd` | in | `std_logic` | sampled on `clk` | Serial input |  |
+| Name | Direction | Size | Description | Specification |
+|---|---|---|---|---|
+| `clk` | in | 1 | Clock |  |
+| `rst_n` | in | 1 | Asynchronous reset, active low |  |
+| `tx_data` | in | 8 | Byte to queue for sending |  |
+| `tx_write` | in | 1 | Queue `tx_data` |  |
+| `tx_full` | out | 1 | The transmit FIFO is full |  |
+| `rx_data` | out | 8 | Oldest received byte |  |
+| `rx_read` | in | 1 | Take `rx_data` |  |
+| `rx_empty` | out | 1 | No received byte |  |
+| `host_clk` | in | 1 | Clock of `rx_error` |  |
+| `rx_error` | out | 1 | A frame had a bad stop bit, on `host_clk` | `UART-3` |
+| `txd` | out | 1 | Serial output |  |
+| `rxd` | in | 1 | Serial input |  |
 
 <a id="clocks-and-resets"></a>
 
