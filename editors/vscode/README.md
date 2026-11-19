@@ -248,4 +248,4 @@ npm run test:e2e     # runs VS Code against target/debug/vfl (build it first)
 npm run package      # builds vfl-<version>.vsix
 ```
 
-Install the package with `code --install-extension vfl-0.14.1.vsix`.
+Install the package with `code --install-extension vfl-0.15.0.vsix`.
