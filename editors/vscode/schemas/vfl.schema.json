@@ -6935,12 +6935,12 @@
         "reset_pattern": {
           "description": "Regular expression for the input ports driven as resets.",
           "type": "string",
-          "default": "(?i)^(.*_)?(a|s)?(rst|reset)\\d*(n|_n|_b|_i|_in|_ni|_n_i)?$"
+          "default": "(?i)^(.*_)?n?(a|s)?(rst|reset)\\d*(n|_n|_b|_i|_in|_ni|_n_i)?$"
         },
         "active_low_pattern": {
           "description": "Regular expression for the resets that are active low, when no architecture compares them with `'0'` or `'1'`.",
           "type": "string",
-          "default": "(?i)([^i]n|_b|_ni|_n_i)$"
+          "default": "(?i)([^i]n|_b|_ni|_n_i)$|^(.*_)?n_?(a|s)?(rst|reset)"
         }
       },
       "additionalProperties": false

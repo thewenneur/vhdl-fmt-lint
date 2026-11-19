@@ -1030,8 +1030,8 @@ impl Default for GenerateConfig {
             clock_period: "10 ns".into(),
             reset_cycles: 5,
             clock_pattern: r"(?i)^(.*_)?(clk|clock)\d*(_i|_in|_p)?$".into(),
-            reset_pattern: r"(?i)^(.*_)?(a|s)?(rst|reset)\d*(n|_n|_b|_i|_in|_ni|_n_i)?$".into(),
-            active_low_pattern: r"(?i)([^i]n|_b|_ni|_n_i)$".into(),
+            reset_pattern: r"(?i)^(.*_)?n?(a|s)?(rst|reset)\d*(n|_n|_b|_i|_in|_ni|_n_i)?$".into(),
+            active_low_pattern: r"(?i)([^i]n|_b|_ni|_n_i)$|^(.*_)?n_?(a|s)?(rst|reset)".into(),
         }
     }
 }
