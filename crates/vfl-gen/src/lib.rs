@@ -1001,8 +1001,6 @@ pub fn testbench(entity: &Entity, config: &Config) -> Result<String, GenerateErr
         );
     }
 
-    // Stimulus.
-    out.push_str("\n  stimulus : process\n  begin\n");
     let wait_cycles = |out: &mut String, cycles: u32| match clocks.first() {
         Some(clock) => {
             let _ = writeln!(out, "    for i in 1 to {cycles} loop");
@@ -1013,7 +1011,9 @@ pub fn testbench(entity: &Entity, config: &Config) -> Result<String, GenerateErr
             let _ = writeln!(out, "    wait for {cycles} * {};", generate.clock_period);
         }
     };
+    // Reset: held for `reset_cycles`, then released for good.
     if !resets.is_empty() {
+        out.push_str("\n  reset_gen : process\n  begin\n");
         for r in &resets {
             let _ = writeln!(out, "    {} <= {};", r.name, bit_value(!r.active_low));
         }
@@ -1021,7 +1021,17 @@ pub fn testbench(entity: &Entity, config: &Config) -> Result<String, GenerateErr
         for r in &resets {
             let _ = writeln!(out, "    {} <= {};", r.name, bit_value(r.active_low));
         }
-        out.push('\n');
+        out.push_str("    wait;\n  end process reset_gen;\n");
+    }
+
+    // Stimulus.
+    out.push_str("\n  stimulus : process\n  begin\n");
+    if !resets.is_empty() {
+        let released: Vec<String> = resets
+            .iter()
+            .map(|r| format!("{} = {}", r.name, bit_value(r.active_low)))
+            .collect();
+        let _ = writeln!(out, "    wait until {};\n", released.join(" and "));
     }
     out.push_str("    -- TODO: drive the inputs and check the outputs.\n");
     out.push_str(&stimuli);

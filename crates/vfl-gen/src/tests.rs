@@ -194,13 +194,19 @@ begin
 
   clk <= not clk after CLK_PERIOD / 2 when not done else '0';
 
-  stimulus : process
+  reset_gen : process
   begin
     rst_n <= '0';
     for i in 1 to 5 loop
       wait until rising_edge(clk);
     end loop;
     rst_n <= '1';
+    wait;
+  end process reset_gen;
+
+  stimulus : process
+  begin
+    wait until rst_n = '1';
 
     -- TODO: drive the inputs and check the outputs.
     en <= '1';
