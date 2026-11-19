@@ -15,12 +15,12 @@ toggle through two flip-flops and pulses when it changes.
 
 ## Ports
 
-| Name | Direction | Type | Description |
+| Name | Direction | Size | Description |
 |---|---|---|---|
-| `clk_a` | in | `std_logic` | Source clock |
-| `pulse_a` | in | `std_logic` | Pulse in the source domain |
-| `clk_b` | in | `std_logic` | Destination clock |
-| `pulse_b` | out | `std_logic` | Pulse in the destination domain |
+| `clk_a` | in | 1 | Source clock |
+| `pulse_a` | in | 1 | Pulse in the source domain |
+| `clk_b` | in | 1 | Destination clock |
+| `pulse_b` | out | 1 | Pulse in the destination domain |
 
 <a id="users"></a>
 

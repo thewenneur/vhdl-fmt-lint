@@ -25,16 +25,16 @@ Writes to a full FIFO and reads from an empty one are ignored.
 
 ### 2.2 Ports
 
-| Name | Direction | Type | Timing | Description |
-|---|---|---|---|---|
-| `clk` | in | `std_logic` | clock | Clock |
-| `rst` | in | `std_logic` | reset (synchronous, active high, on `clk`) | Synchronous reset, active high |
-| `wr_en` | in | `std_logic` | sampled on `clk` | Write `wr_data` this cycle |
-| `wr_data` | in | `std_logic_vector(WIDTH - 1 downto 0)` | sampled on `clk` | Word to write |
-| `rd_en` | in | `std_logic` | sampled on `clk` | Take the oldest word |
-| `rd_data` | out | `std_logic_vector(WIDTH - 1 downto 0)` | combinational | Oldest word |
-| `empty` | out | `std_logic` | combinational | No word to read |
-| `full` | out | `std_logic` | combinational | No room to write |
+| Name | Direction | Size | Description |
+|---|---|---|---|
+| `clk` | in | 1 | Clock |
+| `rst` | in | 1 | Synchronous reset, active high |
+| `wr_en` | in | 1 | Write `wr_data` this cycle |
+| `wr_data` | in | `WIDTH` (default 8) | Word to write |
+| `rd_en` | in | 1 | Take the oldest word |
+| `rd_data` | out | `WIDTH` (default 8) | Oldest word |
+| `empty` | out | 1 | No word to read |
+| `full` | out | 1 | No room to write |
 
 <a id="clocks-and-resets"></a>
 

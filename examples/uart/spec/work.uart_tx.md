@@ -29,14 +29,14 @@ parity bit and a stop bit.
 
 ### 2.2 Ports
 
-| Name | Direction | Type | Timing | Description | Specification |
-|---|---|---|---|---|---|
-| `clk` | in | `std_logic` | clock | Clock |  |
-| `rst_n` | in | `std_logic` | reset (asynchronous, active low) | Asynchronous reset, active low |  |
-| `data` | in | `std_logic_vector(7 downto 0)` | sampled on `clk` | Byte to send |  |
-| `valid` | in | `std_logic` | sampled on `clk` | `data` holds a byte to send |  |
-| `ready` | out | `std_logic` | combinational | A byte is taken this cycle | `TX-3` |
-| `txd` | out | `std_logic` | registered on `clk` | Serial output |  |
+| Name | Direction | Size | Description | Specification |
+|---|---|---|---|---|
+| `clk` | in | 1 | Clock |  |
+| `rst_n` | in | 1 | Asynchronous reset, active low |  |
+| `data` | in | 8 | Byte to send |  |
+| `valid` | in | 1 | `data` holds a byte to send |  |
+| `ready` | out | 1 | A byte is taken this cycle | `TX-3` |
+| `txd` | out | 1 | Serial output |  |
 
 <a id="clocks-and-resets"></a>
 

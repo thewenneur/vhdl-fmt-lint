@@ -113,15 +113,10 @@ the project with its unit and the tests that verify it, then the problems found.
 Each entity's page has these sections, numbered in the order `sections` gives:
 
 1. **Overview**: the entity's doc comment, its `@spec` notes and its requirements.
-2. **Interface**: the symbol, the generics and the ports. Each port has a *Timing*:
-   - `clock` for a clock, `reset (asynchronous, active low)` for a reset, with its clock
-     when it is synchronous;
-   - `registered on clk` for an output a clocked process drives, `sampled on clk` for an
-     input one reads;
-   - `combinational` when only logic drives or reads it.
-   Ports wired to instances take the timing of the instance port, with the clock renamed
-   to the signal connected to it, so a structural top level gets its timing from the
-   blocks below it.
+2. **Interface**: the symbol, the generics and the ports. Each port has a *Size* in
+   bits: `1` for `std_logic`, the width of a vector, the sum of the fields of a record.
+   A width set by generics is shown as its expression (`WIDTH`), with the value of the
+   generic defaults when they give one.
 3. **Clocks and resets**: each clock with its edge and what uses it (processes, or
    instances for a clock that only goes down), each reset with its kind, and the clock
    domain diagram and crossings when there are several clocks.

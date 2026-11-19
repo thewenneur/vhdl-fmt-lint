@@ -138,9 +138,14 @@ fn generics_table(generics: &[Interface]) -> Block {
     }
 }
 
-fn ports_table(ports: &[Interface]) -> Block {
+fn ports_table(
+    packages: &crate::fields::Scope,
+    generics: &[Interface],
+    ports: &[Interface],
+    verilog: bool,
+) -> Block {
     Block::Table {
-        head: vec!["Name", "Direction", "Type", "Description"],
+        head: vec!["Name", "Direction", "Size", "Description"],
         rows: ports
             .iter()
             .map(|p| {
@@ -149,15 +154,10 @@ fn ports_table(ports: &[Interface]) -> Block {
                 } else {
                     p.mode.as_str()
                 };
-                let mut ty = type_cell(&p.ty);
-                if let Some(default) = &p.default {
-                    ty.push(text(" := "));
-                    ty.push(code(default.clone()));
-                }
                 vec![
                     vec![code(p.name.clone())],
                     vec![text(mode)],
-                    ty,
+                    crate::fields::port_size(packages, generics, &p.ty, verilog),
                     vec![text(p.description.clone())],
                 ]
             })
@@ -645,7 +645,7 @@ fn entity(
     }
     if !e.ports.is_empty() {
         blocks.push(heading(2, vec![text("Ports")], Some("ports".into())));
-        blocks.push(ports_table(&e.ports));
+        blocks.push(ports_table(packages, &e.generics, &e.ports, e.verilog));
     }
     if !users.is_empty() {
         blocks.push(heading(
@@ -1045,7 +1045,7 @@ fn package_page(
                 blocks.push(generics_table(&c.generics));
             }
             if !c.ports.is_empty() {
-                blocks.push(ports_table(&c.ports));
+                blocks.push(ports_table(packages, &c.generics, &c.ports, false));
             }
         }
     }

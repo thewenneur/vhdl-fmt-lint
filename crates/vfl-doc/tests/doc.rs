@@ -416,7 +416,7 @@ fn writes_markdown_pages() {
         "{counter}"
     );
     assert!(
-        counter.contains("| `clk` | in | `std_logic` | Clock and synchronous reset |"),
+        counter.contains("| `clk` | in | 1 | Clock and synchronous reset |"),
         "{counter}"
     );
     assert!(

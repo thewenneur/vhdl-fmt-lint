@@ -23,16 +23,16 @@ Writes to a full FIFO and reads from an empty one are ignored.
 
 ## Ports
 
-| Name | Direction | Type | Description |
+| Name | Direction | Size | Description |
 |---|---|---|---|
-| `clk` | in | `std_logic` | Clock |
-| `rst` | in | `std_logic` | Synchronous reset, active high |
-| `wr_en` | in | `std_logic` | Write `wr_data` this cycle |
-| `wr_data` | in | `std_logic_vector(WIDTH - 1 downto 0)` | Word to write |
-| `rd_en` | in | `std_logic` | Take the oldest word |
-| `rd_data` | out | `std_logic_vector(WIDTH - 1 downto 0)` | Oldest word |
-| `empty` | out | `std_logic` | No word to read |
-| `full` | out | `std_logic` | No room to write |
+| `clk` | in | 1 | Clock |
+| `rst` | in | 1 | Synchronous reset, active high |
+| `wr_en` | in | 1 | Write `wr_data` this cycle |
+| `wr_data` | in | `WIDTH` (default 8) | Word to write |
+| `rd_en` | in | 1 | Take the oldest word |
+| `rd_data` | out | `WIDTH` (default 8) | Oldest word |
+| `empty` | out | 1 | No word to read |
+| `full` | out | 1 | No room to write |
 
 <a id="users"></a>
 

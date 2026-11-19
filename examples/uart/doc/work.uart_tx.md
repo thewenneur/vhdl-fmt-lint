@@ -24,14 +24,14 @@ parity bit and a stop bit.
 
 ## Ports
 
-| Name | Direction | Type | Description |
+| Name | Direction | Size | Description |
 |---|---|---|---|
-| `clk` | in | `std_logic` | Clock |
-| `rst_n` | in | `std_logic` | Asynchronous reset, active low |
-| `data` | in | `std_logic_vector(7 downto 0)` | Byte to send |
-| `valid` | in | `std_logic` | `data` holds a byte to send |
-| `ready` | out | `std_logic` | A byte is taken this cycle |
-| `txd` | out | `std_logic` | Serial output |
+| `clk` | in | 1 | Clock |
+| `rst_n` | in | 1 | Asynchronous reset, active low |
+| `data` | in | 8 | Byte to send |
+| `valid` | in | 1 | `data` holds a byte to send |
+| `ready` | out | 1 | A byte is taken this cycle |
+| `txd` | out | 1 | Serial output |
 
 <a id="users"></a>
 

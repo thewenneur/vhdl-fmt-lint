@@ -19,12 +19,12 @@ toggle through two flip-flops and pulses when it changes.
 
 ### 2.1 Ports
 
-| Name | Direction | Type | Timing | Description |
-|---|---|---|---|---|
-| `clk_a` | in | `std_logic` | clock | Source clock |
-| `pulse_a` | in | `std_logic` | sampled on `clk_a` | Pulse in the source domain |
-| `clk_b` | in | `std_logic` | clock | Destination clock |
-| `pulse_b` | out | `std_logic` | combinational | Pulse in the destination domain |
+| Name | Direction | Size | Description |
+|---|---|---|---|
+| `clk_a` | in | 1 | Source clock |
+| `pulse_a` | in | 1 | Pulse in the source domain |
+| `clk_b` | in | 1 | Destination clock |
+| `pulse_b` | out | 1 | Pulse in the destination domain |
 
 <a id="clocks-and-resets"></a>
 
