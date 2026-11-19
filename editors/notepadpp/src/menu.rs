@@ -61,6 +61,7 @@ pub const NAMES: &[&str] = &[
     "Show design hierarchy",
     "",
     "Generate specification",
+    "Generate fixture values",
 ];
 
 #[cfg(test)]

@@ -2124,3 +2124,58 @@ fn call_hierarchy_of_subprograms_and_instances() {
     assert_eq!(calls(&outgoing, "to"), [("sub".into(), 2)]);
     assert_eq!(outgoing[0]["to"]["uri"], sub);
 }
+
+#[test]
+fn fixture_values_for_selected_constants() {
+    let (dir, _, _) = setup();
+    let text = "use work.pkg.all;\npackage fx is\n  \
+constant c_a : bit_vector(width - 1 downto 0);\n  \
+constant c_b : integer range 1 to 3 := 0;\nend package;\n";
+    let path = dir.path().join("fx.vhd");
+    std::fs::write(&path, text).unwrap();
+    let uri = url(&path);
+    let mut client = Client::start(dir.path());
+    let request = |client: &mut Client, end_line: u32, end_character: u32| {
+        client.request(
+            "textDocument/codeAction",
+            json!({
+                "textDocument": { "uri": uri },
+                "range": { "start": { "line": 2, "character": 4 }, "end": { "line": end_line, "character": end_character } },
+                "context": { "diagnostics": [], "only": ["refactor.rewrite.fixture"] },
+            }),
+        )
+    };
+    let actions = request(&mut client, 3, 4);
+    let action = &actions[0];
+    assert_eq!(
+        action["title"],
+        "Generate fixture values for 2 declarations"
+    );
+    // The values are worked out when the action is chosen.
+    assert!(action.get("edit").is_none(), "{action}");
+    let action = client.request("codeAction/resolve", action.clone());
+    let fixed = apply(text, &action["edit"], &uri);
+    let lines: Vec<&str> = fixed.lines().collect();
+    // `width` is 8, from another package.
+    assert!(
+        lines[2].starts_with("  constant c_a : bit_vector(width - 1 downto 0) := x\""),
+        "{fixed}"
+    );
+    assert_eq!(
+        lines[2].len(),
+        "  constant c_a : bit_vector(width - 1 downto 0) := x\"00\";".len()
+    );
+    assert!(
+        ["1;", "2;", "3;"]
+            .iter()
+            .any(|v| lines[3].ends_with(&format!(":= {v}"))),
+        "{fixed}"
+    );
+    // Inside one declaration: that one only.
+    assert_eq!(
+        request(&mut client, 2, 6)[0]["title"],
+        "Generate fixture value"
+    );
+    // Not for a caret alone, asked for at every move.
+    assert_eq!(request(&mut client, 2, 4), json!([]));
+}

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Generate fixture values**: on the selected constant, signal and variable declarations (or
+  the one at the caret), an editor action gives each an initial value of its type and size,
+  for tests: a bit string as wide as the vector (widths through generics use their default
+  values), an integer in its range, an enumeration literal, aggregates for records and arrays.
+  The values look random but depend only on the name. A refactoring code action
+  (`refactor.rewrite.fixture`), `vfl.generateFixtures` in VS Code, and
+  **Plugins > vfl > Generate fixture values** in Notepad++.
+
 ## [0.14.1] - 2026-11-19
 
 ### Changed

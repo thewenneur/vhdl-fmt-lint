@@ -95,6 +95,7 @@ const MENU: &[(&str, Option<extern "C" fn()>)] = &[
     ("Show design hierarchy", Some(cmd_hierarchy)),
     ("", None),
     ("Generate specification", Some(cmd_generate_spec)),
+    ("Generate fixture values", Some(cmd_generate_fixtures)),
 ];
 
 // The entries are those of `menu::NAMES`, in its order, which keeps the
@@ -844,6 +845,10 @@ extern "C" fn cmd_generate_docs() {
 
 extern "C" fn cmd_generate_spec() {
     guard(tools::generate_spec);
+}
+
+extern "C" fn cmd_generate_fixtures() {
+    guard(tools::generate_fixtures);
 }
 
 extern "C" fn cmd_hierarchy() {

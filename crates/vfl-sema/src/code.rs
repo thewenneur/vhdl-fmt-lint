@@ -33,6 +33,7 @@ use crate::rtl::cases::declaration_node;
 use crate::rtl::static_int;
 use crate::syntax::is_designator;
 
+mod fixture;
 mod hazards;
 mod widths;
 

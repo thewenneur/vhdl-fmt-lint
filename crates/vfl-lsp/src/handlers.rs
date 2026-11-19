@@ -18,7 +18,7 @@ use serde_json::Value;
 use vfl_sema::FileId;
 
 pub(crate) use self::code_actions::compatible_fixes;
-use self::code_actions::{code_actions, resolve_associate, resolve_rename};
+use self::code_actions::{code_actions, resolve_associate, resolve_fixture, resolve_rename};
 use self::completion::completion;
 pub(crate) use self::completion::{completion_at, visible_decls};
 #[cfg(test)]
@@ -90,6 +90,8 @@ pub fn request(world: &mut World, method: &str, params: Value) -> Result<Value, 
                 json(resolve_rename(world, action, rename).map_err(Error::Failed)?)
             } else if let Ok(associate) = serde_json::from_value(data.clone()) {
                 json(resolve_associate(world, action, associate).map_err(Error::Failed)?)
+            } else if let Ok(fixture) = serde_json::from_value(data.clone()) {
+                json(resolve_fixture(world, action, fixture).map_err(Error::Failed)?)
             } else if let Ok(config) = serde_json::from_value(data) {
                 json(crate::settings::resolve(world, action, config).map_err(Error::Failed)?)
             } else {

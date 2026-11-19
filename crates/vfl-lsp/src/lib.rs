@@ -108,6 +108,7 @@ pub fn capabilities() -> ServerCapabilities {
                 CodeActionKind::QUICKFIX,
                 CodeActionKind::new("source.fixAll.vfl"),
                 CodeActionKind::new(generate::TESTBENCH_KIND),
+                CodeActionKind::new(generate::FIXTURE_KIND),
                 CodeActionKind::new(settings::GENERATE_CONFIG_KIND),
             ]),
             resolve_provider: Some(true),

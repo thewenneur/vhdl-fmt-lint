@@ -140,6 +140,10 @@ pub fn generate_request(world: &mut World, params: GenerateParams) -> Result<Gen
 
 pub const TESTBENCH_KIND: &str = "refactor.generate.testbench";
 
+/// "Generate fixture values" on the selected constant, signal and
+/// variable declarations.
+pub const FIXTURE_KIND: &str = "refactor.rewrite.fixture";
+
 /// What a testbench code action needs to be resolved.
 #[derive(Debug, Serialize, Deserialize)]
 struct TestbenchData {

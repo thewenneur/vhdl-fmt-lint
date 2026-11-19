@@ -92,6 +92,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         apply: "first",
       }),
     ),
+    vscode.commands.registerCommand("vfl.generateFixtures", () => {
+      // The server offers the action on a selection: a caret alone stands
+      // for its line.
+      const editor = vscode.window.activeTextEditor;
+      if (editor?.selection.isEmpty) {
+        const line = editor.document.lineAt(editor.selection.active.line).range;
+        editor.selection = new vscode.Selection(line.start, line.end);
+      }
+      return vscode.commands.executeCommand("editor.action.codeAction", {
+        kind: "refactor.rewrite.fixture",
+        apply: "first",
+      });
+    }),
     vscode.commands.registerCommand("vfl.toggleFormatOnType", toggleFormatOnType),
     vscode.commands.registerCommand("vfl.insertInstance", (entity?: string) =>
       insertGenerated("instance", entity),
