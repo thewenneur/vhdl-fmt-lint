@@ -1042,7 +1042,7 @@ pub fn testbench(entity: &Entity, config: &Config) -> Result<String, GenerateErr
         out.push_str("    done <= true;\n");
     }
     if standard >= Standard::Vhdl2008 {
-        out.push_str("    std.env.finish;\n");
+        out.push_str("    std.env.stop;\n");
     }
     out.push_str("    wait;\n  end process stimulus;\n");
     let _ = writeln!(out, "end architecture {};", generate.testbench_architecture);
